@@ -23,6 +23,7 @@ frontend/dist/
 
 # IDE
 .idea/
+.vscode/
 *.swp
 *.swo
 *~
@@ -43,3 +44,4 @@ Thumbs.db
 *.tmp
 *.temp
 .cache/
+.claude/

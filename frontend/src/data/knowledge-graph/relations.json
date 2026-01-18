@@ -929,116 +929,670 @@
     "type": "used_in",
     "label": "SLO核心指标"
   },
-
-  {"source": "tensor_core", "target": "sm", "type": "part_of", "label": "SM组成"},
-  {"source": "cuda_core", "target": "sm", "type": "part_of", "label": "SM组成"},
-  {"source": "sm", "target": "gpu", "type": "part_of", "label": "GPU组成"},
-  {"source": "l2_cache", "target": "gpu", "type": "part_of", "label": "GPU组成"},
-  {"source": "interposer", "target": "chiplet", "type": "connects", "label": "连接Chiplet"},
-  {"source": "ici", "target": "tpu", "type": "connects", "label": "TPU互联"},
-  {"source": "ualink", "target": "nvlink", "type": "alternative_to", "label": "开放替代"},
-  {"source": "uec", "target": "ethernet", "type": "optimizes", "label": "AI优化"},
-  {"source": "leaf_spine", "target": "fat_tree", "type": "variant_of", "label": "拓扑变体"},
-
-  {"source": "fsdp", "target": "zero", "type": "implements", "label": "PyTorch实现"},
-  {"source": "fsdp", "target": "dp", "type": "optimizes", "label": "优化DP"},
-  {"source": "megatron", "target": "tp", "type": "implements", "label": "实现TP"},
-  {"source": "megatron", "target": "pp", "type": "implements", "label": "实现PP"},
-  {"source": "deepspeed", "target": "zero", "type": "implements", "label": "实现ZeRO"},
-  {"source": "deepspeed", "target": "dp", "type": "supports", "label": "支持"},
-  {"source": "3d_parallel", "target": "dp", "type": "combines", "label": "组合"},
-  {"source": "3d_parallel", "target": "tp", "type": "combines", "label": "组合"},
-  {"source": "3d_parallel", "target": "pp", "type": "combines", "label": "组合"},
-  {"source": "cp", "target": "ring_attention", "type": "implemented_by", "label": "实现方式"},
-  {"source": "cp", "target": "ulysses", "type": "implemented_by", "label": "实现方式"},
-  {"source": "ring_attention", "target": "attention", "type": "parallelizes", "label": "并行化注意力"},
-  {"source": "ulysses", "target": "attention", "type": "parallelizes", "label": "并行化注意力"},
-  {"source": "cp", "target": "kv_cache", "type": "distributes", "label": "分布KV"},
-
-  {"source": "vllm", "target": "paged_attention", "type": "implements", "label": "核心技术"},
-  {"source": "vllm", "target": "continuous_batching", "type": "implements", "label": "核心技术"},
-  {"source": "tensorrt_llm", "target": "quantization", "type": "supports", "label": "支持量化"},
-  {"source": "tensorrt_llm", "target": "tp", "type": "supports", "label": "支持TP"},
-  {"source": "sglang", "target": "speculative_decoding", "type": "supports", "label": "支持"},
-  {"source": "gptq", "target": "quantization", "type": "variant_of", "label": "量化方法"},
-  {"source": "awq", "target": "quantization", "type": "variant_of", "label": "量化方法"},
-  {"source": "awq", "target": "gptq", "type": "alternative_to", "label": "替代方案"},
-  {"source": "disagg_prefill", "target": "prefill", "type": "optimizes", "label": "分离优化"},
-  {"source": "disagg_prefill", "target": "decode", "type": "separates_from", "label": "分离"},
-  {"source": "chunked_prefill", "target": "prefill", "type": "optimizes", "label": "分块优化"},
-  {"source": "kv_compression", "target": "kv_cache", "type": "compresses", "label": "压缩KV"},
-  {"source": "medusa", "target": "speculative_decoding", "type": "variant_of", "label": "推测变体"},
-
-  {"source": "llama", "target": "transformer", "type": "based_on", "label": "基于"},
-  {"source": "llama", "target": "rope", "type": "uses", "label": "位置编码"},
-  {"source": "llama", "target": "swiglu", "type": "uses", "label": "激活函数"},
-  {"source": "llama", "target": "rmsnorm", "type": "uses", "label": "归一化"},
-  {"source": "llama", "target": "gqa", "type": "uses", "label": "注意力"},
-  {"source": "qwen", "target": "transformer", "type": "based_on", "label": "基于"},
-  {"source": "qwen", "target": "gqa", "type": "uses", "label": "注意力"},
-  {"source": "mistral", "target": "transformer", "type": "based_on", "label": "基于"},
-  {"source": "mistral", "target": "sliding_window_attention", "type": "uses", "label": "滑动窗口"},
-  {"source": "mistral", "target": "gqa", "type": "uses", "label": "注意力"},
-  {"source": "mixtral", "target": "mistral", "type": "extends", "label": "MoE扩展"},
-  {"source": "mixtral", "target": "moe", "type": "uses", "label": "稀疏架构"},
-  {"source": "deepseek_v2", "target": "moe", "type": "uses", "label": "稀疏架构"},
-  {"source": "deepseek_v2", "target": "mla", "type": "uses", "label": "注意力"},
-  {"source": "swiglu", "target": "ffn", "type": "activation_of", "label": "激活函数"},
-  {"source": "rmsnorm", "target": "transformer", "type": "component_of", "label": "归一化"},
-  {"source": "alibi", "target": "rope", "type": "alternative_to", "label": "位置编码替代"},
-  {"source": "sliding_window_attention", "target": "attention", "type": "variant_of", "label": "注意力变体"},
-  {"source": "sparse_attention", "target": "attention", "type": "variant_of", "label": "注意力变体"},
-  {"source": "sliding_window_attention", "target": "sparse_attention", "type": "type_of", "label": "稀疏类型"},
-
-  {"source": "sharp", "target": "allreduce", "type": "accelerates", "label": "网内计算"},
-  {"source": "sharp", "target": "infiniband", "type": "runs_on", "label": "运行于"},
-  {"source": "nvls", "target": "allreduce", "type": "accelerates", "label": "NVLink网内计算"},
-  {"source": "nvls", "target": "nvswitch", "type": "runs_on", "label": "运行于"},
-  {"source": "nvls", "target": "sharp", "type": "similar_to", "label": "类似技术"},
-  {"source": "ring_allreduce", "target": "allreduce", "type": "algorithm_of", "label": "算法"},
-  {"source": "hierarchical_allreduce", "target": "allreduce", "type": "algorithm_of", "label": "算法"},
-  {"source": "bucket_allreduce", "target": "allreduce", "type": "optimizes", "label": "分桶优化"},
-  {"source": "async_allreduce", "target": "allreduce", "type": "variant_of", "label": "异步变体"},
-  {"source": "async_allreduce", "target": "overlap_comm", "type": "enables", "label": "支持重叠"},
-  {"source": "overlap_comm", "target": "cuda_stream", "type": "uses", "label": "使用Stream"},
-  {"source": "collective_permute", "target": "send_recv", "type": "composed_of", "label": "组成"},
-  {"source": "collective_permute", "target": "pp", "type": "used_by", "label": "流水线通信"},
-  {"source": "send_recv", "target": "mpi", "type": "defined_by", "label": "MPI定义"},
-  {"source": "horovod", "target": "ring_allreduce", "type": "uses", "label": "使用Ring"},
-  {"source": "horovod", "target": "nccl", "type": "uses", "label": "GPU后端"},
-  {"source": "horovod", "target": "mpi", "type": "uses", "label": "CPU后端"},
-
-  {"source": "rocev2", "target": "roce", "type": "version_of", "label": "版本"},
-  {"source": "rocev2", "target": "rdma", "type": "implements", "label": "实现RDMA"},
-  {"source": "dcqcn", "target": "rocev2", "type": "congestion_control_for", "label": "拥塞控制"},
-  {"source": "dcqcn", "target": "ecn", "type": "uses", "label": "使用ECN"},
-  {"source": "dcqcn", "target": "cnp", "type": "uses", "label": "使用CNP"},
-  {"source": "ecn", "target": "pfc", "type": "complements", "label": "配合PFC"},
-  {"source": "cnp", "target": "rocev2", "type": "part_of", "label": "协议组成"},
-  {"source": "qp", "target": "rdma", "type": "endpoint_of", "label": "通信端点"},
-  {"source": "cq", "target": "qp", "type": "notifies", "label": "完成通知"},
-  {"source": "wqe", "target": "qp", "type": "submitted_to", "label": "提交请求"},
-  {"source": "mr", "target": "rdma", "type": "required_by", "label": "内存注册"},
-  {"source": "lkey_rkey", "target": "mr", "type": "part_of", "label": "访问密钥"},
-  {"source": "bth", "target": "infiniband", "type": "header_of", "label": "传输头"},
-  {"source": "bth", "target": "rocev2", "type": "header_of", "label": "传输头"},
-  {"source": "psn", "target": "bth", "type": "field_of", "label": "BTH字段"},
-
-  {"source": "kubernetes", "target": "gang_scheduling", "type": "supports", "label": "通过Volcano"},
-  {"source": "slurm", "target": "gang_scheduling", "type": "supports", "label": "原生支持"},
-  {"source": "slurm", "target": "mpi", "type": "integrates", "label": "集成MPI"},
-  {"source": "checkpoint", "target": "fault_tolerance", "type": "enables", "label": "故障恢复"},
-  {"source": "checkpoint", "target": "elastic_training", "type": "required_by", "label": "弹性训练需要"},
-  {"source": "elastic_training", "target": "fault_tolerance", "type": "provides", "label": "提供容错"},
-  {"source": "elastic_training", "target": "horovod", "type": "supported_by", "label": "Horovod支持"},
-  {"source": "gang_scheduling", "target": "allreduce", "type": "required_by", "label": "集合通信需要"},
-  {"source": "cuda", "target": "gpu", "type": "programming_model_for", "label": "编程模型"},
-  {"source": "cuda_stream", "target": "cuda", "type": "feature_of", "label": "CUDA特性"},
-  {"source": "cuda_stream", "target": "异步访问", "type": "enables", "label": "异步执行"},
-  {"source": "nccl", "target": "cuda", "type": "built_on", "label": "基于CUDA"},
-  {"source": "numa", "target": "server", "type": "architecture_of", "label": "内存架构"},
-  {"source": "numa", "target": "memory_bandwidth", "type": "affects", "label": "影响带宽"},
-  {"source": "memory_bandwidth", "target": "hbm", "type": "characteristic_of", "label": "HBM特性"},
-  {"source": "memory_bandwidth", "target": "roofline", "type": "analyzed_by", "label": "Roofline分析"},
-  {"source": "fault_tolerance", "target": "ras", "type": "part_of", "label": "RAS组成"}
+  {
+    "source": "tensor_core",
+    "target": "sm",
+    "type": "part_of",
+    "label": "SM组成"
+  },
+  {
+    "source": "cuda_core",
+    "target": "sm",
+    "type": "part_of",
+    "label": "SM组成"
+  },
+  {
+    "source": "sm",
+    "target": "gpu",
+    "type": "part_of",
+    "label": "GPU组成"
+  },
+  {
+    "source": "l2_cache",
+    "target": "gpu",
+    "type": "part_of",
+    "label": "GPU组成"
+  },
+  {
+    "source": "interposer",
+    "target": "chiplet",
+    "type": "connects",
+    "label": "连接Chiplet"
+  },
+  {
+    "source": "ici",
+    "target": "tpu",
+    "type": "connects",
+    "label": "TPU互联"
+  },
+  {
+    "source": "ualink",
+    "target": "nvlink",
+    "type": "alternative_to",
+    "label": "开放替代"
+  },
+  {
+    "source": "uec",
+    "target": "ethernet",
+    "type": "optimizes",
+    "label": "AI优化"
+  },
+  {
+    "source": "leaf_spine",
+    "target": "fat_tree",
+    "type": "variant_of",
+    "label": "拓扑变体"
+  },
+  {
+    "source": "fsdp",
+    "target": "zero",
+    "type": "implements",
+    "label": "PyTorch实现"
+  },
+  {
+    "source": "fsdp",
+    "target": "dp",
+    "type": "optimizes",
+    "label": "优化DP"
+  },
+  {
+    "source": "megatron",
+    "target": "tp",
+    "type": "implements",
+    "label": "实现TP"
+  },
+  {
+    "source": "megatron",
+    "target": "pp",
+    "type": "implements",
+    "label": "实现PP"
+  },
+  {
+    "source": "deepspeed",
+    "target": "zero",
+    "type": "implements",
+    "label": "实现ZeRO"
+  },
+  {
+    "source": "deepspeed",
+    "target": "dp",
+    "type": "supports",
+    "label": "支持"
+  },
+  {
+    "source": "3d_parallel",
+    "target": "dp",
+    "type": "combines",
+    "label": "组合"
+  },
+  {
+    "source": "3d_parallel",
+    "target": "tp",
+    "type": "combines",
+    "label": "组合"
+  },
+  {
+    "source": "3d_parallel",
+    "target": "pp",
+    "type": "combines",
+    "label": "组合"
+  },
+  {
+    "source": "cp",
+    "target": "ring_attention",
+    "type": "implemented_by",
+    "label": "实现方式"
+  },
+  {
+    "source": "cp",
+    "target": "ulysses",
+    "type": "implemented_by",
+    "label": "实现方式"
+  },
+  {
+    "source": "ring_attention",
+    "target": "attention",
+    "type": "parallelizes",
+    "label": "并行化注意力"
+  },
+  {
+    "source": "ulysses",
+    "target": "attention",
+    "type": "parallelizes",
+    "label": "并行化注意力"
+  },
+  {
+    "source": "cp",
+    "target": "kv_cache",
+    "type": "distributes",
+    "label": "分布KV"
+  },
+  {
+    "source": "vllm",
+    "target": "paged_attention",
+    "type": "implements",
+    "label": "核心技术"
+  },
+  {
+    "source": "vllm",
+    "target": "continuous_batching",
+    "type": "implements",
+    "label": "核心技术"
+  },
+  {
+    "source": "tensorrt_llm",
+    "target": "quantization",
+    "type": "supports",
+    "label": "支持量化"
+  },
+  {
+    "source": "tensorrt_llm",
+    "target": "tp",
+    "type": "supports",
+    "label": "支持TP"
+  },
+  {
+    "source": "sglang",
+    "target": "speculative_decoding",
+    "type": "supports",
+    "label": "支持"
+  },
+  {
+    "source": "gptq",
+    "target": "quantization",
+    "type": "variant_of",
+    "label": "量化方法"
+  },
+  {
+    "source": "awq",
+    "target": "quantization",
+    "type": "variant_of",
+    "label": "量化方法"
+  },
+  {
+    "source": "awq",
+    "target": "gptq",
+    "type": "alternative_to",
+    "label": "替代方案"
+  },
+  {
+    "source": "disagg_prefill",
+    "target": "prefill",
+    "type": "optimizes",
+    "label": "分离优化"
+  },
+  {
+    "source": "disagg_prefill",
+    "target": "decode",
+    "type": "separates_from",
+    "label": "分离"
+  },
+  {
+    "source": "chunked_prefill",
+    "target": "prefill",
+    "type": "optimizes",
+    "label": "分块优化"
+  },
+  {
+    "source": "kv_compression",
+    "target": "kv_cache",
+    "type": "compresses",
+    "label": "压缩KV"
+  },
+  {
+    "source": "medusa",
+    "target": "speculative_decoding",
+    "type": "variant_of",
+    "label": "推测变体"
+  },
+  {
+    "source": "llama",
+    "target": "transformer",
+    "type": "based_on",
+    "label": "基于"
+  },
+  {
+    "source": "llama",
+    "target": "rope",
+    "type": "uses",
+    "label": "位置编码"
+  },
+  {
+    "source": "llama",
+    "target": "swiglu",
+    "type": "uses",
+    "label": "激活函数"
+  },
+  {
+    "source": "llama",
+    "target": "rmsnorm",
+    "type": "uses",
+    "label": "归一化"
+  },
+  {
+    "source": "llama",
+    "target": "gqa",
+    "type": "uses",
+    "label": "注意力"
+  },
+  {
+    "source": "qwen",
+    "target": "transformer",
+    "type": "based_on",
+    "label": "基于"
+  },
+  {
+    "source": "qwen",
+    "target": "gqa",
+    "type": "uses",
+    "label": "注意力"
+  },
+  {
+    "source": "mistral",
+    "target": "transformer",
+    "type": "based_on",
+    "label": "基于"
+  },
+  {
+    "source": "mistral",
+    "target": "sliding_window_attention",
+    "type": "uses",
+    "label": "滑动窗口"
+  },
+  {
+    "source": "mistral",
+    "target": "gqa",
+    "type": "uses",
+    "label": "注意力"
+  },
+  {
+    "source": "mixtral",
+    "target": "mistral",
+    "type": "extends",
+    "label": "MoE扩展"
+  },
+  {
+    "source": "mixtral",
+    "target": "moe",
+    "type": "uses",
+    "label": "稀疏架构"
+  },
+  {
+    "source": "deepseek_v2",
+    "target": "moe",
+    "type": "uses",
+    "label": "稀疏架构"
+  },
+  {
+    "source": "deepseek_v2",
+    "target": "mla",
+    "type": "uses",
+    "label": "注意力"
+  },
+  {
+    "source": "swiglu",
+    "target": "ffn",
+    "type": "activation_of",
+    "label": "激活函数"
+  },
+  {
+    "source": "rmsnorm",
+    "target": "transformer",
+    "type": "component_of",
+    "label": "归一化"
+  },
+  {
+    "source": "alibi",
+    "target": "rope",
+    "type": "alternative_to",
+    "label": "位置编码替代"
+  },
+  {
+    "source": "sliding_window_attention",
+    "target": "attention",
+    "type": "variant_of",
+    "label": "注意力变体"
+  },
+  {
+    "source": "sparse_attention",
+    "target": "attention",
+    "type": "variant_of",
+    "label": "注意力变体"
+  },
+  {
+    "source": "sliding_window_attention",
+    "target": "sparse_attention",
+    "type": "type_of",
+    "label": "稀疏类型"
+  },
+  {
+    "source": "sharp",
+    "target": "allreduce",
+    "type": "accelerates",
+    "label": "网内计算"
+  },
+  {
+    "source": "sharp",
+    "target": "infiniband",
+    "type": "runs_on",
+    "label": "运行于"
+  },
+  {
+    "source": "nvls",
+    "target": "allreduce",
+    "type": "accelerates",
+    "label": "NVLink网内计算"
+  },
+  {
+    "source": "nvls",
+    "target": "nvswitch",
+    "type": "runs_on",
+    "label": "运行于"
+  },
+  {
+    "source": "nvls",
+    "target": "sharp",
+    "type": "similar_to",
+    "label": "类似技术"
+  },
+  {
+    "source": "ring_allreduce",
+    "target": "allreduce",
+    "type": "algorithm_of",
+    "label": "算法"
+  },
+  {
+    "source": "hierarchical_allreduce",
+    "target": "allreduce",
+    "type": "algorithm_of",
+    "label": "算法"
+  },
+  {
+    "source": "bucket_allreduce",
+    "target": "allreduce",
+    "type": "optimizes",
+    "label": "分桶优化"
+  },
+  {
+    "source": "async_allreduce",
+    "target": "allreduce",
+    "type": "variant_of",
+    "label": "异步变体"
+  },
+  {
+    "source": "async_allreduce",
+    "target": "overlap_comm",
+    "type": "enables",
+    "label": "支持重叠"
+  },
+  {
+    "source": "overlap_comm",
+    "target": "cuda_stream",
+    "type": "uses",
+    "label": "使用Stream"
+  },
+  {
+    "source": "collective_permute",
+    "target": "send_recv",
+    "type": "composed_of",
+    "label": "组成"
+  },
+  {
+    "source": "collective_permute",
+    "target": "pp",
+    "type": "used_by",
+    "label": "流水线通信"
+  },
+  {
+    "source": "send_recv",
+    "target": "mpi",
+    "type": "defined_by",
+    "label": "MPI定义"
+  },
+  {
+    "source": "horovod",
+    "target": "ring_allreduce",
+    "type": "uses",
+    "label": "使用Ring"
+  },
+  {
+    "source": "horovod",
+    "target": "nccl",
+    "type": "uses",
+    "label": "GPU后端"
+  },
+  {
+    "source": "horovod",
+    "target": "mpi",
+    "type": "uses",
+    "label": "CPU后端"
+  },
+  {
+    "source": "rocev2",
+    "target": "roce",
+    "type": "version_of",
+    "label": "版本"
+  },
+  {
+    "source": "rocev2",
+    "target": "rdma",
+    "type": "implements",
+    "label": "实现RDMA"
+  },
+  {
+    "source": "dcqcn",
+    "target": "rocev2",
+    "type": "congestion_control_for",
+    "label": "拥塞控制"
+  },
+  {
+    "source": "dcqcn",
+    "target": "ecn",
+    "type": "uses",
+    "label": "使用ECN"
+  },
+  {
+    "source": "dcqcn",
+    "target": "cnp",
+    "type": "uses",
+    "label": "使用CNP"
+  },
+  {
+    "source": "ecn",
+    "target": "pfc",
+    "type": "complements",
+    "label": "配合PFC"
+  },
+  {
+    "source": "cnp",
+    "target": "rocev2",
+    "type": "part_of",
+    "label": "协议组成"
+  },
+  {
+    "source": "qp",
+    "target": "rdma",
+    "type": "endpoint_of",
+    "label": "通信端点"
+  },
+  {
+    "source": "cq",
+    "target": "qp",
+    "type": "notifies",
+    "label": "完成通知"
+  },
+  {
+    "source": "wqe",
+    "target": "qp",
+    "type": "submitted_to",
+    "label": "提交请求"
+  },
+  {
+    "source": "mr",
+    "target": "rdma",
+    "type": "required_by",
+    "label": "内存注册"
+  },
+  {
+    "source": "lkey_rkey",
+    "target": "mr",
+    "type": "part_of",
+    "label": "访问密钥"
+  },
+  {
+    "source": "bth",
+    "target": "infiniband",
+    "type": "header_of",
+    "label": "传输头"
+  },
+  {
+    "source": "bth",
+    "target": "rocev2",
+    "type": "header_of",
+    "label": "传输头"
+  },
+  {
+    "source": "psn",
+    "target": "bth",
+    "type": "field_of",
+    "label": "BTH字段"
+  },
+  {
+    "source": "kubernetes",
+    "target": "gang_scheduling",
+    "type": "supports",
+    "label": "通过Volcano"
+  },
+  {
+    "source": "slurm",
+    "target": "gang_scheduling",
+    "type": "supports",
+    "label": "原生支持"
+  },
+  {
+    "source": "slurm",
+    "target": "mpi",
+    "type": "integrates",
+    "label": "集成MPI"
+  },
+  {
+    "source": "checkpoint",
+    "target": "fault_tolerance",
+    "type": "enables",
+    "label": "故障恢复"
+  },
+  {
+    "source": "checkpoint",
+    "target": "elastic_training",
+    "type": "required_by",
+    "label": "弹性训练需要"
+  },
+  {
+    "source": "elastic_training",
+    "target": "fault_tolerance",
+    "type": "provides",
+    "label": "提供容错"
+  },
+  {
+    "source": "elastic_training",
+    "target": "horovod",
+    "type": "supported_by",
+    "label": "Horovod支持"
+  },
+  {
+    "source": "gang_scheduling",
+    "target": "allreduce",
+    "type": "required_by",
+    "label": "集合通信需要"
+  },
+  {
+    "source": "cuda",
+    "target": "gpu",
+    "type": "programming_model_for",
+    "label": "编程模型"
+  },
+  {
+    "source": "cuda_stream",
+    "target": "cuda",
+    "type": "feature_of",
+    "label": "CUDA特性"
+  },
+  {
+    "source": "cuda_stream",
+    "target": "异步访问",
+    "type": "enables",
+    "label": "异步执行"
+  },
+  {
+    "source": "nccl",
+    "target": "cuda",
+    "type": "built_on",
+    "label": "基于CUDA"
+  },
+  {
+    "source": "numa",
+    "target": "server",
+    "type": "architecture_of",
+    "label": "内存架构"
+  },
+  {
+    "source": "numa",
+    "target": "memory_bandwidth",
+    "type": "affects",
+    "label": "影响带宽"
+  },
+  {
+    "source": "memory_bandwidth",
+    "target": "hbm",
+    "type": "characteristic_of",
+    "label": "HBM特性"
+  },
+  {
+    "source": "memory_bandwidth",
+    "target": "roofline",
+    "type": "analyzed_by",
+    "label": "Roofline分析"
+  },
+  {
+    "source": "fault_tolerance",
+    "target": "ras",
+    "type": "part_of",
+    "label": "RAS组成"
+  },
+  {
+    "source": "gpu",
+    "target": "chiplet",
+    "type": "composed_of",
+    "label": "由芯粒组成"
+  },
+  {
+    "source": "npu",
+    "target": "chiplet",
+    "type": "composed_of",
+    "label": "由芯粒组成"
+  },
+  {
+    "source": "chiplet",
+    "target": "hbm",
+    "type": "connects",
+    "label": "连接内存"
+  },
+  {
+    "source": "chiplet",
+    "target": "nvlink",
+    "type": "connects_via",
+    "label": "通过互联"
+  },
+  {
+    "source": "interposer",
+    "target": "hbm",
+    "type": "connects",
+    "label": "连接"
+  },
+  {
+    "source": "interposer",
+    "target": "infinity_fabric",
+    "type": "enables",
+    "label": "支持"
+  }
 ]
