@@ -1,0 +1,261 @@
+/* ============================================
+   Tier6+ 互联建模 - Linear Style Light Theme
+   注: 基础样式已通过 ConfigProvider 配置
+   ============================================ */
+
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=Inter:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap');
+
+:root {
+  /* 背景层次 */
+  --bg-base: #F7F7F7;
+  --bg-elevated: #FFFFFF;
+  --bg-surface: #EFEFEF;
+  --bg-inset: #E8E8E8;
+  --bg-hover: rgba(0, 0, 0, 0.03);
+
+  /* 边框 */
+  --border-subtle: rgba(0, 0, 0, 0.05);
+  --border-default: #E5E5E5;
+  --border-strong: #D4D4D4;
+
+  /* 主色 */
+  --primary: #4F6BED;
+  --primary-subtle: rgba(79, 107, 237, 0.08);
+
+  /* 文字 */
+  --text-primary: #1A1A1A;
+  --text-secondary: #666666;
+  --text-muted: #999999;
+
+  /* 阴影 */
+  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.05);
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.08), 0 1px 2px rgba(0, 0, 0, 0.04);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.08), 0 2px 4px rgba(0, 0, 0, 0.04);
+  --shadow-focus: 0 0 0 3px rgba(79, 107, 237, 0.2);
+
+  /* 字体 */
+  --font-mono: 'JetBrains Mono', 'SF Mono', monospace;
+  --font-sans: 'Inter', 'Noto Sans SC', -apple-system, sans-serif;
+  --font-display: 'Plus Jakarta Sans', 'Noto Sans SC', sans-serif;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: var(--font-sans);
+  background: var(--bg-base);
+  color: var(--text-primary);
+  min-height: 100vh;
+  -webkit-font-smoothing: antialiased;
+}
+
+#root {
+  width: 100vw;
+  height: 100vh;
+}
+
+/* 滚动条 */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border-default);
+  border-radius: 4px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--border-strong);
+  background-clip: content-box;
+}
+
+/* ============================================
+   Ant Design 精细调整（ConfigProvider 未覆盖的部分）
+   ============================================ */
+
+/* 折叠面板 - 额外样式 */
+.ant-collapse {
+  box-shadow: var(--shadow-xs);
+}
+
+.ant-collapse > .ant-collapse-item {
+  border-bottom-color: var(--border-subtle);
+}
+
+.ant-collapse-header:hover {
+  background: var(--bg-hover);
+}
+
+/* Tabs - Card 类型特殊处理 */
+.ant-tabs-card > .ant-tabs-nav .ant-tabs-nav-list {
+  width: 100%;
+  display: flex;
+}
+
+.ant-tabs-card > .ant-tabs-nav .ant-tabs-tab {
+  flex: 1;
+  justify-content: center;
+  background: var(--bg-surface);
+}
+
+.ant-tabs-card > .ant-tabs-nav .ant-tabs-tab-active {
+  background: var(--bg-elevated);
+}
+
+/* 按钮悬停效果 */
+.ant-btn-primary:hover {
+  transform: translateY(-1px);
+}
+
+/* 卡片悬停效果 */
+.ant-card {
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.ant-card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
+}
+
+/* 数字输入框 - 等宽字体 */
+.ant-input-number-input {
+  font-family: var(--font-mono);
+}
+
+/* 描述列表 - 等宽字体 */
+.ant-descriptions-item-content {
+  font-family: var(--font-mono);
+}
+
+/* 代码样式 */
+.ant-typography code {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  font-family: var(--font-mono);
+  padding: 2px 6px;
+  border-radius: 5px;
+  font-size: 12px;
+}
+
+/* 标题字体 */
+.ant-modal-title,
+h1, h2, h3 {
+  font-family: var(--font-display);
+}
+
+/* ============================================
+   自定义组件样式
+   ============================================ */
+
+/* 侧边栏内的 Segmented */
+.sider-segmented .ant-segmented {
+  background: var(--bg-surface);
+}
+
+.sider-segmented .ant-segmented-item-selected {
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow-sm);
+}
+
+/* 拓扑图布局选择器 */
+.topology-layout-segmented.ant-segmented {
+  background: var(--bg-surface);
+}
+
+.topology-layout-segmented .ant-segmented-item-selected {
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow-sm);
+}
+
+/* 连接编辑面板的Collapse */
+.connection-collapse.ant-collapse {
+  background: transparent;
+  border: none;
+  box-shadow: none;
+}
+
+.connection-collapse .ant-collapse-item {
+  border: none;
+}
+
+.connection-collapse .ant-collapse-header {
+  padding: 10px 12px;
+  border-radius: 8px;
+}
+
+.connection-collapse .ant-collapse-content {
+  border-top: none;
+}
+
+.connection-collapse .ant-collapse-content-box {
+  padding: 8px 0 0 0;
+}
+
+/* ============================================
+   动画效果
+   ============================================ */
+
+/* 脉冲动画 */
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.6;
+    transform: scale(1.2);
+  }
+}
+
+/* 弹簧效果 */
+@keyframes spring-bounce {
+  0% { transform: scale(1); }
+  25% { transform: scale(1.05); }
+  50% { transform: scale(0.98); }
+  75% { transform: scale(1.02); }
+  100% { transform: scale(1); }
+}
+
+/* 容器悬停发光 */
+.topology-container-hover {
+  filter: drop-shadow(0 4px 12px rgba(94, 106, 210, 0.15));
+}
+
+/* 连接线脉冲 */
+@keyframes connection-pulse {
+  0%, 100% {
+    stroke-opacity: 1;
+    stroke-width: 2;
+  }
+  50% {
+    stroke-opacity: 0.7;
+    stroke-width: 3;
+  }
+}
+
+/* 节点拖拽 */
+.node-dragging {
+  transform: scale(1.1);
+  filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.2));
+  cursor: grabbing;
+}
+
+/* 力导向节点悬停 */
+.force-node-hover {
+  cursor: grab;
+}
+
+.force-node-hover:active {
+  cursor: grabbing;
+}

@@ -1,0 +1,194 @@
+[
+  {
+    "id": "token",
+    "name": "Token",
+    "definition": "**Token**是大语言模型处理文本的最小离散单位，由**分词器**（Tokenizer）将原始文本切分得到。\n**分词算法**：现代LLM普遍使用子词分词算法（如**BPE**、WordPiece、SentencePiece），将文本切分为介于字符和单词之间的片段，既能覆盖所有可能的输入又能保持合理的词表大小。典型词表大小为32K-128K个token。\n**统计特性**：\n1）英文中1个token约等于0.75个单词或4个字符\n2）中文中1个token约等于1-2个汉字\n**Token的重要性**：\n1）计费单位：API按token数计费\n2）上下文长度：以token计量（如4K、32K、128K）\n3）位置编码和注意力计算的范围\n理解token对于控制成本、估算延迟和设计prompt都至关重要。",
+    "category": "model",
+    "source": "Sennrich et al. (2016). Neural Machine Translation of Rare Words with Subword Units. ACL",
+    "url": "https://arxiv.org/abs/1508.07909"
+  },
+  {
+    "id": "注意力机制",
+    "name": "注意力机制",
+    "definition": "**注意力机制**（Attention Mechanism）是一种让模型动态关注输入序列不同部分的技术。\n**核心原理**：通过计算**Query**与**Key**的相似度来加权**Value**。\n**地位**：是**Transformer**架构的核心组件。",
+    "category": "model",
+    "source": "Vaswani et al. (2017). Attention Is All You Need. NeurIPS 2017",
+    "url": "https://arxiv.org/abs/1706.03762"
+  },
+  {
+    "id": "权重",
+    "name": "权重",
+    "definition": "**权重**（Weight）是神经网络中神经元连接的可学习参数，反映输入对输出的影响强度。\n**分布**：LLM的权重主要分布在**Attention**和**FFN**层。\n**开销**：存储和传输权重是主要的内存开销。",
+    "category": "model",
+    "source": "Goodfellow et al. (2016). Deep Learning. MIT Press",
+    "url": "https://www.deeplearningbook.org/"
+  },
+  {
+    "id": "激活",
+    "name": "激活",
+    "definition": "**激活**（Activation）是神经网络前向传播过程中各层的中间输出值。\n**特点**：LLM推理中，激活内存随**batch size**和**序列长度**增长。\n**优化**：是**SP**（序列并行）优化的主要目标。",
+    "category": "model",
+    "source": "Goodfellow et al. (2016). Deep Learning. MIT Press",
+    "url": "https://www.deeplearningbook.org/"
+  },
+  {
+    "id": "transformer",
+    "name": "Transformer",
+    "definition": "**Transformer**是2017年Google提出的革命性神经网络架构，完全基于**注意力机制**建模序列依赖关系，摒弃了此前主流的RNN/LSTM结构。\n**架构组成**：\n1）**编码器**（Encoder）：处理输入序列\n2）**解码器**（Decoder）：生成输出序列\n每层包含**MHA**（多头自注意力）和**FFN**（前馈网络）两个子模块，配合残差连接和层归一化。\n**核心优势**：\n1）自注意力可并行计算所有位置的依赖，训练速度大幅提升\n2）能有效捕获长距离依赖\n3）架构统一，易于扩展\n**现代变体**：LLM主要使用**Decoder-only**变体（如GPT系列、LLaMA、Qwen），通过因果注意力掩码实现自回归生成。",
+    "category": "model",
+    "source": "Vaswani et al. (2017). Attention Is All You Need. NeurIPS",
+    "url": "https://arxiv.org/abs/1706.03762"
+  },
+  {
+    "id": "attention",
+    "name": "Attention",
+    "definition": "**Attention**（注意力机制）是Transformer的核心计算单元，通过计算**Query**与**Key**的相似度来动态加权**Value**，实现序列元素间的信息交互。\n**公式**：Attention(Q,K,V) = softmax(QK^T/√d_k)V\n其中**Q**（查询）、**K**（键）、**V**（值）分别由输入经不同线性变换得到，d_k是Key的维度用于缩放。\n**计算复杂度**：O(n²d)，n为序列长度，d为维度，这是长序列处理的主要瓶颈。\n**类型**：\n1）**Self-Attention**：Q、K、V来自同一序列\n2）**Cross-Attention**：Q来自一个序列，K、V来自另一序列\n**意义**：使模型能并行处理任意距离的依赖关系，是Transformer超越RNN的关键创新。",
+    "category": "model",
+    "source": "Vaswani et al. (2017). Attention Is All You Need. NeurIPS",
+    "url": "https://arxiv.org/abs/1706.03762"
+  },
+  {
+    "id": "mha",
+    "name": "MHA",
+    "definition": "**MHA**（Multi-Head Attention，多头注意力）将注意力计算分成h个并行的头，每个头独立学习不同的注意力模式。\n**实现过程**：\n1）输入X通过h组不同的W_Q、W_K、W_V线性变换得到h组Q、K、V\n2）每组独立计算注意力\n3）将h个头的输出拼接并通过W_O投影得到最终结果\n**多头的优势**：\n1）让模型同时关注不同位置的不同表示子空间\n2）不同头可以捕获不同类型的依赖（如局部语法、长程语义）\n3）增加模型容量而计算量与单头相当\n**典型配置**：GPT-3使用h=96头，d_model=12288，d_head=128。\n**参数量**：Q/K/V投影矩阵（3×d_model²）和输出投影矩阵（d_model²），是Transformer参数量的主要来源之一。",
+    "category": "model",
+    "source": "Vaswani et al. (2017). Attention Is All You Need. NeurIPS",
+    "url": "https://arxiv.org/abs/1706.03762"
+  },
+  {
+    "id": "mqa",
+    "name": "MQA",
+    "definition": "**MQA**（Multi-Query Attention，多查询注意力）是**MHA**的内存优化变体，由Google在2019年提出。\n**核心改变**：保留多个Query头，但所有Query头**共享同一组Key和Value**。\n**效果**：KV Cache大小从h×d_head降低到d_head（h为头数），减少了1/h。对于典型的32头模型，KV Cache可减少到原来的**1/32**。\n**优势**：\n1）节省显存\n2）减少内存带宽需求（每步decode需要读取的KV Cache更少）\n**代价**：可能损失一些模型质量，因为不同Query头被强制使用相同的K/V表示。\n**应用**：PaLM、Falcon等模型采用了MQA。\n**意义**：在模型架构层面解决KV Cache瓶颈的开创性工作，启发了后续的**GQA**和**MLA**。",
+    "category": "model",
+    "source": "Shazeer (2019). Fast Transformer Decoding: One Write-Head is All You Need. arXiv:1911.02150",
+    "url": "https://arxiv.org/abs/1911.02150"
+  },
+  {
+    "id": "gqa",
+    "name": "GQA",
+    "definition": "**GQA**（Grouped Query Attention，分组查询注意力）是**MHA**和**MQA**之间的折中方案，由Google在2023年提出。\n**核心思想**：将h个Query头分成g组，每组内的Query头共享同一组Key和Value。\n1）g=h时退化为MHA\n2）g=1时退化为MQA\n**示例**：LLaMA-2 70B使用8组GQA（32个Query头分成8组），KV Cache减少到MHA的**1/4**，在显著节省内存的同时保持了接近MHA的模型质量。\n**优势**：\n1）提供连续的精度-效率权衡空间\n2）可以通过上采样将MHA预训练的检查点转换为GQA，无需从头训练\n**应用**：已成为现代开源大模型（LLaMA-2/3、Qwen-2、Mistral等）的标准配置。",
+    "category": "model",
+    "source": "Ainslie et al. (2023). GQA: Training Generalized Multi-Query Transformer Models from Multi-Head Checkpoints. EMNLP",
+    "url": "https://arxiv.org/abs/2305.13245"
+  },
+  {
+    "id": "mla",
+    "name": "MLA",
+    "definition": "**MLA**（Multi-head Latent Attention，多头潜在注意力）是DeepSeek-V2提出的创新注意力机制，通过**低秩压缩**大幅减少KV Cache。\n**核心思想**：不直接缓存K和V，而是缓存它们的**低秩压缩表示**（潜在向量）。将K和V通过低秩矩阵压缩到远小于原始维度的潜在空间，推理时从潜在向量恢复K和V进行注意力计算。\n**效果**：缓存大小可减少**90%以上**。\n**创新点**：引入解耦的**RoPE**位置编码，将位置信息与内容信息分离处理。\n**实际应用**：DeepSeek-V2使用MLA实现了超低的推理成本：236B参数的MoE模型，KV Cache仅相当于7B级别模型。\n**意义**：代表了KV Cache优化的新方向，通过训练时学习更高效的KV表示，而非简单共享（如MQA/GQA）。",
+    "category": "model",
+    "source": "DeepSeek-AI (2024). DeepSeek-V2: A Strong, Economical, and Efficient Mixture-of-Experts Language Model",
+    "url": "https://arxiv.org/abs/2405.04434"
+  },
+  {
+    "id": "moe",
+    "name": "MoE",
+    "definition": "**MoE**（Mixture of Experts，混合专家模型）是一种**稀疏激活**的神经网络架构，通过**门控机制**（Router）动态选择部分专家子网络来处理每个输入。\n**实现方式**：在Transformer中，MoE通常替换**FFN**层：将一个大FFN拆分为多个小专家FFN，每个token只激活其中一部分（如Top-2）。\n**优势**：模型参数量可以很大（提供更强的表示能力），但计算量保持可控（仅激活部分专家）。\n**示例**：Mixtral 8x7B有8个专家共47B参数，但每次推理只激活2个专家，计算量约等于14B密集模型。\n**挑战**：\n1）**负载均衡**：防止所有token路由到少数专家\n2）**通信开销**：EP需要AllToAll通信\n3）**显存占用**：所有专家都要加载\n**应用**：DeepSeek-V2、GPT-4等顶级模型据信都采用MoE架构。",
+    "category": "model",
+    "source": "Shazeer et al. (2017). Outrageously Large Neural Networks: The Sparsely-Gated Mixture-of-Experts Layer. ICLR",
+    "url": "https://arxiv.org/abs/1701.06538"
+  },
+  {
+    "id": "ffn",
+    "name": "FFN",
+    "definition": "**FFN**（Feed-Forward Network，前馈网络）是Transformer每层中Attention之后的两层全连接网络，对每个位置独立进行非线性变换。\n**公式**：FFN(x) = W_2 · activation(W_1 · x + b_1) + b_2\n**维度配置**：隐藏维度通常是模型维度的4倍（如d_model=4096时d_ff=16384）。\n**激活函数演进**：ReLU → GELU → SiLU/Swish → **SwiGLU**（LLaMA等现代模型使用，引入门控机制）。\n**参数量**：FFN占据Transformer参数的约**2/3**：\n1）W_1维度：d_model × d_ff\n2）W_2维度：d_ff × d_model\n**在MoE中的角色**：FFN被替换为多个专家FFN，通过路由机制稀疏激活。\n**知识存储**：FFN被认为是模型存储知识的主要位置，其参数编码了训练语料中的事实性知识。",
+    "category": "model",
+    "source": "Vaswani et al. (2017). Attention Is All You Need. NeurIPS",
+    "url": "https://arxiv.org/abs/1706.03762"
+  },
+  {
+    "id": "kv_cache",
+    "name": "KV Cache",
+    "definition": "**KV Cache**是LLM推理中的核心优化技术，用于缓存自注意力计算中已处理token的**Key**和**Value**向量。\n**问题背景**：在自回归生成中，每生成一个新token都需要与所有历史token计算注意力。如果不缓存，每步都要重新计算所有历史token的K和V，计算量随序列增长呈**O(n²)**增长。\n**优化原理**：历史token的K/V只需计算一次后存储，新token只需计算自己的K/V并与缓存拼接，将计算复杂度从O(n²)降到**O(n)**。\n**内存开销**：KV Cache带来了显著的内存占用。对于LLaMA-70B，单条8K序列的KV Cache约需**2.5GB**。\n**优化方向**：\n1）**内存管理**：PagedAttention实现动态分配\n2）**KV压缩**：MQA/GQA/MLA减少KV头数\n3）**量化**：降低KV Cache的精度",
+    "category": "model",
+    "source": "Pope et al. (2023). Efficiently Scaling Transformer Inference. MLSys",
+    "url": "https://arxiv.org/abs/2211.05102"
+  },
+  {
+    "id": "rope",
+    "name": "RoPE",
+    "definition": "**RoPE**（Rotary Position Embedding，旋转位置编码）是通过**旋转矩阵**将位置信息编码到Query和Key向量的技术。\n**核心思想**：将位置信息以旋转角度的形式融入Q和K，使得内积自然包含相对位置信息。\n**公式**：对于位置m的向量x，RoPE(x,m) = R(m)·x，其中R(m)是与位置相关的旋转矩阵。\n**优势**：\n1）天然支持**相对位置编码**：Q·K的内积只依赖相对位置\n2）**长度外推**：可处理训练时未见过的更长序列\n3）计算高效：只需简单的向量旋转操作\n**应用**：LLaMA、Qwen、Mistral等主流开源模型的标准位置编码。\n**扩展**：通过调整旋转基数（base）可实现上下文长度扩展（如NTK-aware Scaling、YaRN等）。",
+    "category": "model",
+    "source": "Su et al. (2021). RoFormer: Enhanced Transformer with Rotary Position Embedding. arXiv:2104.09864",
+    "url": "https://arxiv.org/abs/2104.09864"
+  },
+  {
+    "id": "llama",
+    "name": "LLaMA",
+    "definition": "**LLaMA**（Large Language Model Meta AI）是Meta于2023年发布的开源大语言模型系列，标志着开源LLM生态的繁荣。\n**模型规模**：LLaMA-1提供7B、13B、33B、65B四个规格。\n**架构特点**：\n1）**Pre-normalization**：使用**RMSNorm**替代LayerNorm\n2）**SwiGLU激活**：FFN使用**SwiGLU**替代ReLU\n3）**RoPE位置编码**：支持长度外推\n4）无偏置项：除了attention的output projection\n**训练数据**：1.4T tokens的公开数据集（CommonCrawl、Wikipedia、GitHub等）。\n**意义**：\n1）证明了开源数据可以训练出接近GPT-3.5水平的模型\n2）催生了Alpaca、Vicuna等大量衍生模型\n3）推动了开源LLM生态的快速发展",
+    "category": "model",
+    "source": "Touvron et al. (2023). LLaMA: Open and Efficient Foundation Language Models. arXiv:2302.13971",
+    "url": "https://arxiv.org/abs/2302.13971"
+  },
+  {
+    "id": "qwen",
+    "name": "Qwen",
+    "definition": "**Qwen**（通义千问）是阿里巴巴开发的大语言模型系列，在中英双语任务上表现出色。\n**模型演进**：\n1）**Qwen-1**：0.5B到72B多个规格\n2）**Qwen-2**：架构优化，支持更长上下文\n3）**Qwen-2.5**：进一步提升多语言能力\n**架构特点**：\n1）**GQA**分组查询注意力\n2）**SwiGLU**激活函数\n3）**RoPE**位置编码（支持YaRN扩展）\n4）词表大小15万+，覆盖多语言\n**版本类型**：\n1）**Base**：预训练基座模型\n2）**Chat**：对话微调模型\n3）**Coder**：代码专精模型\n4）**VL**：多模态视觉语言模型\n**特色**：对中文支持特别优秀，在中文评测中持续领先。",
+    "category": "model",
+    "source": "Qwen Team (2024). Qwen Technical Report. Alibaba Group",
+    "url": "https://arxiv.org/abs/2309.16609"
+  },
+  {
+    "id": "mistral",
+    "name": "Mistral",
+    "definition": "**Mistral**是法国AI公司Mistral AI发布的高效大语言模型，以小规模实现卓越性能著称。\n**Mistral 7B特点**：\n1）**滑动窗口注意力**（Sliding Window Attention）：限制注意力范围以提升效率\n2）**GQA**：8组分组查询注意力\n3）**RoPE**：旋转位置编码\n**性能**：7B参数超越LLaMA-2 13B，在多项基准测试中表现优异。\n**架构创新**：\n1）滑动窗口大小4096，有效处理长序列\n2）Flash Attention 2优化\n3）无偏置项设计\n**开放性**：采用Apache 2.0许可证，完全开放商用。\n**意义**：证明了精心设计的小模型可以超越更大的模型，推动了高效LLM的研究方向。",
+    "category": "model",
+    "source": "Mistral AI (2023). Mistral 7B. arXiv:2310.06825",
+    "url": "https://arxiv.org/abs/2310.06825"
+  },
+  {
+    "id": "mixtral",
+    "name": "Mixtral",
+    "definition": "**Mixtral**是Mistral AI发布的混合专家（MoE）大语言模型，将稀疏激活架构推向开源社区。\n**Mixtral 8x7B规格**：\n1）**8个专家**：每个专家约7B参数\n2）**Top-2路由**：每个token激活2个专家\n3）**总参数**：46.7B参数\n4）**激活参数**：约13B（推理等效）\n**架构特点**：\n1）每层替换FFN为8个专家FFN + 门控网络\n2）保留Mistral的滑动窗口注意力\n3）32K上下文窗口\n**性能**：\n1）超越LLaMA-2 70B的推理能力\n2）多语言能力强（法语、德语、西班牙语等）\n3）推理速度比同等能力密集模型快6倍\n**意义**：首个高质量开源MoE模型，证明了MoE在开源生态的可行性。",
+    "category": "model",
+    "source": "Mistral AI (2024). Mixtral of Experts. arXiv:2401.04088",
+    "url": "https://arxiv.org/abs/2401.04088"
+  },
+  {
+    "id": "deepseek_v2",
+    "name": "DeepSeek-V2",
+    "definition": "**DeepSeek-V2**是深度求索（DeepSeek）发布的高效大语言模型，以创新架构实现极致性价比。\n**模型规格**：\n1）**总参数**：236B\n2）**激活参数**：21B\n3）**专家数**：160个专家，Top-6路由\n**核心创新**：\n1）**MLA**（多头潜在注意力）：通过低秩压缩将KV Cache减少93%\n2）**DeepSeekMoE**：细粒度专家划分+共享专家设计\n3）**解耦RoPE**：位置信息与内容信息分离\n**效率提升**：\n1）KV Cache仅相当于2.8B模型\n2）训练成本仅为LLaMA-3 70B的1/5\n3）推理成本大幅降低\n**性能**：接近GPT-4水平，在多项中英文评测中表现出色。\n**意义**：证明了通过架构创新可以打破规模定律的限制，用更少资源达到更好效果。",
+    "category": "model",
+    "source": "DeepSeek-AI (2024). DeepSeek-V2: A Strong, Economical, and Efficient Mixture-of-Experts Language Model",
+    "url": "https://arxiv.org/abs/2405.04434"
+  },
+  {
+    "id": "swiglu",
+    "name": "SwiGLU",
+    "definition": "**SwiGLU**是一种门控激活函数，结合了**Swish**激活和**GLU**（Gated Linear Unit）门控机制。\n**公式**：SwiGLU(x) = Swish(xW_1) ⊙ (xW_2)\n其中Swish(x) = x·sigmoid(x)，⊙表示逐元素乘法。\n**与标准FFN对比**：\n1）标准FFN：W_2(ReLU(W_1·x))\n2）SwiGLU FFN：W_2(Swish(W_1·x) ⊙ (W_3·x))\n**优势**：\n1）门控机制提供更强的表达能力\n2）Swish的平滑性有助于优化\n3）实验表明在同等计算量下效果更好\n**参数变化**：增加了第三个权重矩阵W_3，为保持计算量，通常将隐藏维度缩小2/3。\n**应用**：LLaMA、Qwen、Mistral等主流开源模型均采用SwiGLU。",
+    "category": "model",
+    "source": "Shazeer (2020). GLU Variants Improve Transformer. arXiv:2002.05202",
+    "url": "https://arxiv.org/abs/2002.05202"
+  },
+  {
+    "id": "rmsnorm",
+    "name": "RMSNorm",
+    "definition": "**RMSNorm**（Root Mean Square Layer Normalization）是**LayerNorm**的简化高效变体。\n**公式**：RMSNorm(x) = x / RMS(x) · γ，其中RMS(x) = √(mean(x²))\n**与LayerNorm对比**：\n1）LayerNorm需要计算均值和方差，然后中心化和缩放\n2）RMSNorm只计算均方根，无需中心化\n**优势**：\n1）**计算效率**：减少约7-64%的计算量\n2）**数值稳定**：避免减法运算带来的数值问题\n3）**效果相当**：实验证明与LayerNorm效果相近\n**应用位置**：\n1）**Pre-LN**：在Attention和FFN之前（LLaMA等现代模型）\n2）**Post-LN**：在之后（原始Transformer）\n**采用**：LLaMA、Qwen、Mistral等现代LLM的标准归一化方式。",
+    "category": "model",
+    "source": "Zhang & Sennrich (2019). Root Mean Square Layer Normalization. NeurIPS",
+    "url": "https://arxiv.org/abs/1910.07467"
+  },
+  {
+    "id": "alibi",
+    "name": "ALiBi",
+    "definition": "**ALiBi**（Attention with Linear Biases）是一种无需可学习参数的位置编码方法，通过在注意力分数上添加线性偏置实现位置感知。\n**核心思想**：不修改Q/K向量，而是在计算softmax之前，给注意力分数加上与距离成正比的负偏置。\n**公式**：score(q,k) = q·k - m|i-j|，其中m是每个头特定的斜率，|i-j|是位置距离。\n**优势**：\n1）**长度外推**：训练短序列，推理长序列（训练2K可外推到8K+）\n2）**零额外参数**：偏置由固定公式计算\n3）**实现简单**：只需修改attention mask\n**局限**：每个头使用相同斜率模式，表达能力可能受限。\n**应用**：BLOOM、MPT等模型采用ALiBi，但RoPE仍是主流选择。",
+    "category": "model",
+    "source": "Press et al. (2022). Train Short, Test Long: Attention with Linear Biases Enables Input Length Extrapolation. ICLR",
+    "url": "https://arxiv.org/abs/2108.12409"
+  },
+  {
+    "id": "sliding_window_attention",
+    "name": "滑动窗口注意力",
+    "definition": "**滑动窗口注意力**（Sliding Window Attention，SWA）是一种限制注意力范围的高效注意力机制。\n**核心思想**：每个token只与其前后固定窗口大小（如4096）的token计算注意力，而非全序列。\n**优势**：\n1）**线性复杂度**：O(n·w)替代O(n²)，w为窗口大小\n2）**内存高效**：减少KV Cache存储需求\n3）**信息传递**：通过多层堆叠，信息仍可跨越整个序列\n**信息传递机制**：若层数为L，窗口大小为w，则信息可传递的有效距离为L×w（如32层×4096=131K）。\n**应用**：\n1）**Mistral**：4096窗口大小\n2）**Longformer**：结合全局注意力\n3）**BigBird**：随机+局部+全局注意力\n**适用场景**：长文档处理、流式推理等对效率要求高的场景。",
+    "category": "model",
+    "source": "Mistral AI (2023). Mistral 7B; Beltagy et al. (2020). Longformer",
+    "url": "https://arxiv.org/abs/2310.06825"
+  },
+  {
+    "id": "sparse_attention",
+    "name": "稀疏注意力",
+    "definition": "**稀疏注意力**（Sparse Attention）是一类只计算部分位置对注意力的高效注意力机制。\n**核心思想**：通过预定义或学习的稀疏模式，选择性地计算注意力，将O(n²)降低到O(n√n)或O(n·log(n))。\n**常见模式**：\n1）**局部窗口**：只关注邻近token（滑动窗口）\n2）**膨胀窗口**：跳跃式关注更远的token\n3）**全局token**：特殊token可与所有位置交互\n4）**随机采样**：随机选择一些位置\n**代表方法**：\n1）**Longformer**：局部+全局稀疏\n2）**BigBird**：随机+局部+全局\n3）**Sparse Transformer**：固定步长稀疏模式\n**优势**：大幅降低长序列的计算和内存开销。\n**局限**：可能丢失某些长距离依赖，且稀疏模式的CUDA优化较复杂。",
+    "category": "model",
+    "source": "Child et al. (2019). Generating Long Sequences with Sparse Transformers. arXiv:1904.10509",
+    "url": "https://arxiv.org/abs/1904.10509"
+  }
+]

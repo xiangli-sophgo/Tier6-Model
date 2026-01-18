@@ -1,0 +1,279 @@
+[
+  {
+    "id": "tps",
+    "name": "TPS",
+    "definition": "**TPS**（Tokens Per Second，每秒生成token数）是衡量LLM推理性能的核心指标。\n**分类**：\n1）**Prefill TPS**：处理输入prompt的速度，计算密集型，主要受GPU算力限制\n2）**Decode TPS**：生成输出token的速度，内存带宽密集型，主要受HBM带宽限制\n用户体验主要由Decode TPS决定。\n**示例**：H100（3TB/s HBM带宽）推理LLaMA-70B（140GB FP16权重），每生成一个token需读取全部权重，理论上限约21 token/s（单用户）。\n**优化方法**：\n1）增大batch size（均摊权重读取）\n2）量化（减少数据量）\n3）Tensor Parallelism（叠加带宽）\n4）Speculative Decoding（一次验证多token）\nMLPerf Inference使用TPS作为LLM推理的标准性能指标。",
+    "category": "inference",
+    "source": "MLPerf Inference Benchmark; LLM Inference Performance Metrics",
+    "url": "https://mlcommons.org/benchmarks/inference/"
+  },
+  {
+    "id": "fp4_int8",
+    "name": "FP4/INT8",
+    "definition": "**FP4**是4位浮点格式（如E2M1），**INT8**是8位整数格式（-128到127）。\n两者均用于神经网络量化，以较小精度损失换取内存和计算效率提升。",
+    "category": "inference",
+    "source": "NVIDIA Transformer Engine; Dettmers et al. (2022). LLM.int8(): 8-bit Matrix Multiplication. NeurIPS",
+    "url": "https://arxiv.org/abs/2208.07339"
+  },
+  {
+    "id": "prefill",
+    "name": "Prefill",
+    "definition": "**Prefill**是LLM推理的第一阶段，对用户输入的完整prompt进行一次性前向计算。模型并行处理所有输入token，计算注意力并生成**KV Cache**。\n**特点**：\n1）**计算密集型**（Compute-bound），处理大量token的矩阵乘法\n2）可高度并行化，所有prompt token同时计算\n3）延迟与prompt长度成正比（O(n²)计算量）\n对于长prompt（如RAG场景），Prefill可能占据推理时间的大部分。\n**优化策略**：\n1）增大batch size提高GPU利用率\n2）**Chunked Prefill**：将长prompt分块处理\n3）**Splitwise**：将Prefill与Decode分离到不同GPU\nPrefill完成后输出第一个token，进入Decode阶段。",
+    "category": "inference",
+    "source": "Pope et al. (2023). Efficiently Scaling Transformer Inference. MLSys",
+    "url": "https://arxiv.org/abs/2211.05102"
+  },
+  {
+    "id": "decode",
+    "name": "Decode",
+    "definition": "**Decode**是LLM推理的第二阶段，基于Prefill构建的KV Cache逐个token自回归生成输出。\n**每生成一个token需要**：\n1）读取该token的embedding\n2）读取全部模型权重进行前向计算\n3）读取所有历史token的KV Cache计算注意力\n4）将新token的KV追加到Cache\n**特点**：严重的**内存带宽瓶颈**（Memory-bound），每个token只做很少计算，但要读取GB级的权重和KV Cache，算术强度极低。Decode的TPS主要受限于HBM带宽而非算力。\n**优化策略**：\n1）**Continuous Batching**：提高batch size均摊权重读取开销\n2）量化减少数据量\n3）**Speculative Decoding**：一次验证多token\n4）**MQA/GQA/MLA**：减少KV Cache",
+    "category": "inference",
+    "source": "Pope et al. (2023). Efficiently Scaling Transformer Inference. MLSys",
+    "url": "https://arxiv.org/abs/2211.05102"
+  },
+  {
+    "id": "flash_attention",
+    "name": "FlashAttention",
+    "definition": "**FlashAttention**是Stanford大学Tri Dao等人提出的IO感知注意力计算算法，通过精妙的**分块（tiling）**策略大幅减少对HBM的访问次数。\n**原理**：传统注意力需要将完整的N×N注意力矩阵写入HBM再读回，而FlashAttention在**SRAM**（片上高速缓存）中分块计算，仅在最终输出时写HBM。\n**优势**：\n1）内存复杂度从O(N²)降至O(N)\n2）计算速度提升2-4倍\n3）精确计算，无近似误差，可直接替换标准注意力\n**版本演进**：\n- **FlashAttention-2**：优化并行化策略，达到理论峰值50-73%\n- **FlashAttention-3**：支持FP8和异步计算\n现已成为主流LLM训练和推理框架的标配。",
+    "category": "inference",
+    "source": "Dao et al. (2022). FlashAttention: Fast and Memory-Efficient Exact Attention with IO-Awareness. NeurIPS",
+    "url": "https://arxiv.org/abs/2205.14135"
+  },
+  {
+    "id": "paged_attention",
+    "name": "PagedAttention",
+    "definition": "**PagedAttention**是vLLM提出的KV Cache管理技术。\n**核心思想**：将KV Cache分成固定大小的页，实现动态分配和跨请求共享。\n**优势**：解决内存碎片问题，提高吞吐量。",
+    "category": "inference",
+    "source": "Kwon et al. (2023). Efficient Memory Management for Large Language Model Serving with PagedAttention. SOSP",
+    "url": "https://arxiv.org/abs/2309.06180"
+  },
+  {
+    "id": "speculative_decoding",
+    "name": "Speculative Decoding",
+    "definition": "**Speculative Decoding**（推测解码）用小模型快速生成多个候选token，再由大模型并行验证。\n**原理**：通过一次前向验证多个token，加速自回归生成。",
+    "category": "inference",
+    "source": "Leviathan et al. (2023). Fast Inference from Transformers via Speculative Decoding. ICML",
+    "url": "https://arxiv.org/abs/2211.17192"
+  },
+  {
+    "id": "continuous_batching",
+    "name": "Continuous Batching",
+    "definition": "**Continuous Batching**（连续批处理）是动态调整推理批次的技术。\n**机制**：已完成的请求立即退出，新请求随时加入。\n**优势**：最大化GPU利用率，提高服务吞吐量。",
+    "category": "inference",
+    "source": "Yu et al. (2022). Orca: A Distributed Serving System for Transformer-Based Generative Models. OSDI",
+    "url": "https://www.usenix.org/conference/osdi22/presentation/yu"
+  },
+  {
+    "id": "quantization",
+    "name": "Quantization",
+    "definition": "**Quantization**（量化）将模型权重和激活从高精度（FP32/FP16）转为低精度（INT8/INT4/FP8）。\n**优势**：减少内存占用和计算量。\n**代价**：可能轻微损失精度。",
+    "category": "inference",
+    "source": "Dettmers et al. (2022). LLM.int8(): 8-bit Matrix Multiplication for Transformers at Scale. NeurIPS",
+    "url": "https://arxiv.org/abs/2208.07339"
+  },
+  {
+    "id": "gradient_checkpointing",
+    "name": "Gradient Checkpointing",
+    "definition": "**Gradient Checkpointing**（梯度检查点）只保存部分层的激活值，反向传播时重新计算未保存的激活。\n**核心思想**：用计算换内存，使有限GPU内存可训练更大模型。",
+    "category": "inference",
+    "source": "Chen et al. (2016). Training Deep Nets with Sublinear Memory Cost. arXiv:1604.06174",
+    "url": "https://arxiv.org/abs/1604.06174"
+  },
+  {
+    "id": "zero",
+    "name": "ZeRO",
+    "definition": "**ZeRO**（Zero Redundancy Optimizer）是DeepSpeed提出的优化器状态分片技术，消除数据并行中的冗余存储。\n**三个阶段**：\n1）**ZeRO-1**：分片优化器状态（momentum、variance），内存减少约4倍\n2）**ZeRO-2**：额外分片梯度，内存减少约8倍\n3）**ZeRO-3**：分片优化器状态+梯度+参数，内存减少约N倍（N为GPU数）\n**扩展技术**：\n1）**ZeRO-Offload**：卸载到CPU内存\n2）**ZeRO-Infinity**：卸载到NVMe SSD\n**等价实现**：PyTorch的**FSDP**等价于ZeRO-3。",
+    "category": "inference",
+    "source": "Rajbhandari et al. (2020). ZeRO: Memory Optimizations Toward Training Trillion Parameter Models. SC",
+    "url": "https://arxiv.org/abs/1910.02054"
+  },
+  {
+    "id": "slo",
+    "name": "SLO",
+    "fullName": "Service Level Objective",
+    "definition": "**SLO**（Service Level Objective，服务水平目标）是定义服务性能承诺的量化指标，在LLM推理服务中尤为关键。\n**典型LLM SLO**：\n1）**延迟SLO**：如P99 TTFT < 500ms、P99 TPOT < 50ms\n2）**吞吐量SLO**：如每秒处理请求数 > 100 QPS\n3）**可用性SLO**：如99.9%的请求成功完成\n**SLO与SLA的关系**：SLA是与客户的合同承诺，SLO是内部技术目标。\n**满足SLO的策略**：\n1）请求排队策略\n2）批处理大小调整\n3）负载均衡\n4）超时控制\n5）请求优先级分级\n6）弹性扩缩容\n**监控指标**：TTFT、TPOT、TPS的P50/P90/P99分位数。",
+    "category": "inference",
+    "source": "Google SRE Book; LLM Serving Best Practices",
+    "url": "https://sre.google/sre-book/service-level-objectives/"
+  },
+  {
+    "id": "ttft",
+    "name": "TTFT",
+    "fullName": "Time to First Token",
+    "definition": "**TTFT**（Time to First Token，首token延迟）是衡量LLM推理响应速度的核心指标，指从用户发送请求到收到第一个生成token的时间。\n**组成部分**：\n1）网络延迟：请求传输时间\n2）排队延迟：等待GPU资源\n3）Prefill延迟：处理完整prompt的计算时间\nTTFT直接影响用户感知的响应速度，是交互式应用的关键SLO指标。\n**影响因素**：prompt长度（O(n²)复杂度）、GPU算力、batch size、系统负载。\n**优化策略**：\n1）**Chunked Prefill**：分块处理\n2）**Splitwise**：将Prefill分离到专用GPU\n3）请求优先级调度\n4）预计算常用prompt\n**典型要求**：在线服务 < 1秒，实时对话 < 500ms。",
+    "category": "inference",
+    "source": "LLM Inference Performance Metrics; vLLM Documentation",
+    "url": "https://docs.vllm.ai/en/latest/",
+    "aliases": [
+      "FTL",
+      "First Token Latency",
+      "首token延迟"
+    ]
+  },
+  {
+    "id": "tpot",
+    "name": "TPOT",
+    "fullName": "Time Per Output Token",
+    "definition": "**TPOT**（Time Per Output Token，每token生成时间）是衡量LLM推理Decode阶段性能的指标，表示生成每个输出token所需的平均时间。\n**公式**：TPOT = 1/TPS\n**影响因素**：\n1）HBM带宽：每token需读取全部权重和KV Cache\n2）Batch size：多请求共享权重读取开销\n3）KV Cache大小：随序列长度增长\n4）量化精度：低精度减少数据传输量\n**典型值**：单用户H100推理70B模型约50ms/token（20 TPS）；高并发场景可能增至100-200ms/token。\n**用户体验**：流式输出时用户阅读速度约200-300词/分钟（约3-5 token/秒），TPOT < 200ms通常可接受。",
+    "category": "inference",
+    "source": "LLM Inference Performance Metrics; Anyscale Blog",
+    "url": "https://www.anyscale.com/blog/continuous-batching-llm-inference",
+    "aliases": [
+      "ITL",
+      "Inter-Token Latency",
+      "每token延迟"
+    ]
+  },
+  {
+    "id": "latency",
+    "name": "Latency",
+    "fullName": "End-to-End Latency",
+    "definition": "**Latency**（延迟）在LLM推理中指从请求发送到完整响应接收的总时间，也称**端到端延迟**（E2E Latency）。\n**公式**：总延迟 = TTFT + TPOT × 输出token数\n**延迟分解**：\n1）网络延迟：客户端-服务器往返时间\n2）排队延迟：等待GPU资源\n3）Prefill延迟：处理输入prompt\n4）Decode延迟：逐token生成输出\n**常用指标**：P50（中位数）、P90、P99、P999，其中P99是SLO常用指标。\n**影响因素**：输入/输出长度、模型大小、GPU算力/带宽、系统负载、batch策略。\n**权衡**：小batch低延迟但浪费算力，大batch高吞吐但增加延迟。",
+    "category": "inference",
+    "source": "Systems Performance Engineering; LLM Serving Optimization",
+    "url": "https://arxiv.org/abs/2309.06180"
+  },
+  {
+    "id": "throughput",
+    "name": "Throughput",
+    "fullName": "System Throughput",
+    "definition": "**Throughput**（吞吐量）是衡量LLM推理系统处理能力的指标。\n**吞吐量指标**：\n1）**Token Throughput**：所有用户每秒生成的token总数（系统TPS）\n2）**Request Throughput**：每秒完成的请求数（QPS）\n3）用户吞吐量：单用户的TPS\n**提升策略**：增大batch size，多请求共享权重读取开销，将memory-bound转为compute-bound。**Continuous Batching**动态调整batch，最大化GPU利用率。\n**权衡**：大batch提高吞吐但增加排队延迟，需根据SLO找平衡点。\n**典型值**：H100推理70B模型，单用户20 TPS，batch=32时系统可达400+ TPS。",
+    "category": "inference",
+    "source": "Pope et al. (2023). Efficiently Scaling Transformer Inference; vLLM Paper",
+    "url": "https://arxiv.org/abs/2309.06180"
+  },
+  {
+    "id": "qps",
+    "name": "QPS",
+    "fullName": "Queries Per Second",
+    "definition": "**QPS**（Queries Per Second，每秒查询数）是衡量LLM推理服务处理能力的请求级指标。与TPS（token级）不同，QPS关注完整请求的处理速度。\n**公式**：QPS = 并发请求数 / 平均请求延迟\n**影响因素**：\n1）平均输入/输出长度：长序列降低QPS\n2）GPU资源：更多GPU提高并发能力\n3）Batch策略：Continuous Batching提高QPS\n4）模型大小：小模型QPS更高\n**应用场景**：\n- 容量规划：估算支持N个并发用户需要多少GPU\n- 负载测试：逐步增加QPS直到延迟超过SLO阈值\n**特点**：与Web服务不同，LLM的QPS通常较低（几十到几百），但每个请求消耗大量计算资源。",
+    "category": "inference",
+    "source": "LLM Serving Best Practices; Load Testing Methodology",
+    "url": "https://www.anyscale.com/blog/continuous-batching-llm-inference"
+  },
+  {
+    "id": "p99_latency",
+    "name": "P99 Latency",
+    "fullName": "99th Percentile Latency",
+    "definition": "**P99 Latency**（99分位延迟）是指99%的请求延迟低于此值的阈值，是LLM服务SLO的核心指标。相比平均延迟，P99更能反映用户体验的一致性。\n**百分位体系**：P50（中位数）、P90、P95、P99、P999（99.9%）。P99与P50的差距反映系统稳定性。\n**影响因素**：\n1）长尾请求：超长prompt或输出\n2）资源竞争：GPU内存/带宽争用\n3）GC暂停：Python/CUDA内存管理\n4）排队延迟：高负载时的等待\n**优化策略**：\n1）设置请求超时\n2）限制最大序列长度\n3）资源隔离\n4）预热模型避免冷启动\n**典型SLO**：P99 TTFT < 1s，P99 TPOT < 100ms。",
+    "category": "inference",
+    "source": "SRE Best Practices; Latency Percentile Analysis",
+    "url": "https://sre.google/sre-book/monitoring-distributed-systems/",
+    "aliases": [
+      "P99",
+      "99分位延迟",
+      "尾延迟"
+    ]
+  },
+  {
+    "id": "goodput",
+    "name": "Goodput",
+    "fullName": "Effective Throughput",
+    "definition": "**Goodput**（有效吞吐量）是指在满足SLO约束条件下的实际有效输出量，区别于不考虑质量的原始吞吐量。\n**公式**：Goodput = 满足SLO的请求数 × 平均输出长度 / 时间\n**意义**：\n1）排除超时、失败、被丢弃的请求\n2）只计算对用户有价值的输出\n3）反映系统的真实服务能力\n**与Throughput的区别**：高负载时Throughput可能很高但大量请求超时，Goodput反而下降。\n**优化策略**：\n1）准入控制：拒绝超出容量的请求\n2）负载均衡\n3）弹性扩缩容\n4）请求优先级\nGoodput是评估LLM服务系统ROI的关键指标。",
+    "category": "inference",
+    "source": "Agrawal et al. (2024). Sarathi-Serve: Optimizing LLM Inference",
+    "url": "https://arxiv.org/abs/2403.02310"
+  },
+  {
+    "id": "normalized_latency",
+    "name": "Normalized Latency",
+    "fullName": "Normalized Latency per Token",
+    "definition": "**Normalized Latency**（归一化延迟）是将总延迟除以输出token数得到的标准化指标，用于公平比较不同长度请求的处理效率。\n**公式**：Normalized Latency = 总延迟 / 输出token数\n**意义**：\n1）消除输出长度差异的影响\n2）反映系统的单位处理效率\n3）便于跨请求、跨系统比较\n**与TPOT的区别**：TPOT仅考虑Decode阶段，Normalized Latency包含完整的端到端时间（含TTFT、排队等）。\n**使用场景**：\n1）评估不同batch策略的效率\n2）比较不同模型的推理性能\n3）容量规划中估算GPU需求\n**局限性**：对于极短输出请求，TTFT占比过大会使Normalized Latency偏高；需结合TTFT和TPOT分析。",
+    "category": "inference",
+    "source": "LLM Inference Benchmarking Methodology",
+    "url": "https://github.com/vllm-project/vllm"
+  },
+  {
+    "id": "batch_size",
+    "name": "Batch Size",
+    "fullName": "Inference Batch Size",
+    "definition": "**Batch Size**（批处理大小）是指同时处理的请求数量，是LLM推理性能优化的核心参数。\n**Batch的作用**：\n1）均摊权重读取开销：多请求共享一次权重读取\n2）提高GPU利用率：将memory-bound转为compute-bound\n3）提升系统吞吐量：batch加倍，吞吐量接近翻倍\n**Batch的权衡**：\n1）延迟增加：排队等待凑batch\n2）KV Cache占用：N个请求需要N倍缓存\n3）内存限制：batch过大超出GPU内存\n**动态batch策略**：**Continuous Batching**动态增减batch中的请求，最大化利用率。静态batch适用于离线批处理，动态batch适用于在线服务。\n**最优batch size取决于**：模型大小、GPU内存、延迟SLO、请求到达率。\n**典型值**：在线服务batch=8-64，离线处理batch=64-256。",
+    "category": "inference",
+    "source": "Pope et al. (2023). Efficiently Scaling Transformer Inference",
+    "url": "https://arxiv.org/abs/2211.05102"
+  },
+  {
+    "id": "time_to_last_token",
+    "name": "TTLT",
+    "fullName": "Time to Last Token",
+    "definition": "**TTLT**（Time to Last Token，末token延迟）是从请求发送到收到最后一个生成token的时间，即完整的**端到端延迟**。\n**公式**：TTLT = TTFT + TPOT × (输出token数 - 1)\n**意义**：\n1）反映用户获得完整响应的等待时间\n2）是SLO设置的重要参考\n3）用于评估非流式输出场景的性能\n**与用户体验的关系**：流式输出时用户可边看边等，TTLT重要性降低；非流式输出（如API调用）时TTLT决定等待时间。\n**优化策略**：\n1）减少TTFT：优化Prefill阶段\n2）减少TPOT：提高Decode速度\n3）减少输出长度：合理的max_tokens限制\n**注意**：对于长输出任务（如代码生成、长文摘要），TTLT可能达到数十秒，需要合理设置超时。",
+    "category": "inference",
+    "source": "LLM Inference Latency Analysis",
+    "url": "https://www.anyscale.com/blog/llm-inference-explained"
+  },
+  {
+    "id": "vllm",
+    "name": "vLLM",
+    "definition": "**vLLM**是UC Berkeley开发的高性能LLM推理引擎，以**PagedAttention**技术闻名。\n**核心技术**：\n1）**PagedAttention**：KV Cache分页管理，解决内存碎片\n2）**Continuous Batching**：动态批处理\n3）**Prefix Caching**：共享prompt前缀的KV Cache\n**性能优势**：\n1）吞吐量比HuggingFace高2-24倍\n2）显存利用率更高（接近100%）\n3）支持长序列（通过分页）\n**支持模型**：LLaMA、Qwen、Mistral、GPT等主流模型。\n**部署特性**：\n1）OpenAI兼容API\n2）支持张量并行\n3）支持多GPU分布式推理\n**应用**：已成为开源LLM部署的事实标准。\n**发展**：持续更新，支持最新模型和优化技术。",
+    "category": "inference",
+    "source": "Kwon et al. (2023). Efficient Memory Management for Large Language Model Serving with PagedAttention",
+    "url": "https://github.com/vllm-project/vllm"
+  },
+  {
+    "id": "tensorrt_llm",
+    "name": "TensorRT-LLM",
+    "definition": "**TensorRT-LLM**是NVIDIA官方的LLM推理优化库，基于TensorRT深度优化。\n**核心技术**：\n1）**算子融合**：将多个算子合并减少内存访问\n2）**INT8/FP8量化**：利用Tensor Core加速\n3）**In-flight Batching**：动态批处理\n4）**Paged KV Cache**：类似PagedAttention\n**特有优化**：\n1）**Inflight Batching**：NVIDIA优化的Continuous Batching\n2）**Multi-GPU支持**：原生TP/PP支持\n3）**Speculative Decoding**：集成投机解码\n**与vLLM对比**：\n1）TensorRT-LLM：更底层优化，性能极致但灵活性较低\n2）vLLM：更通用，社区活跃\n**应用**：NVIDIA Triton Inference Server的LLM后端。\n**要求**：需要NVIDIA GPU和CUDA环境。",
+    "category": "inference",
+    "source": "NVIDIA TensorRT-LLM Documentation",
+    "url": "https://github.com/NVIDIA/TensorRT-LLM"
+  },
+  {
+    "id": "sglang",
+    "name": "SGLang",
+    "definition": "**SGLang**是Stanford开发的LLM编程框架和推理引擎，专注于复杂LLM应用。\n**核心特性**：\n1）**RadixAttention**：高效的Prefix Caching\n2）**结构化生成**：JSON、正则表达式约束\n3）**多轮对话优化**：跨轮次KV Cache复用\n4）**并行解码**：多个分支同时生成\n**RadixAttention优势**：\n1）用Radix Tree管理KV Cache\n2）自动检测和复用共享前缀\n3）比vLLM的prefix caching更高效\n**编程模型**：\n1）**SGLang DSL**：用于复杂LLM workflow\n2）支持分支、循环、并行调用\n**性能**：在特定场景（如多轮对话）比vLLM更快。\n**应用场景**：Agent、RAG、多轮对话等复杂应用。",
+    "category": "inference",
+    "source": "Zheng et al. (2024). SGLang: Efficient Execution of Structured Language Model Programs",
+    "url": "https://github.com/sgl-project/sglang"
+  },
+  {
+    "id": "gptq",
+    "name": "GPTQ",
+    "definition": "**GPTQ**是一种高效的LLM后训练量化方法，可将权重量化到4/3/2位。\n**核心原理**：\n1）基于**OBQ**（Optimal Brain Quantization）框架\n2）逐列量化，最小化输出误差\n3）使用Hessian信息指导量化顺序\n**量化过程**：\n1）不需要训练数据，只需少量校准数据\n2）逐层量化，速度快（70B模型几小时）\n3）支持INT4/INT3/INT2\n**性能表现**：\n1）4-bit量化精度损失很小\n2）3-bit开始有明显退化\n**与AWQ对比**：\n1）GPTQ：关注量化误差最小化\n2）AWQ：关注保护显著权重\n**工具支持**：AutoGPTQ、GPTQ-for-LLaMA。\n**应用**：在消费级GPU上运行大模型的主流方案。",
+    "category": "inference",
+    "source": "Frantar et al. (2023). GPTQ: Accurate Post-Training Quantization for Generative Pre-trained Transformers",
+    "url": "https://arxiv.org/abs/2210.17323"
+  },
+  {
+    "id": "awq",
+    "name": "AWQ",
+    "fullName": "Activation-aware Weight Quantization",
+    "definition": "**AWQ**（Activation-aware Weight Quantization）是基于激活感知的LLM量化方法。\n**核心思想**：\n1）观察到1%的**显著权重**（salient weights）对性能影响很大\n2）保护这些显著权重，对其使用更高精度\n3）通过激活分布识别显著权重\n**量化策略**：\n1）不直接跳过显著权重，而是**缩放**它们\n2）缩放因子使量化误差最小化\n3）保持硬件友好的统一量化格式\n**性能表现**：\n1）4-bit量化优于GPTQ\n2）更好的精度-速度平衡\n**与GPTQ对比**：\n1）AWQ通常精度更好\n2）AWQ量化速度更快\n**工具**：AutoAWQ。\n**应用**：vLLM、TensorRT-LLM都支持AWQ模型。",
+    "category": "inference",
+    "source": "Lin et al. (2023). AWQ: Activation-aware Weight Quantization for LLM Compression and Acceleration",
+    "url": "https://arxiv.org/abs/2306.00978"
+  },
+  {
+    "id": "disagg_prefill",
+    "name": "Disaggregated Prefill",
+    "fullName": "Disaggregated Prefill/Decode",
+    "definition": "**Disaggregated Prefill/Decode**是将Prefill和Decode阶段分离到不同GPU的推理架构。\n**问题背景**：\n1）Prefill是compute-bound，需要高算力\n2）Decode是memory-bound，需要高带宽\n3）混合部署导致资源利用率低\n**解决方案**：\n1）**Prefill GPU**：专门处理Prefill，高利用率计算\n2）**Decode GPU**：专门处理Decode，优化带宽利用\n3）中间通过KV Cache传输连接\n**优势**：\n1）提高整体硬件利用率\n2）可独立扩展Prefill和Decode容量\n3）针对不同阶段使用不同硬件\n**挑战**：\n1）KV Cache传输开销\n2）调度复杂度增加\n**实现**：Splitwise、DistServe等系统。\n**趋势**：NVIDIA Blackwell架构原生支持。",
+    "category": "inference",
+    "source": "Patel et al. (2024). Splitwise: Efficient Generative LLM Inference Using Phase Splitting",
+    "url": "https://arxiv.org/abs/2311.18677"
+  },
+  {
+    "id": "chunked_prefill",
+    "name": "Chunked Prefill",
+    "definition": "**Chunked Prefill**是将长prompt分块处理的优化技术，解决长序列Prefill的问题。\n**问题背景**：\n1）长prompt的Prefill时间很长\n2）会阻塞其他请求（Head-of-line blocking）\n3）GPU显存峰值过高\n**解决方案**：\n1）将长prompt分成多个chunk\n2）每个chunk独立进行Prefill\n3）chunk之间可以插入其他请求的Decode\n**优势**：\n1）减少排队延迟\n2）平滑GPU利用率\n3）支持更长序列\n**与Continuous Batching结合**：\n1）Prefill chunk和Decode交替执行\n2）提高整体吞吐量\n**实现**：vLLM、TensorRT-LLM支持。\n**参数调优**：chunk size需要平衡延迟和吞吐。",
+    "category": "inference",
+    "source": "Agrawal et al. (2024). Taming Throughput-Latency Tradeoff in LLM Inference",
+    "url": "https://arxiv.org/abs/2310.18547"
+  },
+  {
+    "id": "kv_compression",
+    "name": "KV Compression",
+    "fullName": "KV Cache Compression",
+    "definition": "**KV Cache Compression**是减少KV Cache内存占用的技术集合。\n**压缩方法**：\n1）**量化**：将KV Cache从FP16量化到INT8/INT4\n2）**稀疏化**：只保留重要token的KV（如H2O）\n3）**低秩分解**：用更少的向量表示KV\n4）**Eviction策略**：LRU/LFU淘汰旧token\n**典型技术**：\n1）**H2O**（Heavy-Hitter Oracle）：保留attention权重高的token\n2）**StreamingLLM**：保留attention sink + 最近window\n3）**KIVI**：KV Cache量化到2-bit\n**效果**：可减少50-90%的KV Cache内存。\n**权衡**：压缩过度会影响生成质量。\n**应用场景**：\n1）长上下文推理\n2）内存受限环境\n3）高并发服务",
+    "category": "inference",
+    "source": "Zhang et al. (2024). H2O: Heavy-Hitter Oracle for Efficient Generative Inference",
+    "url": "https://arxiv.org/abs/2306.14048"
+  },
+  {
+    "id": "medusa",
+    "name": "Medusa",
+    "definition": "**Medusa**是一种无需草稿模型的推测解码方法，使用额外的**解码头**预测多个未来token。\n**核心设计**：\n1）在原模型基础上添加多个**Medusa头**\n2）每个头预测不同位置的token\n3）主模型一次验证所有预测\n**与标准Speculative Decoding对比**：\n1）标准方法：需要单独的小模型\n2）Medusa：只需额外的线性层\n**优势**：\n1）无需维护两个模型\n2）解码头与主模型参数共享\n3）训练简单（只训练解码头）\n**性能**：2-3倍加速，取决于接受率。\n**树状验证**：\n1）构建候选token树\n2）一次前向验证多条路径\n3）选择最长有效路径\n**应用**：适合单模型部署场景。",
+    "category": "inference",
+    "source": "Cai et al. (2024). Medusa: Simple LLM Inference Acceleration Framework with Multiple Decoding Heads",
+    "url": "https://arxiv.org/abs/2401.10774"
+  }
+]

@@ -1,0 +1,140 @@
+[
+  {
+    "id": "pod",
+    "name": "Pod",
+    "definition": "**Pod**是数据中心中由多台**机架**（Rack）组成的模块化部署单元。\n**组成**：通常包含统一的网络、电力和制冷设计，形成独立的计算域。\n**规模**：典型AI Pod包含数十到数百个GPU。\n**示例**：\n1）**NVIDIA DGX SuperPOD**：由多台DGX H100服务器组成，通过NVLink和InfiniBand互联\n2）**Google TPU Pod**：数千个TPU芯片通过ICI高速互联\n**设计考量**：Pod级别的网络采用无阻塞（non-blocking）拓扑，确保任意两个节点间有足够带宽。",
+    "category": "hardware",
+    "source": "Google Data Center Design; NVIDIA DGX SuperPOD Reference Architecture",
+    "url": "https://www.nvidia.com/en-us/data-center/dgx-superpod/"
+  },
+  {
+    "id": "rack",
+    "name": "Rack",
+    "definition": "**Rack**（机架）是用于安装服务器、网络和存储设备的标准化结构。\n**标准**：遵循**EIA-310**标准（19英寸宽度）。\n**功能**：提供统一的物理尺寸、供电和布线承载能力，是数据中心最基本的物理部署单元。\n**容量**：标准42U机架，可容纳多台服务器。\n**AI场景**：单机架可部署多台GPU服务器，配合**ToR交换机**（机架顶部交换机）接入网络。\n**功耗挑战**：AI机架功耗可达数十kW，需要液冷等先进散热方案。",
+    "category": "hardware",
+    "source": "EIA-310-E Standard; ANSI/TIA-942 Data Center Standards",
+    "url": "https://en.wikipedia.org/wiki/19-inch_rack"
+  },
+  {
+    "id": "server",
+    "name": "Server",
+    "definition": "**Server**（服务器）是提供计算、存储或网络服务的专用计算机系统。\n**特点**：具备高可靠性、远程管理（BMC/IPMI）和持续运行能力。\n**AI服务器配置**：\n1）多GPU（如8×H100）\n2）高带宽网卡（如400G InfiniBand）\n3）大容量内存（如2TB DDR5）\n4）NVMe SSD存储\n**典型产品**：\n1）**NVIDIA DGX H100**：8×H100 GPU，NVSwitch全互联\n2）**Supermicro/Dell GPU服务器**：4-8 GPU配置\n**功耗**：单台AI服务器功耗可达10kW+，需要专门的供电和散热设计。",
+    "category": "hardware",
+    "source": "IEEE Computer Society; Data Center Infrastructure Standards",
+    "url": "https://en.wikipedia.org/wiki/Server_(computing)"
+  },
+  {
+    "id": "1u_2u_4u",
+    "name": "1U/2U/4U",
+    "definition": "**U**（Rack Unit，机架单位）是机架高度的标准单位。\n**换算**：1U = 1.75英寸 = 44.45mm\n**常见规格**：\n1）**1U**：高密度计算，适合CPU服务器、网络设备\n2）**2U**：平衡设计，可容纳更多扩展卡和散热\n3）**4U**：AI服务器主流尺寸，可容纳4-8块GPU\n4）**8U+**：超大型服务器，如NVIDIA DGX H100（10U）\n**标准机架**：通常为42U高度，可灵活组合不同尺寸的设备。",
+    "category": "hardware",
+    "source": "EIA-310-E Standard",
+    "url": "https://en.wikipedia.org/wiki/Rack_unit"
+  },
+  {
+    "id": "flops",
+    "name": "FLOPs",
+    "definition": "**FLOPs**（Floating Point Operations）是指算法或模型执行一次所需的浮点运算次数。\n**与FLOPS的区别**：\n1）**FLOPs**（复数形式）：运算次数，衡量模型计算复杂度\n2）**FLOPS**（单数形式）：每秒浮点运算数，衡量硬件算力\n**典型数值**：\n1）GPT-3单次前向：约314 GFLOPs\n2）LLaMA-70B单次前向：约140 TFLOPs\n**计算公式**：Transformer前向FLOPs ≈ 2 × 参数量 × 序列长度\n**应用**：用于估算训练成本、比较模型效率、选择合适硬件。",
+    "category": "hardware",
+    "source": "MLPerf Benchmark Methodology",
+    "url": "https://en.wikipedia.org/wiki/FLOPS"
+  },
+  {
+    "id": "hbm",
+    "name": "HBM",
+    "definition": "**HBM**（High Bandwidth Memory，高带宽内存）是一种革命性的**3D堆叠**内存技术，由JEDEC标准化。\n**核心技术**：将多个DRAM die垂直堆叠，通过**硅通孔**（TSV）互联，并通过**硅中介层**（interposer）与处理器紧密连接。\n**优势**：极高的内存带宽和较低的功耗。\n**版本演进**：\n1）**HBM2e**：约1.8TB/s（如A100）\n2）**HBM3**：约3.35TB/s（如H100 80GB）\n3）**HBM3e**：约4.8TB/s（如H200 141GB）\n**AI重要性**：LLM推理的Decode阶段严重**memory-bound**，HBM带宽直接决定推理TPS上限。\n**供应商**：SK海力士、三星、美光，成本高且供应紧张。",
+    "category": "hardware",
+    "source": "JEDEC. High Bandwidth Memory (HBM) DRAM Standard",
+    "url": "https://en.wikipedia.org/wiki/High_Bandwidth_Memory"
+  },
+  {
+    "id": "npu",
+    "name": "NPU",
+    "definition": "**NPU**（Neural Processing Unit，神经网络处理单元）是专门为神经网络计算优化的AI加速芯片。\n**架构特点**：\n1）大规模**矩阵乘法单元**（如脉动阵列）\n2）大容量**片上内存**（SRAM）\n3）专用**数据流控制**逻辑\n**典型产品**：\n1）**华为Ascend 910B**：约280 TFLOPS FP16\n2）**寒武纪MLU370**：用于推理加速\n3）**Google TPU**：严格意义上也属于NPU\n**与GPU对比**：NPU针对AI workload深度优化，能效比更高，但通用性和生态弱于GPU。\n**应用场景**：端侧推理、云端训练、特定领域加速。",
+    "category": "hardware",
+    "source": "IEEE Computer Society. AI Accelerator Architecture Survey",
+    "url": "https://en.wikipedia.org/wiki/AI_accelerator"
+  },
+  {
+    "id": "gpu",
+    "name": "GPU",
+    "definition": "**GPU**（Graphics Processing Unit，图形处理单元）最初为图形渲染设计，因其大规模并行计算能力成为深度学习的核心硬件。\n**架构特点**：\n1）数千个**CUDA核心**：大规模并行计算\n2）专用**Tensor Core**：高效矩阵乘法（支持FP16/FP8/INT8）\n3）**HBM显存**：TB/s级内存带宽\n4）**SM**（流多处理器）：计算单元的基本组织\n**主流数据中心GPU**：\n1）**NVIDIA**：A100→H100→H200→B200（Blackwell）\n2）**AMD**：MI250X→MI300X（Chiplet架构）\n**关键指标**：算力（TFLOPS）、显存容量、HBM带宽、互联带宽（NVLink）。\n**生态优势**：NVIDIA凭借**CUDA**生态在AI GPU市场占据主导地位。",
+    "category": "hardware",
+    "source": "NVIDIA. GPU Architecture Whitepapers",
+    "url": "https://www.nvidia.com/en-us/data-center/"
+  },
+  {
+    "id": "tpu",
+    "name": "TPU",
+    "definition": "**TPU**（Tensor Processing Unit，张量处理单元）是Google为机器学习设计的**ASIC**加速器。\n**核心架构**：采用**脉动阵列**（Systolic Array）优化矩阵运算，大量片上SRAM减少内存访问。\n**版本演进**：\n1）**TPU v4**：275 TFLOPS BF16，用于训练大模型\n2）**TPU v5e**：197 TFLOPS BF16，成本优化版\n3）**TPU v5p**：最新高性能版本\n**互联技术**：TPU通过**ICI**（Inter-Chip Interconnect）高速互联，组成大规模Pod。\n**应用**：Google内部训练PaLM、Gemini等模型，也通过Google Cloud对外提供服务。\n**特点**：针对TensorFlow/JAX深度优化，能效比优秀，但生态封闭于Google平台。",
+    "category": "hardware",
+    "source": "Jouppi et al. (2017). In-Datacenter Performance Analysis of a Tensor Processing Unit. ISCA",
+    "url": "https://cloud.google.com/tpu"
+  },
+  {
+    "id": "systolic_array",
+    "name": "Systolic Array",
+    "definition": "**Systolic Array**（脉动阵列）是一种高效的矩阵乘法硬件架构。\n**工作原理**：数据在处理单元（**PE**）阵列中有规律地流动，每个PE执行**乘加操作**（MAC）并传递结果给相邻PE。\n**优势**：\n1）数据复用率高：每个数据元素被多个PE使用\n2）内存带宽需求低：数据在PE间流动，减少外部访存\n3）高度规则化：易于硬件实现和扩展\n**应用**：\n1）**Google TPU**：核心计算单元，128×128或256×256阵列\n2）**NVIDIA Tensor Core**：类似思想的实现\n**局限**：灵活性较差，主要适合规则的矩阵运算。",
+    "category": "hardware",
+    "source": "Kung (1982). Why Systolic Architectures? IEEE Computer",
+    "url": "https://en.wikipedia.org/wiki/Systolic_array"
+  },
+  {
+    "id": "roofline",
+    "name": "Roofline Model",
+    "definition": "**Roofline Model**（屋顶线模型）是用于分析程序性能瓶颈的可视化模型。\n**坐标轴**：\n1）横轴：**算术强度**（Arithmetic Intensity，FLOPs/Byte）\n2）纵轴：**性能**（Attainable FLOPS）\n**核心思想**：性能受限于**计算峰值**和**内存带宽**中较低者，形成屋顶状边界。\n**瓶颈判断**：\n1）**Compute-bound**：算术强度高于拐点，性能受限于峰值算力\n2）**Memory-bound**：算术强度低于拐点，性能受限于内存带宽\n**LLM推理分析**：\n1）**Prefill**阶段：高算术强度，compute-bound\n2）**Decode**阶段：低算术强度，memory-bound\n**应用**：指导性能优化方向、选择合适硬件、分析不同workload特性。",
+    "category": "hardware",
+    "source": "Williams et al. (2009). Roofline: An Insightful Visual Performance Model for Multicore Architectures. CACM",
+    "url": "https://en.wikipedia.org/wiki/Roofline_model"
+  },
+  {
+    "id": "tensor_core",
+    "name": "Tensor Core",
+    "definition": "**Tensor Core**是NVIDIA GPU中专门用于矩阵乘法和累加（**GEMM**）的硬件单元，是深度学习加速的核心。\n**工作原理**：执行D = A×B + C的混合精度矩阵运算，单周期完成一个小矩阵（如4×4或8×8）的乘加。\n**精度支持**：\n1）**FP16**：Volta起支持\n2）**TF32**：Ampere起支持（训练默认）\n3）**BF16**：Ampere起支持\n4）**FP8**：Hopper起支持（H100）\n5）**INT8/INT4**：推理量化\n**性能对比**（H100）：\n1）FP16 Tensor Core：1979 TFLOPS\n2）FP32 CUDA Core：67 TFLOPS\n**版本演进**：\n- 第一代（Volta V100）→ 第四代（Hopper H100）\n**应用**：所有现代深度学习框架自动调用Tensor Core。",
+    "category": "hardware",
+    "source": "NVIDIA Tensor Core Architecture",
+    "url": "https://www.nvidia.com/en-us/data-center/tensor-cores/"
+  },
+  {
+    "id": "cuda_core",
+    "name": "CUDA Core",
+    "definition": "**CUDA Core**是NVIDIA GPU的基础标量计算单元，负责通用并行计算。\n**功能**：执行单精度（FP32）和双精度（FP64）浮点运算、整数运算等。\n**与Tensor Core对比**：\n1）**CUDA Core**：通用计算，FP32/FP64，灵活但效率较低\n2）**Tensor Core**：专用矩阵乘法，FP16/FP8，效率极高\n**H100规格**：\n1）CUDA Core：16896个，67 TFLOPS FP32\n2）Tensor Core：528个，1979 TFLOPS FP16\n**执行模型**：CUDA Core按**Warp**（32线程）执行，遵循SIMT模型。\n**深度学习中的角色**：\n1）非矩阵运算（激活函数、归一化等）使用CUDA Core\n2）矩阵运算（GEMM）使用Tensor Core\n**历史**：CUDA Core是NVIDIA GPU的经典设计，从G80架构（2006）延续至今。",
+    "category": "hardware",
+    "source": "NVIDIA CUDA Programming Guide",
+    "url": "https://docs.nvidia.com/cuda/"
+  },
+  {
+    "id": "sm",
+    "name": "SM",
+    "fullName": "Streaming Multiprocessor",
+    "definition": "**SM**（Streaming Multiprocessor，流多处理器）是NVIDIA GPU的基本计算单元，包含一组CUDA Core、Tensor Core和共享资源。\n**组成（H100为例）**：\n1）128个**CUDA Core**（FP32）\n2）4个**Tensor Core**（第四代）\n3）64KB **L1 Cache/共享内存**（可配置）\n4）4个**Warp调度器**\n5）寄存器文件（256KB）\n**H100规格**：132个SM，共16896 CUDA Core。\n**执行模型**：\n1）每个SM独立调度多个**Thread Block**\n2）Thread Block分解为**Warp**（32线程）执行\n3）同一SM内的线程可通过**共享内存**协作\n**性能调优**：\n1）**占用率**（Occupancy）：活跃Warp数/最大Warp数\n2）共享内存使用优化\n3）寄存器压力控制",
+    "category": "hardware",
+    "source": "NVIDIA GPU Architecture Whitepapers",
+    "url": "https://docs.nvidia.com/cuda/cuda-c-programming-guide/"
+  },
+  {
+    "id": "chiplet",
+    "name": "Chiplet",
+    "definition": "**Chiplet**（芯粒）是将大型芯片分解为多个较小的、可独立制造的模块化芯片单元的设计方法。\n**优势**：\n1）**良率提升**：小芯片良率高于大芯片\n2）**成本降低**：可混合不同工艺节点\n3）**灵活组合**：按需组合不同功能芯粒\n4）**性能扩展**：突破单一大芯片的物理限制\n**互联技术**：\n1）**硅中介层**（Interposer）：如AMD MI300\n2）**先进封装**：EMIB、CoWoS等\n3）**高速SerDes**：UCIe标准\n**典型应用**：\n1）**AMD MI300X**：8个XCD + 4个IOD\n2）**AMD EPYC**：多个CCD + IOD\n3）**Intel Ponte Vecchio**：47个芯粒\n**对AI的意义**：Chiplet使构建更大规模的AI加速器成为可能。",
+    "category": "hardware",
+    "source": "AMD Chiplet Architecture; Intel Disaggregated Design",
+    "url": "https://en.wikipedia.org/wiki/Chiplet"
+  },
+  {
+    "id": "interposer",
+    "name": "Interposer",
+    "fullName": "Silicon Interposer",
+    "definition": "**Interposer**（硅中介层）是用于连接多个芯片的高密度互联基板，是先进封装的关键技术。\n**功能**：\n1）提供芯片间的高带宽、低延迟连接\n2）连接HBM与GPU/CPU die\n3）支持Chiplet架构的集成\n**技术类型**：\n1）**硅中介层**：使用硅基板，布线密度最高\n2）**有机中介层**：成本较低，密度较低\n3）**Glass Interposer**：新兴技术\n**应用实例**：\n1）**HBM集成**：GPU通过Interposer连接HBM堆栈\n2）**AMD MI300**：8个XCD通过Interposer互联\n3）**NVIDIA H100**：GPU die与HBM3通过Interposer连接\n**挑战**：成本高、散热复杂、良率控制。\n**供应商**：TSMC CoWoS、Intel EMIB等。",
+    "category": "hardware",
+    "source": "TSMC CoWoS Technology; Advanced Packaging",
+    "url": "https://en.wikipedia.org/wiki/Interposer"
+  },
+  {
+    "id": "l2_cache",
+    "name": "L2 Cache",
+    "definition": "**L2 Cache**是GPU的二级缓存，位于SM和HBM之间，用于减少对高延迟HBM的访问。\n**作用**：\n1）缓存常用数据，减少HBM访问\n2）支持SM间的数据共享\n3）提高有效内存带宽\n**H100规格**：\n1）容量：50MB（vs A100的40MB）\n2）带宽：约12TB/s（内部）\n**对LLM推理的影响**：\n1）KV Cache复用：热门token的KV可能命中L2\n2）权重缓存：部分层的权重可驻留L2\n3）提高小batch效率\n**与L1对比**：\n1）L1：每SM私有，64-128KB，延迟约20周期\n2）L2：全局共享，MB级，延迟约200周期\n**优化策略**：\n1）提高数据局部性\n2）合理设置持久化缓存\n3）利用L2缓存预取",
+    "category": "hardware",
+    "source": "NVIDIA GPU Memory Hierarchy",
+    "url": "https://docs.nvidia.com/cuda/cuda-c-best-practices-guide/"
+  }
+]

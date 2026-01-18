@@ -1,0 +1,218 @@
+[
+  {
+    "id": "内存语义",
+    "name": "内存语义",
+    "definition": "**内存语义**（Memory Semantics）是一种**单边通信**模式，发起方可直接对远程节点的内存进行Load/Store/Atomic操作，无需远程CPU参与，是**RDMA**的核心特性。\n**三种操作**：\n1）**RDMA Write**：将本地数据写入远程内存\n2）**RDMA Read**：从远程内存读取数据到本地\n3）**Atomic**：对远程内存执行原子操作（CAS、FAA）\n**优势**：极低延迟（无需远程CPU处理）和高吞吐（绕过远程软件栈）。\n**实现要求**：\n1）发起方预先获得远程内存地址和访问密钥（rkey）\n2）网卡直接进行DMA操作\n3）硬件保证操作完成通知\n**应用场景**：单向大数据传输、远程数据结构访问，是**GPUDirect RDMA**和高性能存储的基础。",
+    "category": "communication",
+    "source": "InfiniBand Architecture Specification Volume 1, Release 1.4",
+    "url": "https://www.infinibandta.org/ibta-specification/"
+  },
+  {
+    "id": "消息语义",
+    "name": "消息语义",
+    "definition": "**消息语义**（Message Semantics）是一种**双边通信**模式，需要发送方和接收方协同完成数据传输。\n**工作流程**：发送方执行**Send**操作，接收方必须预先**Post Receive**准备好接收缓冲区。\n**特点**：\n1）双边操作：接收方CPU必须参与准备缓冲区\n2）消息边界保留：每次Send对应一次Receive\n3）支持任意长度消息\n4）接收方无需事先知道数据大小\n**适用场景**：请求-响应模式的RPC通信、控制消息传递。\n**与内存语义对比**：消息语义更灵活（无需共享内存地址），但延迟稍高（需要接收方配合）。\n**应用**：MPI的Send/Recv、gRPC等。",
+    "category": "communication",
+    "source": "InfiniBand Architecture Specification Volume 1, Release 1.4",
+    "url": "https://www.infinibandta.org/ibta-specification/"
+  },
+  {
+    "id": "urpc_华为",
+    "name": "URPC（华为）",
+    "definition": "**URPC**（Unified Remote Procedure Call，统一远程过程调用）是华为开发的RPC框架。\n**特点**：\n1）支持**同步/异步**调用\n2）支持多种传输协议\n3）高效的序列化机制\n**应用场景**：华为AI系统（如MindSpore）中模块间的高效通信。\n**与gRPC对比**：URPC针对华为AI硬件和软件栈进行了深度优化。",
+    "category": "communication",
+    "source": "Huawei MindSpore Documentation",
+    "url": "https://www.mindspore.cn/docs/en/master/index.html"
+  },
+  {
+    "id": "通信原语",
+    "name": "通信原语",
+    "definition": "**通信原语**（Communication Primitive）是分布式计算中预定义的集合通信操作模式，提供标准化的多进程数据交换接口。\n**三类原语**：\n1）**一对多**：Broadcast（广播）、Scatter（分发）\n2）**多对一**：Reduce（规约）、Gather（收集）\n3）**多对多**：AllReduce、AllGather、AllToAll、ReduceScatter\n**并行策略与原语对应**：\n1）**数据并行**（DP）：AllReduce同步梯度\n2）**张量并行**（TP）：AllGather、ReduceScatter\n3）**专家并行**（EP）：AllToAll\n**实现算法**：Ring、Tree、Recursive Halving-Doubling等，针对不同消息大小和网络拓扑优化。\n**通信库**：**NCCL**、**MPI**、**Gloo**等提供高效实现，是分布式深度学习框架的基础设施。",
+    "category": "communication",
+    "source": "MPI Forum. MPI: A Message-Passing Interface Standard",
+    "url": "https://www.mpi-forum.org/docs/"
+  },
+  {
+    "id": "allreduce",
+    "name": "AllReduce",
+    "definition": "**AllReduce**是分布式计算中最重要的集合通信原语之一，实现所有参与节点数据的全局规约并将结果分发给每个节点。\n**AI训练应用**：**数据并行**时的梯度同步——每个GPU独立计算本地梯度后，通过AllReduce求和（或平均）得到全局梯度，所有GPU获得相同结果用于更新参数。\n**实现算法**：\n1）**Ring AllReduce**：通信量为2(N-1)/N × 数据量，接近理论下界\n2）**Tree AllReduce**：适合延迟敏感场景\n3）**Recursive Halving-Doubling**：适合小消息\n**关键优化**：NCCL针对**NVLink**和**InfiniBand**优化了AllReduce实现。\n**重要性**：AllReduce的效率直接影响大规模训练的可扩展性。",
+    "category": "communication",
+    "source": "MPI Forum. MPI: A Message-Passing Interface Standard",
+    "url": "https://en.wikipedia.org/wiki/Collective_operation#All-Reduce"
+  },
+  {
+    "id": "allgather",
+    "name": "AllGather",
+    "definition": "**AllGather**是集合通信原语，收集所有进程的数据并分发给每个进程，操作完成后每个进程都拥有所有数据的完整副本。\n**操作示例**：N个进程各持有数据块D_i，AllGather后每个进程都持有[D_0, D_1, ..., D_{N-1}]的拼接结果。\n**通信量**：(N-1) × 每进程数据量。\n**AI训练应用**：在**TP**中将切分的激活或权重收集为完整数据（如**SP**在TP区域边界使用AllGather收集完整激活）。\n**实现算法**：\n1）**Ring AllGather**：数据在环形拓扑中逐步传递，N-1步完成\n2）**Recursive Doubling**：适合小消息，log(N)步完成\n**优化**：NCCL针对NVLink和InfiniBand拓扑优化了AllGather实现。",
+    "category": "communication",
+    "source": "MPI Forum. MPI: A Message-Passing Interface Standard",
+    "url": "https://www.mpi-forum.org/docs/"
+  },
+  {
+    "id": "alltoall",
+    "name": "AllToAll",
+    "definition": "**AllToAll**是集合通信原语，实现所有进程间的全排列数据交换：每个进程将数据分成N块，第i块发给进程i，同时从每个进程接收一块（可理解为矩阵转置）。\n**通信特点**：全对全模式，每对进程间都有数据传输，对网络的**双分带宽**（bisection bandwidth）要求很高。\n**AI训练应用**：**EP**的核心通信操作——MoE模型中每个token可能被路由到任意GPU上的专家，需要通过AllToAll将token重分布到对应专家所在的GPU。\n**网络拓扑影响**：\n1）**Fat-Tree**：良好的双分带宽，适合AllToAll\n2）**Torus/Dragonfly**：AllToAll效率较低\n**限制**：EP的扩展性受限于网络架构对AllToAll的支持程度。",
+    "category": "communication",
+    "source": "MPI Forum. MPI: A Message-Passing Interface Standard",
+    "url": "https://www.mpi-forum.org/docs/"
+  },
+  {
+    "id": "reduce_scatter",
+    "name": "ReduceScatter",
+    "definition": "**ReduceScatter**是集合通信原语，先对所有进程的数据进行规约，再将结果分散到各进程。\n**与AllReduce的关系**：AllReduce = ReduceScatter + AllGather。\n**操作过程**：\n1）对所有进程对应位置的数据进行规约（如求和）\n2）将规约结果的不同部分分散到各进程\n**AI训练应用**：\n1）**SP**（序列并行）：在TP区域边界使用ReduceScatter分散激活\n2）**ZeRO**优化器：分散梯度和参数\n**通信量**：(N-1)/N × 数据量。",
+    "category": "communication",
+    "source": "MPI Forum. MPI: A Message-Passing Interface Standard",
+    "url": "https://www.mpi-forum.org/docs/"
+  },
+  {
+    "id": "broadcast",
+    "name": "Broadcast",
+    "definition": "**Broadcast**（广播）是集合通信原语，一个**根进程**将数据发送给所有其他进程。\n**AI训练应用**：\n1）模型参数初始化分发\n2）配置和超参数同步\n3）随机种子同步\n**实现算法**：\n1）**Binomial Tree**：log(N)步完成\n2）**Ring**：适合大消息\n3）**Scatter + AllGather**：分解实现\n**通信量**：(N-1) × 数据量（根进程需发送N-1份）。",
+    "category": "communication",
+    "source": "MPI Forum. MPI: A Message-Passing Interface Standard",
+    "url": "https://en.wikipedia.org/wiki/Broadcast_(parallel_pattern)"
+  },
+  {
+    "id": "reduce",
+    "name": "Reduce",
+    "definition": "**Reduce**（规约）是集合通信原语，所有进程的数据规约到一个**根进程**。\n**与AllReduce的区别**：结果只在根进程可用，其他进程不获得结果。\n**规约操作**：求和、求最大/最小值、逻辑与/或等。\n**AI训练应用**：\n1）损失值汇总\n2）指标统计\n3）检查点保存前的参数收集\n**通信量**：(N-1) × 数据量。\n**实现**：通常使用树形算法，log(N)步完成。",
+    "category": "communication",
+    "source": "MPI Forum. MPI: A Message-Passing Interface Standard",
+    "url": "https://en.wikipedia.org/wiki/Reduction_operator"
+  },
+  {
+    "id": "scatter",
+    "name": "Scatter",
+    "definition": "**Scatter**（分发）是集合通信原语，**根进程**将数据分块发送给所有进程，每个进程收到不同的数据块。\n**与Broadcast的区别**：Broadcast发送相同数据，Scatter发送不同数据块。\n**AI训练应用**：\n1）数据集分片分发\n2）模型切片分发（PP初始化）\n3）任务分配\n**通信量**：总数据量（不重复传输）。\n**实现**：通常使用树形算法或直接点对点发送。",
+    "category": "communication",
+    "source": "MPI Forum. MPI: A Message-Passing Interface Standard",
+    "url": "https://www.mpi-forum.org/docs/"
+  },
+  {
+    "id": "gather",
+    "name": "Gather",
+    "definition": "**Gather**（收集）是集合通信原语，所有进程将各自的数据发送到**根进程**汇总。\n**与Reduce的区别**：Reduce进行规约操作，Gather只是拼接数据。\n**与AllGather的区别**：Gather结果只在根进程，AllGather结果在所有进程。\n**AI训练应用**：\n1）收集分布式计算的结果\n2）评估指标汇总\n3）日志收集\n**通信量**：(N-1) × 每进程数据量。\n**实现**：通常使用树形算法。",
+    "category": "communication",
+    "source": "MPI Forum. MPI: A Message-Passing Interface Standard",
+    "url": "https://www.mpi-forum.org/docs/"
+  },
+  {
+    "id": "nccl",
+    "name": "NCCL",
+    "definition": "**NCCL**（NVIDIA Collective Communications Library）是NVIDIA开发的多GPU集合通信库。\n**核心优势**：针对**NVLink**和**InfiniBand**深度优化。\n**支持的原语**：AllReduce、AllGather、ReduceScatter、Broadcast、AllToAll等。\n**优化特性**：\n1）自动检测GPU拓扑，选择最优算法\n2）支持多节点多GPU通信\n3）与CUDA深度集成，支持流同步\n**应用**：**PyTorch**和**TensorFlow**分布式训练的默认GPU通信后端。\n**版本**：NCCL 2.x系列持续优化大规模训练性能。",
+    "category": "communication",
+    "source": "NVIDIA. NCCL Documentation",
+    "url": "https://developer.nvidia.com/nccl"
+  },
+  {
+    "id": "gloo",
+    "name": "Gloo",
+    "definition": "**Gloo**是Facebook（Meta）开发的集合通信库。\n**支持范围**：CPU和GPU。\n**传输方式**：\n1）**TCP**：跨节点通信\n2）**共享内存**：节点内通信\n**在PyTorch中的角色**：\n1）**CPU后端**：默认的CPU分布式训练通信库\n2）GPU支持：可用但性能低于NCCL\n**特点**：\n1）纯软件实现，不依赖特殊硬件\n2）跨平台支持好\n3）易于调试和部署\n**适用场景**：CPU训练、小规模GPU训练、开发调试。",
+    "category": "communication",
+    "source": "Facebook. Gloo GitHub Repository",
+    "url": "https://github.com/facebookincubator/gloo"
+  },
+  {
+    "id": "mpi",
+    "name": "MPI",
+    "definition": "**MPI**（Message Passing Interface）是分布式计算的标准通信接口规范。\n**定义内容**：\n1）**点对点通信**：Send、Recv、Isend、Irecv等\n2）**集合通信**：AllReduce、Broadcast、Scatter、Gather等\n3）进程管理、数据类型、拓扑等\n**主要实现**：\n1）**OpenMPI**：开源，广泛使用\n2）**MPICH**：参考实现，高移植性\n3）**Intel MPI**：针对Intel平台优化\n**AI训练应用**：\n1）Horovod等框架基于MPI\n2）作为NCCL的补充（CPU通信、进程管理）\n**标准版本**：MPI-1、MPI-2、MPI-3、MPI-4。",
+    "category": "communication",
+    "source": "MPI Forum. MPI: A Message-Passing Interface Standard",
+    "url": "https://www.mpi-forum.org/"
+  },
+  {
+    "id": "rdma",
+    "name": "RDMA",
+    "definition": "**RDMA**（Remote Direct Memory Access，远程直接内存访问）是一种革命性的网络通信技术，允许一台计算机直接读写另一台计算机的内存，完全绕过双方的操作系统内核和远程CPU。\n**三大优势**：\n1）**超低延迟**：1-2微秒（传统TCP/IP需50-100微秒）\n2）**高吞吐**：接近线路速率\n3）**零CPU开销**：网卡硬件直接执行DMA\n**三种实现**：\n1）**InfiniBand**：原生支持，性能最佳\n2）**RoCE**：基于以太网，需要无损网络支持\n3）**iWARP**：基于TCP，部署简单但性能稍逊\n**AI训练应用**：\n1）NCCL等通信库直接使用RDMA接口\n2）**GPUDirect RDMA**：网卡直接访问GPU显存",
+    "category": "communication",
+    "source": "InfiniBand Trade Association. InfiniBand Architecture Specification",
+    "url": "https://en.wikipedia.org/wiki/Remote_direct_memory_access"
+  },
+  {
+    "id": "gpudirect",
+    "name": "GPUDirect",
+    "definition": "**GPUDirect**是NVIDIA的GPU直接通信技术族，消除CPU中转开销。\n**技术组成**：\n1）**GPUDirect P2P**：同一节点内GPU间通过NVLink/PCIe直接传输\n2）**GPUDirect RDMA**：GPU显存与远程节点直接通信，网卡直接访问GPU内存\n3）**GPUDirect Storage**：GPU直接访问NVMe存储，绕过CPU和系统内存\n**优势**：\n1）降低延迟\n2）提高带宽利用率\n3）减少CPU负载\n**AI训练应用**：\n1）多GPU训练时的梯度同步\n2）大规模分布式训练的跨节点通信\n3）大数据集加载",
+    "category": "communication",
+    "source": "NVIDIA. GPUDirect Technology Overview",
+    "url": "https://developer.nvidia.com/gpudirect"
+  },
+  {
+    "id": "sharp",
+    "name": "SHARP",
+    "definition": "**SHARP**（Scalable Hierarchical Aggregation and Reduction Protocol）是NVIDIA（Mellanox）的**网内计算**技术。\n**核心原理**：将集合通信操作（如AllReduce）的规约计算从端点卸载到**网络交换机**执行。\n**工作方式**：\n1）数据在网络传输时由交换机进行部分聚合\n2）减少网络流量和端点计算负载\n3）最终结果直接返回给各端点\n**效果**：\n1）AllReduce通信量减少约**50%**\n2）降低延迟\n3）减少GPU/CPU的通信等待时间\n**硬件要求**：需要支持SHARP的**Quantum**系列InfiniBand交换机。\n**软件集成**：\n1）NCCL 2.4+原生支持\n2）OpenMPI、Horovod等框架支持\n**局限**：仅支持InfiniBand网络，以太网不支持。",
+    "category": "communication",
+    "source": "NVIDIA Networking. SHARP Technology Overview",
+    "url": "https://docs.nvidia.com/networking/display/sharpv300"
+  },
+  {
+    "id": "nvls",
+    "name": "NVLS",
+    "definition": "**NVLS**（NVLink SHARP）是在**NVLink**域内实现类似SHARP功能的网内计算技术。\n**核心原理**：利用**NVSwitch**在节点内部进行数据规约，无需数据流经所有GPU。\n**与SHARP的关系**：\n1）SHARP：在InfiniBand交换机上实现\n2）NVLS：在NVSwitch上实现\n**优势**：\n1）节点内AllReduce效率大幅提升\n2）降低NVLink带宽需求\n3）减少GPU参与中间计算\n**硬件要求**：需要支持的NVSwitch（如DGX H100中的NVSwitch 3.0）。\n**软件支持**：NCCL 2.14+支持NVLS。\n**应用场景**：8卡或更多GPU的节点内集合通信优化。",
+    "category": "communication",
+    "source": "NVIDIA. NCCL Release Notes",
+    "url": "https://docs.nvidia.com/deeplearning/nccl/release-notes/"
+  },
+  {
+    "id": "ring_allreduce",
+    "name": "Ring AllReduce",
+    "definition": "**Ring AllReduce**是一种带宽最优的AllReduce算法，将GPU排列成逻辑环形拓扑进行数据传输。\n**算法步骤**：\n1）**Reduce-Scatter阶段**：每个GPU将数据分成N块，N-1轮中每轮向后传递一块并与本地累加\n2）**AllGather阶段**：再N-1轮，每轮传递已规约的块直到所有GPU拥有完整结果\n**通信量**：2(N-1)/N × 数据量，接近理论下界。\n**优势**：\n1）**带宽最优**：充分利用所有链路\n2）每个GPU的发送和接收负载均衡\n3）扩展性好，N增加不影响单位通信量\n**局限**：\n1）步骤多（2N-2步），延迟随N增加\n2）对小消息效率低（延迟主导）\n**应用**：NCCL在大消息AllReduce时默认使用Ring算法。",
+    "category": "communication",
+    "source": "Baidu Research. Ring Allreduce",
+    "url": "https://andrew.gibiansky.com/blog/machine-learning/baidu-allreduce/"
+  },
+  {
+    "id": "hierarchical_allreduce",
+    "name": "分层AllReduce",
+    "definition": "**分层AllReduce**（Hierarchical AllReduce）将AllReduce分解为多个层次执行，适配异构网络拓扑。\n**典型两层结构**：\n1）**节点内AllReduce**：利用NVLink高带宽完成本节点GPU间的规约\n2）**节点间AllReduce**：选择每节点一个GPU作为代表，通过InfiniBand/以太网完成跨节点规约\n3）**节点内Broadcast**：将跨节点结果广播给本节点其他GPU\n**优势**：\n1）充分利用节点内NVLink的高带宽\n2）减少跨节点的通信量\n3）适配带宽差异大的拓扑\n**变体**：\n1）**NCCL Tree**：树形分层\n2）**Horovod融合**：结合分层和Ring\n**应用场景**：多节点训练，特别是节点内带宽远高于节点间带宽的场景。",
+    "category": "communication",
+    "source": "Sergeev & Del Balso (2018). Horovod: fast and easy distributed deep learning in TensorFlow",
+    "url": "https://arxiv.org/abs/1802.05799"
+  },
+  {
+    "id": "bucket_allreduce",
+    "name": "Bucket AllReduce",
+    "definition": "**Bucket AllReduce**（分桶AllReduce）将多个小张量打包成大桶统一通信，提升小消息通信效率。\n**问题背景**：神经网络有大量小梯度张量（如偏置项），单独AllReduce每个张量效率极低（启动开销主导）。\n**解决方案**：\n1）设定桶大小阈值（如25MB）\n2）将相邻层的梯度打包到同一个桶\n3）桶满或反向传播完成时触发AllReduce\n**优势**：\n1）减少通信次数，降低启动开销\n2）提高网络带宽利用率\n3）可与计算重叠\n**参数调优**：\n1）桶大小影响重叠效果和内存占用\n2）PyTorch DDP的bucket_cap_mb参数\n**应用**：PyTorch DDP、Horovod等框架的标准优化。",
+    "category": "communication",
+    "source": "PyTorch. DistributedDataParallel Documentation",
+    "url": "https://pytorch.org/docs/stable/notes/ddp.html"
+  },
+  {
+    "id": "async_allreduce",
+    "name": "异步AllReduce",
+    "definition": "**异步AllReduce**是将AllReduce操作与计算异步执行的优化技术。\n**工作方式**：\n1）在反向传播计算梯度时，立即发起已计算梯度的AllReduce\n2）AllReduce在后台执行，不阻塞后续梯度计算\n3）在需要使用梯度更新参数前同步等待\n**实现机制**：\n1）**CUDA Streams**：通信和计算在不同stream执行\n2）**依赖管理**：通过event确保正确的执行顺序\n**优势**：\n1）**通信-计算重叠**：有效隐藏通信延迟\n2）提高GPU利用率\n**配合技术**：\n1）**Gradient Bucketing**：分桶发送\n2）**Gradient Compression**：压缩后发送\n**应用**：PyTorch DDP默认启用异步梯度同步。",
+    "category": "communication",
+    "source": "Li et al. (2020). PyTorch Distributed: Experiences on Accelerating Data Parallel Training. VLDB",
+    "url": "https://arxiv.org/abs/2006.15704"
+  },
+  {
+    "id": "overlap_comm",
+    "name": "通信计算重叠",
+    "definition": "**通信计算重叠**（Communication-Computation Overlap）是分布式训练的核心优化策略，让通信和计算同时进行以隐藏延迟。\n**实现方式**：\n1）**流水线调度**：将任务分块，前一块通信时后一块计算\n2）**异步通信**：非阻塞式发起通信操作\n3）**双缓冲**：准备两份数据，交替使用\n**应用场景**：\n1）**DP梯度同步**：梯度计算与AllReduce重叠\n2）**PP气泡填充**：通信与前向/后向计算重叠\n3）**TP激活通信**：AllGather/ReduceScatter与计算重叠\n**关键技术**：\n1）**CUDA Streams**：并行执行不同操作\n2）**依赖图分析**：识别可重叠的操作对\n**效果**：理想情况下可完全隐藏通信开销，使分布式效率接近100%。",
+    "category": "communication",
+    "source": "Narayanan et al. (2021). Efficient Large-Scale Language Model Training on GPU Clusters. SC",
+    "url": "https://arxiv.org/abs/2104.04473"
+  },
+  {
+    "id": "collective_permute",
+    "name": "Collective Permute",
+    "definition": "**Collective Permute**（集合置换）是一种点对点数据交换模式，每个进程按固定模式向另一个进程发送数据。\n**与AllToAll的区别**：\n1）AllToAll：全对全，每对进程间都有通信\n2）Collective Permute：固定置换模式，每进程只与特定进程通信\n**典型模式**：\n1）**移位置换**：进程i发送给进程(i+k) mod N\n2）**蝴蝶置换**：用于FFT等算法\n**应用场景**：\n1）**PP流水线**：激活值沿流水线传递\n2）**CP上下文并行**：KV Cache的Ring传递\n3）**Ring Attention**：QKV块在GPU间轮转\n**优势**：通信模式固定，可优化拓扑映射和路由。",
+    "category": "communication",
+    "source": "XLA Documentation. Collective Operations",
+    "url": "https://www.tensorflow.org/xla/operation_semantics#collectivepermute"
+  },
+  {
+    "id": "send_recv",
+    "name": "Send/Recv",
+    "definition": "**Send/Recv**（发送/接收）是最基本的点对点通信原语，实现两个进程间的直接数据传输。\n**操作类型**：\n1）**阻塞式**：Send/Recv完成前不返回\n2）**非阻塞式**：Isend/Irecv立即返回，通过Wait/Test检查完成\n**通信模式**：\n1）**同步**：发送方等待接收方确认\n2）**缓冲**：数据先复制到缓冲区\n3）**就绪**：接收方必须已准备好\n**AI训练应用**：\n1）**PP流水线**：相邻stage间传递激活和梯度\n2）**Ring Attention**：环形传递KV Cache\n3）控制消息传递\n**与集合通信对比**：灵活性高但编程复杂，大规模通信优先使用集合原语。",
+    "category": "communication",
+    "source": "MPI Forum. MPI: A Message-Passing Interface Standard",
+    "url": "https://www.mpi-forum.org/docs/"
+  },
+  {
+    "id": "horovod",
+    "name": "Horovod",
+    "definition": "**Horovod**是Uber开发的分布式深度学习框架，以易用性和高性能著称。\n**核心设计**：\n1）**MPI风格**：使用MPI/NCCL/Gloo作为通信后端\n2）**Ring AllReduce**：默认使用带宽最优的Ring算法\n3）**框架无关**：支持TensorFlow、PyTorch、MXNet等\n**使用方式**：\n1）最小代码修改：只需添加几行代码\n2）horovodrun启动器管理进程\n3）自动处理梯度同步\n**优化技术**：\n1）**Tensor Fusion**：梯度打包\n2）**Hierarchical AllReduce**：分层通信\n3）**Elastic Training**：弹性训练支持\n**适用场景**：快速将单机代码扩展到多机多卡，特别适合数据并行场景。",
+    "category": "communication",
+    "source": "Sergeev & Del Balso (2018). Horovod: fast and easy distributed deep learning in TensorFlow. arXiv:1802.05799",
+    "url": "https://github.com/horovod/horovod"
+  }
+]

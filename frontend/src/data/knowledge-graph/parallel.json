@@ -1,0 +1,118 @@
+[
+  {
+    "id": "scale_up",
+    "name": "Scale Up",
+    "definition": "**Scale Up**（垂直扩展）是通过向单个系统添加更多资源来提升性能的扩展方式。\n**典型做法**：在单台服务器内增加GPU数量（如从4卡升级到8卡），或升级到更高性能的GPU型号。\n**优势**：\n1）通信延迟极低（通过**NVLink**等高速互联）\n2）编程模型简单\n3）适合对延迟敏感的场景\n**限制**：上限受单节点物理容量限制，例如单台DGX最多8GPU、单插槽内存容量有限等。\n**实践**：在大模型时代，Scale Up通常与**Scale Out**结合使用，形成层次化的集群架构。",
+    "category": "parallel",
+    "source": "Hill, M.D. (1990). What is Scalability? ACM SIGARCH Computer Architecture News",
+    "url": "https://dl.acm.org/doi/10.1145/121973.121975"
+  },
+  {
+    "id": "scale_out",
+    "name": "Scale Out",
+    "definition": "**Scale Out**（水平扩展）是通过添加更多独立计算节点来提升系统整体容量的扩展方式。\n**实现方式**：将工作负载分布到多台服务器上，通过**InfiniBand**或高速以太网互联。\n**优势**：理论上可无限扩展，突破单机物理限制，是训练超大规模模型（如GPT-4、LLaMA-3）的必要条件。\n**挑战**：\n1）网络通信延迟和带宽成为瓶颈\n2）需要精心设计的并行策略（如**3D并行**）来隐藏通信开销\n3）分布式系统复杂性增加（故障处理、负载均衡、一致性维护）\n**现代实践**：AI集群通常采用分层设计——节点内**Scale Up**（NVLink），节点间**Scale Out**（InfiniBand）。",
+    "category": "parallel",
+    "source": "Hill, M.D. (1990). What is Scalability? ACM SIGARCH Computer Architecture News",
+    "url": "https://dl.acm.org/doi/10.1145/121973.121975"
+  },
+  {
+    "id": "tp",
+    "name": "TP",
+    "definition": "**TP**（Tensor Parallelism，张量并行）是一种**层内模型并行**策略，核心思想是将单层的权重矩阵沿特定维度切分到多个GPU上并行计算。\n**实现示例**：以Transformer的FFN层为例，可将第一个线性层按列切分、第二个按行切分，中间激活无需通信，仅在层边界进行**AllReduce**同步。\n**优势**：\n1）能处理单层参数超过单卡显存的情况\n2）计算效率高（接近线性加速）\n**限制**：通信开销随切分数增加而增大，每次前向/反向都需要AllReduce，因此通常限制在**8卡以内**（一台机器内）通过**NVLink**高速互联。\n**来源**：Megatron-LM提出的关键技术，现已成为大模型训练的标准配置。",
+    "category": "parallel",
+    "source": "Shoeybi et al. (2019). Megatron-LM: Training Multi-Billion Parameter Language Models Using Model Parallelism. arXiv:1909.08053",
+    "url": "https://arxiv.org/abs/1909.08053"
+  },
+  {
+    "id": "sp",
+    "name": "SP",
+    "definition": "**SP**（Sequence Parallelism，序列并行）是一种针对**激活内存**的优化策略，与**TP**紧密配合使用。\n**问题背景**：在TP中，Attention和FFN层的权重被切分并行计算，但LayerNorm、Dropout等操作仍需要完整的激活张量，这部分激活在每张GPU上都完整存储，造成冗余。\n**解决方案**：将这些操作的输入激活沿**序列维度**切分，每张GPU只存储和处理部分序列。\n**通信操作**：在TP区域边界插入**AllGather**（收集完整激活）和**ReduceScatter**（分散激活）操作来衔接。\n**效果**：激活内存减少到原来的**1/TP_size**。\n**应用场景**：对于长序列训练尤其重要，是Megatron-LM的重要优化。",
+    "category": "parallel",
+    "source": "Korthikanti et al. (2023). Reducing Activation Recomputation in Large Transformer Models. MLSys 2023",
+    "url": "https://arxiv.org/abs/2205.05198"
+  },
+  {
+    "id": "ep",
+    "name": "EP",
+    "definition": "**EP**（Expert Parallelism，专家并行）是专为**MoE**模型设计的并行策略。\n**背景**：在MoE架构中，FFN层被替换为多个并行的专家子网络，每个token由**门控网络**（Router）动态选择激活哪些专家。\n**实现方式**：将不同的专家分布到不同GPU上，每张GPU负责一部分专家的计算。\n**通信特点**：由于每个token可能被路由到任意专家，EP需要**AllToAll**通信进行全局token重分布——先将token发送到对应专家所在的GPU计算，再将结果返回。\n**与TP的区别**：AllToAll通信模式对网络拓扑有特殊要求（**Fat-Tree**比Torus更适合）。\n**应用**：DeepSeek-V2、Mixtral等MoE大模型的核心并行技术。",
+    "category": "parallel",
+    "source": "Fedus et al. (2022). Switch Transformers: Scaling to Trillion Parameter Models with Simple and Efficient Sparsity. JMLR",
+    "url": "https://arxiv.org/abs/2101.03961"
+  },
+  {
+    "id": "dp",
+    "name": "DP",
+    "definition": "**DP**（Data Parallelism，数据并行）是最基础也最常用的分布式训练策略。\n**核心思想**：在每个GPU上复制完整的模型副本，将训练数据batch均匀切分给各GPU独立进行前向和反向计算，最后通过**AllReduce**操作同步梯度，确保所有GPU上的模型参数保持一致。\n**优势**：\n1）概念简单、实现成熟\n2）扩展性好（通信量与GPU数量无关）\n**局限**：每张GPU必须能容纳完整模型，对于超大模型（如70B+）单卡显存不足时无法使用。\n**3D并行组合**：DP常与TP/PP组合——TP处理单层过大问题，PP处理层数过多问题，DP扩展训练规模。\n**优化**：**ZeRO**系列优化可显著减少DP的内存冗余。",
+    "category": "parallel",
+    "source": "Dean et al. (2012). Large Scale Distributed Deep Networks. NIPS 2012",
+    "url": "https://papers.nips.cc/paper/2012/hash/6aca97005c68f1206823815f66102863-Abstract.html"
+  },
+  {
+    "id": "pp",
+    "name": "PP",
+    "definition": "**PP**（Pipeline Parallelism，流水线并行）是将神经网络按层切分为多个**Stage**，每个Stage分配到不同GPU上串行执行的并行策略。\n**核心挑战**：朴素实现会导致严重的**气泡**（bubble）问题——当某个Stage在计算时其他Stage空闲。\n**调度策略**：\n1）**GPipe**：将batch拆分为多个micro-batch流水执行\n2）**PipeDream（1F1B）**：一次前向一次反向交替调度，进一步减少bubble\n3）**Interleaved**：将多个Stage分配给同一GPU交错执行\n**通信特点**：通信发生在Stage边界，传输激活和梯度，通信量较小但对延迟敏感。\n**适用场景**：层数多、单卡无法容纳所有层的情况，通常跨节点部署（利用高延迟容忍特性）。",
+    "category": "parallel",
+    "source": "Huang et al. (2019). GPipe: Efficient Training of Giant Neural Networks using Pipeline Parallelism. NeurIPS 2019",
+    "url": "https://arxiv.org/abs/1811.06965"
+  },
+  {
+    "id": "fsdp",
+    "name": "FSDP",
+    "fullName": "Fully Sharded Data Parallel",
+    "definition": "**FSDP**（Fully Sharded Data Parallel）是PyTorch原生的全分片数据并行实现，等价于ZeRO第三阶段。\n**核心思想**：将模型参数、梯度和优化器状态分片到所有GPU，按需收集和释放。\n**工作流程**：\n1）初始化：参数分片存储\n2）前向：AllGather收集当前层参数→计算→释放非本地参数\n3）反向：AllGather参数→计算梯度→ReduceScatter梯度\n**配置选项**：\n1）**FULL_SHARD**：完全分片\n2）**SHARD_GRAD_OP**：只分片梯度和优化器\n3）**NO_SHARD**：不分片（=DDP）\n**优势**：\n1）PyTorch原生支持，无需额外依赖\n2）与PyTorch生态深度集成\n**与DeepSpeed ZeRO对比**：功能类似，FSDP更易用，ZeRO优化更激进。",
+    "category": "parallel",
+    "source": "PyTorch FSDP Documentation; FairScale",
+    "url": "https://pytorch.org/docs/stable/fsdp.html"
+  },
+  {
+    "id": "megatron",
+    "name": "Megatron-LM",
+    "definition": "**Megatron-LM**是NVIDIA开发的大规模Transformer训练框架，是TP和PP技术的开创者。\n**核心贡献**：\n1）**张量并行**（TP）：首次提出高效的层内模型并行方案\n2）**流水线并行**（PP）：1F1B调度策略\n3）**序列并行**（SP）：优化激活内存\n**技术细节**：\n1）MLP层：按列切分第一层，按行切分第二层\n2）Attention：Q/K/V按头切分\n3）仅在层边界进行AllReduce\n**训练规模**：支持万亿参数模型训练。\n**生态**：\n1）**Megatron-DeepSpeed**：结合ZeRO优化\n2）**NeMo**：NVIDIA的对话AI框架基于Megatron\n**影响**：现代大模型训练框架的基础，LLaMA等模型训练均参考其技术。",
+    "category": "parallel",
+    "source": "Shoeybi et al. (2019). Megatron-LM: Training Multi-Billion Parameter Language Models Using Model Parallelism",
+    "url": "https://arxiv.org/abs/1909.08053"
+  },
+  {
+    "id": "deepspeed",
+    "name": "DeepSpeed",
+    "definition": "**DeepSpeed**是Microsoft开发的深度学习优化库，以ZeRO技术闻名。\n**核心技术**：\n1）**ZeRO**（1/2/3）：分片优化\n2）**ZeRO-Offload**：CPU/NVMe卸载\n3）**ZeRO-Infinity**：无限规模训练\n4）**3D并行**：TP+PP+DP组合\n**推理优化**：\n1）**DeepSpeed-Inference**：大模型推理加速\n2）**Tensor Slicing**：推理时的张量并行\n**其他特性**：\n1）混合精度训练\n2）梯度累积\n3）Sparse Attention\n4）1-bit Adam/LAMB\n**应用**：ChatGPT、BLOOM等模型训练使用DeepSpeed。\n**与PyTorch FSDP对比**：DeepSpeed功能更丰富，优化更激进，但学习曲线更陡。",
+    "category": "parallel",
+    "source": "Microsoft DeepSpeed; Rajbhandari et al. (2020)",
+    "url": "https://www.deepspeed.ai/"
+  },
+  {
+    "id": "cp",
+    "name": "CP",
+    "fullName": "Context Parallelism",
+    "definition": "**CP**（Context Parallelism，上下文并行）是针对**长序列**训练的并行策略，将序列维度切分到多个GPU。\n**适用场景**：超长上下文训练（如100K+序列长度）时，单卡无法容纳完整序列的激活内存。\n**工作原理**：\n1）将输入序列沿长度维度切分\n2）每个GPU处理一段子序列\n3）Attention计算需要跨GPU通信交换KV\n**与SP的区别**：\n1）**SP**：优化TP中非Attention部分的激活内存\n2）**CP**：专门处理Attention的长序列问题\n**实现方案**：\n1）**Ring Attention**：环形传递KV\n2）**Ulysses**：DeepSpeed的CP实现\n**通信特点**：需要高效的KV交换机制，通信量与序列长度相关。\n**应用**：LLaMA长上下文版本、Claude等长文本模型训练。",
+    "category": "parallel",
+    "source": "DeepSpeed Ulysses; Ring Attention Paper",
+    "url": "https://arxiv.org/abs/2309.14509"
+  },
+  {
+    "id": "ring_attention",
+    "name": "Ring Attention",
+    "definition": "**Ring Attention**是一种高效的长序列Attention计算方法，通过环形通信实现序列并行。\n**核心思想**：\n1）将序列切分到多个GPU，形成环形拓扑\n2）每个GPU持有本地Q，K/V在环上流动\n3）本地Q与流经的K/V计算部分Attention\n4）累积所有部分结果得到完整输出\n**通信模式**：\n1）K/V块在GPU间环形传递\n2）每轮传递后进行本地计算\n3）通信与计算可重叠\n**优势**：\n1）内存复杂度从O(N²)降到O(N/P)\n2）支持任意长序列\n3）通信效率高\n**与FlashAttention结合**：Ring Attention + FlashAttention实现最优效率。\n**应用**：百万级token上下文训练。",
+    "category": "parallel",
+    "source": "Liu et al. (2023). Ring Attention with Blockwise Transformers for Near-Infinite Context",
+    "url": "https://arxiv.org/abs/2310.01889"
+  },
+  {
+    "id": "ulysses",
+    "name": "Ulysses",
+    "fullName": "DeepSpeed Ulysses",
+    "definition": "**Ulysses**是DeepSpeed提出的序列并行方案，使用AllToAll通信实现高效的长序列训练。\n**核心设计**：\n1）沿**头维度**切分注意力计算\n2）使用**AllToAll**在序列和头维度间转换\n3）每个GPU计算完整序列的部分头\n**工作流程**：\n1）输入：每GPU持有完整序列，部分头\n2）AllToAll：转换为每GPU持有部分序列，完整头\n3）Attention计算\n4）AllToAll：转换回原布局\n**与Ring Attention对比**：\n1）Ulysses：AllToAll通信，适合Fat-Tree网络\n2）Ring Attention：环形通信，适合任意拓扑\n**优势**：\n1）通信量更少\n2）与TP天然兼容\n**限制**：需要头数能被GPU数整除。",
+    "category": "parallel",
+    "source": "DeepSpeed Ulysses: System Optimizations for Enabling Training of Extreme Long Sequence Transformer Models",
+    "url": "https://arxiv.org/abs/2309.14509"
+  },
+  {
+    "id": "3d_parallel",
+    "name": "3D并行",
+    "fullName": "3D Parallelism",
+    "definition": "**3D并行**是将**TP**、**PP**、**DP**三种并行策略组合使用的混合并行方案，是训练超大模型的标准配置。\n**组合方式**：\n1）**TP**：处理单层过大问题，通常8卡以内（NVLink互联）\n2）**PP**：处理层数过多问题，可跨节点\n3）**DP**：扩展训练规模，提高吞吐量\n**GPU分组示例**（64 GPU）：\n1）TP=8：每8卡为一个TP组\n2）PP=4：4个TP组串成流水线\n3）DP=2：2条流水线并行训练\n**通信分析**：\n1）TP：高频小消息，需NVLink\n2）PP：低频大消息，可用InfiniBand\n3）DP：AllReduce梯度，可异步\n**典型配置**：\n1）LLaMA-70B：TP=8, PP=4, DP=N\n2）GPT-3 175B：TP=8, PP=8, DP=64\n**扩展**：加入EP成为**4D并行**（MoE模型）。",
+    "category": "parallel",
+    "source": "Narayanan et al. (2021). Efficient Large-Scale Language Model Training on GPU Clusters",
+    "url": "https://arxiv.org/abs/2104.04473"
+  }
+]

@@ -1,0 +1,186 @@
+[
+  {
+    "id": "ras",
+    "name": "RAS",
+    "definition": "**RAS**（Reliability, Availability, Serviceability）是衡量系统健壮性的三大核心属性。\n**三大属性**：\n1）**Reliability（可靠性）**：系统无故障持续运行的能力，用**MTBF**（平均故障间隔）衡量\n2）**Availability（可用性）**：系统保持可用状态的比例，通常用「几个9」表示（如99.999%）\n3）**Serviceability（可维护性）**：故障诊断和修复的便捷性，用**MTTR**（平均修复时间）衡量\n**计算公式**：可用性 = MTBF / (MTBF + MTTR)\n**AI集群中的应用**：\n1）**GPU故障检测**：ECC内存、温度监控、功耗监控\n2）**网络冗余**：双上联、链路聚合、自动故障切换\n3）**Checkpoint**：定期保存训练状态，故障后快速恢复\n**重要性**：大规模AI集群（数千GPU）故障概率高，RAS设计直接影响训练效率。",
+    "category": "system",
+    "source": "IBM System/360 RAS Architecture (1964); IEEE Std 1413-2010",
+    "url": "https://en.wikipedia.org/wiki/Reliability,_availability_and_serviceability"
+  },
+  {
+    "id": "事务",
+    "name": "事务",
+    "definition": "**Transaction**（事务）是系统中一组被视为**不可分割**的操作集合。\n**数据库事务的ACID特性**：\n1）**Atomicity（原子性）**：事务要么全部完成，要么全部回滚\n2）**Consistency（一致性）**：事务前后系统状态保持一致\n3）**Isolation（隔离性）**：并发事务互不干扰\n4）**Durability（持久性）**：已提交事务的结果永久保存\n**总线事务（Bus Transaction）**：\n1）指一次完整的**请求-响应**交互\n2）包括地址阶段和数据阶段\n3）可分为**Posted**（无需响应）和**Non-Posted**（需要响应）\n**PCIe事务类型**：\n1）Memory Read/Write\n2）Configuration Read/Write\n3）Message（中断、错误通知等）\n**AI系统应用**：分布式训练的**AllReduce**可视为一种集合事务。",
+    "category": "system",
+    "source": "Gray & Reuter (1993). Transaction Processing: Concepts and Techniques. Morgan Kaufmann",
+    "url": "https://en.wikipedia.org/wiki/Database_transaction"
+  },
+  {
+    "id": "内存池化",
+    "name": "内存池化",
+    "definition": "**Memory Pooling**（内存池化）是将分布式节点的内存资源汇聚为统一可管理的**共享内存池**的技术。\n**核心概念**：\n1）**物理分离，逻辑统一**：内存物理上分布在不同机箱，但呈现为统一地址空间\n2）**动态分配**：控制器根据工作负载动态分配内存给计算节点\n3）**按需扩展**：计算和内存可独立扩展\n**CXL 3.0实现**：\n1）**CXL Switch**：连接多个内存扩展器和计算节点\n2）**Fabric Manager**：管理内存分配和访问权限\n3）**Memory Hot-Add/Remove**：运行时动态调整\n**优势**：\n1）提高内存利用率（避免碎片化）\n2）降低TCO（总拥有成本）\n3）支持内存故障隔离和热替换\n**AI应用场景**：LLM推理的KV Cache可使用池化内存，突破单机内存限制。",
+    "category": "system",
+    "source": "CXL Consortium. Compute Express Link Specification 3.0",
+    "url": "https://www.computeexpresslink.org/spec-landing"
+  },
+  {
+    "id": "超节点",
+    "name": "超节点",
+    "definition": "**Super Node**（超节点）是由多台计算节点通过**高带宽、低延迟**互连紧密耦合形成的逻辑计算单元。\n**核心特征**：\n1）**透明性**：对上层呈现为**近似单机**的计算语义\n2）**紧耦合**：节点间通信延迟接近本地访问\n3）**统一调度**：作为整体参与任务分配\n**典型实现**：\n1）**NVIDIA DGX SuperPOD**：32台DGX H100通过NVLink Switch互联，256 GPU\n2）**Google TPU Pod**：数千TPU通过ICI互联\n3）**华为Atlas 900**：多台Atlas服务器组成的集群\n**互联要求**：\n1）带宽：TB/s级（如NVLink 900GB/s/GPU）\n2）延迟：μs级\n3）拓扑：全互联或Fat-Tree\n**AI训练价值**：超节点内可高效运行**TP**（张量并行），跨超节点使用**PP/DP**。",
+    "category": "system",
+    "source": "NVIDIA DGX SuperPOD Architecture Guide",
+    "url": "https://docs.nvidia.com/dgx-superpod/index.html"
+  },
+  {
+    "id": "同步访问",
+    "name": "同步访问",
+    "definition": "**Synchronous Access**（同步访问）是发起访问请求后，调用方**阻塞等待**直到操作完成的访问模式。\n**工作流程**：\n1）发起请求\n2）等待（CPU空闲或自旋）\n3）操作完成，继续执行\n**优点**：\n1）编程模型简单直观\n2）时序确定性强\n3）无需状态管理\n**缺点**：\n1）CPU可能空等，浪费计算资源\n2）无法重叠多个操作\n3）对高延迟操作效率低\n**适用场景**：\n1）延迟敏感的关键路径\n2）简单的顺序操作\n3）调试和测试\n**AI系统示例**：\n1）同步CUDA kernel启动（`cudaDeviceSynchronize()`）\n2）同步内存拷贝（`cudaMemcpy`）\n**对比**：高吞吐场景推荐使用**异步访问**+流水线隐藏延迟。",
+    "category": "system",
+    "source": "Hennessy & Patterson (2017). Computer Architecture: A Quantitative Approach",
+    "url": "https://en.wikipedia.org/wiki/Synchronization_(computer_science)"
+  },
+  {
+    "id": "异步访问",
+    "name": "异步访问",
+    "definition": "**Asynchronous Access**（异步访问）是发起请求后**立即返回**，通过回调、轮询或信号获取结果的访问模式。\n**工作流程**：\n1）发起请求，获取句柄/Future\n2）继续执行其他任务\n3）通过回调/轮询/事件获取结果\n**通知机制**：\n1）**Callback**：完成时调用预设函数\n2）**Polling**：周期性检查状态\n3）**Event/Signal**：操作系统通知\n4）**Future/Promise**：延迟获取结果\n**优点**：\n1）CPU与I/O重叠执行\n2）支持并发多个操作\n3）提高系统吞吐量\n**AI系统应用**：\n1）**CUDA Stream**：多流并行，计算与传输重叠\n2）**异步AllReduce**：通信与计算重叠\n3）**Prefetch**：预取下一批数据\n**关键技术**：双缓冲、流水线、Overlap策略。",
+    "category": "system",
+    "source": "Hennessy & Patterson (2017). Computer Architecture: A Quantitative Approach",
+    "url": "https://en.wikipedia.org/wiki/Asynchronous_I/O"
+  },
+  {
+    "id": "post方案_pcie",
+    "name": "Posted方案（PCIe）",
+    "definition": "**Posted Transaction**是PCIe中发送方**不等待**接收方响应即可继续的事务类型。\n**事务分类**：\n1）**Posted**：发送后不等待响应（Fire-and-Forget）\n2）**Non-Posted**：必须等待响应才能完成\n**PCIe事务类型**：\n1）**Memory Write**：Posted事务，写入后立即返回\n2）**Memory Read**：Non-Posted事务，需等待数据返回\n3）**Configuration R/W**：Non-Posted事务\n4）**Message**：Posted事务（中断、错误通知等）\n**Posted优势**：\n1）减少延迟敏感性\n2）提高带宽利用率\n3）允许写入合并（Write Combining）\n**Posted风险**：\n1）写入可能尚未完成，需要显式Flush\n2）错误可能延迟报告\n**AI应用**：GPU显存写入使用Posted模式提升效率，关键同步点使用Memory Barrier。",
+    "category": "system",
+    "source": "PCI Express Base Specification 5.0",
+    "url": "https://pcisig.com/specifications"
+  },
+  {
+    "id": "网络隔离",
+    "name": "网络隔离",
+    "definition": "**Network Isolation**（网络隔离）是将网络划分为多个**独立子网**的设计策略。\n**实现方式**：\n1）**VLAN**（Virtual LAN）：二层隔离，同一交换机划分多个广播域\n2）**VRF**（Virtual Routing and Forwarding）：三层隔离，独立路由表\n3）**物理隔离**：使用独立的网络设备和链路\n4）**SDN**：软件定义的逻辑隔离\n**设计目标**：\n1）**安全性**：限制攻击面，防止横向移动\n2）**故障隔离**：单点故障不影响其他域\n3）**QoS保证**：关键业务独享带宽\n4）**合规要求**：满足数据隔离法规\n**AI集群应用**：\n1）**训练网络**与**存储网络**分离\n2）**管理网络**独立，提高安全性\n3）**多租户隔离**：不同团队/项目使用独立网络\n**典型架构**：InfiniBand用于计算，以太网用于管理和存储。",
+    "category": "system",
+    "source": "IEEE 802.1Q VLAN Standard; RFC 4364 (BGP/MPLS VPN)",
+    "url": "https://en.wikipedia.org/wiki/Network_segmentation"
+  },
+  {
+    "id": "gva",
+    "name": "GVA",
+    "definition": "**GVA**（Guest Virtual Address，客户机虚拟地址）是虚拟机内进程使用的虚拟地址。\n**地址转换链**：\n1）**GVA → GPA**：Guest OS页表转换（客户机内部）\n2）**GPA → HPA**：Hypervisor页表转换（**EPT**/NPT）\n**相关概念**：\n1）**GPA**（Guest Physical Address）：客户机物理地址\n2）**HPA**（Host Physical Address）：宿主机物理地址\n3）**HVA**（Host Virtual Address）：宿主机虚拟地址\n**硬件加速**：\n1）**Intel EPT**（Extended Page Tables）\n2）**AMD NPT**（Nested Page Tables）\n**性能影响**：两级页表查询增加TLB miss开销，硬件辅助可缓解。\n**GPU虚拟化**：\n1）**NVIDIA vGPU**：GPU内存也需要地址转换\n2）**SR-IOV**：直通模式减少转换开销\n**应用场景**：云GPU实例、多租户AI平台。",
+    "category": "system",
+    "source": "Intel 64 and IA-32 Architectures Software Developer's Manual Vol.3",
+    "url": "https://www.intel.com/content/www/us/en/developer/articles/technical/intel-sdm.html"
+  },
+  {
+    "id": "spa",
+    "name": "SPA",
+    "definition": "**SPA**（System Physical Address，系统物理地址）是多节点系统中**全局统一**的物理地址空间。\n**核心作用**：为跨节点寻址提供统一的地址视图。\n**地址层次**：\n1）**VA**（Virtual Address）：进程虚拟地址\n2）**NPA**（Node Physical Address）：节点本地物理地址\n3）**SPA**：全局系统物理地址\n**地址映射**：\n1）节点本地访问：VA → NPA（MMU转换）\n2）跨节点访问：NPA → SPA → 远端NPA（互联协议转换）\n**NUMA架构应用**：\n1）多Socket服务器：每个CPU有本地内存，通过UPI/Infinity Fabric互联\n2）CXL扩展内存：扩展设备内存映射到SPA\n**AI集群意义**：\n1）NVLink/NVSwitch统一GPU显存地址空间\n2）支持**GPUDirect**跨GPU访问\n**典型实现**：AMD EPYC的GMI（Global Memory Interconnect）。",
+    "category": "system",
+    "source": "AMD EPYC Processor Architecture; Intel Xeon Scalable Platform",
+    "url": "https://en.wikipedia.org/wiki/Non-uniform_memory_access"
+  },
+  {
+    "id": "npa",
+    "name": "NPA",
+    "definition": "**NPA**（Node Physical Address，节点物理地址）是单个节点或芯片内部使用的**本地物理地址**。\n**特点**：\n1）仅在该节点内有效\n2）直接用于访问本地内存/设备\n3）需要转换才能被其他节点访问\n**地址转换**：\n1）**本地访问**：VA → NPA（单级MMU）\n2）**远程访问**：远端SPA → 本地NPA（互联控制器）\n**NUMA场景**：\n1）每个CPU Socket有独立的NPA空间\n2）访问本地内存用NPA，延迟低\n3）访问远程内存需要SPA转换，延迟高\n**CXL内存扩展**：\n1）CXL设备有自己的NPA空间\n2）Host通过CXL协议访问设备NPA\n3）设备内存映射到Host的SPA\n**设计意义**：分层地址空间简化了节点内部设计，同时支持系统级扩展。",
+    "category": "system",
+    "source": "AMD EPYC Processor Architecture; CXL Specification",
+    "url": "https://www.amd.com/en/technologies/epyc"
+  },
+  {
+    "id": "mmu",
+    "name": "MMU",
+    "definition": "**MMU**（Memory Management Unit，内存管理单元）是处理器中负责**虚拟地址到物理地址转换**的硬件单元。\n**核心功能**：\n1）**地址转换**：VA → PA，通过页表实现\n2）**内存保护**：检查访问权限（读/写/执行）\n3）**缓存控制**：设置内存区域的缓存策略\n**关键组件**：\n1）**TLB**（Translation Lookaside Buffer）：缓存页表项，加速转换\n2）**Page Table Walker**：遍历页表查找映射\n**页表结构**：\n1）**单级页表**：简单但浪费空间\n2）**多级页表**：节省空间，现代处理器标配（如4级页表）\n3）**大页**（Huge Page）：减少TLB miss，AI训练常用\n**GPU MMU**：\n1）GPU有独立的MMU管理显存地址空间\n2）支持**UVM**（Unified Virtual Memory）：CPU/GPU共享地址空间\n**性能影响**：TLB miss导致页表遍历，可能数百周期延迟。",
+    "category": "system",
+    "source": "Hennessy & Patterson (2017). Computer Architecture: A Quantitative Approach",
+    "url": "https://en.wikipedia.org/wiki/Memory_management_unit"
+  },
+  {
+    "id": "虚拟化",
+    "name": "虚拟化",
+    "definition": "**Virtualization**（虚拟化）是通过软件抽象层将物理资源模拟为多个**隔离的虚拟实例**的技术。\n**虚拟化类型**：\n1）**计算虚拟化**：虚拟机（VM）、容器（Container）\n2）**存储虚拟化**：SAN、软件定义存储\n3）**网络虚拟化**：VLAN、SDN、NFV\n**实现技术**：\n1）**全虚拟化**：完整模拟硬件，Guest无需修改\n2）**半虚拟化**：Guest OS配合，效率更高\n3）**硬件辅助虚拟化**：Intel VT-x/VT-d、AMD-V\n**核心组件**：\n1）**Hypervisor**：VMware ESXi、KVM、Xen\n2）**VMM**（Virtual Machine Monitor）：管理VM生命周期\n**GPU虚拟化**：\n1）**vGPU**：时分复用GPU资源\n2）**SR-IOV**：硬件分区，低开销\n3）**MIG**（Multi-Instance GPU）：H100支持，物理隔离\n**AI云应用**：多租户GPU实例、弹性训练资源、推理服务隔离。",
+    "category": "system",
+    "source": "Popek & Goldberg (1974). Formal Requirements for Virtualizable Third Generation Architectures. CACM",
+    "url": "https://en.wikipedia.org/wiki/Virtualization"
+  },
+  {
+    "id": "kubernetes",
+    "name": "Kubernetes",
+    "definition": "**Kubernetes**（K8s）是Google开源的容器编排平台，是云原生AI基础设施的核心。\n**核心概念**：\n1）**Pod**：最小调度单元，可包含多个容器\n2）**Node**：工作节点，运行Pod\n3）**Deployment**：管理Pod副本和滚动更新\n4）**Service**：服务发现和负载均衡\n**AI训练扩展**：\n1）**Kubeflow**：端到端ML平台\n2）**Volcano**：批处理调度器，支持Gang Scheduling\n3）**GPU Operator**：自动化GPU驱动管理\n**GPU调度支持**：\n1）**Device Plugin**：GPU资源发现和分配\n2）**nvidia.com/gpu**：GPU资源声明\n3）**MIG支持**：切分GPU实例\n**优势**：\n1）自动扩缩容\n2）故障自愈\n3）声明式配置\n**应用**：主流云厂商AI平台的基础设施层。",
+    "category": "system",
+    "source": "Kubernetes.io. Production-Grade Container Orchestration",
+    "url": "https://kubernetes.io/"
+  },
+  {
+    "id": "slurm",
+    "name": "SLURM",
+    "definition": "**SLURM**（Simple Linux Utility for Resource Management）是HPC领域最广泛使用的作业调度系统。\n**核心功能**：\n1）**资源管理**：追踪节点、CPU、GPU、内存状态\n2）**作业调度**：队列管理、优先级、抢占\n3）**作业启动**：分配资源并执行用户程序\n**关键组件**：\n1）**slurmctld**：中央控制器\n2）**slurmd**：节点守护进程\n3）**squeue/sinfo**：查询命令\n**AI训练支持**：\n1）**GPU调度**：gres/gpu资源类型\n2）**多节点作业**：srun启动分布式训练\n3）**与MPI集成**：PMIx支持\n**调度策略**：\n1）**FIFO**：先进先出\n2）**Backfill**：回填调度提高利用率\n3）**Fair Share**：公平份额\n**应用**：超算中心、学术机构、企业AI集群的标准调度器。",
+    "category": "system",
+    "source": "SchedMD. SLURM Workload Manager",
+    "url": "https://slurm.schedmd.com/"
+  },
+  {
+    "id": "checkpoint",
+    "name": "Checkpoint",
+    "definition": "**Checkpoint**（检查点）是定期保存训练状态以支持故障恢复的机制。\n**保存内容**：\n1）**模型权重**：所有层的参数\n2）**优化器状态**：动量、学习率调度器状态\n3）**训练进度**：当前epoch、step\n4）**随机数状态**：确保可重现性\n**存储策略**：\n1）**全量保存**：完整状态，恢复快但空间大\n2）**增量保存**：只保存变化部分\n3）**分布式Checkpoint**：每个rank保存本地分片\n**优化技术**：\n1）**异步Checkpoint**：保存与训练重叠\n2）**压缩**：减少存储和传输开销\n3）**分层存储**：热数据在NVMe，冷数据在对象存储\n**恢复流程**：\n1）加载最近有效的Checkpoint\n2）恢复模型和优化器状态\n3）从断点继续训练\n**重要性**：大规模训练故障频繁，Checkpoint是保证训练进度不丢失的关键。",
+    "category": "system",
+    "source": "PyTorch Distributed Checkpoint Documentation",
+    "url": "https://pytorch.org/docs/stable/distributed.checkpoint.html"
+  },
+  {
+    "id": "elastic_training",
+    "name": "弹性训练",
+    "definition": "**Elastic Training**（弹性训练）是支持训练过程中**动态增减**计算资源的技术。\n**核心能力**：\n1）**Worker扩缩容**：根据资源可用性动态调整\n2）**故障容忍**：部分节点故障不终止训练\n3）**资源抢占恢复**：被抢占后自动恢复\n**实现框架**：\n1）**PyTorch Elastic (TorchElastic)**：原生弹性分布式训练\n2）**Horovod Elastic**：弹性Ring AllReduce\n3）**DeepSpeed Elastic**：支持ZeRO的弹性训练\n**技术要点**：\n1）**成员发现**：etcd/rendezvous协调\n2）**状态同步**：新成员加入时的参数同步\n3）**梯度累积调整**：适应不同batch size\n**应用场景**：\n1）**Spot实例**：使用低成本可中断资源\n2）**资源碎片利用**：充分利用集群空闲资源\n3）**混合云训练**：跨多个资源池\n**挑战**：扩缩容时的效率损失、一致性保证。",
+    "category": "system",
+    "source": "PyTorch. TorchElastic Documentation",
+    "url": "https://pytorch.org/docs/stable/elastic/run.html"
+  },
+  {
+    "id": "fault_tolerance",
+    "name": "容错",
+    "definition": "**Fault Tolerance**（容错）是系统在部分组件故障时仍能**继续正常运行**的能力。\n**故障类型**：\n1）**硬件故障**：GPU故障、内存ECC错误、网卡失效\n2）**软件故障**：进程崩溃、驱动异常、OOM\n3）**网络故障**：链路中断、拥塞、丢包\n**容错技术**：\n1）**冗余**：多副本、RAID、双路网络\n2）**Checkpoint/Restart**：定期保存状态\n3）**心跳检测**：及时发现故障节点\n4）**自动故障切换**：无需人工干预的恢复\n**AI训练容错策略**：\n1）**节点级容错**：故障节点自动剔除，剩余节点继续\n2）**数据并行容错**：DP天然支持节点减少\n3）**流水线容错**：需要特殊处理stage分配\n**关键指标**：\n1）**MTBF**：平均故障间隔\n2）**MTTR**：平均恢复时间\n3）**可用性** = MTBF / (MTBF + MTTR)",
+    "category": "system",
+    "source": "Avizienis et al. (2004). Basic Concepts and Taxonomy of Dependable and Secure Computing. IEEE TDSC",
+    "url": "https://en.wikipedia.org/wiki/Fault_tolerance"
+  },
+  {
+    "id": "gang_scheduling",
+    "name": "Gang Scheduling",
+    "definition": "**Gang Scheduling**（协同调度）是将**一组相关任务**作为整体同时调度的策略。\n**核心原则**：组内所有任务**同时启动**，否则全部等待。\n**必要性**：\n1）分布式训练需要所有Worker同时运行\n2）AllReduce需要所有参与者在线\n3）PP流水线需要所有stage就绪\n**调度器支持**：\n1）**SLURM**：通过partition和feature配置\n2）**Volcano**：Kubernetes批处理调度器，原生Gang支持\n3）**Kubeflow**：通过MPI Operator实现\n**调度参数**：\n1）**min-member**：最少需要的任务数\n2）**max-member**：最多允许的任务数\n**挑战**：\n1）**碎片化**：大Gang难以找到连续资源\n2）**饥饿**：大作业可能长时间等待\n3）**抢占**：是否允许部分运行的Gang被打断\n**优化**：Backfill调度、资源预留、弹性Gang配合。",
+    "category": "system",
+    "source": "Volcano Project. Gang Scheduling in Kubernetes",
+    "url": "https://volcano.sh/en/docs/"
+  },
+  {
+    "id": "cuda",
+    "name": "CUDA",
+    "definition": "**CUDA**（Compute Unified Device Architecture）是NVIDIA的GPU并行计算平台和编程模型。\n**编程模型**：\n1）**Host**：CPU端代码\n2）**Device**：GPU端代码（Kernel）\n3）**Grid/Block/Thread**：线程层次结构\n**内存层次**：\n1）**Global Memory**：全局显存，大但延迟高\n2）**Shared Memory**：Block内共享，低延迟\n3）**Register**：线程私有，最快\n4）**L1/L2 Cache**：硬件管理的缓存\n**关键API**：\n1）**cudaMalloc/cudaFree**：显存分配释放\n2）**cudaMemcpy**：数据传输\n3）**kernel<<<>>>**：启动GPU计算\n**生态系统**：\n1）**cuBLAS**：线性代数库\n2）**cuDNN**：深度学习原语\n3）**NCCL**：多GPU通信\n**重要性**：是现代AI计算的事实标准，几乎所有深度学习框架底层使用CUDA。",
+    "category": "system",
+    "source": "NVIDIA. CUDA C++ Programming Guide",
+    "url": "https://docs.nvidia.com/cuda/"
+  },
+  {
+    "id": "cuda_stream",
+    "name": "CUDA Stream",
+    "definition": "**CUDA Stream**是GPU操作的**有序执行队列**，实现异步并行执行。\n**核心概念**：\n1）同一Stream内的操作**顺序执行**\n2）不同Stream的操作可**并行执行**\n3）默认Stream（Stream 0）与所有Stream同步\n**典型用法**：\n1）**计算-传输重叠**：一个Stream计算，另一个Stream传输\n2）**多Kernel并行**：独立的Kernel在不同Stream执行\n3）**流水线**：分批处理数据，各批在不同Stream\n**同步机制**：\n1）**cudaStreamSynchronize**：等待特定Stream\n2）**cudaDeviceSynchronize**：等待所有Stream\n3）**cudaEvent**：细粒度的跨Stream同步\n**性能优化**：\n1）最大化GPU利用率\n2）隐藏内存传输延迟\n3）实现高效的通信-计算重叠\n**AI训练应用**：PyTorch的异步数据加载、NCCL异步通信。",
+    "category": "system",
+    "source": "NVIDIA. CUDA C++ Programming Guide - Streams",
+    "url": "https://docs.nvidia.com/cuda/cuda-c-programming-guide/#streams"
+  },
+  {
+    "id": "numa",
+    "name": "NUMA",
+    "definition": "**NUMA**（Non-Uniform Memory Access，非统一内存访问）是多处理器系统的内存架构。\n**核心特点**：\n1）每个CPU有**本地内存**，访问延迟低\n2）访问其他CPU的内存是**远程访问**，延迟高\n3）内存总带宽随CPU数量扩展\n**延迟差异**：\n1）**本地访问**：约100ns\n2）**远程访问**：约200-300ns（2-3倍）\n**NUMA拓扑**：\n1）**Node**：CPU+本地内存组成的单元\n2）**距离矩阵**：描述节点间的相对延迟\n**优化策略**：\n1）**NUMA-aware分配**：数据分配到访问它的CPU本地\n2）**进程绑定**：将进程绑定到特定NUMA节点\n3）**内存策略**：interleave、preferred、bind\n**GPU服务器NUMA**：\n1）GPU通过PCIe连接到特定CPU\n2）GPU访问非本地NUMA节点内存会有额外延迟\n**工具**：numactl、hwloc、nvidia-smi topo。",
+    "category": "system",
+    "source": "Lameter (2013). NUMA (Non-Uniform Memory Access): An Overview. ACM Queue",
+    "url": "https://en.wikipedia.org/wiki/Non-uniform_memory_access"
+  },
+  {
+    "id": "memory_bandwidth",
+    "name": "内存带宽",
+    "definition": "**Memory Bandwidth**（内存带宽）是单位时间内内存系统能传输的最大数据量。\n**计算公式**：带宽 = 数据位宽 × 频率 × 通道数\n**典型数值**：\n1）**DDR5-4800**：约76.8 GB/s（单通道）\n2）**HBM3**：约3.35 TB/s（H100的80GB HBM3）\n3）**GDDR6X**：约1 TB/s（RTX 4090）\n**AI训练瓶颈**：\n1）**Batch Norm/LayerNorm**：计算简单但内存密集\n2）**Attention矩阵**：大矩阵读写\n3）**KV Cache**：推理时频繁访问\n**优化策略**：\n1）**算子融合**：减少中间结果写回\n2）**Flash Attention**：分块计算，减少HBM访问\n3）**内存复用**：激活值重计算替代存储\n**衡量指标**：\n1）**有效带宽**：实际达到的带宽\n2）**算术强度**：FLOP/Byte比值\n3）**Roofline模型**：分析性能受限于计算还是带宽。",
+    "category": "system",
+    "source": "Williams et al. (2009). Roofline: An Insightful Visual Performance Model. CACM",
+    "url": "https://en.wikipedia.org/wiki/Memory_bandwidth"
+  }
+]
