@@ -23,6 +23,9 @@ from .types import (
 )
 from .topology import TopologyParser
 from .latency import (
+    # 核心
+    init_evaluators,
+    # 基础操作
     calc_pcie_h2d_latency, calc_pcie_d2h_latency,
     calc_weight_load_latency, calc_embedding_latency,
     calc_layernorm_latency, calc_lm_head_latency,
@@ -279,6 +282,9 @@ class LLMInferenceSimulator:
         self.parallelism = parallelism
         self.hardware = hardware
         self.config = config or SimulationConfig()
+
+        # 初始化精确评估器 (使用新的 GEMM 评估器)
+        init_evaluators(hardware)
 
         # 解析拓扑
         self.topo_parser = TopologyParser(topology_dict, hardware)

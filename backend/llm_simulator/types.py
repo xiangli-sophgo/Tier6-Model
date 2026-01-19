@@ -198,6 +198,37 @@ class ChipHardwareConfig:
     pcie_latency_us: float = 1.0
     hbm_random_access_latency_ns: float = 100.0
 
+    # ========== 微架构参数 (用于精确 GEMM 评估) ==========
+    # 如果提供这些参数，将使用精确 GEMM 评估器
+    # 如果不提供 (None)，评估器会使用预设值
+    cube_m: Optional[int] = None
+    """矩阵单元 M 维度 (如 SG2260E=16, H100=16)"""
+
+    cube_k: Optional[int] = None
+    """矩阵单元 K 维度 (累加维度, 如 SG2260E=32, H100=16)"""
+
+    cube_n: Optional[int] = None
+    """矩阵单元 N 维度 (如 SG2260E=8, H100=16)"""
+
+    sram_size_kb: Optional[float] = None
+    """每核 SRAM 大小 (KB, 如 SG2260E=2048, H100=256)"""
+
+    sram_utilization: Optional[float] = None
+    """SRAM 可用比例 (0-1, 如 SG2260E=0.45, H100=0.5)"""
+
+    lane_num: Optional[int] = None
+    """SIMD lane 数量 (行对齐基数, 如 SG2260E=16, H100=32)"""
+
+    align_bytes: Optional[int] = None
+    """内存对齐字节数 (列对齐基数, 如 SG2260E=32, H100=128)"""
+
+    compute_dma_overlap_rate: Optional[float] = None
+    """计算-搬运重叠率 (0-1, 如 SG2260E=0.8, H100=0.9)"""
+
+    def has_micro_arch(self) -> bool:
+        """检查是否有微架构参数"""
+        return self.cube_m is not None and self.cube_k is not None
+
 
 @dataclass
 class NodeConfig:
@@ -209,6 +240,9 @@ class NodeConfig:
     bandwidth_utilization: float = 0.9  # 带宽利用率
     startup_latency_us: float = 1.0  # 通信启动延迟
     sync_latency_us: float = 1.0  # 同步延迟
+    # NVLink 参数 (用于通信延迟计算)
+    nvlink_bandwidth_gbps: float = 400.0  # NVLink 带宽 (H100 NVSwitch: 900 GB/s)
+    nvlink_latency_us: float = 1.0  # NVLink 启动延迟
 
 
 @dataclass
@@ -217,6 +251,9 @@ class ClusterConfig:
     num_nodes: int
     inter_node_bandwidth_gbps: float
     inter_node_latency_us: float
+    # InfiniBand 参数 (用于跨节点通信)
+    ib_bandwidth_gbps: float = 100.0  # IB 带宽 (NDR: 400 Gb/s = 50 GB/s)
+    ib_latency_us: float = 5.0  # IB 启动延迟
 
 
 @dataclass
