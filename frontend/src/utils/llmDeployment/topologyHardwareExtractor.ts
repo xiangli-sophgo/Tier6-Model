@@ -7,7 +7,7 @@
 import { HierarchicalTopology, ConnectionConfig } from '../../types'
 import { FlexBoardChipConfig } from '../../components/ConfigPanel/shared'
 import { ChipHardwareConfig, HardwareConfig, NodeConfig, ClusterConfig } from './types'
-import { CHIP_PRESETS } from './presets'
+import { getChipConfig } from './presets'
 
 /**
  * 芯片组信息
@@ -187,14 +187,16 @@ export function extractChipGroupsFromConfig(
       const key = chip.preset_id || chip.name
       const existing = chipGroupMap.get(key)
 
-      // 获取芯片配置
+      // 获取芯片配置（从后端预设或自定义）
       let chipConfig: ChipHardwareConfig
-      if (chip.preset_id && CHIP_PRESETS[chip.preset_id]) {
-        chipConfig = CHIP_PRESETS[chip.preset_id]
+      const presetConfig = chip.preset_id ? getChipConfig(chip.preset_id) : null
+      if (presetConfig) {
+        chipConfig = presetConfig
       } else {
         // 自定义芯片
         chipConfig = {
           chip_type: chip.name,
+          flops_dtype: 'BF16',
           compute_tflops_fp16: chip.compute_tflops_fp16 || 100,
           memory_gb: chip.memory_gb || 32,
           memory_bandwidth_gbps: chip.memory_bandwidth_gbps || 1000,

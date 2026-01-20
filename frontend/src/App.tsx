@@ -384,7 +384,7 @@ const WorkbenchContent: React.FC = () => {
             options={[
               { value: '3d', label: '3D视图' },
               { value: 'topology', label: '拓扑图' },
-              { value: 'analysis', label: '部署分析' },
+              { value: 'analysis', label: '部署结果' },
               { value: 'knowledge', label: '知识网络' },
             ]}
           />
@@ -593,7 +593,7 @@ const WorkbenchContent: React.FC = () => {
             <div style={{ flex: 1, overflow: 'auto', padding: 24, background: '#fafafa' }}>
               <div style={{ maxWidth: 1600, margin: '0 auto' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
-                  <div style={{ fontSize: 20, fontWeight: 600, color: '#1a1a1a' }}>LLM 部署分析结果</div>
+                  <div style={{ fontSize: 20, fontWeight: 600, color: '#1a1a1a' }}>LLM 部署结果</div>
                   {analysis.analysisViewMode === 'detail' && (
                     <Button type="primary" size="small" icon={<ArrowLeftOutlined />} onClick={() => analysis.setAnalysisViewMode('history')} style={{ fontSize: 13 }}>
                       历史记录

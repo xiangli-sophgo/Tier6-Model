@@ -754,7 +754,7 @@ export const ConfigPanel: React.FC<ConfigPanelProps> = ({
                         icon={<PlusOutlined />}
                         onClick={() => {
                           const newBoards = [...rackConfig.boards]
-                          const newChips = [...newBoards[boardIndex].chips, { name: 'H100-SXM', count: 8, preset_id: 'h100-sxm' }]
+                          const newChips = [...newBoards[boardIndex].chips, { name: 'SG2262', count: 8, preset_id: 'sg2262' }]
                           newBoards[boardIndex] = { ...newBoards[boardIndex], chips: newChips }
                           setRackConfig(prev => ({ ...prev, boards: newBoards }))
                         }}
@@ -770,6 +770,7 @@ export const ConfigPanel: React.FC<ConfigPanelProps> = ({
                       const currentMemory = chip.memory_gb ?? presetConfig?.memory_gb ?? 32
                       const currentBandwidth = chip.memory_bandwidth_gbps ?? presetConfig?.memory_bandwidth_gbps ?? 1000
                       const currentBwUtil = chip.memory_bandwidth_utilization ?? presetConfig?.memory_bandwidth_utilization ?? 0.9
+                      const currentFlopsDtype = presetConfig?.flops_dtype ?? 'BF16'
                       // 检查参数是否被修改过
                       const isModified = presetConfig && (
                         (chip.compute_tflops_fp16 !== undefined && chip.compute_tflops_fp16 !== presetConfig.compute_tflops_fp16) ||
@@ -880,7 +881,7 @@ export const ConfigPanel: React.FC<ConfigPanelProps> = ({
                           {/* 第二行：芯片参数（可编辑） */}
                           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                              <Tooltip title="FP16 精度的理论峰值算力">
+                              <Tooltip title={`${currentFlopsDtype} 精度的理论峰值算力`}>
                                 <Text style={{ fontSize: 12, width: 60, flexShrink: 0, cursor: 'help' }}>算力:</Text>
                               </Tooltip>
                               <InputNumber
@@ -894,8 +895,15 @@ export const ConfigPanel: React.FC<ConfigPanelProps> = ({
                                   newBoards[boardIndex] = { ...newBoards[boardIndex], chips: newChips }
                                   setRackConfig(prev => ({ ...prev, boards: newBoards }))
                                 }}
+                                formatter={(val) => {
+                                  if (val === undefined || val === null) return ''
+                                  // 四舍五入到2位小数，然后移除末尾的0
+                                  const num = Math.round(Number(val) * 100) / 100
+                                  return String(num).replace(/\.?0+$/, '')
+                                }}
+                                parser={(val) => Number(val)}
                                 style={{ flex: 1 }}
-                                addonAfter="TFLOPs"
+                                addonAfter={`${currentFlopsDtype} TFLOPs`}
                               />
                             </div>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -913,6 +921,13 @@ export const ConfigPanel: React.FC<ConfigPanelProps> = ({
                                   newBoards[boardIndex] = { ...newBoards[boardIndex], chips: newChips }
                                   setRackConfig(prev => ({ ...prev, boards: newBoards }))
                                 }}
+                                formatter={(val) => {
+                                  if (val === undefined || val === null) return ''
+                                  // 四舍五入到2位小数，然后移除末尾的0
+                                  const num = Math.round(Number(val) * 100) / 100
+                                  return String(num).replace(/\.?0+$/, '')
+                                }}
+                                parser={(val) => Number(val)}
                                 style={{ flex: 1 }}
                                 addonAfter="GB"
                               />
@@ -932,6 +947,13 @@ export const ConfigPanel: React.FC<ConfigPanelProps> = ({
                                   newBoards[boardIndex] = { ...newBoards[boardIndex], chips: newChips }
                                   setRackConfig(prev => ({ ...prev, boards: newBoards }))
                                 }}
+                                formatter={(val) => {
+                                  if (val === undefined || val === null) return ''
+                                  // 四舍五入到2位小数，然后移除末尾的0
+                                  const num = Math.round(Number(val) * 100) / 100
+                                  return String(num).replace(/\.?0+$/, '')
+                                }}
+                                parser={(val) => Number(val)}
                                 style={{ flex: 1 }}
                                 addonAfter="GB/s"
                               />
@@ -998,6 +1020,7 @@ export const ConfigPanel: React.FC<ConfigPanelProps> = ({
                                       const presetId = `custom-${Date.now()}`
                                       const config: ChipHardwareConfig = {
                                         chip_type: newName,
+                                        flops_dtype: currentFlopsDtype,
                                         compute_tflops_fp16: currentTflops,
                                         memory_gb: currentMemory,
                                         memory_bandwidth_gbps: currentBandwidth,
@@ -1220,7 +1243,7 @@ export const ConfigPanel: React.FC<ConfigPanelProps> = ({
           style={tabButtonStyle(activePageTab === 'deployment')}
           onClick={() => setActivePageTab('deployment')}
         >
-          部署设置
+          部署分析
         </button>
       </div>
 

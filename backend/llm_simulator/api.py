@@ -4,7 +4,9 @@ FastAPI 接口模块
 提供 LLM 推理模拟的 REST API 接口。
 """
 
+import json
 import logging
+from pathlib import Path
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -18,6 +20,8 @@ from .simulator import (
     validate_mla_config,
     validate_moe_config,
 )
+from .evaluators import ARCH_PRESETS
+from .types import ProtocolConfig, NetworkInfraConfig
 
 # 配置日志
 logging.basicConfig(
@@ -46,6 +50,19 @@ class SimulationResponse(BaseModel):
     ganttChart: dict[str, Any]
     stats: dict[str, Any]
     timestamp: float
+
+
+class BenchmarkConfig(BaseModel):
+    """Benchmark 配置"""
+    id: str
+    name: str
+    model: dict[str, Any]
+    inference: dict[str, Any]
+
+
+# Benchmark 文件存储目录
+BENCHMARKS_DIR = Path(__file__).parent.parent / "benchmarks"
+BENCHMARKS_DIR.mkdir(exist_ok=True)
 
 
 # ============================================
@@ -82,6 +99,70 @@ async def root():
 async def health_check():
     """健康检查"""
     return {"status": "healthy"}
+
+
+@app.get("/api/presets/chips")
+async def get_chip_presets():
+    """
+    获取所有芯片预设配置
+
+    返回后端定义的所有硬件架构配置，包括：
+    - 芯片名称
+    - 算力精度 (BF16/FP16)
+    - 峰值算力 (TFLOPS)
+    - 核心数量
+    - 内存带宽等
+    """
+    result = []
+    for chip_id, arch in ARCH_PRESETS.items():
+        result.append({
+            "id": chip_id,
+            "name": arch.name,
+            "flops_dtype": arch.flops_dtype,
+            "compute_tflops": round(arch.flops_per_second / 1e12, 2),  # 四舍五入到2位小数
+            "num_cores": arch.num_cores,
+            "sram_size_mb": round(arch.sram_size_bytes / (1024 * 1024), 2),
+            "dram_bandwidth_gbps": round(arch.dram_bandwidth_bytes / 1e9, 2),
+            "intra_bw_gbps": round(arch.intra_bw / 1e9, 2),
+            "inter_bw_gbps": round(arch.inter_bw / 1e9, 2),
+            # 粗粒度延迟（向后兼容）
+            "intra_latency_us": round(arch.intra_latency_us, 2),
+            "inter_latency_us": round(arch.inter_latency_us, 2),
+            # 细粒度通信延迟（新增，单位: us）
+            "comm_latency": {
+                "chip_to_chip_us": round(arch.comm_latency.chip_to_chip_us, 2),
+                "comm_start_overhead_us": round(arch.comm_latency.comm_start_overhead_us, 2),
+                "memory_read_latency_us": round(arch.comm_latency.memory_read_latency_us, 2),
+                "memory_write_latency_us": round(arch.comm_latency.memory_write_latency_us, 2),
+            },
+        })
+    return {"chips": result}
+
+
+@app.get("/api/presets/runtime")
+async def get_runtime_presets():
+    """
+    获取运行时配置预设
+
+    返回协议和网络基础设施的默认配置值，供前端显示和配置。
+    """
+    # 使用默认值创建配置对象
+    protocol = ProtocolConfig()
+    network = NetworkInfraConfig()
+
+    return {
+        "protocol": {
+            "rtt_tp_us": protocol.rtt_tp_us,
+            "rtt_ep_us": protocol.rtt_ep_us,
+            "bandwidth_utilization": protocol.bandwidth_utilization,
+            "sync_latency_us": protocol.sync_latency_us,
+        },
+        "network": {
+            "switch_delay_us": network.switch_delay_us,
+            "cable_delay_us": network.cable_delay_us,
+            "link_delay_us": network.link_delay_us,
+        },
+    }
 
 
 @app.post("/api/simulate", response_model=SimulationResponse)
@@ -204,6 +285,101 @@ async def validate_config(request: SimulationRequest):
         "required_chips": required_chips,
         "available_chips": available_chips,
     }
+
+
+# ============================================
+# Benchmark 管理 API
+# ============================================
+
+@app.get("/api/benchmarks")
+async def list_benchmarks():
+    """
+    获取所有自定义 Benchmark 列表
+
+    从 benchmarks 目录读取所有 JSON 文件
+    """
+    benchmarks = []
+    for file_path in BENCHMARKS_DIR.glob("*.json"):
+        try:
+            with open(file_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                benchmarks.append(data)
+        except Exception as e:
+            logger.warning(f"读取 benchmark 文件失败 {file_path}: {e}")
+    return {"benchmarks": benchmarks}
+
+
+@app.get("/api/benchmarks/{benchmark_id}")
+async def get_benchmark(benchmark_id: str):
+    """
+    获取单个 Benchmark 配置
+    """
+    file_path = BENCHMARKS_DIR / f"{benchmark_id}.json"
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail=f"Benchmark 不存在: {benchmark_id}")
+
+    try:
+        with open(file_path, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception as e:
+        logger.error(f"读取 benchmark 失败: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/benchmarks")
+async def create_benchmark(benchmark: BenchmarkConfig):
+    """
+    创建新的 Benchmark 配置
+
+    保存为 JSON 文件到 benchmarks 目录
+    """
+    file_path = BENCHMARKS_DIR / f"{benchmark.id}.json"
+
+    try:
+        with open(file_path, "w", encoding="utf-8") as f:
+            json.dump(benchmark.model_dump(), f, ensure_ascii=False, indent=2)
+        logger.info(f"创建 benchmark: {benchmark.id}")
+        return {"success": True, "id": benchmark.id}
+    except Exception as e:
+        logger.error(f"保存 benchmark 失败: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.put("/api/benchmarks/{benchmark_id}")
+async def update_benchmark(benchmark_id: str, benchmark: BenchmarkConfig):
+    """
+    更新 Benchmark 配置
+    """
+    file_path = BENCHMARKS_DIR / f"{benchmark_id}.json"
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail=f"Benchmark 不存在: {benchmark_id}")
+
+    try:
+        with open(file_path, "w", encoding="utf-8") as f:
+            json.dump(benchmark.model_dump(), f, ensure_ascii=False, indent=2)
+        logger.info(f"更新 benchmark: {benchmark_id}")
+        return {"success": True, "id": benchmark_id}
+    except Exception as e:
+        logger.error(f"更新 benchmark 失败: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.delete("/api/benchmarks/{benchmark_id}")
+async def delete_benchmark(benchmark_id: str):
+    """
+    删除 Benchmark 配置
+    """
+    file_path = BENCHMARKS_DIR / f"{benchmark_id}.json"
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail=f"Benchmark 不存在: {benchmark_id}")
+
+    try:
+        file_path.unlink()
+        logger.info(f"删除 benchmark: {benchmark_id}")
+        return {"success": True, "id": benchmark_id}
+    except Exception as e:
+        logger.error(f"删除 benchmark 失败: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 if __name__ == "__main__":

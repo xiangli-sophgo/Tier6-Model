@@ -6,6 +6,7 @@
 - 内存层次参数 (SRAM 大小、带宽)
 - 对齐约束
 - 计算-搬运重叠率
+- 细粒度通信延迟参数
 """
 
 from dataclasses import dataclass, field
@@ -13,8 +14,92 @@ from typing import Optional
 
 
 @dataclass
+class CommunicationLatency:
+    """细粒度通信延迟参数
+
+    所有参数单位：微秒 (us, microseconds)
+    1 微秒 = 1000 纳秒 (ns)
+
+    参考来源：
+    - DS_TPU 实测数据 (SG2261/SG2262)
+    - NVIDIA 芯片架构推算
+    - HBM/DDR 典型延迟值
+    """
+
+    chip_to_chip_us: float = 0.15
+    """芯片间物理互联延迟 (chip-to-chip latency)
+
+    单位：微秒 (us)
+
+    这是纯粹的物理层互联延迟，不包含启动开销、同步等
+
+    典型值：
+    - NVLink 4.0 (H100): ~0.10 us (100 ns) - 最新一代，延迟更低
+    - NVLink 3.0 (A100): ~0.15 us (150 ns)
+    - SophgoLink (SG2262): ~0.15 us (150 ns) - 参考 DS_TPU c2c_lat
+    - PCIe 4.0/5.0: ~1.0-2.0 us - PCIe 协议开销更大
+
+    注意：端到端通信延迟 = chip_to_chip + start_overhead + 传输时间
+    """
+
+    comm_start_overhead_us: float = 0.59
+    """通信操作启动开销 (communication start overhead)
+
+    单位：微秒 (us)
+
+    包含的开销：
+    - 通信初始化 (2 * chip_to_chip)
+    - DDR 读写 (ddr_read + ddr_write)
+    - NoC 延迟 (network-on-chip)
+    - Die-to-Die 延迟 (对于多die芯片)
+
+    DS_TPU 计算公式：
+    start_lat = 2*c2c_lat + ddr_r_lat + ddr_w_lat + noc_lat + 2*d2d_lat
+              = 2*0.15 + 0.15 + 0.01 + 0.05 + 2*0.04
+              = 0.59 us
+
+    典型值：
+    - 高速互联 (NVLink/SophgoLink): ~0.5-0.6 us
+    - PCIe: ~2-3 us (协议开销更大)
+    """
+
+    memory_read_latency_us: float = 0.15
+    """显存读延迟 (DDR/HBM read latency)
+
+    单位：微秒 (us)
+
+    这是 DRAM 读取延迟，不包含传输时间
+
+    典型值：
+    - HBM3 (H100): ~0.10 us (100 ns) - 最新 HBM3 延迟更低
+    - HBM2e (A100): ~0.12 us (120 ns)
+    - HBM2 (SG2262): ~0.15 us (150 ns) - 参考 DS_TPU ddr_r_lat
+    - DDR4/DDR5: ~0.15-0.20 us (150-200 ns)
+    """
+
+    memory_write_latency_us: float = 0.01
+    """显存写延迟 (DDR/HBM write latency)
+
+    单位：微秒 (us)
+
+    写操作通常比读操作快一个数量级（可以缓冲）
+
+    典型值：
+    - 各种 HBM/DDR: ~0.01 us (10 ns) - 参考 DS_TPU ddr_w_lat
+    - 写延迟对性能影响相对较小
+    """
+
+
+@dataclass
 class AcceleratorMicroArch:
     """加速器微架构配置"""
+
+    # ========== 基本信息 ==========
+    name: str = "unknown"
+    """芯片名称"""
+
+    flops_dtype: str = "BF16"
+    """算力对应的数据精度 (BF16/FP16/FP8/INT8)"""
 
     # ========== 计算单元配置 ==========
     num_cores: int = 64
@@ -62,6 +147,27 @@ class AcceleratorMicroArch:
 
     inter_bw: float = 100e9
     """组间通信带宽 (字节/秒)，默认 100 GB/s (跨节点)"""
+
+    intra_latency_us: float = 1.0
+    """组内通信延迟 (微秒)，默认 1.0 us (高速互联)
+
+    注：这是粗粒度的端到端延迟，用于快速估算
+    更精确的延迟建模请使用 comm_latency 参数
+    """
+
+    inter_latency_us: float = 2.0
+    """组间通信延迟 (微秒)，默认 2.0 us (跨节点网络)
+
+    注：这是粗粒度的端到端延迟，用于快速估算
+    更精确的延迟建模请使用 comm_latency 参数
+    """
+
+    comm_latency: CommunicationLatency = field(default_factory=CommunicationLatency)
+    """细粒度通信延迟参数（用于精确建模）
+
+    包含芯片间互联、启动开销、显存读写等细粒度延迟
+    用于通信算子的精确建模（AllReduce, AllGather 等）
+    """
 
     # ========== 派生属性 ==========
     @property

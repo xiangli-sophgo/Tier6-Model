@@ -14,6 +14,7 @@ import {
   InferenceConfig,
   BenchmarkScenario,
   BenchmarkPreset,
+  FlopsDtype,
 } from './types';
 
 // ============================================
@@ -226,146 +227,94 @@ function estimateModelParams(config: LLMModelConfig): string {
 }
 
 // ============================================
-// 预设硬件配置
+// 芯片预设（全部从后端获取）
 // ============================================
-
-/** 算能 SG2260E (默认芯片) */
-export const SG2260E: ChipHardwareConfig = {
-  chip_type: 'SG2260E',
-  compute_tflops_fp16: 64,     // FP16 算力
-  compute_tops_int8: 128,      // INT8 算力
-  num_cores: 8,                // 计算核心数
-  memory_gb: 64,               // DRAM 容量
-  memory_bandwidth_gbps: 273,  // DRAM 理论带宽
-  memory_bandwidth_utilization: 0.893,  // 带宽利用率
-  l2_cache_mb: 16,             // L2M 容量
-  l2_bandwidth_gbps: 512,      // L2M 单向带宽
-};
-
-/** NVIDIA H100 SXM */
-export const H100_SXM: ChipHardwareConfig = {
-  chip_type: 'H100-SXM',
-  compute_tflops_fp16: 1979,   // FP16 Tensor Core
-  compute_tops_int8: 3958,     // INT8 Tensor Core
-  memory_gb: 80,
-  memory_bandwidth_gbps: 3350,
-  memory_bandwidth_utilization: 0.9,
-};
-
-/** NVIDIA H100 PCIe */
-export const H100_PCIE: ChipHardwareConfig = {
-  chip_type: 'H100-PCIe',
-  compute_tflops_fp16: 1513,   // FP16 Tensor Core
-  compute_tops_int8: 3026,     // INT8 Tensor Core
-  memory_gb: 80,
-  memory_bandwidth_gbps: 2000,
-  memory_bandwidth_utilization: 0.9,
-};
-
-/** NVIDIA A100 SXM */
-export const A100_SXM: ChipHardwareConfig = {
-  chip_type: 'A100-SXM',
-  compute_tflops_fp16: 312,
-  compute_tops_int8: 624,
-  memory_gb: 80,
-  memory_bandwidth_gbps: 2039,
-  memory_bandwidth_utilization: 0.85,
-};
-
-/** NVIDIA A100 PCIe */
-export const A100_PCIE: ChipHardwareConfig = {
-  chip_type: 'A100-PCIe',
-  compute_tflops_fp16: 312,
-  compute_tops_int8: 624,
-  memory_gb: 80,
-  memory_bandwidth_gbps: 1935,
-  memory_bandwidth_utilization: 0.85,
-};
-
-/** NVIDIA A800 (中国版) */
-export const A800: ChipHardwareConfig = {
-  chip_type: 'A800',
-  compute_tflops_fp16: 312,
-  compute_tops_int8: 624,
-  memory_gb: 80,
-  memory_bandwidth_gbps: 2039,
-  memory_bandwidth_utilization: 0.85,
-};
-
-/** NVIDIA L40S */
-export const L40S: ChipHardwareConfig = {
-  chip_type: 'L40S',
-  compute_tflops_fp16: 362,
-  compute_tops_int8: 724,
-  memory_gb: 48,
-  memory_bandwidth_gbps: 864,
-  memory_bandwidth_utilization: 0.85,
-};
-
-/** NVIDIA RTX 4090 */
-export const RTX_4090: ChipHardwareConfig = {
-  chip_type: 'RTX-4090',
-  compute_tflops_fp16: 165,
-  compute_tops_int8: 330,
-  memory_gb: 24,
-  memory_bandwidth_gbps: 1008,
-  memory_bandwidth_utilization: 0.85,
-};
-
-/** AMD MI300X */
-export const MI300X: ChipHardwareConfig = {
-  chip_type: 'MI300X',
-  compute_tflops_fp16: 1307,
-  compute_tops_int8: 2614,
-  memory_gb: 192,
-  memory_bandwidth_gbps: 5300,
-  memory_bandwidth_utilization: 0.85,
-};
-
-/** 华为昇腾910B */
-export const ASCEND_910B: ChipHardwareConfig = {
-  chip_type: 'Ascend-910B',
-  compute_tflops_fp16: 320,
-  compute_tops_int8: 640,
-  memory_gb: 64,
-  memory_bandwidth_gbps: 1600,
-  memory_bandwidth_utilization: 0.85,
-};
-
-/** 所有预设芯片 */
-export const CHIP_PRESETS: Record<string, ChipHardwareConfig> = {
-  'sg2260e': SG2260E,        // 默认芯片
-  'h100-sxm': H100_SXM,
-  'h100-pcie': H100_PCIE,
-  'a100-sxm': A100_SXM,
-  'a100-pcie': A100_PCIE,
-  'a800': A800,
-  'l40s': L40S,
-  'rtx-4090': RTX_4090,
-  'mi300x': MI300X,
-  'ascend-910b': ASCEND_910B,
-};
 
 /** 默认芯片 ID */
 export const DEFAULT_CHIP_ID = 'sg2260e';
 
-/** 获取芯片列表 */
-export function getChipList(): Array<{ id: string; name: string; memory: string; compute: string; isCustom?: boolean }> {
-  const builtIn = Object.entries(CHIP_PRESETS).map(([id, config]) => ({
+// ============================================
+// 后端芯片预设管理
+// ============================================
+
+/** 后端芯片预设缓存 */
+let backendChipPresetsCache: Record<string, ChipHardwareConfig> = {};
+let backendPresetsLoaded = false;
+
+/** 后端芯片互联配置缓存 */
+let backendChipInterconnectCache: Record<string, ChipInterconnectConfig> = {};
+
+/** 从后端加载芯片预设 */
+export async function loadBackendChipPresets(): Promise<void> {
+  if (backendPresetsLoaded) return;
+
+  try {
+    const response = await fetch('/api/presets/chips');
+    if (!response.ok) {
+      console.warn('后端芯片预设加载失败，使用本地预设');
+      return;
+    }
+    const data = await response.json();
+    const chips = data.chips || [];
+
+    // 转换为 ChipHardwareConfig 格式
+    backendChipPresetsCache = {};
+    backendChipInterconnectCache = {};
+    for (const chip of chips) {
+      backendChipPresetsCache[chip.id] = {
+        chip_type: chip.name,
+        flops_dtype: chip.flops_dtype as FlopsDtype,
+        compute_tflops_fp16: chip.compute_tflops,
+        compute_tops_int8: chip.compute_tflops * 2,  // 估算
+        num_cores: chip.num_cores,
+        memory_gb: 64,  // 默认值，后端可扩展
+        memory_bandwidth_gbps: chip.dram_bandwidth_gbps,
+        memory_bandwidth_utilization: 0.85,
+      };
+      // 保存互联配置
+      backendChipInterconnectCache[chip.id] = {
+        interconnect_type: chip.name,  // 使用芯片名作为互联类型标识
+        intra_node_bandwidth_gbps: chip.intra_bw_gbps,
+        intra_node_latency_us: chip.intra_latency_us,
+        recommended_chips_per_node: 8,  // 默认值
+      };
+    }
+    backendPresetsLoaded = true;
+    console.log(`已从后端加载 ${chips.length} 个芯片预设:`, Object.keys(backendChipPresetsCache));
+  } catch (error) {
+    console.warn('后端芯片预设加载失败:', error);
+  }
+}
+
+/** 获取后端芯片预设（同步，需先调用 loadBackendChipPresets） */
+export function getBackendChipPresets(): Record<string, ChipHardwareConfig> {
+  return backendChipPresetsCache;
+}
+
+/** 获取芯片列表（优先使用后端预设） */
+export function getChipList(): Array<{ id: string; name: string; memory: string; compute: string; flops_dtype?: string; isCustom?: boolean; isBackend?: boolean }> {
+  // 后端预设优先
+  const backend = Object.entries(backendChipPresetsCache).map(([id, config]) => ({
     id,
     name: config.chip_type,
     memory: `${config.memory_gb}GB`,
-    compute: `${config.compute_tflops_fp16} TFLOPs`,
+    compute: `${config.compute_tflops_fp16.toFixed(0)} ${config.flops_dtype} TFLOPs`,
+    flops_dtype: config.flops_dtype,
     isCustom: false,
+    isBackend: true,
   }));
+
+  // 后端数据 + 自定义
   const custom = Object.entries(getCustomChipPresets()).map(([id, config]) => ({
     id,
     name: config.chip_type,
     memory: `${config.memory_gb}GB`,
-    compute: `${config.compute_tflops_fp16} TFLOPs`,
+    compute: `${config.compute_tflops_fp16} ${config.flops_dtype || 'BF16'} TFLOPs`,
+    flops_dtype: config.flops_dtype,
     isCustom: true,
+    isBackend: false,
   }));
-  return [...builtIn, ...custom];
+  return [...backend, ...custom];
 }
 
 // ============================================
@@ -398,17 +347,19 @@ export function deleteCustomChipPreset(id: string): void {
   localStorage.setItem(CUSTOM_CHIP_PRESETS_KEY, JSON.stringify(presets));
 }
 
-/** 获取芯片配置（包含内置和自定义） */
+/** 获取芯片配置（后端预设 + 自定义） */
 export function getChipConfig(id: string): ChipHardwareConfig | null {
-  if (CHIP_PRESETS[id]) {
-    return CHIP_PRESETS[id];
+  // 优先使用后端预设
+  if (backendChipPresetsCache[id]) {
+    return backendChipPresetsCache[id];
   }
+  // 检查自定义
   const custom = getCustomChipPresets();
   return custom[id] || null;
 }
 
 // ============================================
-// 芯片互联配置映射
+// 芯片互联配置映射（从后端获取）
 // ============================================
 
 /** 芯片互联配置 */
@@ -423,79 +374,9 @@ export interface ChipInterconnectConfig {
   recommended_chips_per_node: number;
 }
 
-/** SG2260E 互联配置 */
-export const SG2260E_INTERCONNECT: ChipInterconnectConfig = {
-  interconnect_type: 'TP Group',
-  intra_node_bandwidth_gbps: 64,   // TP Group 内带宽
-  intra_node_latency_us: 1,
-  recommended_chips_per_node: 8,
-};
-
-/** H100 SXM 互联配置 - NVLink 4.0 */
-export const H100_SXM_INTERCONNECT: ChipInterconnectConfig = {
-  interconnect_type: 'NVLink 4.0',
-  intra_node_bandwidth_gbps: 900,
-  intra_node_latency_us: 1,
-  recommended_chips_per_node: 8,
-};
-
-/** H100 PCIe 互联配置 - PCIe 5.0 */
-export const H100_PCIE_INTERCONNECT: ChipInterconnectConfig = {
-  interconnect_type: 'PCIe 5.0',
-  intra_node_bandwidth_gbps: 128,
-  intra_node_latency_us: 15,  // PCIe实测 ~13-20us
-  recommended_chips_per_node: 8,
-};
-
-/** A100 SXM 互联配置 - NVLink 3.0 */
-export const A100_SXM_INTERCONNECT: ChipInterconnectConfig = {
-  interconnect_type: 'NVLink 3.0',
-  intra_node_bandwidth_gbps: 600,
-  intra_node_latency_us: 2,  // 实测 ~2us
-  recommended_chips_per_node: 8,
-};
-
-/** A100/A800 PCIe 互联配置 - PCIe 4.0 */
-export const PCIE_4_INTERCONNECT: ChipInterconnectConfig = {
-  interconnect_type: 'PCIe 4.0',
-  intra_node_bandwidth_gbps: 64,
-  intra_node_latency_us: 15,  // PCIe实测 ~13-20us
-  recommended_chips_per_node: 8,
-};
-
-/** MI300X 互联配置 - Infinity Fabric 3.0 */
-export const MI300X_INTERCONNECT: ChipInterconnectConfig = {
-  interconnect_type: 'Infinity Fabric 3.0',
-  intra_node_bandwidth_gbps: 896,
-  intra_node_latency_us: 1,
-  recommended_chips_per_node: 8,
-};
-
-/** Ascend 910B 互联配置 - HCCS */
-export const ASCEND_910B_INTERCONNECT: ChipInterconnectConfig = {
-  interconnect_type: 'HCCS',
-  intra_node_bandwidth_gbps: 392,  // 7链路 × 56 GB/s
-  intra_node_latency_us: 2,
-  recommended_chips_per_node: 8,
-};
-
-/** 芯片ID到互联配置的映射 */
-export const CHIP_INTERCONNECT_PRESETS: Record<string, ChipInterconnectConfig> = {
-  'sg2260e': SG2260E_INTERCONNECT,  // 默认芯片
-  'h100-sxm': H100_SXM_INTERCONNECT,
-  'h100-pcie': H100_PCIE_INTERCONNECT,
-  'a100-sxm': A100_SXM_INTERCONNECT,
-  'a100-pcie': PCIE_4_INTERCONNECT,
-  'a800': A100_SXM_INTERCONNECT,  // A800 也支持 NVLink 3.0
-  'l40s': PCIE_4_INTERCONNECT,
-  'rtx-4090': PCIE_4_INTERCONNECT,
-  'mi300x': MI300X_INTERCONNECT,
-  'ascend-910b': ASCEND_910B_INTERCONNECT,
-};
-
-/** 获取芯片互联配置 */
+/** 获取芯片互联配置（从后端获取） */
 export function getChipInterconnectConfig(chipId: string): ChipInterconnectConfig | null {
-  return CHIP_INTERCONNECT_PRESETS[chipId] || null;
+  return backendChipInterconnectCache[chipId] || null;
 }
 
 // ============================================
@@ -563,44 +444,11 @@ export const CLUSTER_PRESETS: Record<string, ClusterConfig> = {
 };
 
 // ============================================
-// 预设完整硬件配置
+// 预设完整硬件配置（动态创建，使用后端芯片配置）
 // ============================================
 
-/** 8x H100 DGX 节点 */
-export const HARDWARE_8xH100: HardwareConfig = {
-  chip: H100_SXM,
-  node: DGX_H100_NODE,
-  cluster: { num_nodes: 1, inter_node_bandwidth_gbps: 0, inter_node_latency_us: 0 },
-};
-
-/** 16x H100 (2节点) */
-export const HARDWARE_16xH100: HardwareConfig = {
-  chip: H100_SXM,
-  node: DGX_H100_NODE,
-  cluster: { ...IB_NDR_CLUSTER, num_nodes: 2 },
-};
-
-/** 64x H100 (8节点) */
-export const HARDWARE_64xH100: HardwareConfig = {
-  chip: H100_SXM,
-  node: DGX_H100_NODE,
-  cluster: { ...IB_NDR_CLUSTER, num_nodes: 8 },
-};
-
-/** 8x A100 DGX 节点 */
-export const HARDWARE_8xA100: HardwareConfig = {
-  chip: A100_SXM,
-  node: DGX_A100_NODE,
-  cluster: { num_nodes: 1, inter_node_bandwidth_gbps: 0, inter_node_latency_us: 0 },
-};
-
-/** 所有预设硬件配置 */
-export const HARDWARE_PRESETS: Record<string, HardwareConfig> = {
-  '8xh100': HARDWARE_8xH100,
-  '16xh100': HARDWARE_16xH100,
-  '64xh100': HARDWARE_64xH100,
-  '8xa100': HARDWARE_8xA100,
-};
+/** 所有预设硬件配置（空，使用 createHardwareConfig 动态创建） */
+export const HARDWARE_PRESETS: Record<string, HardwareConfig> = {};
 
 // ============================================
 // 预设推理配置
@@ -745,7 +593,7 @@ export function getModelPreset(modelId: string): LLMModelConfig {
 
 /** 获取芯片预设 */
 export function getChipPreset(chipId: string): ChipHardwareConfig {
-  const preset = CHIP_PRESETS[chipId];
+  const preset = getChipConfig(chipId);
   if (!preset) {
     throw new Error(`未找到芯片预设: ${chipId}`);
   }

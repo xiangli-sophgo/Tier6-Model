@@ -12,6 +12,7 @@ import {
   Radio,
   Spin,
   message,
+  InputNumber,
 } from 'antd'
 import {
   PlayCircleOutlined,
@@ -29,12 +30,16 @@ import {
   TopologyTrafficResult,
   ScoreWeights,
   DEFAULT_SCORE_WEIGHTS,
+  ProtocolConfig,
+  NetworkInfraConfig,
+  DEFAULT_PROTOCOL_CONFIG,
+  DEFAULT_NETWORK_CONFIG,
 } from '../../../utils/llmDeployment/types'
 import { HierarchicalTopology } from '../../../types'
 import {
   MODEL_PRESETS,
   INFERENCE_PRESETS,
-  createHardwareConfig,
+  getBackendChipPresets,
 } from '../../../utils/llmDeployment/presets'
 import { analyzePlan } from '../../../utils/llmDeployment/planAnalyzer'
 import { searchWithFixedChips } from '../../../utils/llmDeployment/planSearcher'
@@ -46,8 +51,7 @@ import {
 } from '../../../utils/llmDeployment/topologyHardwareExtractor'
 import { RackConfig, DeploymentAnalysisData, AnalysisHistoryItem, AnalysisViewMode } from '../shared'
 import {
-  ModelConfigSelector,
-  InferenceConfigSelector,
+  BenchmarkConfigSelector,
   HardwareConfigSelector,
   colors,
   configRowStyle,
@@ -106,10 +110,33 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
   const [chipGroups, setChipGroups] = useState<ChipGroupInfo[]>([])
   const [selectedChipType, setSelectedChipType] = useState<string | undefined>()
 
-  // 硬件配置状态
-  const [hardwareConfig, setHardwareConfig] = useState<HardwareConfig>(() =>
-    createHardwareConfig('h100-sxm', 'dgx-h100', 1, 400)
-  )
+  // 硬件配置状态（初始为 null，等待后端芯片预设加载完成）
+  const [hardwareConfig, setHardwareConfig] = useState<HardwareConfig | null>(null)
+
+  // 初始化硬件配置：等待后端芯片预设加载完成
+  React.useEffect(() => {
+    const backendPresets = getBackendChipPresets()
+    // 如果后端预设已加载且硬件配置还未初始化
+    if (Object.keys(backendPresets).length > 0 && !hardwareConfig) {
+      // 从拓扑配置中提取硬件配置
+      if (rackConfig && rackConfig.boards.length > 0 && topology?.connections) {
+        const groups = extractChipGroupsFromConfig(rackConfig.boards)
+        if (groups.length > 0) {
+          const firstChipType = groups[0].presetId || groups[0].chipType
+          const config = generateHardwareConfigFromPanelConfig(
+            podCount,
+            racksPerPod,
+            rackConfig.boards.map(b => ({ chips: b.chips, count: b.count })),
+            topology.connections,
+            firstChipType
+          )
+          if (config) {
+            setHardwareConfig(config)
+          }
+        }
+      }
+    }
+  }, [hardwareConfig, rackConfig, topology, podCount, racksPerPod])
 
   // 序列化 rackConfig 用于深度比较
   const rackConfigJson = React.useMemo(() =>
@@ -181,6 +208,10 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
   // 评分权重
   const [scoreWeights, setScoreWeights] = useState<ScoreWeights>({ ...DEFAULT_SCORE_WEIGHTS })
 
+  // 运行时配置 (协议和网络参数)
+  const [protocolConfig, setProtocolConfig] = useState<ProtocolConfig>({ ...DEFAULT_PROTOCOL_CONFIG })
+  const [networkConfig, setNetworkConfig] = useState<NetworkInfraConfig>({ ...DEFAULT_NETWORK_CONFIG })
+
   // 分析结果状态
   const [analysisResult, setAnalysisResult] = useState<PlanAnalysisResult | null>(null)
   const [topKPlans, setTopKPlans] = useState<PlanAnalysisResult[]>([])
@@ -243,7 +274,7 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
 
   // 当分析状态变化时，通知父组件
   React.useEffect(() => {
-    if (onAnalysisDataChange) {
+    if (onAnalysisDataChange && hardwareConfig) {
       onAnalysisDataChange({
         result: analysisResult,
         topKPlans,
@@ -271,10 +302,12 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
   }, [analysisResult, topKPlans, hardwareConfig, displayModelConfig, displayInferenceConfig, modelConfig, inferenceConfig, loading, errorMsg, searchStats, onAnalysisDataChange, handleMapToTopology, topology, onTrafficResultChange, viewMode, history, handleLoadFromHistory, handleDeleteHistory, handleClearHistory])
 
   // 计算最大可用芯片数
-  const maxChips = hardwareConfig.node.chips_per_node * hardwareConfig.cluster.num_nodes
+  const maxChips = hardwareConfig ? hardwareConfig.node.chips_per_node * hardwareConfig.cluster.num_nodes : 0
 
   // 运行分析
   const handleRunAnalysis = useCallback(async () => {
+    if (!hardwareConfig) return // 等待硬件配置加载
+
     setAnalysisResult(null)
     setTopKPlans([])
     setSearchStats(null)
@@ -357,25 +390,49 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
     }
   }, [modelConfig, inferenceConfig, hardwareConfig, parallelismMode, manualStrategy, searchConstraints, maxChips, scoreWeights, onAddToHistory])
 
+  // 等待后端芯片预设加载完成
+  if (!hardwareConfig) {
+    return (
+      <div style={{ padding: 16, textAlign: 'center' }}>
+        <Spin tip="正在加载芯片预设..." />
+      </div>
+    )
+  }
+
   return (
     <div style={{ padding: 0 }}>
-      {/* 模型配置 */}
+      {/* Benchmark 设置 (模型 + 推理参数) */}
       <div style={{ marginBottom: 12 }}>
-        <BaseCard title="模型配置" accentColor="#5E6AD2" collapsible defaultExpanded>
-          <ModelConfigSelector value={modelConfig} onChange={setModelConfig} />
+        <BaseCard title="Benchmark 设置" accentColor="#5E6AD2" collapsible defaultExpanded>
+          <BenchmarkConfigSelector
+            modelConfig={modelConfig}
+            onModelChange={setModelConfig}
+            inferenceConfig={inferenceConfig}
+            onInferenceChange={setInferenceConfig}
+          />
         </BaseCard>
       </div>
 
-      {/* 推理配置 */}
+      {/* 并行策略 */}
       <div style={{ marginBottom: 12 }}>
-        <BaseCard title="推理配置" accentColor="#13c2c2" collapsible defaultExpanded>
-          <InferenceConfigSelector value={inferenceConfig} onChange={setInferenceConfig} />
+        <BaseCard title="并行策略" accentColor="#722ed1" collapsible defaultExpanded>
+          <ParallelismConfigPanel
+            mode={parallelismMode}
+            onModeChange={setParallelismMode}
+            manualStrategy={manualStrategy}
+            onManualStrategyChange={setManualStrategy}
+            searchConstraints={searchConstraints}
+            onSearchConstraintsChange={setSearchConstraints}
+            maxChips={maxChips}
+            scoreWeights={scoreWeights}
+            onScoreWeightsChange={setScoreWeights}
+          />
         </BaseCard>
       </div>
 
-      {/* 硬件配置 */}
+      {/* 硬件配置 - 描述"用什么算" */}
       <div style={{ marginBottom: 12 }}>
-        <BaseCard title="硬件配置" accentColor="#52c41a" collapsible defaultExpanded>
+        <BaseCard title="硬件配置" accentColor="#13c2c2" collapsible defaultExpanded>
           <div style={{ marginBottom: 12 }}>
             <Radio.Group
               size="small"
@@ -436,20 +493,100 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
         </BaseCard>
       </div>
 
-      {/* 并行策略 */}
+      {/* 通信参数 (高级) */}
       <div style={{ marginBottom: 12 }}>
-        <BaseCard title="并行策略" accentColor="#faad14" collapsible defaultExpanded>
-          <ParallelismConfigPanel
-            mode={parallelismMode}
-            onModeChange={setParallelismMode}
-            manualStrategy={manualStrategy}
-            onManualStrategyChange={setManualStrategy}
-            searchConstraints={searchConstraints}
-            onSearchConstraintsChange={setSearchConstraints}
-            maxChips={maxChips}
-            scoreWeights={scoreWeights}
-            onScoreWeightsChange={setScoreWeights}
-          />
+        <BaseCard title="通信参数" accentColor="#eb2f96" collapsible defaultExpanded={false}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+            <div style={configRowStyle}>
+              <Text style={{ fontSize: 12 }}>TP RTT (µs)</Text>
+              <InputNumber
+                size="small"
+                min={0}
+                max={10}
+                step={0.05}
+                value={protocolConfig.rtt_tp_us}
+                onChange={(v) => setProtocolConfig(prev => ({ ...prev, rtt_tp_us: v ?? 0.35 }))}
+                style={{ width: 70 }}
+              />
+            </div>
+            <div style={configRowStyle}>
+              <Text style={{ fontSize: 12 }}>EP RTT (µs)</Text>
+              <InputNumber
+                size="small"
+                min={0}
+                max={10}
+                step={0.05}
+                value={protocolConfig.rtt_ep_us}
+                onChange={(v) => setProtocolConfig(prev => ({ ...prev, rtt_ep_us: v ?? 0.85 }))}
+                style={{ width: 70 }}
+              />
+            </div>
+            <div style={configRowStyle}>
+              <Text style={{ fontSize: 12 }}>带宽利用率</Text>
+              <InputNumber
+                size="small"
+                min={0.5}
+                max={1.0}
+                step={0.01}
+                value={protocolConfig.bandwidth_utilization}
+                onChange={(v) => setProtocolConfig(prev => ({ ...prev, bandwidth_utilization: v ?? 0.95 }))}
+                style={{ width: 70 }}
+              />
+            </div>
+            <div style={configRowStyle}>
+              <Text style={{ fontSize: 12 }}>同步延迟 (µs)</Text>
+              <InputNumber
+                size="small"
+                min={0}
+                max={10}
+                step={0.1}
+                value={protocolConfig.sync_latency_us}
+                onChange={(v) => setProtocolConfig(prev => ({ ...prev, sync_latency_us: v ?? 0 }))}
+                style={{ width: 70 }}
+              />
+            </div>
+            <div style={configRowStyle}>
+              <Text style={{ fontSize: 12 }}>交换机延迟 (µs)</Text>
+              <InputNumber
+                size="small"
+                min={0}
+                max={10}
+                step={0.05}
+                value={networkConfig.switch_delay_us}
+                onChange={(v) => {
+                  const switchDelay = v ?? 0.25
+                  setNetworkConfig(prev => ({
+                    ...prev,
+                    switch_delay_us: switchDelay,
+                    link_delay_us: 2 * switchDelay + 2 * prev.cable_delay_us,
+                  }))
+                }}
+                style={{ width: 70 }}
+              />
+            </div>
+            <div style={configRowStyle}>
+              <Text style={{ fontSize: 12 }}>线缆延迟 (µs)</Text>
+              <InputNumber
+                size="small"
+                min={0}
+                max={1}
+                step={0.005}
+                value={networkConfig.cable_delay_us}
+                onChange={(v) => {
+                  const cableDelay = v ?? 0.025
+                  setNetworkConfig(prev => ({
+                    ...prev,
+                    cable_delay_us: cableDelay,
+                    link_delay_us: 2 * prev.switch_delay_us + 2 * cableDelay,
+                  }))
+                }}
+                style={{ width: 70 }}
+              />
+            </div>
+          </div>
+          <div style={{ marginTop: 8, fontSize: 12, color: '#999' }}>
+            链路延迟: {networkConfig.link_delay_us.toFixed(3)} µs
+          </div>
         </BaseCard>
       </div>
 

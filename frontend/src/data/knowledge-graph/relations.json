@@ -1594,5 +1594,41 @@
     "target": "infinity_fabric",
     "type": "enables",
     "label": "支持"
+  },
+  {
+    "source": "precision_formats",
+    "target": "quantization",
+    "type": "enables",
+    "label": "精度量化"
+  },
+  {
+    "source": "precision_formats",
+    "target": "kv_compression",
+    "type": "enables",
+    "label": "KV Cache压缩"
+  },
+  {
+    "source": "precision_formats",
+    "target": "throughput",
+    "type": "affects",
+    "label": "影响吞吐量"
+  },
+  {
+    "source": "precision_formats",
+    "target": "tensor_core",
+    "type": "supported_by",
+    "label": "硬件支持"
+  },
+  {
+    "source": "precision_formats",
+    "target": "memory_bandwidth",
+    "type": "affects",
+    "label": "影响带宽利用"
+  },
+  {
+    "source": "precision_formats",
+    "target": "tpot",
+    "type": "affects",
+    "label": "影响每token延迟"
   }
 ]

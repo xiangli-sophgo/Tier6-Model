@@ -314,6 +314,93 @@ class LLMModelConfig:
 
 
 # ============================================
+# 运行时配置
+# ============================================
+
+@dataclass
+class ProtocolConfig:
+    """通信协议运行时配置
+
+    这些参数与通信协议栈 (如 NCCL/RCCL) 的实现相关，
+    不同的软件版本或配置可能有不同的开销。
+
+    所有延迟单位：微秒 (us)
+    """
+    rtt_tp_us: float = 0.35
+    """TP 通信 RTT (Round-Trip Time)
+
+    张量并行通信的往返延迟，主要来自通信协议开销。
+    典型值：0.3-0.5 us (高速互联如 NVLink)
+    """
+
+    rtt_ep_us: float = 0.85
+    """EP 通信 RTT (Round-Trip Time)
+
+    专家并行通信的往返延迟，通常比 TP 通信稍高。
+    典型值：0.7-1.0 us
+    """
+
+    bandwidth_utilization: float = 0.95
+    """带宽利用率 (0-1)
+
+    实际带宽与峰值带宽的比值，取决于通信模式、消息大小等。
+    典型值：0.90-0.98 (大消息), 0.5-0.8 (小消息)
+    """
+
+    sync_latency_us: float = 0.0
+    """同步延迟
+
+    集合通信后的同步开销。
+    典型值：0-1 us
+    """
+
+
+@dataclass
+class NetworkInfraConfig:
+    """网络基础设施配置
+
+    这些参数取决于数据中心的网络设备（交换机型号、线缆类型等）。
+
+    所有延迟单位：微秒 (us)
+    """
+    switch_delay_us: float = 0.25
+    """交换机转发延迟
+
+    单个交换机的数据包处理和转发延迟。
+    典型值：
+    - 高端 InfiniBand 交换机: 0.1-0.3 us
+    - 以太网交换机: 0.5-2.0 us
+    """
+
+    cable_delay_us: float = 0.025
+    """线缆传输延迟
+
+    信号在线缆中传输的延迟（约 5 ns/m）。
+    典型值：
+    - 机架内 (1-2m): 0.01-0.02 us
+    - 机架间 (5-10m): 0.025-0.05 us
+    """
+
+    @property
+    def link_delay_us(self) -> float:
+        """端到端链路延迟 (包括两端交换机和线缆)"""
+        return 2 * self.switch_delay_us + 2 * self.cable_delay_us
+
+
+@dataclass
+class SimulationConfig:
+    """模拟运行时配置 (汇总所有可配置参数)"""
+    protocol: ProtocolConfig = None  # type: ignore
+    network: NetworkInfraConfig = None  # type: ignore
+
+    def __post_init__(self):
+        if self.protocol is None:
+            self.protocol = ProtocolConfig()
+        if self.network is None:
+            self.network = NetworkInfraConfig()
+
+
+# ============================================
 # 推理配置
 # ============================================
 

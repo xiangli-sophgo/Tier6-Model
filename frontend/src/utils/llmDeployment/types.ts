@@ -188,11 +188,16 @@ export interface InferenceConfig {
 // 硬件配置
 // ============================================
 
+/** 算力精度类型 */
+export type FlopsDtype = 'BF16' | 'FP16' | 'FP8' | 'INT8';
+
 /** 芯片硬件配置 */
 export interface ChipHardwareConfig {
   /** 芯片型号 */
   chip_type: string;
-  /** FP16/BF16 算力 (TFLOPs) */
+  /** 算力精度 (BF16/FP16/FP8/INT8) */
+  flops_dtype: FlopsDtype;
+  /** 算力 (TFLOPs) - 对应 flops_dtype 精度 */
   compute_tflops_fp16: number;
   /** INT8 算力 (TOPs) */
   compute_tops_int8?: number;
@@ -721,6 +726,55 @@ export interface TopologyTrafficResult {
   /** 平均链路利用率 */
   avgUtilization: number;
 }
+
+// ============================================
+// 运行时配置 (通信协议和网络基础设施)
+// ============================================
+
+/** 通信协议配置 */
+export interface ProtocolConfig {
+  /** TP 通信 RTT (微秒) */
+  rtt_tp_us: number;
+  /** EP 通信 RTT (微秒) */
+  rtt_ep_us: number;
+  /** 带宽利用率 (0-1) */
+  bandwidth_utilization: number;
+  /** 同步延迟 (微秒) */
+  sync_latency_us: number;
+}
+
+/** 网络基础设施配置 */
+export interface NetworkInfraConfig {
+  /** 交换机延迟 (微秒) */
+  switch_delay_us: number;
+  /** 线缆延迟 (微秒) */
+  cable_delay_us: number;
+  /** 链路延迟 (微秒, 计算值) */
+  link_delay_us: number;
+}
+
+/** 运行时配置 (汇总) */
+export interface RuntimeConfig {
+  /** 协议配置 */
+  protocol: ProtocolConfig;
+  /** 网络配置 */
+  network: NetworkInfraConfig;
+}
+
+/** 默认协议配置 */
+export const DEFAULT_PROTOCOL_CONFIG: ProtocolConfig = {
+  rtt_tp_us: 0.35,
+  rtt_ep_us: 0.85,
+  bandwidth_utilization: 0.95,
+  sync_latency_us: 0.0,
+};
+
+/** 默认网络配置 */
+export const DEFAULT_NETWORK_CONFIG: NetworkInfraConfig = {
+  switch_delay_us: 0.25,
+  cable_delay_us: 0.025,
+  link_delay_us: 0.55,  // 2 * 0.25 + 2 * 0.025
+};
 
 // ============================================
 // 模拟结果类型 (从 simulation 模块重导出)

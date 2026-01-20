@@ -15,6 +15,7 @@ import {
   MultiLevelViewOptions,
 } from '../types'
 import { TopologyTrafficResult } from '../utils/llmDeployment/types'
+import { loadBackendChipPresets } from '../utils/llmDeployment/presets'
 import { DeploymentAnalysisData, AnalysisHistoryItem, AnalysisViewMode } from '../components/ConfigPanel/shared'
 import { getTopology, generateTopology, getLevelConnectionDefaults } from '../api/topology'
 import { useViewNavigation } from '../hooks/useViewNavigation'
@@ -350,6 +351,11 @@ export const WorkbenchProvider: React.FC<WorkbenchProviderProps> = ({ children }
 
   // 初始加载
   useEffect(() => {
+    // 加载后端芯片预设
+    loadBackendChipPresets().then(() => {
+      console.log('后端芯片预设加载完成')
+    })
+    // 加载拓扑
     loadTopology()
   }, [loadTopology])
 

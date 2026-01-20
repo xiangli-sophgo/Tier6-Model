@@ -13,7 +13,8 @@
 
 from dataclasses import dataclass
 from typing import Tuple, Union, Optional
-import math
+
+from ..types import ProtocolConfig, NetworkInfraConfig
 
 
 @dataclass
@@ -27,39 +28,34 @@ class CommResult:
     """实际通信数据量 (字节)"""
 
 
-# ==================== 通信延迟常量 ====================
+# ==================== 通信参数配置说明 ====================
+#
+# 通信延迟参数来源：
+#
+# 1. 芯片特定延迟 (从 AcceleratorMicroArch.comm_latency 获取):
+#    - chip_to_chip_us: 芯片间物理互联延迟
+#    - comm_start_overhead_us: 通信启动开销
+#    - memory_read_latency_us: 显存读延迟
+#    - memory_write_latency_us: 显存写延迟
+#
+# 2. 协议参数 (从 ProtocolConfig 获取，可由用户配置):
+#    - rtt_tp_us: TP 通信 RTT
+#    - rtt_ep_us: EP 通信 RTT
+#    - bandwidth_utilization: 带宽利用率
+#    - sync_latency_us: 同步延迟
+#    (默认值定义在 types.py 的 ProtocolConfig dataclass 中)
+#
+# 3. 网络基础设施参数 (从 NetworkInfraConfig 获取，可由用户配置):
+#    - switch_delay_us: 交换机延迟
+#    - cable_delay_us: 线缆延迟
+#    (默认值定义在 types.py 的 NetworkInfraConfig dataclass 中)
+#
+# 4. MoE 参数 (从 model.moe_config 获取):
+#    - num_experts_per_tok (topk)
 
-# 基础延迟参数 (微秒)
-C2C_LATENCY = 0.15      # 芯片到芯片延迟
-DDR_READ_LATENCY = 0.15  # DDR 读延迟
-DDR_WRITE_LATENCY = 0.01 # DDR 写延迟
-NOC_LATENCY = 0.05       # NoC 延迟
-D2D_LATENCY = 0.04       # Die-to-Die 延迟
-
-# RTT 延迟
-RTT_TP = 0.35           # TP 通信 RTT
-RTT_EP = 0.85           # EP 通信 RTT
-
-# 网络延迟
-SWITCH_DELAY = 0.25     # 交换机延迟
-CABLE_DELAY = 0.025     # 线缆延迟
-
-# 其他参数
-BANDWIDTH_UTILIZATION = 0.95  # 带宽利用率
-SYNC_LATENCY = 0.0           # 同步延迟
-CPU_FETCH_DELAY = 0.0        # CPU fetch 延迟
-
-# MoE 参数
-MOE_TOPK = 8                  # MoE topk
-PREFILL_FACTOR = 8 / 128      # Prefill 系数
-
-# 计算启动延迟
-START_LATENCY = 2 * C2C_LATENCY + DDR_READ_LATENCY + DDR_WRITE_LATENCY + NOC_LATENCY + 2 * D2D_LATENCY
-# = 2 * 0.15 + 0.15 + 0.01 + 0.05 + 2 * 0.04 = 0.59 μs
-
-# 链路延迟 (用于跨节点通信)
-LINK_DELAY = 2 * SWITCH_DELAY + 2 * CABLE_DELAY
-# = 2 * 0.25 + 2 * 0.025 = 0.55 μs
+# MoE 默认参数 (应从 moe_config 获取)
+DEFAULT_MOE_TOPK = 8            # MoE topk
+DEFAULT_PREFILL_FACTOR = 8 / 128  # Prefill 系数
 
 
 # ==================== AllReduce 评估器 ====================
@@ -73,23 +69,33 @@ class AllReduceEval:
     2. 扁平模式 (其他 TP): Ring AllReduce
     """
 
-    def __init__(self, arch):
+    def __init__(
+        self,
+        arch,
+        protocol_config: Optional["ProtocolConfig"] = None,
+        network_config: Optional["NetworkInfraConfig"] = None,
+    ):
         """
         初始化评估器
 
         Args:
-            arch: 架构配置，需要 intra_bw 和 inter_bw 属性
+            arch: 架构配置，需要 intra_bw、inter_bw 和 comm_latency 属性
+            protocol_config: 协议配置 (可选，使用默认值如果未提供)
+            network_config: 网络基础设施配置 (可选，使用默认值如果未提供)
         """
         self.arch = arch
-        self.c2c_lat = C2C_LATENCY
-        self.ddr_r_lat = DDR_READ_LATENCY
-        self.ddr_w_lat = DDR_WRITE_LATENCY
-        self.noc_lat = NOC_LATENCY
-        self.d2d_lat = D2D_LATENCY
-        self.rtt_tp = RTT_TP
-        self.start_lat = START_LATENCY
-        self.sync_lat = SYNC_LATENCY
-        self.bw_urate = BANDWIDTH_UTILIZATION
+        # 芯片特定的延迟参数 (从 arch.comm_latency 获取)
+        self.c2c_lat = arch.comm_latency.chip_to_chip_us
+        self.ddr_r_lat = arch.comm_latency.memory_read_latency_us
+        self.ddr_w_lat = arch.comm_latency.memory_write_latency_us
+        self.start_lat = arch.comm_latency.comm_start_overhead_us
+
+        # 协议参数 (从 protocol_config 获取，或使用 dataclass 默认值)
+        proto = protocol_config if protocol_config is not None else ProtocolConfig()
+        self.rtt_tp = proto.rtt_tp_us
+        self.sync_lat = proto.sync_latency_us
+        self.bw_urate = proto.bandwidth_utilization
+
         self.link_delay = 0  # AllReduce 不使用 link_delay
 
     def evaluate_raw(
@@ -192,17 +198,33 @@ class AllGatherEval:
     支持分层和扁平两种模式。
     """
 
-    def __init__(self, arch):
+    def __init__(
+        self,
+        arch,
+        protocol_config: Optional["ProtocolConfig"] = None,
+        network_config: Optional["NetworkInfraConfig"] = None,
+    ):
+        """初始化评估器
+
+        Args:
+            arch: AcceleratorMicroArch 对象，包含芯片特定的延迟参数
+            protocol_config: 协议配置 (可选)
+            network_config: 网络基础设施配置 (可选)
+        """
         self.arch = arch
-        self.c2c_lat = C2C_LATENCY
-        self.ddr_r_lat = DDR_READ_LATENCY
-        self.ddr_w_lat = DDR_WRITE_LATENCY
-        self.noc_lat = NOC_LATENCY
-        self.d2d_lat = D2D_LATENCY
-        self.rtt_tp = RTT_TP
-        self.start_lat = START_LATENCY
-        self.sync_lat = SYNC_LATENCY
-        self.bw_urate = BANDWIDTH_UTILIZATION
+
+        # 芯片特定的延迟参数 (从 arch.comm_latency 获取)
+        self.c2c_lat = arch.comm_latency.chip_to_chip_us
+        self.ddr_r_lat = arch.comm_latency.memory_read_latency_us
+        self.ddr_w_lat = arch.comm_latency.memory_write_latency_us
+        self.start_lat = arch.comm_latency.comm_start_overhead_us
+
+        # 协议参数 (从 protocol_config 获取，或使用 dataclass 默认值)
+        proto = protocol_config if protocol_config is not None else ProtocolConfig()
+        self.rtt_tp = proto.rtt_tp_us
+        self.sync_lat = proto.sync_latency_us
+        self.bw_urate = proto.bandwidth_utilization
+
         self.link_delay = 0
 
     def evaluate_raw(
@@ -296,17 +318,33 @@ class ReduceScatterEval:
     支持分层和扁平两种模式。
     """
 
-    def __init__(self, arch):
+    def __init__(
+        self,
+        arch,
+        protocol_config: Optional["ProtocolConfig"] = None,
+        network_config: Optional["NetworkInfraConfig"] = None,
+    ):
+        """初始化评估器
+
+        Args:
+            arch: AcceleratorMicroArch 对象，包含芯片特定的延迟参数
+            protocol_config: 协议配置 (可选)
+            network_config: 网络基础设施配置 (可选)
+        """
         self.arch = arch
-        self.c2c_lat = C2C_LATENCY
-        self.ddr_r_lat = DDR_READ_LATENCY
-        self.ddr_w_lat = DDR_WRITE_LATENCY
-        self.noc_lat = NOC_LATENCY
-        self.d2d_lat = D2D_LATENCY
-        self.rtt_tp = RTT_TP
-        self.start_lat = START_LATENCY
-        self.sync_lat = SYNC_LATENCY
-        self.bw_urate = BANDWIDTH_UTILIZATION
+
+        # 芯片特定的延迟参数 (从 arch.comm_latency 获取)
+        self.c2c_lat = arch.comm_latency.chip_to_chip_us
+        self.ddr_r_lat = arch.comm_latency.memory_read_latency_us
+        self.ddr_w_lat = arch.comm_latency.memory_write_latency_us
+        self.start_lat = arch.comm_latency.comm_start_overhead_us
+
+        # 协议参数 (从 protocol_config 获取，或使用 dataclass 默认值)
+        proto = protocol_config if protocol_config is not None else ProtocolConfig()
+        self.rtt_tp = proto.rtt_tp_us
+        self.sync_lat = proto.sync_latency_us
+        self.bw_urate = proto.bandwidth_utilization
+
         self.link_delay = 0
 
     def evaluate_raw(
@@ -400,23 +438,47 @@ class DispatchEval:
     用于将 token 分发到各个 expert 所在的芯片
     """
 
-    def __init__(self, arch):
+    def __init__(
+        self,
+        arch,
+        protocol_config: Optional["ProtocolConfig"] = None,
+        network_config: Optional["NetworkInfraConfig"] = None,
+        moe_topk: int = DEFAULT_MOE_TOPK,
+        prefill_factor: float = DEFAULT_PREFILL_FACTOR,
+    ):
+        """初始化评估器
+
+        Args:
+            arch: AcceleratorMicroArch 对象，包含芯片特定的延迟参数
+            protocol_config: 协议配置 (可选)
+            network_config: 网络基础设施配置 (可选)
+            moe_topk: MoE top-k 值 (通常从 moe_config.num_experts_per_tok 获取)
+            prefill_factor: Prefill 系数
+        """
         self.arch = arch
-        self.allgather_eval = AllGatherEval(arch)
-        self.c2c_lat = C2C_LATENCY
-        self.ddr_r_lat = DDR_READ_LATENCY
-        self.ddr_w_lat = DDR_WRITE_LATENCY
-        self.noc_lat = NOC_LATENCY
-        self.d2d_lat = D2D_LATENCY
-        self.start_lat = START_LATENCY
-        self.switch_delay = SWITCH_DELAY
-        self.cable_delay = CABLE_DELAY
-        self.link_delay = LINK_DELAY
-        self.cpu_fetch_delay = CPU_FETCH_DELAY
-        self.rtt_ep = RTT_EP
-        self.topk = MOE_TOPK
-        self.prefill_factor = PREFILL_FACTOR
-        self.bw_urate = BANDWIDTH_UTILIZATION
+        self.allgather_eval = AllGatherEval(arch, protocol_config, network_config)
+
+        # 芯片特定的延迟参数 (从 arch.comm_latency 获取)
+        self.c2c_lat = arch.comm_latency.chip_to_chip_us
+        self.ddr_r_lat = arch.comm_latency.memory_read_latency_us
+        self.ddr_w_lat = arch.comm_latency.memory_write_latency_us
+        self.start_lat = arch.comm_latency.comm_start_overhead_us
+
+        # 网络基础设施参数 (从 network_config 获取，或使用 dataclass 默认值)
+        net = network_config if network_config is not None else NetworkInfraConfig()
+        self.switch_delay = net.switch_delay_us
+        self.cable_delay = net.cable_delay_us
+        self.link_delay = net.link_delay_us
+
+        # 协议参数 (从 protocol_config 获取，或使用 dataclass 默认值)
+        proto = protocol_config if protocol_config is not None else ProtocolConfig()
+        self.rtt_ep = proto.rtt_ep_us
+        self.bw_urate = proto.bandwidth_utilization
+
+        # MoE 参数
+        self.topk = moe_topk
+        self.prefill_factor = prefill_factor
+        self.cpu_fetch_delay = 0.0  # CPU fetch 延迟 (通常为 0)
 
     def evaluate_raw(
         self,
@@ -489,23 +551,47 @@ class CombineEval:
     用于将 expert 输出收集回原始芯片
     """
 
-    def __init__(self, arch):
+    def __init__(
+        self,
+        arch,
+        protocol_config: Optional["ProtocolConfig"] = None,
+        network_config: Optional["NetworkInfraConfig"] = None,
+        moe_topk: int = DEFAULT_MOE_TOPK,
+        prefill_factor: float = DEFAULT_PREFILL_FACTOR,
+    ):
+        """初始化评估器
+
+        Args:
+            arch: AcceleratorMicroArch 对象，包含芯片特定的延迟参数
+            protocol_config: 协议配置 (可选)
+            network_config: 网络基础设施配置 (可选)
+            moe_topk: MoE top-k 值 (通常从 moe_config.num_experts_per_tok 获取)
+            prefill_factor: Prefill 系数
+        """
         self.arch = arch
-        self.allgather_eval = AllGatherEval(arch)
-        self.c2c_lat = C2C_LATENCY
-        self.ddr_r_lat = DDR_READ_LATENCY
-        self.ddr_w_lat = DDR_WRITE_LATENCY
-        self.noc_lat = NOC_LATENCY
-        self.d2d_lat = D2D_LATENCY
-        self.start_lat = START_LATENCY
-        self.switch_delay = SWITCH_DELAY
-        self.cable_delay = CABLE_DELAY
-        self.link_delay = LINK_DELAY
-        self.cpu_fetch_delay = CPU_FETCH_DELAY
-        self.rtt_ep = RTT_EP
-        self.topk = MOE_TOPK
-        self.prefill_factor = PREFILL_FACTOR
-        self.bw_urate = BANDWIDTH_UTILIZATION
+        self.allgather_eval = AllGatherEval(arch, protocol_config, network_config)
+
+        # 芯片特定的延迟参数 (从 arch.comm_latency 获取)
+        self.c2c_lat = arch.comm_latency.chip_to_chip_us
+        self.ddr_r_lat = arch.comm_latency.memory_read_latency_us
+        self.ddr_w_lat = arch.comm_latency.memory_write_latency_us
+        self.start_lat = arch.comm_latency.comm_start_overhead_us
+
+        # 网络基础设施参数 (从 network_config 获取，或使用 dataclass 默认值)
+        net = network_config if network_config is not None else NetworkInfraConfig()
+        self.switch_delay = net.switch_delay_us
+        self.cable_delay = net.cable_delay_us
+        self.link_delay = net.link_delay_us
+
+        # 协议参数 (从 protocol_config 获取，或使用 dataclass 默认值)
+        proto = protocol_config if protocol_config is not None else ProtocolConfig()
+        self.rtt_ep = proto.rtt_ep_us
+        self.bw_urate = proto.bandwidth_utilization
+
+        # MoE 参数
+        self.topk = moe_topk
+        self.prefill_factor = prefill_factor
+        self.cpu_fetch_delay = 0.0  # CPU fetch 延迟 (通常为 0)
 
     def evaluate_raw(
         self,
@@ -577,14 +663,28 @@ _dispatch_eval: Optional[DispatchEval] = None
 _combine_eval: Optional[CombineEval] = None
 
 
-def init_comm_evaluators(arch) -> None:
-    """初始化所有通信评估器"""
+def init_comm_evaluators(
+    arch,
+    protocol_config: Optional["ProtocolConfig"] = None,
+    network_config: Optional["NetworkInfraConfig"] = None,
+    moe_topk: int = DEFAULT_MOE_TOPK,
+    prefill_factor: float = DEFAULT_PREFILL_FACTOR,
+) -> None:
+    """初始化所有通信评估器
+
+    Args:
+        arch: 架构配置
+        protocol_config: 协议配置 (可选)
+        network_config: 网络基础设施配置 (可选)
+        moe_topk: MoE top-k 值 (用于 Dispatch/Combine)
+        prefill_factor: Prefill 系数 (用于 Dispatch/Combine)
+    """
     global _allreduce_eval, _allgather_eval, _reducescatter_eval, _dispatch_eval, _combine_eval
-    _allreduce_eval = AllReduceEval(arch)
-    _allgather_eval = AllGatherEval(arch)
-    _reducescatter_eval = ReduceScatterEval(arch)
-    _dispatch_eval = DispatchEval(arch)
-    _combine_eval = CombineEval(arch)
+    _allreduce_eval = AllReduceEval(arch, protocol_config, network_config)
+    _allgather_eval = AllGatherEval(arch, protocol_config, network_config)
+    _reducescatter_eval = ReduceScatterEval(arch, protocol_config, network_config)
+    _dispatch_eval = DispatchEval(arch, protocol_config, network_config, moe_topk, prefill_factor)
+    _combine_eval = CombineEval(arch, protocol_config, network_config, moe_topk, prefill_factor)
 
 
 def get_allreduce_eval() -> Optional[AllReduceEval]:
@@ -632,13 +732,14 @@ def eval_allreduce(
     Returns:
         (latency_us, comm_bytes)
     """
-    # 创建临时架构对象
-    class TempArch:
-        pass
+    from .arch_config import AcceleratorMicroArch, CommunicationLatency
 
-    arch = TempArch()
-    arch.intra_bw = intra_bw
-    arch.inter_bw = inter_bw
+    arch = AcceleratorMicroArch(
+        name="TempArch",
+        intra_bw=intra_bw,
+        inter_bw=inter_bw,
+        comm_latency=CommunicationLatency(),
+    )
 
     evaluator = AllReduceEval(arch)
     return evaluator.evaluate_raw(tp, data_bytes, comm_protocol)
@@ -652,12 +753,14 @@ def eval_allgather(
     comm_protocol: int = 1,
 ) -> Tuple[float, float]:
     """快捷函数: 评估 AllGather"""
-    class TempArch:
-        pass
+    from .arch_config import AcceleratorMicroArch, CommunicationLatency
 
-    arch = TempArch()
-    arch.intra_bw = intra_bw
-    arch.inter_bw = inter_bw
+    arch = AcceleratorMicroArch(
+        name="TempArch",
+        intra_bw=intra_bw,
+        inter_bw=inter_bw,
+        comm_latency=CommunicationLatency(),
+    )
 
     evaluator = AllGatherEval(arch)
     return evaluator.evaluate_raw(tp, data_bytes, comm_protocol)
@@ -671,12 +774,14 @@ def eval_reducescatter(
     comm_protocol: int = 1,
 ) -> Tuple[float, float]:
     """快捷函数: 评估 ReduceScatter"""
-    class TempArch:
-        pass
+    from .arch_config import AcceleratorMicroArch, CommunicationLatency
 
-    arch = TempArch()
-    arch.intra_bw = intra_bw
-    arch.inter_bw = inter_bw
+    arch = AcceleratorMicroArch(
+        name="TempArch",
+        intra_bw=intra_bw,
+        inter_bw=inter_bw,
+        comm_latency=CommunicationLatency(),
+    )
 
     evaluator = ReduceScatterEval(arch)
     return evaluator.evaluate_raw(tp, data_bytes, comm_protocol)

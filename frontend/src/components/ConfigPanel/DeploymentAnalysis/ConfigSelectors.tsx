@@ -1,10 +1,10 @@
 /**
  * 配置选择器组件
  *
- * 包含：ModelConfigSelector, InferenceConfigSelector, HardwareConfigSelector
+ * 包含：ModelConfigSelector, BenchmarkConfigSelector, HardwareConfigSelector
  */
 
-import React, { useState, useCallback } from 'react'
+import React, { useState, useCallback, useEffect } from 'react'
 import {
   Typography,
   Button,
@@ -12,6 +12,8 @@ import {
   Select,
   Tag,
   Tooltip,
+  Space,
+  message,
 } from 'antd'
 import {
   LLMModelConfig,
@@ -23,9 +25,9 @@ import {
   getModelList,
   getChipList,
   getModelPreset,
-  getInferencePreset,
   createHardwareConfig,
 } from '../../../utils/llmDeployment/presets'
+import { listBenchmarks, createBenchmark } from '../../../api/topology'
 
 const { Text } = Typography
 
@@ -288,7 +290,7 @@ export const ModelConfigSelector: React.FC<ModelConfigSelectorProps> = ({ value,
           </div>
           <div style={paramRowStyle}>
             <Tooltip title="权重精度: 模型权重的存储精度，影响权重显存占用"><Text style={{ fontSize: 11, cursor: 'help' }}>权重精度</Text></Tooltip>
-            <Select size="small" value={value.weight_dtype} onChange={(v) => updateField('weight_dtype', v)} style={{ width: 70 }}
+            <Select size="small" value={value.weight_dtype} onChange={(v) => updateField('weight_dtype', v)} style={{ width: 90 }}
               options={[
                 { value: 'bf16', label: 'BF16' },
                 { value: 'fp16', label: 'FP16' },
@@ -299,7 +301,7 @@ export const ModelConfigSelector: React.FC<ModelConfigSelectorProps> = ({ value,
           </div>
           <div style={paramRowStyle}>
             <Tooltip title="激活精度: 计算过程中的激活值和KV Cache精度"><Text style={{ fontSize: 11, cursor: 'help' }}>激活精度</Text></Tooltip>
-            <Select size="small" value={value.activation_dtype} onChange={(v) => updateField('activation_dtype', v)} style={{ width: 70 }}
+            <Select size="small" value={value.activation_dtype} onChange={(v) => updateField('activation_dtype', v)} style={{ width: 90 }}
               options={[
                 { value: 'bf16', label: 'BF16' },
                 { value: 'fp16', label: 'FP16' },
@@ -513,229 +515,470 @@ export const ModelConfigSelector: React.FC<ModelConfigSelectorProps> = ({ value,
 }
 
 // ============================================
-// 推理配置选择器
+// Benchmark 配置选择器 (合并模型+推理参数)
 // ============================================
 
-interface InferenceConfigSelectorProps {
-  value: InferenceConfig
-  onChange: (config: InferenceConfig) => void
+interface BenchmarkConfigSelectorProps {
+  modelConfig: LLMModelConfig
+  onModelChange: (config: LLMModelConfig) => void
+  inferenceConfig: InferenceConfig
+  onInferenceChange: (config: InferenceConfig) => void
 }
 
-const CUSTOM_INFERENCE_KEY = 'llm_custom_inference'
-
-function loadCustomInference(): Record<string, InferenceConfig & { name: string }> {
-  try {
-    const data = localStorage.getItem(CUSTOM_INFERENCE_KEY)
-    return data ? JSON.parse(data) : {}
-  } catch {
-    return {}
+/** 格式化序列长度 */
+function formatSeqLen(len: number): string {
+  if (len >= 1024 && len % 1024 === 0) {
+    return `${len / 1024}K`
   }
+  return String(len)
 }
 
-function saveCustomInference(configs: Record<string, InferenceConfig & { name: string }>) {
-  localStorage.setItem(CUSTOM_INFERENCE_KEY, JSON.stringify(configs))
+/** 格式化参数量 */
+function formatParamCount(model: LLMModelConfig): string {
+  const total = calculateModelParams(model)
+  const billions = total / 1e9
+  return billions >= 1 ? `${billions.toFixed(0)}B` : `${(total / 1e6).toFixed(0)}M`
 }
 
-export const InferenceConfigSelector: React.FC<InferenceConfigSelectorProps> = ({ value, onChange }) => {
-  const [presetId, setPresetId] = useState<string>('standard')
-  const [customConfigs, setCustomConfigs] = useState(loadCustomInference)
-  const [saveModalVisible, setSaveModalVisible] = useState(false)
-  const [saveName, setSaveName] = useState('')
+/** 获取数据类型的位数 */
+function getDtypeBits(dtype: string): number {
+  const bitsMap: Record<string, number> = {
+    'fp32': 32, 'fp16': 16, 'bf16': 16, 'fp8': 8, 'int8': 8, 'int4': 4
+  }
+  return bitsMap[dtype] || 16
+}
 
-  const presetOptions = [
-    { value: 'low-latency', label: '低延迟交互', isCustom: false },
-    { value: 'standard', label: '标准推理', isCustom: false },
-    { value: 'high-throughput', label: '高吞吐批处理', isCustom: false },
-    { value: 'long-context', label: '长上下文', isCustom: false },
-    { value: 'code-gen', label: '代码生成', isCustom: false },
-  ]
+/** 解析模型简称 */
+function getModelShortName(modelName: string): string {
+  const match = modelName.match(/^(DeepSeek-V\d+|Llama-[\d.]+|Qwen[\d.]*|GPT-\d+)/i)
+  return match ? match[1] : modelName.split('-')[0]
+}
 
-  const allOptions = [
-    ...Object.entries(customConfigs).map(([id, cfg]) => ({
-      value: id,
-      label: `[自定义] ${cfg.name}`,
-      isCustom: true,
-    })),
-    ...presetOptions,
-  ]
+/** 生成 Benchmark 名称: DeepSeek-V3-671B-S4K-O512-W16A16-B8 */
+function generateBenchmarkName(model: LLMModelConfig, inference: InferenceConfig): string {
+  const shortName = getModelShortName(model.model_name)
+  const params = formatParamCount(model)
+  const seqIn = formatSeqLen(inference.input_seq_length)
+  const seqOut = formatSeqLen(inference.output_seq_length)
+  const wBits = getDtypeBits(model.weight_dtype)
+  const aBits = getDtypeBits(model.activation_dtype)
+  return `${shortName}-${params}-S${seqIn}-O${seqOut}-W${wBits}A${aBits}-B${inference.batch_size}`
+}
 
+/** Benchmark 类型 */
+interface CustomBenchmark {
+  id: string
+  name: string
+  model: LLMModelConfig
+  inference: InferenceConfig
+}
+
+export const BenchmarkConfigSelector: React.FC<BenchmarkConfigSelectorProps> = ({
+  modelConfig,
+  onModelChange,
+  inferenceConfig,
+  onInferenceChange,
+}) => {
+  const [presetId, setPresetId] = useState<string>('deepseek-v3-standard')
+  const [editMode, setEditMode] = useState<boolean>(false)
+  const [customBenchmarks, setCustomBenchmarks] = useState<CustomBenchmark[]>([])
+  // 保存进入编辑模式时的原始配置，用于重置
+  const [originalModel, setOriginalModel] = useState<LLMModelConfig | null>(null)
+  const [originalInference, setOriginalInference] = useState<InferenceConfig | null>(null)
+
+  const modelList = getModelList()
+
+  // 从后端加载自定义 benchmarks
+  useEffect(() => {
+    listBenchmarks().then((benchmarks) => {
+      setCustomBenchmarks(benchmarks.map(b => ({
+        id: b.id,
+        name: b.name,
+        model: b.model as unknown as LLMModelConfig,
+        inference: b.inference as unknown as InferenceConfig,
+      })))
+    })
+  }, [])
+
+  // 当前 Benchmark 名称
+  const currentBenchmarkName = generateBenchmarkName(modelConfig, inferenceConfig)
+
+  // 检查当前配置是否与选中的 benchmark 匹配
+  const isConfigModified = useCallback(() => {
+    const match = customBenchmarks.find(c => c.id === presetId)
+    if (match) {
+      return generateBenchmarkName(match.model, match.inference) !== currentBenchmarkName
+    }
+    return true
+  }, [presetId, currentBenchmarkName, customBenchmarks])
+
+  // 选择 benchmark
   const handlePresetChange = (id: string) => {
     setPresetId(id)
-    if (customConfigs[id]) {
-      const { name: _, ...config } = customConfigs[id]
-      onChange(config)
+    const match = customBenchmarks.find(c => c.id === id)
+    if (match) {
+      onModelChange(match.model)
+      onInferenceChange(match.inference)
+    }
+  }
+
+  // 进入编辑模式
+  const enterEditMode = () => {
+    setOriginalModel({ ...modelConfig })
+    setOriginalInference({ ...inferenceConfig })
+    setEditMode(true)
+  }
+
+  // 保存并退出编辑模式
+  const handleSave = async () => {
+    // 如果配置已修改，创建新的 benchmark（使用 benchmark 名称作为 ID）
+    if (isConfigModified()) {
+      const newBenchmark: CustomBenchmark = {
+        id: currentBenchmarkName,
+        name: currentBenchmarkName,
+        model: { ...modelConfig },
+        inference: { ...inferenceConfig },
+      }
+      // 保存到后端
+      const success = await createBenchmark({
+        id: currentBenchmarkName,
+        name: currentBenchmarkName,
+        model: modelConfig as unknown as Record<string, unknown>,
+        inference: inferenceConfig as unknown as Record<string, unknown>,
+      })
+      if (success) {
+        // 检查是否已存在同名 benchmark，如果存在则更新，否则添加
+        const existingIndex = customBenchmarks.findIndex(b => b.id === currentBenchmarkName)
+        if (existingIndex >= 0) {
+          const updated = [...customBenchmarks]
+          updated[existingIndex] = newBenchmark
+          setCustomBenchmarks(updated)
+        } else {
+          setCustomBenchmarks([...customBenchmarks, newBenchmark])
+        }
+        setPresetId(currentBenchmarkName)
+        message.success(`已保存: ${currentBenchmarkName}`)
+      } else {
+        message.error('保存失败')
+      }
+    }
+    setEditMode(false)
+    setOriginalModel(null)
+    setOriginalInference(null)
+  }
+
+  // 重置到原始配置
+  const handleReset = () => {
+    if (originalModel) onModelChange(originalModel)
+    if (originalInference) onInferenceChange(originalInference)
+  }
+
+  // 另存为 Benchmark（使用 benchmark 名称作为 ID）
+  const handleSaveAs = async () => {
+    const newBenchmark: CustomBenchmark = {
+      id: currentBenchmarkName,
+      name: currentBenchmarkName,
+      model: { ...modelConfig },
+      inference: { ...inferenceConfig },
+    }
+    // 保存到后端
+    const success = await createBenchmark({
+      id: currentBenchmarkName,
+      name: currentBenchmarkName,
+      model: modelConfig as unknown as Record<string, unknown>,
+      inference: inferenceConfig as unknown as Record<string, unknown>,
+    })
+    if (success) {
+      // 检查是否已存在同名 benchmark
+      const existingIndex = customBenchmarks.findIndex(b => b.id === currentBenchmarkName)
+      if (existingIndex >= 0) {
+        const updated = [...customBenchmarks]
+        updated[existingIndex] = newBenchmark
+        setCustomBenchmarks(updated)
+      } else {
+        setCustomBenchmarks([...customBenchmarks, newBenchmark])
+      }
+      setPresetId(currentBenchmarkName)
+      message.success(`已保存: ${currentBenchmarkName}`)
     } else {
-      onChange(getInferencePreset(id))
+      message.error('保存失败')
     }
   }
 
-  const handleSave = () => {
-    if (!saveName.trim()) return
-    const customId = `custom_inf_${saveName.trim().toLowerCase().replace(/\s+/g, '_')}`
-    const newConfigs = { ...customConfigs, [customId]: { ...value, name: saveName.trim() } }
-    setCustomConfigs(newConfigs)
-    saveCustomInference(newConfigs)
-    setPresetId(customId)
-    setSaveModalVisible(false)
-    setSaveName('')
+  // 生成下拉选项：全部从后端读取
+  const dropdownOptions = customBenchmarks.map(c => ({
+    value: c.id,
+    label: c.name,
+  }))
+
+  // 更新模型字段
+  const updateModelField = <K extends keyof LLMModelConfig>(field: K, val: LLMModelConfig[K]) => {
+    onModelChange({ ...modelConfig, [field]: val })
   }
 
-  const handleDelete = (id: string) => {
-    const newConfigs = { ...customConfigs }
-    delete newConfigs[id]
-    setCustomConfigs(newConfigs)
-    saveCustomInference(newConfigs)
-    if (presetId === id) {
-      setPresetId('standard')
-      onChange(getInferencePreset('standard'))
+  // 更新 MoE 字段
+  const updateMoeField = <K extends keyof NonNullable<LLMModelConfig['moe_config']>>(
+    field: K,
+    val: NonNullable<LLMModelConfig['moe_config']>[K]
+  ) => {
+    if (modelConfig.moe_config) {
+      onModelChange({ ...modelConfig, moe_config: { ...modelConfig.moe_config, [field]: val } })
     }
   }
 
-  const isCustom = presetId.startsWith('custom_inf_')
+  const paramRowStyle: React.CSSProperties = {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 4,
+    paddingLeft: 8,
+  }
+
+  const infoRowStyle: React.CSSProperties = {
+    display: 'flex',
+    justifyContent: 'space-between',
+    fontSize: 12,
+    color: '#666',
+    marginBottom: 4,
+    paddingLeft: 8,
+  }
+
+  // 估算参数量
+  const estimateParams = () => {
+    const total = calculateModelParams(modelConfig)
+    const billions = total / 1e9
+    return billions >= 1 ? `${billions.toFixed(1)}B` : `${(total / 1e6).toFixed(0)}M`
+  }
 
   return (
     <div>
-      <div style={configRowStyle}>
-        <Text>场景预设</Text>
+      {/* Benchmark 选择下拉框 */}
+      <div style={{ marginBottom: 8 }}>
         <Select
           size="small"
           value={presetId}
           onChange={handlePresetChange}
-          style={{ width: 160 }}
-          options={allOptions}
-          optionRender={(option) => (
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <span>{option.label}</span>
-              {option.data.isCustom && (
-                <Button
-                  type="text"
-                  size="small"
-                  danger
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    handleDelete(option.value as string)
-                  }}
-                  style={{ padding: '0 4px', height: 20, fontSize: 11 }}
-                >
-                  删除
-                </Button>
-              )}
-            </div>
-          )}
+          style={{ width: '100%' }}
+          popupMatchSelectWidth={false}
+          options={dropdownOptions}
         />
       </div>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginTop: 8 }}>
-        <div style={configRowStyle}>
-          <Tooltip title="同时处理的请求数量，影响吞吐量和延迟">
-            <Text style={{ fontSize: 12, cursor: 'help' }}>Batch Size</Text>
-          </Tooltip>
-          <InputNumber
-            size="small"
-            min={1}
-            max={128}
-            value={value.batch_size}
-            onChange={(v) => onChange({ ...value, batch_size: v || 1 })}
-            style={{ width: 70 }}
-          />
-        </div>
-        <div style={configRowStyle}>
-          <Tooltip title="输入提示词的 Token 数量（Prefill 阶段处理）">
-            <Text style={{ fontSize: 12, cursor: 'help' }}>Input SeqLen</Text>
-          </Tooltip>
-          <InputNumber
-            size="small"
-            min={1}
-            max={131072}
-            value={value.input_seq_length}
-            onChange={(v) => onChange({ ...value, input_seq_length: v || 512 })}
-            style={{ width: 70 }}
-          />
-        </div>
-        <div style={configRowStyle}>
-          <Tooltip title="生成输出的 Token 数量（Decode 阶段逐个生成）">
-            <Text style={{ fontSize: 12, cursor: 'help' }}>Output SeqLen</Text>
-          </Tooltip>
-          <InputNumber
-            size="small"
-            min={1}
-            max={32768}
-            value={value.output_seq_length}
-            onChange={(v) => onChange({ ...value, output_seq_length: v || 256 })}
-            style={{ width: 70 }}
-          />
-        </div>
-        <div style={configRowStyle}>
-          <Tooltip title="KV Cache 预分配的最大长度，通常 ≥ 输入长度 + 输出长度">
-            <Text style={{ fontSize: 12, cursor: 'help' }}>Max SeqLen</Text>
-          </Tooltip>
-          <InputNumber
-            size="small"
-            min={value.input_seq_length + value.output_seq_length}
-            max={131072}
-            value={value.max_seq_length}
-            onChange={(v) => onChange({ ...value, max_seq_length: v || 768 })}
-            style={{ width: 70 }}
-          />
-        </div>
-      </div>
 
-      <div style={{ display: 'flex', gap: 4, marginTop: 8 }}>
-        {isCustom && (
-          <Button
-            size="small"
-            type="primary"
-            onClick={() => {
-              const newConfigs = { ...customConfigs, [presetId]: { ...value, name: customConfigs[presetId].name } }
-              setCustomConfigs(newConfigs)
-              saveCustomInference(newConfigs)
-            }}
-            style={{ flex: 1 }}
-          >
-            保存
-          </Button>
-        )}
-        <Button
-          size="small"
-          onClick={() => {
-            setSaveName('')
-            setSaveModalVisible(true)
-          }}
-          style={{ flex: 1 }}
-        >
-          另存为
-        </Button>
-      </div>
+      {/* 编辑模式: 详细参数 */}
+      {editMode ? (
+        <div style={{ fontSize: 11 }}>
+          {/* 模型参数 */}
+          <div style={{ padding: 8, background: '#fafafa', borderRadius: 4, marginBottom: 8 }}>
+            <div style={{ fontSize: 12, color: '#666', fontWeight: 500, marginBottom: 8 }}>模型参数</div>
+            <div style={paramRowStyle}>
+              <Tooltip title="选择预设模型"><Text style={{ fontSize: 11, cursor: 'help' }}>模型选择</Text></Tooltip>
+              <Select
+                size="small"
+                value={modelConfig.model_name}
+                onChange={(name) => {
+                  const preset = modelList.find(m => m.name === name || m.id === name)
+                  if (preset) {
+                    onModelChange(getModelPreset(preset.id))
+                  }
+                }}
+                style={{ width: 160 }}
+                popupMatchSelectWidth={false}
+                options={modelList.map(m => ({ value: m.id, label: m.params ? `${m.name} (${m.params})` : m.name }))}
+              />
+            </div>
+            <div style={paramRowStyle}>
+              <Tooltip title="Dense: 标准密集模型; MoE: 混合专家稀疏模型"><Text style={{ fontSize: 11, cursor: 'help' }}>模型类型</Text></Tooltip>
+              <Select
+                size="small"
+                value={modelConfig.model_type}
+                onChange={(v) => {
+                  if (v === 'moe' && !modelConfig.moe_config) {
+                    onModelChange({ ...modelConfig, model_type: v, moe_config: { num_experts: 8, num_experts_per_tok: 2, expert_capacity_factor: 1.25 } })
+                  } else {
+                    updateModelField('model_type', v)
+                  }
+                }}
+                style={{ width: 90 }}
+                options={[
+                  { value: 'dense', label: 'Dense' },
+                  { value: 'moe', label: 'MoE' },
+                ]}
+              />
+            </div>
+            <div style={paramRowStyle}>
+              <Tooltip title="Hidden Size"><Text style={{ fontSize: 11, cursor: 'help' }}>隐藏层维度</Text></Tooltip>
+              <InputNumber size="small" min={64} max={65536} value={modelConfig.hidden_size}
+                onChange={(v) => updateModelField('hidden_size', v || 4096)} style={{ width: 90 }} />
+            </div>
+            <div style={paramRowStyle}>
+              <Tooltip title="Num Layers"><Text style={{ fontSize: 11, cursor: 'help' }}>层数</Text></Tooltip>
+              <InputNumber size="small" min={1} max={256} value={modelConfig.num_layers}
+                onChange={(v) => updateModelField('num_layers', v || 32)} style={{ width: 90 }} />
+            </div>
+            <div style={paramRowStyle}>
+              <Tooltip title="Num Attention Heads"><Text style={{ fontSize: 11, cursor: 'help' }}>注意力头数</Text></Tooltip>
+              <InputNumber size="small" min={1} max={256} value={modelConfig.num_attention_heads}
+                onChange={(v) => updateModelField('num_attention_heads', v || 32)} style={{ width: 90 }} />
+            </div>
+            <div style={paramRowStyle}>
+              <Tooltip title="Num KV Heads"><Text style={{ fontSize: 11, cursor: 'help' }}>KV头数</Text></Tooltip>
+              <InputNumber size="small" min={1} max={256} value={modelConfig.num_kv_heads}
+                onChange={(v) => updateModelField('num_kv_heads', v || 8)} style={{ width: 90 }} />
+            </div>
+            <div style={paramRowStyle}>
+              <Tooltip title="Intermediate Size"><Text style={{ fontSize: 11, cursor: 'help' }}>FFN维度</Text></Tooltip>
+              <InputNumber size="small" min={64} max={131072} value={modelConfig.intermediate_size}
+                onChange={(v) => updateModelField('intermediate_size', v || 11008)} style={{ width: 90 }} />
+            </div>
+            <div style={paramRowStyle}>
+              <Tooltip title="Vocab Size"><Text style={{ fontSize: 11, cursor: 'help' }}>词表大小</Text></Tooltip>
+              <InputNumber size="small" min={1000} max={500000} value={modelConfig.vocab_size}
+                onChange={(v) => updateModelField('vocab_size', v || 32000)} style={{ width: 90 }} />
+            </div>
+            <div style={paramRowStyle}>
+              <Tooltip title="权重精度"><Text style={{ fontSize: 11, cursor: 'help' }}>权重精度</Text></Tooltip>
+              <Select size="small" value={modelConfig.weight_dtype} onChange={(v) => updateModelField('weight_dtype', v)} style={{ width: 80 }}
+                options={[
+                  { value: 'bf16', label: 'BF16' },
+                  { value: 'fp16', label: 'FP16' },
+                  { value: 'int8', label: 'INT8' },
+                  { value: 'int4', label: 'INT4' },
+                ]}
+              />
+            </div>
+            <div style={paramRowStyle}>
+              <Tooltip title="激活/KV Cache精度"><Text style={{ fontSize: 11, cursor: 'help' }}>激活精度</Text></Tooltip>
+              <Select size="small" value={modelConfig.activation_dtype} onChange={(v) => updateModelField('activation_dtype', v)} style={{ width: 80 }}
+                options={[
+                  { value: 'bf16', label: 'BF16' },
+                  { value: 'fp16', label: 'FP16' },
+                  { value: 'int8', label: 'INT8' },
+                ]}
+              />
+            </div>
 
-      {saveModalVisible && (
-        <div style={{
-          padding: 12,
-          background: '#fff',
-          border: '1px solid #d9d9d9',
-          borderRadius: 6,
-          marginTop: 8,
-        }}>
-          <div style={{ marginBottom: 8 }}>
-            <Text style={{ fontSize: 12 }}>输入配置名称：</Text>
+            {/* MoE 参数 */}
+            {modelConfig.model_type === 'moe' && modelConfig.moe_config && (
+              <>
+                <div style={{ borderTop: '1px solid #e8e8e8', marginTop: 8, paddingTop: 8 }}>
+                  <div style={{ fontSize: 12, color: '#666', fontWeight: 500, marginBottom: 8 }}>MoE 参数</div>
+                </div>
+                <div style={paramRowStyle}>
+                  <Tooltip title="Num Experts"><Text style={{ fontSize: 11, cursor: 'help' }}>专家数量</Text></Tooltip>
+                  <InputNumber size="small" min={2} max={1024} value={modelConfig.moe_config.num_experts}
+                    onChange={(v) => updateMoeField('num_experts', v || 8)} style={{ width: 90 }} />
+                </div>
+                <div style={paramRowStyle}>
+                  <Tooltip title="Top-K"><Text style={{ fontSize: 11, cursor: 'help' }}>激活专家数</Text></Tooltip>
+                  <InputNumber size="small" min={1} max={64} value={modelConfig.moe_config.num_experts_per_tok}
+                    onChange={(v) => updateMoeField('num_experts_per_tok', v || 2)} style={{ width: 90 }} />
+                </div>
+                <div style={paramRowStyle}>
+                  <Tooltip title="Shared Experts"><Text style={{ fontSize: 11, cursor: 'help' }}>共享专家数</Text></Tooltip>
+                  <InputNumber size="small" min={0} max={16} value={modelConfig.moe_config.num_shared_experts || 0}
+                    onChange={(v) => updateMoeField('num_shared_experts', v || 0)} style={{ width: 90 }} />
+                </div>
+                <div style={paramRowStyle}>
+                  <Tooltip title="Expert FFN Size"><Text style={{ fontSize: 11, cursor: 'help' }}>专家FFN维度</Text></Tooltip>
+                  <InputNumber size="small" min={64} max={65536} value={modelConfig.moe_config.expert_intermediate_size}
+                    onChange={(v) => updateMoeField('expert_intermediate_size', v || undefined)} style={{ width: 90 }}
+                    placeholder="同FFN" />
+                </div>
+                <div style={paramRowStyle}>
+                  <Tooltip title="First K Dense Layers"><Text style={{ fontSize: 11, cursor: 'help' }}>前K层Dense</Text></Tooltip>
+                  <InputNumber size="small" min={0} max={100} value={modelConfig.moe_config.first_k_dense_replace || 0}
+                    onChange={(v) => updateMoeField('first_k_dense_replace', v || 0)} style={{ width: 90 }} />
+                </div>
+              </>
+            )}
+
+            <div style={{ borderTop: '1px solid #e8e8e8', marginTop: 8, paddingTop: 6, color: '#999', fontSize: 11 }}>
+              估算参数量: <b style={{ color: '#333' }}>{estimateParams()}</b>
+            </div>
           </div>
-          <input
-            value={saveName}
-            onChange={(e) => setSaveName(e.target.value)}
-            placeholder="如: RAG场景"
-            style={{
-              width: '100%',
-              padding: '6px 8px',
-              border: '1px solid #d9d9d9',
-              borderRadius: 4,
-              marginBottom: 8,
-            }}
-            onKeyDown={(e) => e.key === 'Enter' && handleSave()}
-          />
-          <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-            <Button size="small" onClick={() => setSaveModalVisible(false)}>取消</Button>
-            <Button size="small" type="primary" onClick={handleSave}>保存</Button>
+
+          {/* 推理参数 */}
+          <div style={{ padding: 8, background: '#fafafa', borderRadius: 4 }}>
+            <div style={{ fontSize: 12, color: '#666', fontWeight: 500, marginBottom: 8 }}>推理参数</div>
+            <div style={paramRowStyle}>
+              <Tooltip title="Batch Size"><Text style={{ fontSize: 11, cursor: 'help' }}>Batch Size</Text></Tooltip>
+              <InputNumber size="small" min={1} max={512} value={inferenceConfig.batch_size}
+                onChange={(v) => onInferenceChange({ ...inferenceConfig, batch_size: v || 1 })} style={{ width: 90 }} />
+            </div>
+            <div style={paramRowStyle}>
+              <Tooltip title="输入 Token 数量"><Text style={{ fontSize: 11, cursor: 'help' }}>输入序列长度</Text></Tooltip>
+              <InputNumber size="small" min={1} max={131072} value={inferenceConfig.input_seq_length}
+                onChange={(v) => onInferenceChange({ ...inferenceConfig, input_seq_length: v || 512 })} style={{ width: 90 }} />
+            </div>
+            <div style={paramRowStyle}>
+              <Tooltip title="输出 Token 数量"><Text style={{ fontSize: 11, cursor: 'help' }}>输出序列长度</Text></Tooltip>
+              <InputNumber size="small" min={1} max={32768} value={inferenceConfig.output_seq_length}
+                onChange={(v) => onInferenceChange({ ...inferenceConfig, output_seq_length: v || 256 })} style={{ width: 90 }} />
+            </div>
+            <div style={paramRowStyle}>
+              <Tooltip title="KV Cache 最大长度"><Text style={{ fontSize: 11, cursor: 'help' }}>最大序列长度</Text></Tooltip>
+              <InputNumber size="small" min={inferenceConfig.input_seq_length + inferenceConfig.output_seq_length} max={131072}
+                value={inferenceConfig.max_seq_length}
+                onChange={(v) => onInferenceChange({ ...inferenceConfig, max_seq_length: v || 768 })} style={{ width: 90 }} />
+            </div>
+          </div>
+        </div>
+      ) : (
+        /* 预览模式: Benchmark 名称 + 参数摘要 */
+        <div style={{ padding: 10, background: '#fafafa', borderRadius: 6, fontSize: 12, border: '1px solid #f0f0f0' }}>
+          {/* Benchmark 名称 */}
+          <div style={{ marginBottom: 8, paddingBottom: 8, borderBottom: '1px solid #e8e8e8' }}>
+            <Text strong style={{ fontSize: 13, color: colors.primary }}>{currentBenchmarkName}</Text>
+          </div>
+          {/* 模型信息 */}
+          <div style={infoRowStyle}>
+            <span>模型</span>
+            <span><b>{getModelShortName(modelConfig.model_name)}-{formatParamCount(modelConfig)}</b></span>
+          </div>
+          {/* 精度 */}
+          <div style={infoRowStyle}>
+            <span>精度</span>
+            <span><b>W{getDtypeBits(modelConfig.weight_dtype)}A{getDtypeBits(modelConfig.activation_dtype)}</b></span>
+          </div>
+          {/* MoE 信息 */}
+          {modelConfig.model_type === 'moe' && modelConfig.moe_config && (
+            <div style={infoRowStyle}>
+              <span>MoE</span>
+              <span><b>{modelConfig.moe_config.num_experts}专家 × {modelConfig.moe_config.num_experts_per_tok}激活</b></span>
+            </div>
+          )}
+          {/* 推理参数 */}
+          <div style={infoRowStyle}>
+            <span>输入 / 输出</span>
+            <span><b>{formatSeqLen(inferenceConfig.input_seq_length)} / {formatSeqLen(inferenceConfig.output_seq_length)}</b></span>
+          </div>
+          <div style={infoRowStyle}>
+            <span>Batch Size</span>
+            <span><b>{inferenceConfig.batch_size}</b></span>
           </div>
         </div>
       )}
+
+      {/* 编辑按钮 */}
+      <div style={{ marginTop: 8 }}>
+        {editMode ? (
+          <Space.Compact block>
+            <Button size="small" type="primary" onClick={handleSave} style={{ flex: 1 }}>
+              保存
+            </Button>
+            <Button size="small" onClick={handleSaveAs} style={{ flex: 1 }}>
+              另存为
+            </Button>
+            <Button size="small" onClick={handleReset} style={{ flex: 1 }}>
+              重置
+            </Button>
+          </Space.Compact>
+        ) : (
+          <Button size="small" onClick={enterEditMode} block>
+            编辑 Benchmark
+          </Button>
+        )}
+      </div>
     </div>
   )
 }
@@ -816,7 +1059,7 @@ export const HardwareConfigSelector: React.FC<HardwareConfigSelectorProps> = ({ 
           max={64}
           value={numNodes}
           onChange={(v) => handleNumNodesChange(v || 1)}
-          style={{ width: 70 }}
+          style={{ width: 90 }}
         />
       </div>
       <div style={{ padding: 8, background: '#f0f5ff', borderRadius: 6, fontSize: 12, marginTop: 8 }}>

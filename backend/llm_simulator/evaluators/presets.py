@@ -2,12 +2,14 @@
 预定义硬件微架构配置
 """
 
-from .arch_config import AcceleratorMicroArch
+from .arch_config import AcceleratorMicroArch, CommunicationLatency
 
 
 # ==================== 算能 SG2260E ====================
 def _create_sg2260e() -> AcceleratorMicroArch:
     arch = AcceleratorMicroArch(
+        name="SG2260E",
+        flops_dtype="BF16",
         num_cores=64,
         cube_m=16,
         cube_k=32,
@@ -19,8 +21,17 @@ def _create_sg2260e() -> AcceleratorMicroArch:
         align_bytes=32,
         compute_dma_overlap_rate=0.8,
         # 通信带宽
-        intra_bw=504e9,   # 组内带宽 504 GB/s (高速互联)
-        inter_bw=100e9,   # 组间带宽 100 GB/s (跨节点)
+        intra_bw=504e9,  # 组内带宽 504 GB/s (高速互联)
+        inter_bw=100e9,  # 组间带宽 100 GB/s (跨节点)
+        intra_latency_us=1.0,  # 组内延迟 1 us (粗粒度)
+        inter_latency_us=2.0,  # 组间延迟 2 us (粗粒度)
+        # 细粒度通信延迟 (单位: us)
+        comm_latency=CommunicationLatency(
+            chip_to_chip_us=0.15,      # 芯片间物理互联延迟
+            comm_start_overhead_us=0.59,  # 通信启动开销
+            memory_read_latency_us=0.15,  # 显存读延迟
+            memory_write_latency_us=0.01, # 显存写延迟
+        ),
     )
     # 从 64 TFLOPS 反推频率
     arch.freq_ghz = arch.compute_freq_from_flops(64e12)
@@ -33,6 +44,8 @@ SG2260E_ARCH = _create_sg2260e()
 # ==================== NVIDIA H100 SXM ====================
 def _create_h100() -> AcceleratorMicroArch:
     arch = AcceleratorMicroArch(
+        name="H100 SXM",
+        flops_dtype="FP16",
         num_cores=132,  # SM 数量
         cube_m=16,
         cube_k=16,
@@ -44,8 +57,17 @@ def _create_h100() -> AcceleratorMicroArch:
         align_bytes=128,  # 128B 对齐
         compute_dma_overlap_rate=0.9,
         # 通信带宽
-        intra_bw=900e9,   # NVSwitch 900 GB/s
-        inter_bw=400e9,   # InfiniBand NDR 400 Gb/s = 50 GB/s per port, 8x = 400 GB/s
+        intra_bw=900e9,  # NVSwitch 900 GB/s
+        inter_bw=400e9,  # InfiniBand NDR 400 Gb/s = 50 GB/s per port, 8x = 400 GB/s
+        intra_latency_us=1.0,  # NVLink 4.0 延迟 1 us (粗粒度)
+        inter_latency_us=2.0,  # InfiniBand NDR 延迟 2 us (粗粒度)
+        # 细粒度通信延迟 (单位: us)
+        comm_latency=CommunicationLatency(
+            chip_to_chip_us=0.10,      # NVLink 4.0 物理延迟更低
+            comm_start_overhead_us=0.50,  # NVLink 4.0 启动开销
+            memory_read_latency_us=0.10,  # HBM3 读延迟
+            memory_write_latency_us=0.01, # HBM3 写延迟
+        ),
     )
     arch.freq_ghz = arch.compute_freq_from_flops(989e12)  # 989 TFLOPS FP16
     return arch
@@ -57,6 +79,8 @@ H100_SXM_ARCH = _create_h100()
 # ==================== NVIDIA A100 ====================
 def _create_a100() -> AcceleratorMicroArch:
     arch = AcceleratorMicroArch(
+        name="A100",
+        flops_dtype="FP16",
         num_cores=108,
         cube_m=16,
         cube_k=16,
@@ -68,8 +92,17 @@ def _create_a100() -> AcceleratorMicroArch:
         align_bytes=128,
         compute_dma_overlap_rate=0.85,
         # 通信带宽
-        intra_bw=600e9,   # NVLink 600 GB/s
-        inter_bw=200e9,   # InfiniBand HDR 200 Gb/s = 25 GB/s per port, 8x = 200 GB/s
+        intra_bw=600e9,  # NVLink 600 GB/s
+        inter_bw=200e9,  # InfiniBand HDR 200 Gb/s = 25 GB/s per port, 8x = 200 GB/s
+        intra_latency_us=2.0,  # NVLink 3.0 延迟 2 us (粗粒度)
+        inter_latency_us=2.0,  # InfiniBand HDR 延迟 2 us (粗粒度)
+        # 细粒度通信延迟 (单位: us)
+        comm_latency=CommunicationLatency(
+            chip_to_chip_us=0.15,      # NVLink 3.0 物理延迟
+            comm_start_overhead_us=0.60,  # NVLink 3.0 启动开销
+            memory_read_latency_us=0.12,  # HBM2e 读延迟
+            memory_write_latency_us=0.01, # HBM2e 写延迟
+        ),
     )
     arch.freq_ghz = arch.compute_freq_from_flops(312e12)  # 312 TFLOPS FP16
     return arch
@@ -78,13 +111,171 @@ def _create_a100() -> AcceleratorMicroArch:
 A100_ARCH = _create_a100()
 
 
+# ==================== 算能 SG2261 ====================
+def _create_sg2261() -> AcceleratorMicroArch:
+    """
+    算能 SG2261 单芯片配置
+    参数来源: DS_TPU config/tpu_configs/sg2261.yaml
+    """
+    arch = AcceleratorMicroArch(
+        name="SG2261",
+        flops_dtype="BF16",
+        num_cores=64,
+        cube_m=16,
+        cube_k=32,
+        cube_n=8,
+        sram_size_bytes=2 * 1024 * 1024,  # 2MB per core
+        sram_utilization=0.45,
+        # 4000 GB/s × 85% 效率
+        dram_bandwidth_bytes=4000e9 * 0.85,
+        lane_num=16,
+        align_bytes=32,
+        compute_dma_overlap_rate=0.8,
+        eu_num=512,
+        # 通信带宽 (单芯片默认)
+        intra_bw=448e9,  # 448 GB/s
+        inter_bw=100e9,  # 100 GB/s
+        intra_latency_us=1.0,  # SophgoLink 延迟 1 us (粗粒度)
+        inter_latency_us=2.0,  # 跨节点延迟 2 us (粗粒度)
+        # 细粒度通信延迟 (单位: us) - 参考 DS_TPU
+        comm_latency=CommunicationLatency(
+            chip_to_chip_us=0.15,      # SophgoLink 物理延迟
+            comm_start_overhead_us=0.59,  # 启动开销 (DS_TPU start_lat)
+            memory_read_latency_us=0.15,  # HBM2 读延迟 (DS_TPU ddr_r_lat)
+            memory_write_latency_us=0.01, # HBM2 写延迟 (DS_TPU ddr_w_lat)
+        ),
+    )
+    # 256 TFLOPS BF16
+    arch.freq_ghz = arch.compute_freq_from_flops(256e12)
+    return arch
+
+
+SG2261_ARCH = _create_sg2261()
+
+
+# ==================== 算能 SG2262 (多芯片) ====================
+def _create_sg2262() -> AcceleratorMicroArch:
+    """
+    算能 SG2262 多芯片配置
+    与 DS_TPU SG2262 (原 TPUV1) 配置一致
+    """
+    arch = AcceleratorMicroArch(
+        name="SG2262",
+        flops_dtype="BF16",
+        num_cores=64,
+        cube_m=16,
+        cube_k=32,
+        cube_n=8,
+        sram_size_bytes=2 * 1024 * 1024,  # 2MB
+        sram_utilization=0.45,
+        # DS_TPU: dram_bw = 3*4096e9 * 0.70
+        dram_bandwidth_bytes=3 * 4096e9 * 0.70,
+        lane_num=16,
+        align_bytes=32,
+        compute_dma_overlap_rate=0.8,
+        eu_num=512,
+        # DS_TPU 通信带宽
+        intra_bw=448e9,  # 448 GB/s
+        inter_bw=448e9,  # 448 GB/s
+        intra_latency_us=1.0,  # SophgoLink 延迟 1 us (粗粒度)
+        inter_latency_us=1.0,  # SG2262 芯片间也是高速互联 1 us (粗粒度)
+        # 细粒度通信延迟 (单位: us) - 参考 DS_TPU
+        comm_latency=CommunicationLatency(
+            chip_to_chip_us=0.15,      # SophgoLink 物理延迟 (DS_TPU c2c_lat)
+            comm_start_overhead_us=0.59,  # 启动开销 (DS_TPU start_lat)
+            memory_read_latency_us=0.15,  # HBM2 读延迟 (DS_TPU ddr_r_lat)
+            memory_write_latency_us=0.01, # HBM2 写延迟 (DS_TPU ddr_w_lat)
+        ),
+    )
+    # SG2262: 768 TFLOPS BF16
+    # 注意：不使用 768 * 1024（二进制），直接使用十进制
+    arch.freq_ghz = arch.compute_freq_from_flops(768e12)
+    return arch
+
+
+SG2262_ARCH = _create_sg2262()
+
+
+# ==================== NVIDIA A800 ====================
+def _create_a800() -> AcceleratorMicroArch:
+    """A800 (中国特供版 A100，NVLink 带宽受限)"""
+    arch = AcceleratorMicroArch(
+        name="A800",
+        flops_dtype="FP16",
+        num_cores=108,
+        cube_m=16,
+        cube_k=16,
+        cube_n=8,
+        sram_size_bytes=192 * 1024,
+        sram_utilization=0.5,
+        dram_bandwidth_bytes=2039e9 * 0.85,
+        lane_num=32,
+        align_bytes=128,
+        compute_dma_overlap_rate=0.85,
+        intra_bw=400e9,  # NVLink 受限 400 GB/s
+        inter_bw=200e9,
+        intra_latency_us=2.0,  # NVLink 延迟 2 us (粗粒度)
+        inter_latency_us=2.0,  # InfiniBand HDR 延迟 2 us (粗粒度)
+        # 细粒度通信延迟 (单位: us) - 与 A100 相同
+        comm_latency=CommunicationLatency(
+            chip_to_chip_us=0.15,      # NVLink 3.0 物理延迟 (带宽受限不影响延迟)
+            comm_start_overhead_us=0.60,  # NVLink 3.0 启动开销
+            memory_read_latency_us=0.12,  # HBM2e 读延迟
+            memory_write_latency_us=0.01, # HBM2e 写延迟
+        ),
+    )
+    arch.freq_ghz = arch.compute_freq_from_flops(312e12)
+    return arch
+
+
+A800_ARCH = _create_a800()
+
+
+# ==================== 华为 Ascend 910B ====================
+def _create_ascend_910b() -> AcceleratorMicroArch:
+    """华为昇腾 910B"""
+    arch = AcceleratorMicroArch(
+        name="Ascend-910B",
+        flops_dtype="BF16",
+        num_cores=32,  # AI Core 数量
+        cube_m=16,
+        cube_k=16,
+        cube_n=16,
+        sram_size_bytes=512 * 1024,  # 每核 512KB
+        sram_utilization=0.5,
+        dram_bandwidth_bytes=1600e9 * 0.85,  # HBM2e 1.6 TB/s
+        lane_num=16,
+        align_bytes=32,
+        compute_dma_overlap_rate=0.85,
+        intra_bw=392e9,  # HCCS 7×56 GB/s
+        inter_bw=200e9,
+        intra_latency_us=2.0,  # HCCS 延迟 2 us (粗粒度)
+        inter_latency_us=2.0,  # 跨节点延迟 2 us (粗粒度)
+        # 细粒度通信延迟 (单位: us) - 推算值
+        comm_latency=CommunicationLatency(
+            chip_to_chip_us=0.15,      # HCCS 物理延迟 (推算)
+            comm_start_overhead_us=0.55,  # HCCS 启动开销 (推算)
+            memory_read_latency_us=0.13,  # HBM2e 读延迟
+            memory_write_latency_us=0.01, # HBM2e 写延迟
+        ),
+    )
+    arch.freq_ghz = arch.compute_freq_from_flops(320e12)  # 320 TFLOPS BF16
+    return arch
+
+
+ASCEND_910B_ARCH = _create_ascend_910b()
+
+
 # 配置查找表
 ARCH_PRESETS = {
-    'sg2260e': SG2260E_ARCH,
-    'sg2260': SG2260E_ARCH,
-    'h100': H100_SXM_ARCH,
-    'h100_sxm': H100_SXM_ARCH,
-    'a100': A100_ARCH,
+    "sg2260e": SG2260E_ARCH,
+    "sg2261": SG2261_ARCH,
+    "sg2262": SG2262_ARCH,
+    "h100": H100_SXM_ARCH,
+    "h100-sxm": H100_SXM_ARCH,  # 前端使用横线
+    "a100": A100_ARCH,
+    "a800": A800_ARCH,
+    "ascend-910b": ASCEND_910B_ARCH,  # 前端使用横线
 }
 
 

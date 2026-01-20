@@ -232,7 +232,7 @@ export const DEFAULT_BOARD_CONFIGS: BoardConfigs = {
 export const DEFAULT_RACK_CONFIG: RackConfig = {
   total_u: 42,
   boards: [
-    { id: 'board_1', name: 'Board', u_height: 2, count: 8, chips: [{ name: 'H100-SXM', count: 8, preset_id: 'h100-sxm' }] },
+    { id: 'board_1', name: 'Board', u_height: 2, count: 8, chips: [{ name: 'SG2262', count: 8, preset_id: 'sg2262' }] },
   ],
 }
 

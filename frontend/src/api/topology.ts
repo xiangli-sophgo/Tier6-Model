@@ -234,3 +234,141 @@ export async function deleteManualConnection(connectionId: string): Promise<void
 export async function clearManualConnections(hierarchyLevel?: string): Promise<void> {
   return storageClearManualConnections(hierarchyLevel);
 }
+
+// ============================================
+// 后端预设 API
+// ============================================
+
+/** 后端芯片预设 */
+export interface BackendChipPreset {
+  id: string;
+  name: string;
+  flops_dtype: string;
+  compute_tflops: number;
+  num_cores: number;
+  sram_size_mb: number;
+  dram_bandwidth_gbps: number;
+  intra_bw_gbps: number;
+  inter_bw_gbps: number;
+}
+
+/**
+ * 从后端获取芯片预设列表
+ */
+export async function getBackendChipPresets(): Promise<BackendChipPreset[]> {
+  try {
+    const response = await fetch('/api/presets/chips');
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+    const data = await response.json();
+    return data.chips || [];
+  } catch (error) {
+    console.error('获取后端芯片预设失败:', error);
+    return [];
+  }
+}
+
+// ============================================
+// Benchmark 管理 API
+// ============================================
+
+/** Benchmark 配置类型 */
+export interface BenchmarkConfig {
+  id: string;
+  name: string;
+  model: Record<string, unknown>;
+  inference: Record<string, unknown>;
+}
+
+/**
+ * 获取所有自定义 Benchmark 列表
+ */
+export async function listBenchmarks(): Promise<BenchmarkConfig[]> {
+  try {
+    const response = await fetch('/api/benchmarks');
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+    const data = await response.json();
+    return data.benchmarks || [];
+  } catch (error) {
+    console.error('获取 Benchmark 列表失败:', error);
+    return [];
+  }
+}
+
+/**
+ * 获取单个 Benchmark 配置
+ */
+export async function getBenchmark(id: string): Promise<BenchmarkConfig | null> {
+  try {
+    const response = await fetch(`/api/benchmarks/${id}`);
+    if (!response.ok) {
+      if (response.status === 404) return null;
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+    return await response.json();
+  } catch (error) {
+    console.error('获取 Benchmark 失败:', error);
+    return null;
+  }
+}
+
+/**
+ * 创建新的 Benchmark 配置
+ */
+export async function createBenchmark(benchmark: BenchmarkConfig): Promise<boolean> {
+  try {
+    const response = await fetch('/api/benchmarks', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(benchmark),
+    });
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+    return true;
+  } catch (error) {
+    console.error('创建 Benchmark 失败:', error);
+    return false;
+  }
+}
+
+/**
+ * 更新 Benchmark 配置
+ */
+export async function updateBenchmark(id: string, benchmark: BenchmarkConfig): Promise<boolean> {
+  try {
+    const response = await fetch(`/api/benchmarks/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(benchmark),
+    });
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+    return true;
+  } catch (error) {
+    console.error('更新 Benchmark 失败:', error);
+    return false;
+  }
+}
+
+/**
+ * 删除 Benchmark 配置
+ */
+export async function deleteBenchmark(id: string): Promise<boolean> {
+  try {
+    const response = await fetch(`/api/benchmarks/${id}`, {
+      method: 'DELETE',
+    });
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+    return true;
+  } catch (error) {
+    console.error('删除 Benchmark 失败:', error);
+    return false;
+  }
+}
