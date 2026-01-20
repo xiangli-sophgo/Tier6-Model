@@ -9,7 +9,13 @@
 
 from .base import BaseLayer
 from .embedding import EmbeddingLayer
-from .attention import MLALayer, MHALayer
+from .attention import (
+    MLALayer,
+    MLAv32Layer,
+    MLAAbsorbLayer,
+    MLAAbsorbv32Layer,
+    MHALayer,
+)
 from .ffn import MLPLayer
 from .moe import MoELayer
 from .lmhead import LMHeadLayer
@@ -17,7 +23,12 @@ from .lmhead import LMHeadLayer
 __all__ = [
     'BaseLayer',
     'EmbeddingLayer',
+    # MLA 变体 (对齐 DS_TPU)
     'MLALayer',
+    'MLAv32Layer',
+    'MLAAbsorbLayer',
+    'MLAAbsorbv32Layer',
+    # 标准 MHA
     'MHALayer',
     'MLPLayer',
     'MoELayer',

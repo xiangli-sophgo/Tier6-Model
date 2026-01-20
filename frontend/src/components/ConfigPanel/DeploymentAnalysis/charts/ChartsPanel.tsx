@@ -3,12 +3,8 @@
  */
 
 import React, { useState, useEffect, useRef, useCallback } from 'react'
-import { Typography, Select, Empty, Button, Tooltip, message } from 'antd'
-import {
-  ReloadOutlined,
-  CloudServerOutlined,
-  DesktopOutlined,
-} from '@ant-design/icons'
+import { Typography, Select, Empty, Button, message } from 'antd'
+import { ReloadOutlined } from '@ant-design/icons'
 import { ScoreRadarChart } from './ScoreRadarChart'
 import { MetricsBarChart } from './MetricsBarChart'
 import { MemoryPieChart } from './MemoryPieChart'
@@ -24,11 +20,8 @@ import {
   InferenceConfig,
   GanttChartData,
   SimulationStats,
+  SimulationResult,
 } from '../../../../utils/llmDeployment/types'
-import {
-  runInferenceSimulation,
-  type SimulationResult,
-} from '../../../../utils/llmDeployment'
 import { HierarchicalTopology } from '../../../../types'
 
 const { Text } = Typography
@@ -84,8 +77,6 @@ export const ChartsPanel: React.FC<ChartsPanelProps> = ({
   const [selectedMetric, setSelectedMetric] = useState<MetricType>('score')
   const [simulationResult, setSimulationResult] = useState<SimulationResult | null>(null)
   const [isSimulating, setIsSimulating] = useState(false)
-  const [useBackend, setUseBackend] = useState(true)  // 默认使用后端模拟
-  const [backendAvailable, setBackendAvailable] = useState<boolean | null>(null)
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
     charts: true,
     simulation: true,
@@ -94,19 +85,6 @@ export const ChartsPanel: React.FC<ChartsPanelProps> = ({
 
   // 记录上次运行的result id，避免重复运行
   const lastResultIdRef = useRef<string | null>(null)
-
-  // 检查后端是否可用
-  useEffect(() => {
-    const checkBackend = async () => {
-      try {
-        const response = await fetch('http://localhost:8001/health', { method: 'GET' })
-        setBackendAvailable(response.ok)
-      } catch {
-        setBackendAvailable(false)
-      }
-    }
-    checkBackend()
-  }, [])
 
   // 运行后端模拟
   const runBackendSimulation = useCallback(async () => {
@@ -165,62 +143,21 @@ export const ChartsPanel: React.FC<ChartsPanelProps> = ({
 
       const backendResult: BackendSimulationResult = await response.json()
 
-      // 转换为 SimulationResult 格式
-      setSimulationResult({
-        config: {
-          granularity: 'layer',
-          enableOverlap: true,
-          enablePipeline: true,
-          jitterFactor: 0.05,
-          maxSimulatedTokens: 16,
-        },
-        events: [],
-        commTrace: [],
-        ganttChart: backendResult.ganttChart,
-        stats: backendResult.stats,
-        timestamp: backendResult.timestamp,
-      })
+      // 设置模拟结果
+      setSimulationResult(backendResult)
     } catch (error) {
       console.error('后端模拟失败:', error)
-      message.warning('后端模拟不可用，已切换到前端模拟')
-      setUseBackend(false)
-      runFrontendSimulation()
+      message.error('模拟失败，请检查后端服务是否启动')
     } finally {
       setIsSimulating(false)
     }
   }, [result, inference, topology, model, hardware])
 
-  // 运行前端模拟
-  const runFrontendSimulation = useCallback(() => {
-    if (!result || !inference) return
-
-    setIsSimulating(true)
-    setTimeout(() => {
-      try {
-        const simResult = runInferenceSimulation(
-          model,
-          inference,
-          result.plan.parallelism,
-          hardware,
-          { maxSimulatedTokens: 16 }
-        )
-        setSimulationResult(simResult)
-      } catch (error) {
-        console.error('模拟失败:', error)
-      } finally {
-        setIsSimulating(false)
-      }
-    }, 50)
-  }, [result, inference, model, hardware])
-
-  // 运行模拟（根据设置选择后端或前端）
-  const runSimulation = useCallback(() => {
-    if (useBackend && topology && backendAvailable !== false) {
-      runBackendSimulation()
-    } else {
-      runFrontendSimulation()
-    }
-  }, [useBackend, topology, backendAvailable, runBackendSimulation, runFrontendSimulation])
+  // 运行模拟
+  const runSimulation = useCallback(async () => {
+    if (!result || !inference || !topology) return
+    await runBackendSimulation()
+  }, [result, inference, topology, runBackendSimulation])
 
   // 当分析结果变化时自动运行模拟
   useEffect(() => {
@@ -396,27 +333,14 @@ export const ChartsPanel: React.FC<ChartsPanelProps> = ({
                   动态MFU: {(simulationResult.stats.dynamicMfu * 100).toFixed(1)}%
                 </Text>
               ) : null}
-              <Tooltip title={useBackend ? '使用后端模拟 (精细模式)' : '使用前端模拟 (快速模式)'}>
-                <Button
-                  type="text"
-                  size="small"
-                  icon={useBackend ? <CloudServerOutlined /> : <DesktopOutlined />}
-                  onClick={() => {
-                    setUseBackend(!useBackend)
-                    lastResultIdRef.current = null  // 强制重新运行
-                  }}
-                  style={{ color: backendAvailable === false ? '#999' : undefined }}
-                />
-              </Tooltip>
-              <Tooltip title="重新运行模拟">
-                <Button
-                  type="text"
-                  size="small"
-                  icon={<ReloadOutlined spin={isSimulating} />}
-                  disabled={!inference || isSimulating}
-                  onClick={runSimulation}
-                />
-              </Tooltip>
+              <Button
+                type="text"
+                size="small"
+                icon={<ReloadOutlined spin={isSimulating} />}
+                disabled={!inference || isSimulating}
+                onClick={runSimulation}
+                title="重新运行模拟"
+              />
             </div>
           </div>
           <GanttChart

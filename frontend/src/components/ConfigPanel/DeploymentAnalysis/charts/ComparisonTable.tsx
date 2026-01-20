@@ -4,7 +4,7 @@
 
 import React from 'react'
 import { Typography, Tooltip } from 'antd'
-import { FormulaVsSimComparison } from '../../../../utils/llmDeployment/simulation/types'
+import { FormulaVsSimComparison } from '../../../../utils/llmDeployment/types'
 import { formatDeviation, isSignificantDeviation } from '../../../../utils/llmDeployment/simulationScorer'
 
 const { Text } = Typography

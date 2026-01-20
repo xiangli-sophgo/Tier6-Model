@@ -112,6 +112,9 @@ export interface MoEConfig {
   ep_tp_strategy?: 'scatter_gather' | 'group_alltoall';
 }
 
+/** MLA 变体类型 */
+export type MLAVariant = 'mla' | 'mla_v32' | 'mla_absorb' | 'mla_absorb_v32';
+
 /** MLA (Multi-head Latent Attention) 配置 - DeepSeek V3/R1 专用 */
 export interface MLAConfig {
   /** KV 压缩后的隐维度 (kv_lora_rank) */
@@ -124,6 +127,8 @@ export interface MLAConfig {
   qk_rope_head_dim: number;
   /** V 的头维度 */
   v_head_dim: number;
+  /** MLA 变体: mla | mla_v32 | mla_absorb | mla_absorb_v32 */
+  variant?: MLAVariant;
   /** MLA 张量并行度 (可选，默认使用全局 tp) */
   mla_tp?: number;
   /** MLA 数据并行度 (可选，默认使用全局 dp) */
@@ -777,9 +782,120 @@ export const DEFAULT_NETWORK_CONFIG: NetworkInfraConfig = {
 };
 
 // ============================================
-// 模拟结果类型 (从 simulation 模块重导出)
+// ============================================
+// 模拟结果类型（从后端 API 返回）
 // ============================================
 
-// 注意: 完整的模拟类型定义在 ./simulation/types.ts
-// 这里只导出核心结果类型以便在 PlanAnalysisResult 中使用
-export type { SimulationResult, SimulationConfig, GanttChartData, SimulationStats } from './simulation/types';
+/** Gantt 图任务类型 */
+export type GanttTaskType = string;
+
+/** Gantt 图资源 */
+export interface GanttResource {
+  id: string;
+  name: string;
+  type: string;
+}
+
+/** Gantt 图任务 */
+export interface GanttTask {
+  id: string;
+  name: string;
+  resourceId: string;
+  start: number;
+  end: number;
+  type: GanttTaskType;
+  phase: string;
+  layer?: number;
+  ppStage?: number;  // Pipeline stage (for PP parallelism)
+}
+
+/** Gantt 图数据 */
+export interface GanttChartData {
+  resources: GanttResource[];
+  tasks: GanttTask[];
+  timeRange: { start: number; end: number };
+  phaseTransition?: number;
+}
+
+/** 阶段时间统计 */
+export interface PhaseTimeStats {
+  computeTime: number;
+  commTime: number;
+  bubbleTime: number;
+  overlapTime: number;
+  totalTime: number;
+  computeEfficiency: number;
+}
+
+/** 模拟统计数据 */
+export interface SimulationStats {
+  prefill: PhaseTimeStats;
+  decode: PhaseTimeStats;
+  totalRunTime: number;
+  simulatedTokens: number;
+  ttft: number;
+  avgTpot: number;
+  dynamicMfu: number;
+  dynamicMbu: number;
+  maxPpBubbleRatio: number;
+  totalEvents: number;
+  prefillFlops: number;
+}
+
+/** 模拟结果 */
+export interface SimulationResult {
+  ganttChart: GanttChartData;
+  stats: SimulationStats;
+  timestamp: number;
+}
+
+/** 模拟配置（前端发送到后端）*/
+export interface SimulationConfig {
+  maxSimulatedTokens?: number;
+  enableDataTransferSimulation?: boolean;
+  enableDetailedTransformerOps?: boolean;
+  enableKVCacheAccessSimulation?: boolean;
+  usePreciseEvaluator?: boolean;
+  evaluationGranularity?: 'fine' | 'coarse';
+}
+
+/** 仿真评分结果 */
+export interface SimulationScoreResult {
+  latency_score: number;
+  throughput_score: number;
+  efficiency_score: number;
+  balance_score: number;
+  overall_score: number;
+  raw: {
+    ttft_ms: number;
+    avg_tpot_ms: number;
+    dynamic_mfu: number;
+    dynamic_mbu: number;
+    pp_bubble_ratio: number;
+  };
+}
+
+/** 公式计算 vs 仿真结果对比 */
+export interface FormulaVsSimComparison {
+  formula: {
+    ttft_ms: number;
+    tpot_ms: number;
+    mfu: number;
+    mbu: number;
+    score: number;
+  };
+  simulation: {
+    ttft_ms: number;
+    tpot_ms: number;
+    mfu: number;
+    mbu: number;
+    score: number;
+  };
+  deviation: {
+    ttft_pct: number;
+    tpot_pct: number;
+    mfu_pct: number;
+    mbu_pct: number;
+    score_pct: number;
+  };
+}

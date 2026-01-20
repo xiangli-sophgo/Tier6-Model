@@ -65,6 +65,8 @@ class PerformanceAnalyzer:
         self.evaluators = {
             'MatMulOperator': GEMMEvaluator(arch),
             'FA2Operator': FA2Evaluator(arch),
+            'MHAOperator': FA2Evaluator(arch),  # MHA 复用 FA2 评估器
+            'MQAOperator': FA2Evaluator(arch),  # MQA 复用 FA2 评估器
             'RMSNormOperator': RMSNormEvaluator(arch),
             'allreduce': AllReduceEval(arch, protocol_config, network_config),
             'allgather': AllGatherEval(arch, protocol_config, network_config),
@@ -172,6 +174,59 @@ class PerformanceAnalyzer:
 
         elif operator.operator_type == 'FA2Operator':
             # Flash Attention 评估
+            fa2_result = evaluator.evaluate(
+                B=params.get('B', 1),
+                QS=params.get('QS', 1),
+                KS=params.get('KS', 1),
+                QD=params.get('QD', 1),
+                VD=params.get('VD', 1),
+            )
+            result = {
+                'elapse': fa2_result.latency_us,
+                'comp_elapse': fa2_result.compute_time_us,
+                'dma_elapse': fa2_result.memory_time_us,
+                'dram_traffic': fa2_result.dram_traffic_bytes,
+                'urate': fa2_result.effective_utilization,
+                'best_tile': {
+                    'Q': fa2_result.best_tile[0],
+                    'K': fa2_result.best_tile[1],
+                },
+                'best_partition': {
+                    'P_B': fa2_result.best_partition,
+                },
+            }
+
+        elif operator.operator_type == 'MHAOperator':
+            # MHA 评估 (Multi-Head Attention)
+            # MHA 有 B 和 H 两个维度，等效 B_eff = B * H
+            B = params.get('B', 1)
+            H = params.get('H', 1)
+            B_eff = B * H  # 等效 batch
+            fa2_result = evaluator.evaluate(
+                B=B_eff,
+                QS=params.get('QS', 1),
+                KS=params.get('KS', 1),
+                QD=params.get('QD', 1),
+                VD=params.get('VD', 1),
+            )
+            result = {
+                'elapse': fa2_result.latency_us,
+                'comp_elapse': fa2_result.compute_time_us,
+                'dma_elapse': fa2_result.memory_time_us,
+                'dram_traffic': fa2_result.dram_traffic_bytes,
+                'urate': fa2_result.effective_utilization,
+                'best_tile': {
+                    'Q': fa2_result.best_tile[0],
+                    'K': fa2_result.best_tile[1],
+                },
+                'best_partition': {
+                    'P_B': fa2_result.best_partition,
+                },
+            }
+
+        elif operator.operator_type == 'MQAOperator':
+            # MQA 评估 (Multi-Query Attention)
+            # MQA 的参数格式与 FA2 兼容
             fa2_result = evaluator.evaluate(
                 B=params.get('B', 1),
                 QS=params.get('QS', 1),

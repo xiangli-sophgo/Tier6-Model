@@ -24,70 +24,88 @@ class CommunicationLatency:
     - DS_TPU 实测数据 (SG2261/SG2262)
     - NVIDIA 芯片架构推算
     - HBM/DDR 典型延迟值
+
+    通信启动开销计算公式 (对齐 DS_TPU):
+    start_lat = 2*c2c_lat + ddr_r_lat + ddr_w_lat + noc_lat + 2*d2d_lat
     """
 
     chip_to_chip_us: float = 0.15
-    """芯片间物理互联延迟 (chip-to-chip latency)
+    """芯片间物理互联延迟 (c2c_lat)
 
     单位：微秒 (us)
 
     这是纯粹的物理层互联延迟，不包含启动开销、同步等
 
     典型值：
-    - NVLink 4.0 (H100): ~0.10 us (100 ns) - 最新一代，延迟更低
+    - NVLink 4.0 (H100): ~0.10 us (100 ns)
     - NVLink 3.0 (A100): ~0.15 us (150 ns)
-    - SophgoLink (SG2262): ~0.15 us (150 ns) - 参考 DS_TPU c2c_lat
-    - PCIe 4.0/5.0: ~1.0-2.0 us - PCIe 协议开销更大
-
-    注意：端到端通信延迟 = chip_to_chip + start_overhead + 传输时间
-    """
-
-    comm_start_overhead_us: float = 0.59
-    """通信操作启动开销 (communication start overhead)
-
-    单位：微秒 (us)
-
-    包含的开销：
-    - 通信初始化 (2 * chip_to_chip)
-    - DDR 读写 (ddr_read + ddr_write)
-    - NoC 延迟 (network-on-chip)
-    - Die-to-Die 延迟 (对于多die芯片)
-
-    DS_TPU 计算公式：
-    start_lat = 2*c2c_lat + ddr_r_lat + ddr_w_lat + noc_lat + 2*d2d_lat
-              = 2*0.15 + 0.15 + 0.01 + 0.05 + 2*0.04
-              = 0.59 us
-
-    典型值：
-    - 高速互联 (NVLink/SophgoLink): ~0.5-0.6 us
-    - PCIe: ~2-3 us (协议开销更大)
+    - SophgoLink (SG2262): ~0.15 us (150 ns)
+    - PCIe 4.0/5.0: ~1.0-2.0 us
     """
 
     memory_read_latency_us: float = 0.15
-    """显存读延迟 (DDR/HBM read latency)
+    """显存读延迟 (ddr_r_lat)
 
     单位：微秒 (us)
 
-    这是 DRAM 读取延迟，不包含传输时间
-
     典型值：
-    - HBM3 (H100): ~0.10 us (100 ns) - 最新 HBM3 延迟更低
+    - HBM3 (H100): ~0.10 us (100 ns)
     - HBM2e (A100): ~0.12 us (120 ns)
-    - HBM2 (SG2262): ~0.15 us (150 ns) - 参考 DS_TPU ddr_r_lat
-    - DDR4/DDR5: ~0.15-0.20 us (150-200 ns)
+    - HBM2 (SG2262): ~0.15 us (150 ns)
+    - DDR4/DDR5: ~0.15-0.20 us
     """
 
     memory_write_latency_us: float = 0.01
-    """显存写延迟 (DDR/HBM write latency)
+    """显存写延迟 (ddr_w_lat)
 
     单位：微秒 (us)
 
     写操作通常比读操作快一个数量级（可以缓冲）
 
     典型值：
-    - 各种 HBM/DDR: ~0.01 us (10 ns) - 参考 DS_TPU ddr_w_lat
-    - 写延迟对性能影响相对较小
+    - 各种 HBM/DDR: ~0.01 us (10 ns)
     """
+
+    noc_latency_us: float = 0.05
+    """片上网络延迟 (noc_lat, Network-on-Chip)
+
+    单位：微秒 (us)
+
+    芯片内部 NoC 互联的延迟
+
+    典型值：
+    - SG2262: ~0.05 us (50 ns)
+    - H100: ~0.03-0.05 us
+    """
+
+    die_to_die_latency_us: float = 0.04
+    """Die-to-Die 延迟 (d2d_lat)
+
+    单位：微秒 (us)
+
+    多 Die 芯片中 Die 间的互联延迟
+
+    典型值：
+    - SG2262 (多 Die): ~0.04 us (40 ns)
+    - 单 Die 芯片: 0 us
+    """
+
+    @property
+    def comm_start_overhead_us(self) -> float:
+        """通信操作启动开销 (start_lat)
+
+        动态计算公式 (对齐 DS_TPU):
+        start_lat = 2*c2c_lat + ddr_r_lat + ddr_w_lat + noc_lat + 2*d2d_lat
+
+        返回值单位：微秒 (us)
+        """
+        return (
+            2 * self.chip_to_chip_us +
+            self.memory_read_latency_us +
+            self.memory_write_latency_us +
+            self.noc_latency_us +
+            2 * self.die_to_die_latency_us
+        )
 
 
 @dataclass

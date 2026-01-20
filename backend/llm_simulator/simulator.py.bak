@@ -232,8 +232,8 @@ class SimulationConfig:
     gradient_accumulation_steps: int = 1  # 梯度累积步数
     # 新评估器系统配置
     use_precise_evaluator: bool = True  # 使用精确评估器（基于硬件建模）
+    mla_variant: str = "mla"  # MLA 变体: mla, mla_v32, mla_absorb, mla_absorb_v32
     evaluation_granularity: str = "fine"  # 评估粒度: coarse（粗粒度）或 fine（细粒度）
-    # 注意: mla_variant 已移至 model.mla_config.variant，从模型配置读取
 
 
 @dataclass
@@ -437,8 +437,8 @@ class LLMInferenceSimulator:
                 'q_lora_rank': mla.q_lora_rank,
             })
 
-            # 从模型配置读取 MLA 变体（而非模拟配置）
-            mla_variant = mla.variant
+            # 根据配置选择 MLA 变体
+            mla_variant = self.config.mla_variant
             if mla_variant == "mla_v32":
                 layer = MLAv32Layer(name=f"layer_{layer_index}_mla", config=layer_config)
             elif mla_variant == "mla_absorb":
@@ -456,155 +456,15 @@ class LLMInferenceSimulator:
             })
             layer = MHALayer(name=f"layer_{layer_index}_mha", config=layer_config)
 
-        # 使用评估器直接评估层中的所有算子
+        # 使用 PerformanceAnalyzer 评估层
         if self.config.use_precise_evaluator and self.arch is not None:
-            self._evaluate_layer_operators(layer)
+            analyzer = PerformanceAnalyzer(
+                model=layer,
+                arch=self.arch,
+                global_cache=self.eval_cache,
+            )
 
         return layer
-
-    def _evaluate_layer_operators(self, layer):
-        """直接评估层中的所有算子"""
-        # 导入评估器（延迟导入避免循环依赖）
-        from .evaluators import (
-            GEMMEvaluator,
-            FA2Evaluator,
-            RMSNormEvaluator,
-            AllReduceEval,
-            AllGatherEval,
-            ReduceScatterEval,
-        )
-
-        # 初始化评估器
-        gemm_eval = GEMMEvaluator(self.arch)
-        fa2_eval = FA2Evaluator(self.arch)
-        rmsnorm_eval = RMSNormEvaluator(self.arch)
-        allreduce_eval = AllReduceEval(self.arch)
-        allgather_eval = AllGatherEval(self.arch)
-        reducescatter_eval = ReduceScatterEval(self.arch)
-
-        # 评估所有计算算子
-        for op in layer.comp_ops:
-            cache_key = op.get_cache_key()
-
-            # 检查缓存
-            if cache_key in self.eval_cache:
-                op.apply_result(self.eval_cache[cache_key])
-                continue
-
-            # 评估算子
-            if op.operator_type == 'MatMulOperator':
-                result = gemm_eval.evaluate(
-                    G=op.parallel_params.get('G', 1),
-                    M=op.parallel_params.get('M', 1),
-                    K=op.parallel_params.get('K', 1),
-                    N=op.parallel_params.get('N', 1),
-                    input_dtype=op.parallel_params.get('input_dtype', 'bf16'),
-                    output_dtype=op.parallel_params.get('output_dtype', 'bf16'),
-                )
-                op.elapse = result.latency_us
-                op.comp_elapse = result.compute_time_us
-                op.dma_elapse = result.memory_time_us
-                op.dram_traffic = result.dram_traffic_bytes
-                op.urate = result.effective_utilization
-
-            elif op.operator_type == 'FA2Operator':
-                result = fa2_eval.evaluate(
-                    B=op.parallel_params.get('B', 1),
-                    QS=op.parallel_params.get('QS', 1),
-                    KS=op.parallel_params.get('KS', 1),
-                    QD=op.parallel_params.get('QD', 1),
-                    VD=op.parallel_params.get('VD', 1),
-                )
-                op.elapse = result.latency_us
-                op.comp_elapse = result.compute_time_us
-                op.dma_elapse = result.memory_time_us
-                op.dram_traffic = result.dram_traffic_bytes
-                op.urate = result.effective_utilization
-
-            elif op.operator_type == 'MHAOperator':
-                # MHA 使用 FA2 评估器，等效 B = B * H
-                B = op.parallel_params.get('B', 1)
-                H = op.parallel_params.get('H', 1)
-                result = fa2_eval.evaluate(
-                    B=B * H,
-                    QS=op.parallel_params.get('QS', 1),
-                    KS=op.parallel_params.get('KS', 1),
-                    QD=op.parallel_params.get('QD', 1),
-                    VD=op.parallel_params.get('VD', 1),
-                )
-                op.elapse = result.latency_us
-                op.comp_elapse = result.compute_time_us
-                op.dma_elapse = result.memory_time_us
-                op.dram_traffic = result.dram_traffic_bytes
-                op.urate = result.effective_utilization
-
-            elif op.operator_type == 'MQAOperator':
-                # MQA 也使用 FA2 评估器
-                result = fa2_eval.evaluate(
-                    B=op.parallel_params.get('B', 1),
-                    QS=op.parallel_params.get('QS', 1),
-                    KS=op.parallel_params.get('KS', 1),
-                    QD=op.parallel_params.get('QD', 1),
-                    VD=op.parallel_params.get('VD', 1),
-                )
-                op.elapse = result.latency_us
-                op.comp_elapse = result.compute_time_us
-                op.dma_elapse = result.memory_time_us
-                op.dram_traffic = result.dram_traffic_bytes
-                op.urate = result.effective_utilization
-
-            elif op.operator_type == 'RMSNormOperator':
-                result = rmsnorm_eval.evaluate(
-                    batch_size=op.parallel_params.get('batch_size', 1),
-                    hidden_dim=op.parallel_params.get('hidden_dim', 1),
-                    has_scale=op.parallel_params.get('has_scale', True),
-                    has_bias=op.parallel_params.get('has_bias', False),
-                )
-                # RMSNorm 主要受带宽限制
-                data_bytes = op.parallel_params.get('batch_size', 1) * op.parallel_params.get('hidden_dim', 1) * 2 * 2
-                op.elapse = (data_bytes / self.arch.dram_bandwidth_bytes) * 1e6
-                op.comp_elapse = op.elapse * 0.1
-                op.dma_elapse = op.elapse * 0.9
-                op.dram_traffic = data_bytes
-                op.urate = result.utilization
-
-            # 缓存结果
-            self.eval_cache[cache_key] = {
-                'elapse': op.elapse,
-                'comp_elapse': op.comp_elapse,
-                'dma_elapse': op.dma_elapse,
-                'dram_traffic': op.dram_traffic,
-                'urate': op.urate,
-            }
-
-        # 评估所有通信算子
-        for op in layer.comm_ops:
-            cache_key = op.get_cache_key()
-
-            if cache_key in self.eval_cache:
-                op.apply_result(self.eval_cache[cache_key])
-                continue
-
-            # 评估通信算子
-            tp = op.parallel_params.get('tp', 1)
-            comm_size = op.parallel_params.get('comm_size', 0)
-            comm_protocol = op.parallel_params.get('comm_protocol', 1)
-
-            if op.comm_kind == 'allreduce':
-                result = allreduce_eval.evaluate(tp, comm_size, comm_protocol)
-                op.comm_elapse = result.latency_us
-            elif op.comm_kind == 'allgather':
-                result = allgather_eval.evaluate(tp, comm_size, comm_protocol)
-                op.comm_elapse = result.latency_us
-            elif op.comm_kind == 'reducescatter':
-                result = reducescatter_eval.evaluate(tp, comm_size, comm_protocol)
-                op.comm_elapse = result.latency_us
-            else:
-                # 默认使用简单的带宽模型
-                op.comm_elapse = (comm_size / self.tp_bandwidth) * 1e6
-
-            # 缓存结果
-            self.eval_cache[cache_key] = {'comm_elapse': op.comm_elapse}
 
     def simulate(self) -> SimulationResult:
         """
@@ -655,10 +515,8 @@ class LLMInferenceSimulator:
             self.model.hidden_size * bytes_per_elem
         ) / (1024 ** 3)
 
-        # PCIe 传输延迟 (简化公式: 数据量 / 带宽 + 固定延迟)
-        pcie_bw_gbps = self.hardware.chip.pcie_bandwidth_gbps
-        pcie_latency_us = self.hardware.chip.pcie_latency_us
-        pcie_latency = (input_size_gb / pcie_bw_gbps) * 1000 + pcie_latency_us / 1000  # 转换为 ms
+        # PCIe 传输延迟
+        pcie_latency = calc_pcie_h2d_latency(input_size_gb, self.hardware)
 
         # 为第一个 PP stage 的所有芯片添加传输任务
         for chip_id, state in self.chip_states.items():
@@ -684,10 +542,8 @@ class LLMInferenceSimulator:
             self.inference.batch_size * self.model.vocab_size * bytes_per_elem
         ) / (1024 ** 3)
 
-        # PCIe 传输延迟 (简化公式: 数据量 / 带宽 + 固定延迟)
-        pcie_bw_gbps = self.hardware.chip.pcie_bandwidth_gbps
-        pcie_latency_us = self.hardware.chip.pcie_latency_us
-        pcie_latency = (output_size_gb / pcie_bw_gbps) * 1000 + pcie_latency_us / 1000  # 转换为 ms
+        # PCIe 传输延迟
+        pcie_latency = calc_pcie_d2h_latency(output_size_gb, self.hardware)
 
         # 为最后一个 PP stage 的所有芯片添加传输任务
         last_stage = self.parallelism.pp - 1
@@ -985,22 +841,321 @@ class LLMInferenceSimulator:
 
         return current_time
 
+    def _simulate_single_layer_legacy(
+        self,
+        current_time: float,
+        layer_index: int,
+        num_tokens: int,
+        context_length: int,
+        phase: InferencePhase,
+        chip_id: str,
+        pp_stage: int,
+        token_index: int | None = None,
+    ) -> float:
+        """旧版单层模拟（保留用于参考，未使用）"""
+
+        # 检查是否使用 MLA
+        use_mla = self.model.attention_type == 'mla' and self.model.mla_config is not None
+
+        if self.config.enable_detailed_ops:
+            # 细粒度模拟
+
+            # LayerNorm 1
+            ln1_latency = calc_layernorm_latency(
+                self.model, self.inference, self.parallelism, self.hardware, num_tokens
+            )
+            self.gantt_builder.add_compute_task(
+                GanttTaskType.LAYERNORM, current_time, ln1_latency,
+                phase, chip_id, pp_stage, layer_index, token_index
+            )
+            current_time += ln1_latency
+
+            # SP AllGather (序列切分 → 张量切分)
+            if self.parallelism.sp > 1:
+                sp_allgather_latency = self._calc_sp_allgather_latency(num_tokens)
+                self.gantt_builder.add_comm_task(
+                    GanttTaskType.SP_ALLGATHER, current_time, sp_allgather_latency,
+                    phase, chip_id, pp_stage, layer_index, token_index
+                )
+                current_time += sp_allgather_latency
+
+            # Attention QKV (MLA 使用专用计算)
+            if use_mla:
+                # MLA: Q 投影 + KV 压缩
+                qkv_latency = calc_mla_q_projection_latency(
+                    self.model, self.inference, self.parallelism, self.hardware, num_tokens
+                )
+                kv_compress_latency = calc_mla_kv_compression_latency(
+                    self.model, self.inference, self.parallelism, self.hardware, num_tokens
+                )
+                qkv_latency += kv_compress_latency
+            else:
+                qkv_latency = calc_attention_qkv_latency(
+                    self.model, self.inference, self.parallelism, self.hardware, num_tokens
+                )
+            self.gantt_builder.add_compute_task(
+                GanttTaskType.ATTENTION_QKV, current_time, qkv_latency,
+                phase, chip_id, pp_stage, layer_index, token_index
+            )
+            current_time += qkv_latency
+
+            # KV Cache 读取 (Decode 阶段)
+            if self.config.enable_kv_cache and phase == InferencePhase.DECODE:
+                if use_mla:
+                    # MLA: 压缩后的 KV Cache (~32x 小)
+                    kv_read_latency = calc_mla_kv_cache_read_latency(
+                        self.model, self.inference, self.parallelism, self.hardware, context_length
+                    )
+                else:
+                    kv_read_latency = calc_kv_cache_read_latency(
+                        self.model, self.inference, self.parallelism, self.hardware, context_length
+                    )
+                self.gantt_builder.add_compute_task(
+                    GanttTaskType.KV_CACHE_READ, current_time, kv_read_latency,
+                    phase, chip_id, pp_stage, layer_index, token_index
+                )
+                current_time += kv_read_latency
+
+            # Attention Score
+            if use_mla:
+                # MLA: 在压缩空间计算 Score
+                score_latency = calc_mla_attention_score_latency(
+                    self.model, self.inference, self.parallelism, self.hardware, num_tokens, context_length
+                )
+            else:
+                score_latency = calc_attention_score_latency(
+                    self.model, self.inference, self.parallelism, self.hardware, num_tokens, context_length
+                )
+            self.gantt_builder.add_compute_task(
+                GanttTaskType.ATTENTION_SCORE, current_time, score_latency,
+                phase, chip_id, pp_stage, layer_index, token_index
+            )
+            current_time += score_latency
+
+            # Softmax (MLA 和标准 Attention 相同)
+            softmax_latency = calc_attention_softmax_latency(
+                self.model, self.inference, self.parallelism, self.hardware, num_tokens, context_length
+            )
+            self.gantt_builder.add_compute_task(
+                GanttTaskType.ATTENTION_SOFTMAX, current_time, softmax_latency,
+                phase, chip_id, pp_stage, layer_index, token_index
+            )
+            current_time += softmax_latency
+
+            # Attention Output
+            if use_mla:
+                # MLA: V 解压缩 + Softmax@V + Output 投影
+                output_latency = calc_mla_output_latency(
+                    self.model, self.inference, self.parallelism, self.hardware, num_tokens, context_length
+                )
+            else:
+                output_latency = calc_attention_output_latency(
+                    self.model, self.inference, self.parallelism, self.hardware, num_tokens, context_length
+                )
+            self.gantt_builder.add_compute_task(
+                GanttTaskType.ATTENTION_OUTPUT, current_time, output_latency,
+                phase, chip_id, pp_stage, layer_index, token_index
+            )
+            current_time += output_latency
+
+            # TP AllReduce (Attention)
+            if self.parallelism.tp > 1:
+                tp_comm_latency = self._calc_tp_allreduce_latency(num_tokens)
+                self.gantt_builder.add_comm_task(
+                    GanttTaskType.TP_COMM, current_time, tp_comm_latency,
+                    phase, chip_id, pp_stage, layer_index, token_index
+                )
+                current_time += tp_comm_latency
+
+            # SP ReduceScatter (张量切分 → 序列切分)
+            if self.parallelism.sp > 1:
+                sp_reduce_scatter_latency = self._calc_sp_reduce_scatter_latency(num_tokens)
+                self.gantt_builder.add_comm_task(
+                    GanttTaskType.SP_REDUCE_SCATTER, current_time, sp_reduce_scatter_latency,
+                    phase, chip_id, pp_stage, layer_index, token_index
+                )
+                current_time += sp_reduce_scatter_latency
+
+            # KV Cache 写入
+            if self.config.enable_kv_cache:
+                if use_mla:
+                    # MLA: 压缩后的 KV Cache 写入 (~32x 小)
+                    kv_write_latency = calc_mla_kv_cache_write_latency(
+                        self.model, self.inference, self.parallelism, self.hardware, num_tokens
+                    )
+                else:
+                    kv_write_latency = calc_kv_cache_write_latency(
+                        self.model, self.inference, self.parallelism, self.hardware, num_tokens
+                    )
+                self.gantt_builder.add_compute_task(
+                    GanttTaskType.KV_CACHE_WRITE, current_time, kv_write_latency,
+                    phase, chip_id, pp_stage, layer_index, token_index
+                )
+                current_time += kv_write_latency
+
+            # LayerNorm 2
+            ln2_latency = calc_layernorm_latency(
+                self.model, self.inference, self.parallelism, self.hardware, num_tokens
+            )
+            self.gantt_builder.add_compute_task(
+                GanttTaskType.LAYERNORM, current_time, ln2_latency,
+                phase, chip_id, pp_stage, layer_index, token_index
+            )
+            current_time += ln2_latency
+
+            # SP AllGather (序列切分 → 张量切分) - 进入FFN TP层
+            if self.parallelism.sp > 1:
+                sp_allgather_latency = self._calc_sp_allgather_latency(num_tokens)
+                self.gantt_builder.add_comm_task(
+                    GanttTaskType.SP_ALLGATHER, current_time, sp_allgather_latency,
+                    phase, chip_id, pp_stage, layer_index, token_index
+                )
+                current_time += sp_allgather_latency
+
+            # 判断是否为 MoE 层
+            is_moe = is_moe_layer(layer_index, self.model)
+
+            if is_moe:
+                # ========== MoE 层 ==========
+                # MoE Gate (路由网络)
+                gate_latency = calc_moe_gate_latency(
+                    self.model, self.inference, self.parallelism, self.hardware, num_tokens
+                )
+                self.gantt_builder.add_compute_task(
+                    GanttTaskType.MOE_GATE, current_time, gate_latency,
+                    phase, chip_id, pp_stage, layer_index, token_index
+                )
+                current_time += gate_latency
+
+                # EP Dispatch (Token 分发)
+                if self.parallelism.ep > 1:
+                    dispatch_latency = calc_ep_dispatch_latency(
+                        self.model, self.inference, self.parallelism, self.hardware,
+                        num_tokens, self.ep_bandwidth, self.ep_latency
+                    )
+                    self.gantt_builder.add_comm_task(
+                        GanttTaskType.EP_DISPATCH, current_time, dispatch_latency,
+                        phase, chip_id, pp_stage, layer_index, token_index
+                    )
+                    current_time += dispatch_latency
+
+                # MoE Expert FFN (路由专家)
+                expert_latency = calc_moe_expert_ffn_latency(
+                    self.model, self.inference, self.parallelism, self.hardware, num_tokens
+                )
+                self.gantt_builder.add_compute_task(
+                    GanttTaskType.MOE_EXPERT, current_time, expert_latency,
+                    phase, chip_id, pp_stage, layer_index, token_index
+                )
+                current_time += expert_latency
+
+                # MoE Shared Expert (共享专家, 并行计算)
+                if self.model.moe_config and self.model.moe_config.num_shared_experts > 0:
+                    shared_latency = calc_moe_shared_expert_latency(
+                        self.model, self.inference, self.parallelism, self.hardware, num_tokens
+                    )
+                    # 共享专家与路由专家并行，取较大值
+                    # 这里简化处理：假设共享专家在路由专家之后开始，但可以部分重叠
+                    overlap_ratio = 0.5  # 50% 重叠
+                    effective_shared_latency = shared_latency * (1 - overlap_ratio)
+                    self.gantt_builder.add_compute_task(
+                        GanttTaskType.MOE_SHARED_EXPERT, current_time, effective_shared_latency,
+                        phase, chip_id, pp_stage, layer_index, token_index
+                    )
+                    current_time += effective_shared_latency
+
+                # EP Combine (结果收集)
+                if self.parallelism.ep > 1:
+                    combine_latency = calc_ep_combine_latency(
+                        self.model, self.inference, self.parallelism, self.hardware,
+                        num_tokens, self.ep_bandwidth, self.ep_latency
+                    )
+                    self.gantt_builder.add_comm_task(
+                        GanttTaskType.EP_COMBINE, current_time, combine_latency,
+                        phase, chip_id, pp_stage, layer_index, token_index
+                    )
+                    current_time += combine_latency
+
+            else:
+                # ========== 普通 Dense FFN 层 ==========
+                # FFN Gate
+                gate_latency = calc_ffn_gate_latency(
+                    self.model, self.inference, self.parallelism, self.hardware, num_tokens
+                )
+                self.gantt_builder.add_compute_task(
+                    GanttTaskType.FFN_GATE, current_time, gate_latency,
+                    phase, chip_id, pp_stage, layer_index, token_index
+                )
+                current_time += gate_latency
+
+                # FFN Up
+                up_latency = calc_ffn_up_latency(
+                    self.model, self.inference, self.parallelism, self.hardware, num_tokens
+                )
+                self.gantt_builder.add_compute_task(
+                    GanttTaskType.FFN_UP, current_time, up_latency,
+                    phase, chip_id, pp_stage, layer_index, token_index
+                )
+                current_time += up_latency
+
+                # FFN Down
+                down_latency = calc_ffn_down_latency(
+                    self.model, self.inference, self.parallelism, self.hardware, num_tokens
+                )
+                self.gantt_builder.add_compute_task(
+                    GanttTaskType.FFN_DOWN, current_time, down_latency,
+                    phase, chip_id, pp_stage, layer_index, token_index
+                )
+                current_time += down_latency
+
+            # TP AllReduce (FFN/MoE 输出)
+            if self.parallelism.tp > 1:
+                tp_comm_latency = self._calc_tp_allreduce_latency(num_tokens)
+                self.gantt_builder.add_comm_task(
+                    GanttTaskType.TP_COMM, current_time, tp_comm_latency,
+                    phase, chip_id, pp_stage, layer_index, token_index
+                )
+                current_time += tp_comm_latency
+
+            # SP ReduceScatter (张量切分 → 序列切分) - 离开FFN TP层
+            if self.parallelism.sp > 1:
+                sp_reduce_scatter_latency = self._calc_sp_reduce_scatter_latency(num_tokens)
+                self.gantt_builder.add_comm_task(
+                    GanttTaskType.SP_REDUCE_SCATTER, current_time, sp_reduce_scatter_latency,
+                    phase, chip_id, pp_stage, layer_index, token_index
+                )
+                current_time += sp_reduce_scatter_latency
+
+        else:
+            # 粗粒度模拟 - 整层计算
+            layer_latency = self._calc_layer_latency_coarse(num_tokens, context_length)
+            self.gantt_builder.add_compute_task(
+                GanttTaskType.COMPUTE, current_time, layer_latency,
+                phase, chip_id, pp_stage, layer_index, token_index
+            )
+            current_time += layer_latency
+
+            # TP 通信
+            if self.parallelism.tp > 1:
+                tp_comm = self._calc_tp_allreduce_latency(num_tokens) * 2  # Attn + FFN
+                self.gantt_builder.add_comm_task(
+                    GanttTaskType.TP_COMM, current_time, tp_comm,
+                    phase, chip_id, pp_stage, layer_index, token_index
+                )
+                current_time += tp_comm
+
+        return current_time
 
     def _calc_tp_allreduce_latency(self, num_tokens: int) -> float:
-        """计算 TP AllReduce 延迟（Ring AllReduce 算法）"""
+        """计算 TP AllReduce 延迟"""
         bytes_per_elem = get_bytes_per_element(self.model.dtype)
         data_size_gb = (
             self.inference.batch_size * num_tokens * self.model.hidden_size * bytes_per_elem
         ) / (1024 ** 3)
 
-        # Ring AllReduce: 2 * (N-1) / N * data_size / bandwidth + latency
-        tp = self.parallelism.tp
-        if tp <= 1:
-            return 0.0
-
-        transfer_time = 2 * (tp - 1) / tp * data_size_gb / self.tp_bandwidth * 1000  # ms
-        latency_overhead = self.tp_latency / 1000  # us -> ms
-        return transfer_time + latency_overhead
+        return calc_tp_allreduce_latency(
+            data_size_gb, self.tp_bandwidth, self.tp_latency, self.parallelism.tp
+        )
 
     def _calc_pp_comm_latency(self, num_tokens: int) -> float:
         """计算 PP P2P 通信延迟"""
@@ -1009,10 +1164,7 @@ class LLMInferenceSimulator:
             self.inference.batch_size * num_tokens * self.model.hidden_size * bytes_per_elem
         ) / (1024 ** 3)
 
-        # P2P: data_size / bandwidth + latency
-        transfer_time = data_size_gb / self.pp_bandwidth * 1000  # ms
-        latency_overhead = self.pp_latency / 1000  # us -> ms
-        return transfer_time + latency_overhead
+        return calc_pp_p2p_latency(data_size_gb, self.pp_bandwidth, self.pp_latency)
 
     def _calc_sp_allgather_latency(self, num_tokens: int) -> float:
         """计算 SP AllGather 延迟"""
@@ -1020,16 +1172,14 @@ class LLMInferenceSimulator:
             return 0.0
 
         # 计算数据量
-        bytes_per_elem = get_bytes_per_element(self.model.dtype)
-        data_size_gb = (
-            self.inference.batch_size * num_tokens * self.model.hidden_size * bytes_per_elem
-        ) / (1024 ** 3)
+        data_size_gb = calc_sp_comm_volume_gb(
+            self.model, self.inference, self.parallelism, num_tokens
+        )
 
-        # AllGather: (N-1) / N * data_size / bandwidth + latency
-        sp = self.parallelism.sp
-        transfer_time = (sp - 1) / sp * data_size_gb / self.tp_bandwidth * 1000
-        latency_overhead = self.tp_latency / 1000
-        return transfer_time + latency_overhead
+        # SP通信使用与TP相同的带宽和延迟（通常SP与TP绑定在同一组）
+        return calc_sp_allgather_latency(
+            data_size_gb, self.tp_bandwidth, self.tp_latency, self.parallelism.sp
+        )
 
     def _calc_sp_reduce_scatter_latency(self, num_tokens: int) -> float:
         """计算 SP ReduceScatter 延迟"""
@@ -1037,16 +1187,29 @@ class LLMInferenceSimulator:
             return 0.0
 
         # 计算数据量
-        bytes_per_elem = get_bytes_per_element(self.model.dtype)
-        data_size_gb = (
-            self.inference.batch_size * num_tokens * self.model.hidden_size * bytes_per_elem
-        ) / (1024 ** 3)
+        data_size_gb = calc_sp_comm_volume_gb(
+            self.model, self.inference, self.parallelism, num_tokens
+        )
 
-        # ReduceScatter: (N-1) / N * data_size / bandwidth + latency
-        sp = self.parallelism.sp
-        transfer_time = (sp - 1) / sp * data_size_gb / self.tp_bandwidth * 1000
-        latency_overhead = self.tp_latency / 1000
-        return transfer_time + latency_overhead
+        # SP通信使用与TP相同的带宽和延迟
+        return calc_sp_reduce_scatter_latency(
+            data_size_gb, self.tp_bandwidth, self.tp_latency, self.parallelism.sp
+        )
+
+    def _calc_layer_latency_coarse(self, num_tokens: int, context_length: int) -> float:
+        """粗粒度计算单层延迟"""
+        # 简化计算：主要是 Attention 和 FFN
+        attn_latency = (
+            calc_attention_qkv_latency(self.model, self.inference, self.parallelism, self.hardware, num_tokens) +
+            calc_attention_score_latency(self.model, self.inference, self.parallelism, self.hardware, num_tokens, context_length) +
+            calc_attention_output_latency(self.model, self.inference, self.parallelism, self.hardware, num_tokens, context_length)
+        )
+        ffn_latency = (
+            calc_ffn_gate_latency(self.model, self.inference, self.parallelism, self.hardware, num_tokens) +
+            calc_ffn_up_latency(self.model, self.inference, self.parallelism, self.hardware, num_tokens) +
+            calc_ffn_down_latency(self.model, self.inference, self.parallelism, self.hardware, num_tokens)
+        )
+        return attn_latency + ffn_latency
 
     def _get_chip_for_stage(self, pp_stage: int) -> str:
         """获取指定 PP stage 的第一个芯片ID"""

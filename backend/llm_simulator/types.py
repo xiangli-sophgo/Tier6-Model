@@ -290,6 +290,7 @@ class MLAConfig:
     qk_nope_head_dim: int    # 非 RoPE 头维度
     qk_rope_head_dim: int    # RoPE 头维度
     v_head_dim: int          # V 的头维度
+    variant: str = "mla"     # MLA 变体: mla | mla_v32 | mla_absorb | mla_absorb_v32
     mla_tp: int = 0          # MLA 张量并行度 (0 表示使用全局 tp)
     mla_dp: int = 0          # MLA 数据并行度 (0 表示使用全局 dp)
 

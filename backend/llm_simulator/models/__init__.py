@@ -8,11 +8,21 @@ Model 是最顶层抽象，包含:
 """
 
 from .base import BaseModel
-from .deepseek import DeepSeekModel
+from .deepseek import (
+    DeepSeekModel,
+    create_deepseek_v3,
+    create_deepseek_v3_absorb,
+    create_deepseek_v32,
+    MLA_VARIANTS,
+)
 from .llama import LlamaModel
 
 __all__ = [
     'BaseModel',
     'DeepSeekModel',
+    'create_deepseek_v3',
+    'create_deepseek_v3_absorb',
+    'create_deepseek_v32',
+    'MLA_VARIANTS',
     'LlamaModel',
 ]

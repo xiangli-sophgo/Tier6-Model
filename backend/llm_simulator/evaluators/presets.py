@@ -25,12 +25,14 @@ def _create_sg2260e() -> AcceleratorMicroArch:
         inter_bw=100e9,  # 组间带宽 100 GB/s (跨节点)
         intra_latency_us=1.0,  # 组内延迟 1 us (粗粒度)
         inter_latency_us=2.0,  # 组间延迟 2 us (粗粒度)
-        # 细粒度通信延迟 (单位: us)
+        # 细粒度通信延迟 (单位: us) - 对齐 DS_TPU
         comm_latency=CommunicationLatency(
-            chip_to_chip_us=0.15,      # 芯片间物理互联延迟
-            comm_start_overhead_us=0.59,  # 通信启动开销
-            memory_read_latency_us=0.15,  # 显存读延迟
-            memory_write_latency_us=0.01, # 显存写延迟
+            chip_to_chip_us=0.15,         # c2c_lat: 芯片间物理互联延迟
+            memory_read_latency_us=0.15,  # ddr_r_lat: 显存读延迟
+            memory_write_latency_us=0.01, # ddr_w_lat: 显存写延迟
+            noc_latency_us=0.05,          # noc_lat: 片上网络延迟
+            die_to_die_latency_us=0.04,   # d2d_lat: Die间延迟
+            # start_lat = 2*0.15 + 0.15 + 0.01 + 0.05 + 2*0.04 = 0.59 us
         ),
     )
     # 从 64 TFLOPS 反推频率
@@ -61,12 +63,14 @@ def _create_h100() -> AcceleratorMicroArch:
         inter_bw=400e9,  # InfiniBand NDR 400 Gb/s = 50 GB/s per port, 8x = 400 GB/s
         intra_latency_us=1.0,  # NVLink 4.0 延迟 1 us (粗粒度)
         inter_latency_us=2.0,  # InfiniBand NDR 延迟 2 us (粗粒度)
-        # 细粒度通信延迟 (单位: us)
+        # 细粒度通信延迟 (单位: us) - H100 单 Die 芯片
         comm_latency=CommunicationLatency(
-            chip_to_chip_us=0.10,      # NVLink 4.0 物理延迟更低
-            comm_start_overhead_us=0.50,  # NVLink 4.0 启动开销
-            memory_read_latency_us=0.10,  # HBM3 读延迟
-            memory_write_latency_us=0.01, # HBM3 写延迟
+            chip_to_chip_us=0.10,         # c2c_lat: NVLink 4.0 物理延迟更低
+            memory_read_latency_us=0.10,  # ddr_r_lat: HBM3 读延迟
+            memory_write_latency_us=0.01, # ddr_w_lat: HBM3 写延迟
+            noc_latency_us=0.03,          # noc_lat: H100 片上网络延迟 (推算)
+            die_to_die_latency_us=0.03,   # d2d_lat: HBM 接口延迟 (推算)
+            # start_lat = 2*0.10 + 0.10 + 0.01 + 0.03 + 2*0.03 = 0.40 us
         ),
     )
     arch.freq_ghz = arch.compute_freq_from_flops(989e12)  # 989 TFLOPS FP16
@@ -96,12 +100,14 @@ def _create_a100() -> AcceleratorMicroArch:
         inter_bw=200e9,  # InfiniBand HDR 200 Gb/s = 25 GB/s per port, 8x = 200 GB/s
         intra_latency_us=2.0,  # NVLink 3.0 延迟 2 us (粗粒度)
         inter_latency_us=2.0,  # InfiniBand HDR 延迟 2 us (粗粒度)
-        # 细粒度通信延迟 (单位: us)
+        # 细粒度通信延迟 (单位: us) - A100 单 Die 芯片
         comm_latency=CommunicationLatency(
-            chip_to_chip_us=0.15,      # NVLink 3.0 物理延迟
-            comm_start_overhead_us=0.60,  # NVLink 3.0 启动开销
-            memory_read_latency_us=0.12,  # HBM2e 读延迟
-            memory_write_latency_us=0.01, # HBM2e 写延迟
+            chip_to_chip_us=0.15,         # c2c_lat: NVLink 3.0 物理延迟
+            memory_read_latency_us=0.12,  # ddr_r_lat: HBM2e 读延迟
+            memory_write_latency_us=0.01, # ddr_w_lat: HBM2e 写延迟
+            noc_latency_us=0.05,          # noc_lat: A100 片上网络延迟 (推算)
+            die_to_die_latency_us=0.035,  # d2d_lat: HBM 接口延迟 (推算)
+            # start_lat = 2*0.15 + 0.12 + 0.01 + 0.05 + 2*0.035 = 0.55 us
         ),
     )
     arch.freq_ghz = arch.compute_freq_from_flops(312e12)  # 312 TFLOPS FP16
@@ -137,12 +143,14 @@ def _create_sg2261() -> AcceleratorMicroArch:
         inter_bw=100e9,  # 100 GB/s
         intra_latency_us=1.0,  # SophgoLink 延迟 1 us (粗粒度)
         inter_latency_us=2.0,  # 跨节点延迟 2 us (粗粒度)
-        # 细粒度通信延迟 (单位: us) - 参考 DS_TPU
+        # 细粒度通信延迟 (单位: us) - 对齐 DS_TPU
         comm_latency=CommunicationLatency(
-            chip_to_chip_us=0.15,      # SophgoLink 物理延迟
-            comm_start_overhead_us=0.59,  # 启动开销 (DS_TPU start_lat)
-            memory_read_latency_us=0.15,  # HBM2 读延迟 (DS_TPU ddr_r_lat)
-            memory_write_latency_us=0.01, # HBM2 写延迟 (DS_TPU ddr_w_lat)
+            chip_to_chip_us=0.15,         # c2c_lat: SophgoLink 物理延迟
+            memory_read_latency_us=0.15,  # ddr_r_lat: HBM2 读延迟
+            memory_write_latency_us=0.01, # ddr_w_lat: HBM2 写延迟
+            noc_latency_us=0.05,          # noc_lat: 片上网络延迟
+            die_to_die_latency_us=0.04,   # d2d_lat: Die间延迟
+            # start_lat = 2*0.15 + 0.15 + 0.01 + 0.05 + 2*0.04 = 0.59 us
         ),
     )
     # 256 TFLOPS BF16
@@ -168,7 +176,7 @@ def _create_sg2262() -> AcceleratorMicroArch:
         cube_n=8,
         sram_size_bytes=2 * 1024 * 1024,  # 2MB
         sram_utilization=0.45,
-        # DS_TPU: dram_bw = 3*4096e9 * 0.70
+        # dram_bw = 3*4096e9 * 0.70
         dram_bandwidth_bytes=3 * 4096e9 * 0.70,
         lane_num=16,
         align_bytes=32,
@@ -179,16 +187,17 @@ def _create_sg2262() -> AcceleratorMicroArch:
         inter_bw=448e9,  # 448 GB/s
         intra_latency_us=1.0,  # SophgoLink 延迟 1 us (粗粒度)
         inter_latency_us=1.0,  # SG2262 芯片间也是高速互联 1 us (粗粒度)
-        # 细粒度通信延迟 (单位: us) - 参考 DS_TPU
+        # 细粒度通信延迟 (单位: us) - 对齐 DS_TPU
         comm_latency=CommunicationLatency(
-            chip_to_chip_us=0.15,      # SophgoLink 物理延迟 (DS_TPU c2c_lat)
-            comm_start_overhead_us=0.59,  # 启动开销 (DS_TPU start_lat)
-            memory_read_latency_us=0.15,  # HBM2 读延迟 (DS_TPU ddr_r_lat)
-            memory_write_latency_us=0.01, # HBM2 写延迟 (DS_TPU ddr_w_lat)
+            chip_to_chip_us=0.15,         # c2c_lat: SophgoLink 物理延迟
+            memory_read_latency_us=0.15,  # ddr_r_lat: HBM2 读延迟
+            memory_write_latency_us=0.01, # ddr_w_lat: HBM2 写延迟
+            noc_latency_us=0.05,          # noc_lat: 片上网络延迟
+            die_to_die_latency_us=0.04,   # d2d_lat: Die间延迟
+            # start_lat = 2*0.15 + 0.15 + 0.01 + 0.05 + 2*0.04 = 0.59 us
         ),
     )
     # SG2262: 768 TFLOPS BF16
-    # 注意：不使用 768 * 1024（二进制），直接使用十进制
     arch.freq_ghz = arch.compute_freq_from_flops(768e12)
     return arch
 
@@ -216,12 +225,14 @@ def _create_a800() -> AcceleratorMicroArch:
         inter_bw=200e9,
         intra_latency_us=2.0,  # NVLink 延迟 2 us (粗粒度)
         inter_latency_us=2.0,  # InfiniBand HDR 延迟 2 us (粗粒度)
-        # 细粒度通信延迟 (单位: us) - 与 A100 相同
+        # 细粒度通信延迟 (单位: us) - 与 A100 相同 (带宽受限不影响延迟)
         comm_latency=CommunicationLatency(
-            chip_to_chip_us=0.15,      # NVLink 3.0 物理延迟 (带宽受限不影响延迟)
-            comm_start_overhead_us=0.60,  # NVLink 3.0 启动开销
-            memory_read_latency_us=0.12,  # HBM2e 读延迟
-            memory_write_latency_us=0.01, # HBM2e 写延迟
+            chip_to_chip_us=0.15,         # c2c_lat: NVLink 3.0 物理延迟
+            memory_read_latency_us=0.12,  # ddr_r_lat: HBM2e 读延迟
+            memory_write_latency_us=0.01, # ddr_w_lat: HBM2e 写延迟
+            noc_latency_us=0.05,          # noc_lat: 片上网络延迟 (推算)
+            die_to_die_latency_us=0.035,  # d2d_lat: HBM 接口延迟 (推算)
+            # start_lat = 2*0.15 + 0.12 + 0.01 + 0.05 + 2*0.035 = 0.55 us
         ),
     )
     arch.freq_ghz = arch.compute_freq_from_flops(312e12)
@@ -253,10 +264,12 @@ def _create_ascend_910b() -> AcceleratorMicroArch:
         inter_latency_us=2.0,  # 跨节点延迟 2 us (粗粒度)
         # 细粒度通信延迟 (单位: us) - 推算值
         comm_latency=CommunicationLatency(
-            chip_to_chip_us=0.15,      # HCCS 物理延迟 (推算)
-            comm_start_overhead_us=0.55,  # HCCS 启动开销 (推算)
-            memory_read_latency_us=0.13,  # HBM2e 读延迟
-            memory_write_latency_us=0.01, # HBM2e 写延迟
+            chip_to_chip_us=0.15,         # c2c_lat: HCCS 物理延迟 (推算)
+            memory_read_latency_us=0.13,  # ddr_r_lat: HBM2e 读延迟
+            memory_write_latency_us=0.01, # ddr_w_lat: HBM2e 写延迟
+            noc_latency_us=0.04,          # noc_lat: 片上网络延迟 (推算)
+            die_to_die_latency_us=0.035,  # d2d_lat: Die间延迟 (推算)
+            # start_lat = 2*0.15 + 0.13 + 0.01 + 0.04 + 2*0.035 = 0.55 us
         ),
     )
     arch.freq_ghz = arch.compute_freq_from_flops(320e12)  # 320 TFLOPS BF16

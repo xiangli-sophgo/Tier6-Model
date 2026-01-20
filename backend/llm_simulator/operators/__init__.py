@@ -11,6 +11,8 @@ from .base import ComputeOperator, CommunicationOperator
 from .compute import (
     MatMulOperator,
     FA2Operator,
+    MHAOperator,
+    MQAOperator,
     SoftmaxOperator,
     RMSNormOperator,
 )
@@ -29,6 +31,8 @@ __all__ = [
     # 计算算子
     'MatMulOperator',
     'FA2Operator',
+    'MHAOperator',
+    'MQAOperator',
     'SoftmaxOperator',
     'RMSNormOperator',
     # 通信算子

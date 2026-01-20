@@ -172,23 +172,15 @@ export {
 } from './trafficMapper';
 
 // ============================================
-// 推理模拟器
+// 推理模拟相关类型
 // ============================================
-export {
-  // 核心模拟器
-  InferenceSimulator,
-  runInferenceSimulation,
-  // 事件队列
-  EventQueue,
-  TaskDependencyGraph,
-  // 类型 (常用)
-  type SimulationConfig,
-  type SimulationResult,
-  type GanttChartData,
-  type GanttTask,
-  type SimEvent,
-  type CommTraceItem,
-  type SimulationStats,
-  // 默认配置
-  DEFAULT_SIMULATION_CONFIG,
-} from './simulation';
+// 注意: 前端模拟器已移除，所有模拟均由后端执行
+export type {
+  SimulationConfig,
+  SimulationResult,
+  GanttChartData,
+  GanttTask,
+  SimulationStats,
+  SimulationScoreResult,
+  FormulaVsSimComparison,
+} from './types';

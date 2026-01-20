@@ -226,11 +226,22 @@ class DS_CombineEval:
 
 # ==================== 测试函数 ====================
 
+from llm_simulator.evaluators.arch_config import CommunicationLatency
+
+
 class MockArch:
-    """模拟架构配置"""
+    """模拟架构配置 - 对齐 DS_TPU 参数"""
     def __init__(self, intra_bw=504e9, inter_bw=100e9):
         self.intra_bw = intra_bw
         self.inter_bw = inter_bw
+        # 添加通信延迟配置 (对齐 DS_TPU 默认值)
+        self.comm_latency = CommunicationLatency(
+            chip_to_chip_us=0.15,
+            memory_read_latency_us=0.15,
+            memory_write_latency_us=0.01,
+            noc_latency_us=0.05,
+            die_to_die_latency_us=0.04,
+        )
 
 
 def compare_results(name, tier6_lat, tier6_comm, ds_lat, ds_comm):

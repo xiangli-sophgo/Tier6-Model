@@ -9,8 +9,6 @@ import {
   SimulationStats,
   SimulationScoreResult,
   FormulaVsSimComparison,
-} from './simulation/types'
-import {
   PlanAnalysisResult,
   ScoreWeights,
   DEFAULT_SCORE_WEIGHTS,
@@ -47,7 +45,7 @@ export function calculateSimulationScore(
   const efficiencyScore = avgUtilization * 100
 
   // 均衡评分 (基于气泡比)
-  const bubbleRatio = stats.maxPPBubbleRatio
+  const bubbleRatio = stats.maxPpBubbleRatio
   const balanceScore = (1 - bubbleRatio) * 100
 
   // 综合评分 (加权平均)
@@ -68,7 +66,7 @@ export function calculateSimulationScore(
       avg_tpot_ms: stats.avgTpot,
       dynamic_mfu: stats.dynamicMfu,
       dynamic_mbu: stats.dynamicMbu,
-      pp_bubble_ratio: stats.maxPPBubbleRatio,
+      pp_bubble_ratio: stats.maxPpBubbleRatio,
     },
   }
 }

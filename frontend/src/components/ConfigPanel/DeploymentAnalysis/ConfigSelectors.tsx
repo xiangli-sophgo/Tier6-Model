@@ -856,6 +856,83 @@ export const BenchmarkConfigSelector: React.FC<BenchmarkConfigSelectorProps> = (
                 ]}
               />
             </div>
+            <div style={paramRowStyle}>
+              <Tooltip title="Attention 类型: MHA=多头注意力, GQA=分组查询注意力, MQA=多查询注意力, MLA=多头潜在注意力"><Text style={{ fontSize: 11, cursor: 'help' }}>Attention类型</Text></Tooltip>
+              <Select size="small" value={modelConfig.attention_type || 'mha'} onChange={(v) => {
+                if (v === 'mla' && !modelConfig.mla_config) {
+                  // 初始化 MLA 配置
+                  onModelChange({ ...modelConfig, attention_type: v, mla_config: {
+                    kv_lora_rank: 512,
+                    q_lora_rank: 1536,
+                    qk_nope_head_dim: 128,
+                    qk_rope_head_dim: 64,
+                    v_head_dim: 128,
+                    variant: 'mla',
+                  }})
+                } else {
+                  updateModelField('attention_type', v)
+                }
+              }} style={{ width: 90 }}
+                options={[
+                  { value: 'mha', label: 'MHA' },
+                  { value: 'gqa', label: 'GQA' },
+                  { value: 'mqa', label: 'MQA' },
+                  { value: 'mla', label: 'MLA' },
+                ]}
+              />
+            </div>
+
+            {/* MLA 参数 */}
+            {modelConfig.attention_type === 'mla' && modelConfig.mla_config && (
+              <>
+                <div style={{ borderTop: '1px solid #e8e8e8', marginTop: 8, paddingTop: 8 }}>
+                  <div style={{ fontSize: 12, color: '#666', fontWeight: 500, marginBottom: 8 }}>MLA 参数</div>
+                </div>
+                <div style={paramRowStyle}>
+                  <Tooltip title="MLA 实现变体: mla=基础版, mla_v32=V3.2优化, mla_absorb=吸收版, mla_absorb_v32=吸收+V3.2"><Text style={{ fontSize: 11, cursor: 'help' }}>MLA 变体</Text></Tooltip>
+                  <Select size="small" value={modelConfig.mla_config.variant || 'mla'}
+                    onChange={(v) => onModelChange({ ...modelConfig, mla_config: { ...modelConfig.mla_config!, variant: v } })}
+                    style={{ width: 130 }}
+                    options={[
+                      { value: 'mla', label: 'MLA 基础' },
+                      { value: 'mla_v32', label: 'MLA V3.2' },
+                      { value: 'mla_absorb', label: 'MLA 吸收' },
+                      { value: 'mla_absorb_v32', label: 'MLA 吸收V3.2' },
+                    ]}
+                  />
+                </div>
+                <div style={paramRowStyle}>
+                  <Tooltip title="KV LoRA Rank: KV 压缩后的隐维度"><Text style={{ fontSize: 11, cursor: 'help' }}>KV LoRA Rank</Text></Tooltip>
+                  <InputNumber size="small" min={64} max={4096} value={modelConfig.mla_config.kv_lora_rank}
+                    onChange={(v) => onModelChange({ ...modelConfig, mla_config: { ...modelConfig.mla_config!, kv_lora_rank: v || 512 } })}
+                    style={{ width: 90 }} />
+                </div>
+                <div style={paramRowStyle}>
+                  <Tooltip title="Q LoRA Rank: Query 的 LoRA rank"><Text style={{ fontSize: 11, cursor: 'help' }}>Q LoRA Rank</Text></Tooltip>
+                  <InputNumber size="small" min={64} max={4096} value={modelConfig.mla_config.q_lora_rank}
+                    onChange={(v) => onModelChange({ ...modelConfig, mla_config: { ...modelConfig.mla_config!, q_lora_rank: v || 1536 } })}
+                    style={{ width: 90 }} />
+                </div>
+                <div style={paramRowStyle}>
+                  <Tooltip title="QK Nope Head Dim: 非 RoPE 头维度"><Text style={{ fontSize: 11, cursor: 'help' }}>QK Nope维度</Text></Tooltip>
+                  <InputNumber size="small" min={32} max={512} value={modelConfig.mla_config.qk_nope_head_dim}
+                    onChange={(v) => onModelChange({ ...modelConfig, mla_config: { ...modelConfig.mla_config!, qk_nope_head_dim: v || 128 } })}
+                    style={{ width: 90 }} />
+                </div>
+                <div style={paramRowStyle}>
+                  <Tooltip title="QK RoPE Head Dim: RoPE 头维度"><Text style={{ fontSize: 11, cursor: 'help' }}>QK RoPE维度</Text></Tooltip>
+                  <InputNumber size="small" min={32} max={512} value={modelConfig.mla_config.qk_rope_head_dim}
+                    onChange={(v) => onModelChange({ ...modelConfig, mla_config: { ...modelConfig.mla_config!, qk_rope_head_dim: v || 64 } })}
+                    style={{ width: 90 }} />
+                </div>
+                <div style={paramRowStyle}>
+                  <Tooltip title="V Head Dim: Value 头维度"><Text style={{ fontSize: 11, cursor: 'help' }}>V 头维度</Text></Tooltip>
+                  <InputNumber size="small" min={32} max={512} value={modelConfig.mla_config.v_head_dim}
+                    onChange={(v) => onModelChange({ ...modelConfig, mla_config: { ...modelConfig.mla_config!, v_head_dim: v || 128 } })}
+                    style={{ width: 90 }} />
+                </div>
+              </>
+            )}
 
             {/* MoE 参数 */}
             {modelConfig.model_type === 'moe' && modelConfig.moe_config && (

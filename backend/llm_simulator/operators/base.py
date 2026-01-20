@@ -14,6 +14,8 @@ class ComputeOpType(Enum):
     """计算算子类型枚举"""
     MATMUL = auto()
     FA2 = auto()
+    MHA = auto()      # Multi-Head Attention (用于 MLA/MLAv32)
+    MQA = auto()      # Multi-Query Attention (用于 MLAAbsorb/MLAAbsorbv32)
     SOFTMAX = auto()
     RMSNORM = auto()
 

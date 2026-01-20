@@ -10,7 +10,7 @@
 import React, { useMemo, useState, useCallback, useRef, useEffect } from 'react'
 import { Empty, Typography, Button, Space, Tooltip } from 'antd'
 import { ZoomInOutlined, ZoomOutOutlined, ReloadOutlined } from '@ant-design/icons'
-import type { GanttChartData, GanttTask } from '../../../../utils/llmDeployment/simulation/types'
+import type { GanttChartData, GanttTask } from '../../../../utils/llmDeployment/types'
 
 const { Text } = Typography
 
