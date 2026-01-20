@@ -889,15 +889,15 @@ export const BenchmarkConfigSelector: React.FC<BenchmarkConfigSelectorProps> = (
                   <div style={{ fontSize: 12, color: '#666', fontWeight: 500, marginBottom: 8 }}>MLA 参数</div>
                 </div>
                 <div style={paramRowStyle}>
-                  <Tooltip title="MLA 实现变体: mla=基础版, mla_v32=V3.2优化, mla_absorb=吸收版, mla_absorb_v32=吸收+V3.2"><Text style={{ fontSize: 11, cursor: 'help' }}>MLA 变体</Text></Tooltip>
+                  <Tooltip title="MLA 实现变体: mla=基础版, mla_v32=V3.2优化, mla_absorb=Absorb权重吸收优化, mla_absorb_v32=Absorb+V3.2"><Text style={{ fontSize: 11, cursor: 'help' }}>MLA 变体</Text></Tooltip>
                   <Select size="small" value={modelConfig.mla_config.variant || 'mla'}
                     onChange={(v) => onModelChange({ ...modelConfig, mla_config: { ...modelConfig.mla_config!, variant: v } })}
-                    style={{ width: 130 }}
+                    style={{ width: 160 }}
                     options={[
                       { value: 'mla', label: 'MLA 基础' },
                       { value: 'mla_v32', label: 'MLA V3.2' },
-                      { value: 'mla_absorb', label: 'MLA 吸收' },
-                      { value: 'mla_absorb_v32', label: 'MLA 吸收V3.2' },
+                      { value: 'mla_absorb', label: 'MLA Absorb' },
+                      { value: 'mla_absorb_v32', label: 'MLA Absorb V3.2' },
                     ]}
                   />
                 </div>

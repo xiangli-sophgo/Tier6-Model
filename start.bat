@@ -13,18 +13,11 @@ cd /d %SCRIPT_DIR%
 echo 启动后端服务...
 cd backend
 
-:: 检查虚拟环境
-if not exist "venv" (
-    echo 创建Python虚拟环境...
-    python -m venv venv
-)
-
-call venv\Scripts\activate.bat
-echo 安装后端依赖...
-pip install -r requirements.txt
+:: 跳过虚拟环境，直接使用系统 Python
+echo 检查后端依赖...
 
 :: 启动后端
-start "Tier6+ Backend" cmd /k "cd /d %SCRIPT_DIR%backend && call venv\Scripts\activate.bat && python -m uvicorn llm_simulator.api:app --port 8001 --reload"
+start "Tier6+ Backend" cmd /k "cd /d %SCRIPT_DIR%backend && python3 -m uvicorn llm_simulator.api:app --port 8001 --reload"
 
 cd ..
 
