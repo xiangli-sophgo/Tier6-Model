@@ -10,9 +10,7 @@ import { MetricsBarChart } from './MetricsBarChart'
 import { MemoryPieChart } from './MemoryPieChart'
 import { RooflineChart } from './RooflineChart'
 import { GanttChart } from './GanttChart'
-import { ComparisonTable } from './ComparisonTable'
 import { BaseCard } from '../../../common/BaseCard'
-import { compareFormulaAndSimulation } from '../../../../utils/llmDeployment/simulationScorer'
 import {
   PlanAnalysisResult,
   HardwareConfig,
@@ -351,42 +349,6 @@ export const ChartsPanel: React.FC<ChartsPanelProps> = ({
         </BaseCard>
       </div>
 
-      {/* ═══════════════════════════════════════════════════════════════ */}
-      {/* 六、公式 vs 仿真结果 */}
-      {/* ═══════════════════════════════════════════════════════════════ */}
-      {simulationResult && (
-        <div style={{ marginBottom: 16 }}>
-          <BaseCard
-            title="公式 vs 仿真结果"
-            accentColor="#1890ff"
-            collapsible
-            expanded={expandedSections.comparison}
-            onExpandChange={(expanded) => setExpandedSections(prev => ({ ...prev, comparison: expanded }))}
-          >
-            <div style={{ ...chartCardStyle, boxShadow: 'none', border: 'none' }}>
-            <div style={chartTitleStyle}>
-              <Text strong>理论估算与事件驱动模拟对比</Text>
-              <Text type="secondary" style={{ fontSize: 11 }}>
-                误差分析与评分
-              </Text>
-            </div>
-            <ComparisonTable
-              comparison={compareFormulaAndSimulation(
-                result,
-                simulationResult.stats,
-                undefined,  // 使用默认权重
-                inference ? {
-                  model,
-                  inference,
-                  parallelism: result.plan.parallelism,
-                  hardware,
-                } : undefined
-              )}
-            />
-          </div>
-          </BaseCard>
-        </div>
-      )}
     </div>
   )
 }

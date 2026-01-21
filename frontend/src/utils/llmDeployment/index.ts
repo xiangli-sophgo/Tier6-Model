@@ -3,11 +3,13 @@
  *
  * 提供完整的 LLM 推理部署方案分析能力：
  * - 模型参数化：根据 LLM 配置自动计算通信量、显存需求、计算量
- * - 硬件参数化：配置芯片算力、显存、带宽，计算真实延迟
- * - 延迟估算：预估 Prefill/Decode 延迟，识别瓶颈
+ * - 硬件参数化：配置芯片算力、显存、带宽
  * - 显存分析：分析各项显存占用，检查是否超限
- * - 方案搜索：自动搜索满足约束的所有方案，评分排序
- * - 多方案对比：对比多个方案的各项指标
+ * - 后端模拟：调用后端精确仿真器进行延迟、吞吐、MFU/MBU 计算
+ * - 方案搜索：自动搜索满足约束的所有方案（串行调用后端）
+ * - 评分排序：基于后端仿真结果进行方案评分和排序
+ *
+ * 注意：所有延迟估算、瓶颈分析、吞吐量计算均由后端完成
  */
 
 // ============================================
@@ -65,85 +67,41 @@ export {
 } from './commCalculator';
 
 // ============================================
-// 延迟估算器
+// 后端 API 调用层
 // ============================================
 export {
-  // 计算延迟
-  estimatePrefillComputeLatency,
-  estimateDecodeComputeLatency,
-  // 访存延迟
-  estimateMemoryLatency,
-  estimateDecodeMemoryLatency,
-  // 通信延迟
-  estimateCommLatency,
-  estimatePrefillCommLatency,
-  estimateDecodeCommLatency,
-  // 流水线
-  calculatePPBubbleRatio,
-  calculatePPEfficiency,
-  // 综合分析
-  analyzeLatency,
-  analyzeBottleneckRoofline,
-  // 吞吐量
-  estimateTokenThroughput,
-  estimateRequestThroughput,
-  estimateMFU,
-  estimateTheoreticalMaxThroughput,
-} from './latencyEstimator';
+  simulateBackend,
+  batchSimulate,
+  validateConfig,
+} from './backendApi';
 
 // ============================================
-// 方案分析器
+// 方案搜索器（后端版本）
 // ============================================
 export {
-  // 可行性检查
-  checkFeasibility,
-  // 吞吐分析
-  analyzeThroughput,
-  // 利用率分析
-  analyzeUtilization,
-  // 评分
-  calculateOverallScore,
-  // 建议生成
-  generateSuggestions,
-  // 完整分析
-  analyzePlan,
-  quickAnalyze,
-} from './planAnalyzer';
-
-// ============================================
-// 方案搜索器
-// ============================================
-export {
-  // 完整搜索
-  searchOptimalPlan,
-  // 快速搜索
-  quickSearch,
-  // 固定芯片数搜索
   searchWithFixedChips,
-  // 渐进式搜索
   progressiveSearch,
-} from './planSearcher';
+  type SearchOptions,
+  type SearchResult,
+  type InfeasibleResult,
+  type FullSearchResult,
+} from './planSearcherBackend';
 
 // ============================================
-// 方案对比器
+// 仿真评分计算器
 // ============================================
 export {
-  // 对比分析
-  comparePlans,
-  analyzeAndCompare,
-  // 报告生成
-  generateComparisonReport,
-  // 成本效益
-  calculateCostPerToken,
-  compareCostEfficiency,
-  // 场景适配
-  analyzeScenarioFit,
-  // 敏感性分析
-  analyzeSensitivity,
-  // 数据导出
-  exportComparisonToCSV,
-  exportComparisonToJSON,
-} from './planComparator';
+  calculateSimulationScore,
+  formatDeviation,
+  isSignificantDeviation,
+} from './simulationScorer';
+
+// ============================================
+// 结果适配器
+// ============================================
+export {
+  adaptSimulationResult,
+} from './resultAdapter';
 
 // ============================================
 // 芯片映射器 (拓扑融合)

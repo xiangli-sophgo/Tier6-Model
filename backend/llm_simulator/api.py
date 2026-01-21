@@ -230,7 +230,7 @@ async def validate_config(request: SimulationRequest):
 
     # 验证并行策略
     try:
-        validate_parallelism_config(request.parallelism)
+        validate_parallelism_config(request.parallelism, request.model)
     except ValueError as e:
         errors.append(f"并行策略: {e}")
 

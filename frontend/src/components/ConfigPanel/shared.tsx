@@ -8,6 +8,7 @@ import {
   HierarchicalTopology,
 } from '../../types'
 import { TopologyTrafficResult, PlanAnalysisResult, HardwareConfig, LLMModelConfig, InferenceConfig, ParallelismStrategy } from '../../utils/llmDeployment/types'
+import { InfeasibleResult } from '../../utils/llmDeployment'
 
 // 历史记录项
 export interface AnalysisHistoryItem {
@@ -38,12 +39,22 @@ export type AnalysisViewMode = 'history' | 'detail'
 export interface DeploymentAnalysisData {
   result: PlanAnalysisResult | null
   topKPlans: PlanAnalysisResult[]
+  /** 不可行方案列表 */
+  infeasiblePlans?: InfeasibleResult[]
   hardware: HardwareConfig
   model: LLMModelConfig
   inference?: InferenceConfig
   loading: boolean
   errorMsg: string | null
   searchStats: { evaluated: number; feasible: number; timeMs: number } | null
+  searchProgress?: {
+    stage: 'idle' | 'generating' | 'evaluating' | 'completed' | 'cancelled'
+    totalCandidates: number
+    currentEvaluating: number
+    evaluated: number
+  }
+  /** 取消评估的回调 */
+  onCancelEvaluation?: () => void
   onSelectPlan: (plan: PlanAnalysisResult) => void
   onMapToTopology?: () => void
   onClearTraffic?: () => void

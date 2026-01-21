@@ -840,6 +840,8 @@ export interface SimulationStats {
   maxPpBubbleRatio: number;
   totalEvents: number;
   prefillFlops: number;
+  /** 错误原因（仅当模拟失败时存在） */
+  errorReason?: string;
 }
 
 /** 模拟结果 */

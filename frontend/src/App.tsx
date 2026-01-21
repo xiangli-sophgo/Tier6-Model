@@ -603,9 +603,12 @@ const WorkbenchContent: React.FC = () => {
                 <AnalysisResultDisplay
                   result={analysis.deploymentAnalysisData?.result ?? null}
                   topKPlans={analysis.deploymentAnalysisData?.topKPlans ?? []}
+                  infeasiblePlans={analysis.deploymentAnalysisData?.infeasiblePlans ?? []}
                   loading={analysis.deploymentAnalysisData?.loading ?? false}
                   onSelectPlan={analysis.deploymentAnalysisData?.onSelectPlan}
                   searchStats={analysis.deploymentAnalysisData?.searchStats ?? null}
+                  searchProgress={analysis.deploymentAnalysisData?.searchProgress}
+                  onCancelEvaluation={analysis.deploymentAnalysisData?.onCancelEvaluation}
                   errorMsg={analysis.deploymentAnalysisData?.errorMsg ?? null}
                   viewMode={analysis.analysisViewMode}
                   onViewModeChange={analysis.setAnalysisViewMode}

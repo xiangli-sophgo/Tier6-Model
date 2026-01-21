@@ -525,19 +525,15 @@ interface BenchmarkConfigSelectorProps {
   onInferenceChange: (config: InferenceConfig) => void
 }
 
+/** 记录上次使用的 Benchmark */
+const LAST_BENCHMARK_KEY = 'llm_last_benchmark_id'
+
 /** 格式化序列长度 */
 function formatSeqLen(len: number): string {
   if (len >= 1024 && len % 1024 === 0) {
     return `${len / 1024}K`
   }
   return String(len)
-}
-
-/** 格式化参数量 */
-function formatParamCount(model: LLMModelConfig): string {
-  const total = calculateModelParams(model)
-  const billions = total / 1e9
-  return billions >= 1 ? `${billions.toFixed(0)}B` : `${(total / 1e6).toFixed(0)}M`
 }
 
 /** 获取数据类型的位数 */
@@ -548,21 +544,45 @@ function getDtypeBits(dtype: string): number {
   return bitsMap[dtype] || 16
 }
 
-/** 解析模型简称 */
-function getModelShortName(modelName: string): string {
-  const match = modelName.match(/^(DeepSeek-V\d+|Llama-[\d.]+|Qwen[\d.]*|GPT-\d+)/i)
-  return match ? match[1] : modelName.split('-')[0]
+/**
+ * 解析模型名称和参数量
+ * "DeepSeek-V3-671B" → { name: "DeepSeek-V3", size: "671B" }
+ */
+function parseModelName(modelName: string): { name: string; size: string } {
+  const sizeMatch = modelName.match(/(\d+\.?\d*)[BMK]/i)
+
+  if (sizeMatch) {
+    const size = sizeMatch[1] + sizeMatch[0].slice(-1).toUpperCase()
+    const name = modelName
+      .replace(/[-_]?\d+\.?\d*[BMK][-_]?/i, '')
+      .replace(/-+$/, '')
+      .replace(/^-+/, '')
+      .replace(/-Instruct|-Chat|-Base/i, '')
+      .trim()
+    return { name, size }
+  }
+
+  return { name: modelName, size: '' }
 }
 
 /** 生成 Benchmark 名称: DeepSeek-V3-671B-S4K-O512-W16A16-B8 */
 function generateBenchmarkName(model: LLMModelConfig, inference: InferenceConfig): string {
-  const shortName = getModelShortName(model.model_name)
-  const params = formatParamCount(model)
+  const { name, size } = parseModelName(model.model_name)
   const seqIn = formatSeqLen(inference.input_seq_length)
   const seqOut = formatSeqLen(inference.output_seq_length)
   const wBits = getDtypeBits(model.weight_dtype)
   const aBits = getDtypeBits(model.activation_dtype)
-  return `${shortName}-${params}-S${seqIn}-O${seqOut}-W${wBits}A${aBits}-B${inference.batch_size}`
+
+  // 构建名称
+  const parts = [
+    size ? `${name}-${size}` : name,
+    `S${seqIn}`,
+    `O${seqOut}`,
+    `W${wBits}A${aBits}`,
+    `B${inference.batch_size}`
+  ]
+
+  return parts.join('-')
 }
 
 /** Benchmark 类型 */
@@ -579,7 +599,7 @@ export const BenchmarkConfigSelector: React.FC<BenchmarkConfigSelectorProps> = (
   inferenceConfig,
   onInferenceChange,
 }) => {
-  const [presetId, setPresetId] = useState<string>('deepseek-v3-standard')
+  const [presetId, setPresetId] = useState<string>('')
   const [editMode, setEditMode] = useState<boolean>(false)
   const [customBenchmarks, setCustomBenchmarks] = useState<CustomBenchmark[]>([])
   // 保存进入编辑模式时的原始配置，用于重置
@@ -591,12 +611,28 @@ export const BenchmarkConfigSelector: React.FC<BenchmarkConfigSelectorProps> = (
   // 从后端加载自定义 benchmarks
   useEffect(() => {
     listBenchmarks().then((benchmarks) => {
-      setCustomBenchmarks(benchmarks.map(b => ({
+      const mapped = benchmarks.map(b => ({
         id: b.id,
         name: b.name,
         model: b.model as unknown as LLMModelConfig,
         inference: b.inference as unknown as InferenceConfig,
-      })))
+      }))
+      setCustomBenchmarks(mapped)
+
+      // 设置初始 benchmark：优先使用上次的，否则使用第一个
+      if (mapped.length > 0) {
+        const lastBenchmarkId = localStorage.getItem(LAST_BENCHMARK_KEY)
+        const initialId = (lastBenchmarkId && mapped.find(b => b.id === lastBenchmarkId))
+          ? lastBenchmarkId
+          : mapped[0].id
+
+        setPresetId(initialId)
+        const initialBenchmark = mapped.find(b => b.id === initialId)
+        if (initialBenchmark) {
+          onModelChange(initialBenchmark.model)
+          onInferenceChange(initialBenchmark.inference)
+        }
+      }
     })
   }, [])
 
@@ -615,6 +651,8 @@ export const BenchmarkConfigSelector: React.FC<BenchmarkConfigSelectorProps> = (
   // 选择 benchmark
   const handlePresetChange = (id: string) => {
     setPresetId(id)
+    // 保存到 localStorage，记录本次选择
+    localStorage.setItem(LAST_BENCHMARK_KEY, id)
     const match = customBenchmarks.find(c => c.id === id)
     if (match) {
       onModelChange(match.model)
@@ -657,6 +695,8 @@ export const BenchmarkConfigSelector: React.FC<BenchmarkConfigSelectorProps> = (
           setCustomBenchmarks([...customBenchmarks, newBenchmark])
         }
         setPresetId(currentBenchmarkName)
+        // 保存到 localStorage，记录本次选择
+        localStorage.setItem(LAST_BENCHMARK_KEY, currentBenchmarkName)
         message.success(`已保存: ${currentBenchmarkName}`)
       } else {
         message.error('保存失败')
@@ -699,6 +739,8 @@ export const BenchmarkConfigSelector: React.FC<BenchmarkConfigSelectorProps> = (
         setCustomBenchmarks([...customBenchmarks, newBenchmark])
       }
       setPresetId(currentBenchmarkName)
+      // 保存到 localStorage，记录本次选择
+      localStorage.setItem(LAST_BENCHMARK_KEY, currentBenchmarkName)
       message.success(`已保存: ${currentBenchmarkName}`)
     } else {
       message.error('保存失败')
@@ -1010,20 +1052,16 @@ export const BenchmarkConfigSelector: React.FC<BenchmarkConfigSelectorProps> = (
           {/* 模型信息 */}
           <div style={infoRowStyle}>
             <span>模型</span>
-            <span><b>{getModelShortName(modelConfig.model_name)}-{formatParamCount(modelConfig)}</b></span>
+            <span><b>{(() => {
+              const { name, size } = parseModelName(modelConfig.model_name)
+              return size ? `${name}-${size}` : name
+            })()}</b></span>
           </div>
           {/* 精度 */}
           <div style={infoRowStyle}>
             <span>精度</span>
             <span><b>W{getDtypeBits(modelConfig.weight_dtype)}A{getDtypeBits(modelConfig.activation_dtype)}</b></span>
           </div>
-          {/* MoE 信息 */}
-          {modelConfig.model_type === 'moe' && modelConfig.moe_config && (
-            <div style={infoRowStyle}>
-              <span>MoE</span>
-              <span><b>{modelConfig.moe_config.num_experts}专家 × {modelConfig.moe_config.num_experts_per_tok}激活</b></span>
-            </div>
-          )}
           {/* 推理参数 */}
           <div style={infoRowStyle}>
             <span>输入 / 输出</span>

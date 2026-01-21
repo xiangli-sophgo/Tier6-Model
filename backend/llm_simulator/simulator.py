@@ -128,6 +128,9 @@ def validate_moe_config(moe_dict: dict) -> MoEConfig:
         expert_capacity_factor=moe_dict.get("expert_capacity_factor", 1.0),
         num_shared_experts=moe_dict.get("num_shared_experts", 0),
         expert_intermediate_size=expert_intermediate_size,
+        first_k_dense_replace=moe_dict.get("first_k_dense_replace", 0),
+        moe_tp=moe_dict.get("moe_tp", 1),
+        ep_tp_strategy=moe_dict.get("ep_tp_strategy", "scatter_gather"),
     )
 
 
@@ -181,8 +184,6 @@ def validate_hardware_config(hardware_dict: dict) -> None:
         raise ValueError(f"memory_gb 必须为正数，当前值: {memory_gb}")
     if memory_bw <= 0:
         raise ValueError(f"memory_bandwidth_gbps 必须为正数，当前值: {memory_bw}")
-    if memory_bw > 10000:
-        raise ValueError(f"memory_bandwidth_gbps ({memory_bw}) 超过合理范围 (最大 10000 GB/s)")
 
 
 def validate_parallelism_config(parallelism_dict: dict, model_dict: dict | None = None) -> None:
@@ -213,6 +214,22 @@ def validate_parallelism_config(parallelism_dict: dict, model_dict: dict | None 
         num_heads = model_dict.get("num_attention_heads", 1)
         if tp > num_heads:
             raise ValueError(f"TP ({tp}) 不能大于注意力头数 ({num_heads})")
+
+        # MoE 约束验证：dp * tp = moe_tp * ep
+        moe_config = model_dict.get("moe_config")
+        if moe_config:
+            dp = parallelism_dict.get("dp", 1)
+            ep = parallelism_dict.get("ep", 1)
+            moe_tp = parallelism_dict.get("moe_tp", 1)
+
+            # DS_TPU 约束：确保 Attention 芯片数 = MoE FFN 芯片数
+            attention_chips = dp * tp
+            moe_chips = moe_tp * ep
+
+            if attention_chips != moe_chips:
+                raise ValueError(
+                    f"MoE 并行约束不满足: dp*tp ({dp}*{tp}={attention_chips}) 必须等于 moe_tp*ep ({moe_tp}*{ep}={moe_chips})"
+                )
 
 
 @dataclass

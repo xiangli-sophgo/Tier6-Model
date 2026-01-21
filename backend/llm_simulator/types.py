@@ -423,6 +423,7 @@ class ParallelismStrategy:
     pp: int = 1
     ep: int = 1
     sp: int = 1
+    moe_tp: int = 1  # MoE 专家内张量并行度
 
 
 # ============================================

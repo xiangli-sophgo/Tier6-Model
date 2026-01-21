@@ -29,8 +29,11 @@ import {
   DashboardOutlined,
   ClockCircleOutlined,
   AimOutlined,
+  StopOutlined,
+  CloseCircleOutlined,
 } from '@ant-design/icons'
 import { PlanAnalysisResult, HardwareConfig, LLMModelConfig, InferenceConfig, DEFAULT_SCORE_WEIGHTS } from '../../../utils/llmDeployment/types'
+import { InfeasibleResult } from '../../../utils/llmDeployment'
 import { generateBenchmarkName, parseBenchmarkParts } from '../../../utils/llmDeployment/benchmarkNaming'
 import { AnalysisHistoryItem, AnalysisViewMode } from '../shared'
 import { colors } from './ConfigSelectors'
@@ -232,9 +235,19 @@ const HistoryList: React.FC<HistoryListProps> = ({
 interface AnalysisResultDisplayProps {
   result: PlanAnalysisResult | null
   topKPlans: PlanAnalysisResult[]
+  /** 不可行方案列表 */
+  infeasiblePlans?: InfeasibleResult[]
   loading: boolean
   onSelectPlan?: (plan: PlanAnalysisResult) => void
   searchStats?: { evaluated: number; feasible: number; timeMs: number } | null
+  searchProgress?: {
+    stage: 'idle' | 'generating' | 'evaluating' | 'completed' | 'cancelled'
+    totalCandidates: number
+    currentEvaluating: number
+    evaluated: number
+  }
+  /** 取消评估的回调 */
+  onCancelEvaluation?: () => void
   errorMsg?: string | null
   // 视图模式（从父组件传入）
   viewMode?: AnalysisViewMode
@@ -259,9 +272,12 @@ type MetricType = 'ttft' | 'tpot' | 'throughput' | 'tps_batch' | 'tps_chip' | 'm
 export const AnalysisResultDisplay: React.FC<AnalysisResultDisplayProps> = ({
   result,
   topKPlans,
+  infeasiblePlans = [],
   loading,
   onSelectPlan,
   searchStats,
+  searchProgress,
+  onCancelEvaluation,
   errorMsg,
   viewMode = 'history',
   onViewModeChange: _onViewModeChange,
@@ -295,20 +311,115 @@ export const AnalysisResultDisplay: React.FC<AnalysisResultDisplayProps> = ({
     onLoadFromHistory?.(item)
   }, [onLoadFromHistory])
 
-  if (loading) {
+  // 搜索进度卡片组件（独立提取）
+  const SearchProgressCard = () => {
+    if (!loading && (!searchProgress || searchProgress.stage === 'idle')) {
+      return null
+    }
+
     return (
-      <div style={{ textAlign: 'center', padding: 40 }}>
-        <Spin size="large" />
-        <div style={{ marginTop: 16 }}>
-          <Text type="secondary">正在搜索最优方案...</Text>
-        </div>
-      </div>
+      <BaseCard
+        title="搜索与评估"
+        style={{ marginBottom: 16 }}
+      >
+        {loading ? (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            {searchProgress && searchProgress.stage !== 'idle' ? (
+              <>
+                {/* 阶段 1: 生成候选方案 */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  {searchProgress.stage === 'generating' ? (
+                    <Spin size="small" />
+                  ) : (
+                    <CheckCircleOutlined style={{ color: colors.success, fontSize: 16 }} />
+                  )}
+                  <Text style={{ fontSize: 13 }}>
+                    生成候选方案: <Text strong>{searchProgress.totalCandidates}</Text> 个
+                  </Text>
+                </div>
+
+                {/* 阶段 2: 后端评估 */}
+                {searchProgress.stage !== 'generating' && (
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      {searchProgress.stage === 'evaluating' ? (
+                        <Spin size="small" />
+                      ) : (
+                        <CheckCircleOutlined style={{ color: colors.success, fontSize: 16 }} />
+                      )}
+                      <Text style={{ fontSize: 13 }}>
+                        后端评估: <Text strong>{searchProgress.evaluated}</Text> / <Text strong>{searchProgress.totalCandidates}</Text>
+                        {searchProgress.stage === 'evaluating' && (
+                          <Text type="secondary" style={{ marginLeft: 8, fontSize: 11 }}>（5 并发）</Text>
+                        )}
+                      </Text>
+                    </div>
+                    {/* 取消按钮 */}
+                    {searchProgress.stage === 'evaluating' && onCancelEvaluation && (
+                      <Button
+                        type="text"
+                        danger
+                        size="small"
+                        icon={<StopOutlined />}
+                        onClick={onCancelEvaluation}
+                        style={{ fontSize: 12 }}
+                      >
+                        取消
+                      </Button>
+                    )}
+                  </div>
+                )}
+
+                {/* 阶段 3: 排序结果 */}
+                {searchProgress.stage === 'completed' && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <CheckCircleOutlined style={{ color: colors.success, fontSize: 16 }} />
+                    <Text style={{ fontSize: 13 }}>排序并显示结果</Text>
+                  </div>
+                )}
+              </>
+            ) : (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <Spin size="small" />
+                <Text type="secondary" style={{ fontSize: 13 }}>正在搜索最优方案...</Text>
+              </div>
+            )}
+          </div>
+        ) : searchProgress?.stage === 'cancelled' ? (
+          // 搜索已取消
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <CheckCircleOutlined style={{ color: colors.success, fontSize: 16 }} />
+              <Text style={{ fontSize: 13 }}>
+                生成候选方案: <Text strong>{searchProgress.totalCandidates}</Text> 个
+              </Text>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <CloseCircleOutlined style={{ color: '#faad14', fontSize: 16 }} />
+              <Text style={{ fontSize: 13, color: '#faad14' }}>
+                评估已取消: 已完成 <Text strong style={{ color: '#faad14' }}>{searchProgress.evaluated}</Text> / <Text strong style={{ color: '#faad14' }}>{searchProgress.totalCandidates}</Text>
+              </Text>
+            </div>
+          </div>
+        ) : (
+          // 搜索完成后显示最后一次的统计
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <CheckCircleOutlined style={{ color: colors.success, fontSize: 16 }} />
+            <Text style={{ fontSize: 13 }}>
+              最近搜索: 评估了 <Text strong>{searchProgress?.totalCandidates || 0}</Text> 个方案
+            </Text>
+          </div>
+        )}
+      </BaseCard>
     )
   }
 
-  if (errorMsg) {
+  // 错误提示组件
+  const ErrorAlert = () => {
+    if (!errorMsg) return null
+
     return (
-      <div style={{ padding: 16 }}>
+      <div style={{ marginBottom: 16 }}>
         <div style={{ textAlign: 'center', padding: 20, background: '#fff2f0', borderRadius: 8, border: '1px solid #ffccc7' }}>
           <WarningOutlined style={{ fontSize: 24, color: '#ff4d4f', marginBottom: 8 }} />
           <div style={{ color: '#ff4d4f', fontWeight: 500 }}>{errorMsg}</div>
@@ -324,10 +435,97 @@ export const AnalysisResultDisplay: React.FC<AnalysisResultDisplayProps> = ({
     )
   }
 
+  // 不可行方案列表组件
+  const InfeasiblePlansList = () => {
+    const [expanded, setExpanded] = useState(false)
+
+    if (infeasiblePlans.length === 0) return null
+
+    // 按错误原因分组统计
+    const reasonCounts: Record<string, number> = {}
+    infeasiblePlans.forEach(plan => {
+      const reason = plan.reason || '未知原因'
+      reasonCounts[reason] = (reasonCounts[reason] || 0) + 1
+    })
+
+    return (
+      <BaseCard
+        title={
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <WarningOutlined style={{ color: '#faad14' }} />
+            <span>不可行方案 ({infeasiblePlans.length})</span>
+          </div>
+        }
+        style={{ marginBottom: 16 }}
+      >
+        {/* 错误原因统计 */}
+        <div style={{ marginBottom: expanded ? 12 : 0 }}>
+          {Object.entries(reasonCounts).map(([reason, count]) => (
+            <div key={reason} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '4px 0', borderBottom: '1px dashed #f0f0f0' }}>
+              <Text type="secondary" style={{ fontSize: 12 }}>{reason}</Text>
+              <Tag color="orange" style={{ fontSize: 11, margin: 0 }}>{count} 个</Tag>
+            </div>
+          ))}
+        </div>
+
+        {/* 展开详细列表 */}
+        <div
+          style={{ cursor: 'pointer', textAlign: 'center', padding: '8px 0', color: '#1890ff', fontSize: 12 }}
+          onClick={() => setExpanded(!expanded)}
+        >
+          {expanded ? '收起详情 ▲' : '展开详情 ▼'}
+        </div>
+
+        {expanded && (
+          <div style={{ maxHeight: 300, overflowY: 'auto', marginTop: 8 }}>
+            <Table
+              size="small"
+              dataSource={infeasiblePlans.map((plan, index) => ({ ...plan, key: index }))}
+              pagination={false}
+              columns={[
+                {
+                  title: '并行策略',
+                  dataIndex: 'parallelism',
+                  width: 150,
+                  render: (p) => (
+                    <Text style={{ fontSize: 11, fontFamily: 'monospace' }}>
+                      DP={p.dp} TP={p.tp} EP={p.ep}
+                    </Text>
+                  ),
+                },
+                {
+                  title: '芯片数',
+                  dataIndex: 'parallelism',
+                  width: 60,
+                  render: (p) => (
+                    <Text style={{ fontSize: 11 }}>{p.dp * p.tp * p.ep}</Text>
+                  ),
+                },
+                {
+                  title: '失败原因',
+                  dataIndex: 'reason',
+                  ellipsis: true,
+                  render: (reason) => (
+                    <Tooltip title={reason}>
+                      <Text type="danger" style={{ fontSize: 11 }}>{reason}</Text>
+                    </Tooltip>
+                  ),
+                },
+              ]}
+            />
+          </div>
+        )}
+      </BaseCard>
+    )
+  }
+
   // 历史列表视图
   if (viewMode === 'history') {
     return (
       <div style={{ padding: 4 }}>
+        <SearchProgressCard />
+        <ErrorAlert />
+        <InfeasiblePlansList />
         <HistoryList
           history={history}
           onLoad={handleLoadFromHistory}
@@ -342,6 +540,9 @@ export const AnalysisResultDisplay: React.FC<AnalysisResultDisplayProps> = ({
   if (!result) {
     return (
       <div style={{ padding: 4 }}>
+        <SearchProgressCard />
+        <ErrorAlert />
+        <InfeasiblePlansList />
         <HistoryList
           history={history}
           onLoad={handleLoadFromHistory}
