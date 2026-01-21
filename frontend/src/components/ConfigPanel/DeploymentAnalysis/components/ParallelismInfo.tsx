@@ -4,8 +4,9 @@
  */
 
 import React from 'react'
+import { InfoCircleOutlined } from '@ant-design/icons'
 
-export type ParallelismType = 'dp' | 'tp' | 'pp' | 'ep' | 'sp'
+export type ParallelismType = 'dp' | 'tp' | 'pp' | 'ep' | 'sp' | 'moe_tp'
 
 interface ParallelismInfoProps {
   type: ParallelismType
@@ -18,6 +19,7 @@ const COLORS: Record<ParallelismType, { primary: string; light: string; dark: st
   pp: { primary: '#1890ff', light: '#e6f7ff', dark: '#0050b3' },
   ep: { primary: '#1890ff', light: '#e6f7ff', dark: '#0050b3' },
   sp: { primary: '#1890ff', light: '#e6f7ff', dark: '#0050b3' },
+  moe_tp: { primary: '#1890ff', light: '#e6f7ff', dark: '#0050b3' },
 }
 
 const INFO: Record<ParallelismType, {
@@ -106,6 +108,15 @@ const INFO: Record<ParallelismType, {
       'ReduceScatter: 输出回序列切分',
       'Dropout: 继续序列切分状态',
     ],
+  },
+  moe_tp: {
+    name: 'MoE TP',
+    fullName: 'MoE Tensor Parallelism',
+    shortDesc: 'MoE 张量并行',
+    definition: 'MoE 模型专用，在每个专家内部应用张量并行，将专家权重矩阵切分到多个 GPU。',
+    keyPoints: ['专家内 TP', 'MoE 专用', '与 EP 配合'],
+    communication: 'AllReduce (专家内)',
+    bestFor: 'MoE 模型，单个专家参数过大',
   },
 }
 
@@ -362,12 +373,58 @@ const DiagramSP: React.FC = () => (
   </svg>
 )
 
+const DiagramMoETP: React.FC = () => (
+  <svg width="360" height="195" viewBox="0 0 360 195" style={{ fontFamily: '"Times New Roman", Times, serif' }}>
+    {/* 箭头定义 */}
+    <defs>
+      <marker id="arrowMoE" markerWidth="8" markerHeight="8" refX="4" refY="4" orient="auto">
+        <path d="M0,0 L8,4 L0,8 Z" fill={C.border} />
+      </marker>
+      <marker id="arrowGreenMoE" markerWidth="8" markerHeight="8" refX="4" refY="4" orient="auto">
+        <path d="M0,0 L8,4 L0,8 Z" fill="#13c2c2" />
+      </marker>
+    </defs>
+
+    {/* 顶部：Expert Weights */}
+    <rect x="80" y="8" width="200" height="28" rx="4" fill={C.primaryLight} stroke={C.primary} strokeWidth="1.5" />
+    <text x="180" y="27" textAnchor="middle" fontSize="13" fill={C.primary} fontWeight="600">Expert Weights [H × 4H]</text>
+
+    {/* 分发箭头 */}
+    <path d="M130 38 L75 55" stroke={C.border} strokeWidth="1.5" markerEnd="url(#arrowMoE)" />
+    <path d="M180 38 L180 55" stroke={C.border} strokeWidth="1.5" markerEnd="url(#arrowMoE)" />
+    <path d="M230 38 L285 55" stroke={C.border} strokeWidth="1.5" markerEnd="url(#arrowMoE)" />
+
+    {/* GPU 方块 - 居中对称 */}
+    {[0, 1, 2].map(i => (
+      <g key={i} transform={`translate(${20 + i * 115}, 62)`}>
+        <rect width="85" height="78" rx="5" fill="#fff" stroke={C.border} strokeWidth="1.5" />
+        <text x="42" y="18" textAnchor="middle" fontSize="12" fill={C.text} fontWeight="600">GPU {i}</text>
+        <line x1="0" y1="24" x2="85" y2="24" stroke={C.border} strokeWidth="1" />
+        {/* 专家权重分片 */}
+        <rect x="10" y="32" width="65" height="38" rx="3" fill={C.primaryLight} stroke={C.primary} strokeWidth="1.5" />
+        <text x="42" y="48" textAnchor="middle" fontSize="12" fill={C.primary} fontWeight="600">Expert</text>
+        <text x="42" y="62" textAnchor="middle" fontSize="11" fill={C.primary}>W[{i}]</text>
+      </g>
+    ))}
+
+    {/* 底部：AllReduce 通信 */}
+    <rect x="80" y="160" width="200" height="28" rx="4" fill="#e6fffb" stroke="#13c2c2" strokeWidth="1.5" />
+    <text x="180" y="179" textAnchor="middle" fontSize="13" fill="#13c2c2" fontWeight="600">AllReduce (专家内)</text>
+
+    {/* 连接箭头 - 结果同步 */}
+    <path d="M62 140 L125 157" stroke="#13c2c2" strokeWidth="1.5" markerEnd="url(#arrowGreenMoE)" />
+    <path d="M180 140 L180 157" stroke="#13c2c2" strokeWidth="1.5" markerEnd="url(#arrowGreenMoE)" />
+    <path d="M298 140 L235 157" stroke="#13c2c2" strokeWidth="1.5" markerEnd="url(#arrowGreenMoE)" />
+  </svg>
+)
+
 const DIAGRAMS: Record<ParallelismType, React.FC> = {
   dp: DiagramDP,
   tp: DiagramTP,
   pp: DiagramPP,
   ep: DiagramEP,
   sp: DiagramSP,
+  moe_tp: DiagramMoETP,
 }
 
 // ============================================
@@ -488,16 +545,29 @@ export const ParallelismCard: React.FC<ParallelismCardProps> = ({ type, value, s
         minWidth: 90,
         padding: '8px 12px',
         background: selected ? color.light : '#fff',
-        border: `1.5px solid ${selected ? color.primary : '#e8e8e8'}`,
+        border: `2px solid ${selected ? color.primary : 'transparent'}`,
+        outline: selected ? 'none' : '1px solid #e8e8e8',
+        outlineOffset: '-2px',
         borderRadius: 8,
         cursor: 'pointer',
-        transition: 'all 0.2s',
+        transition: 'background-color 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease',
         display: 'flex',
         alignItems: 'center',
         gap: 8,
         fontFamily: '"Times New Roman", Times, serif',
+        position: 'relative',
+        boxShadow: selected ? `0 2px 8px rgba(24, 144, 255, 0.15)` : 'none',
       }}
     >
+      {/* 右上角标记 */}
+      <InfoCircleOutlined style={{
+        position: 'absolute',
+        top: 6,
+        right: 6,
+        fontSize: 11,
+        color: selected ? color.primary : '#d9d9d9',
+        cursor: 'pointer',
+      }} />
       <div style={{
         fontSize: 28,
         fontWeight: 700,

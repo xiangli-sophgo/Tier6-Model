@@ -112,6 +112,9 @@ export interface TopologyGraphProps {
   onMultiLevelOptionsChange?: (options: MultiLevelViewOptions) => void
   // 流量热力图
   trafficResult?: TopologyTrafficResult | null
+  // 视图切换
+  viewMode?: '3d' | 'topology'
+  onViewModeChange?: (mode: '3d' | 'topology') => void
 }
 
 export interface Node {

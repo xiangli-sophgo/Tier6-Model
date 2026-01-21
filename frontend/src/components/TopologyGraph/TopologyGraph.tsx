@@ -1,6 +1,6 @@
 import React, { useMemo, useRef, useState, useEffect, useCallback } from 'react'
-import { Modal, Button, Space, Typography, Breadcrumb } from 'antd'
-import { ZoomInOutlined, ZoomOutOutlined } from '@ant-design/icons'
+import { Modal, Button, Space, Typography, Breadcrumb, Segmented } from 'antd'
+import { ZoomInOutlined, ZoomOutOutlined, AppstoreOutlined, ApartmentOutlined } from '@ant-design/icons'
 import {
   HierarchyLevel,
 } from '../../types'
@@ -89,6 +89,9 @@ export const TopologyGraph: React.FC<TopologyGraphProps> = ({
   onMultiLevelOptionsChange,
   // 流量热力图
   trafficResult,
+  // 视图切换
+  viewMode,
+  onViewModeChange,
 }) => {
   void _onNavigateBack
   void _canGoBack
@@ -926,7 +929,31 @@ export const TopologyGraph: React.FC<TopologyGraphProps> = ({
           borderRadius: 10,
           border: '1px solid rgba(0, 0, 0, 0.08)',
           boxShadow: '0 4px 12px rgba(0, 0, 0, 0.06)',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 12,
         }}>
+          {/* 视图切换器 */}
+          {viewMode && onViewModeChange && (
+            <Segmented
+              size="small"
+              value={viewMode}
+              onChange={(value) => onViewModeChange(value as '3d' | 'topology')}
+              options={[
+                {
+                  label: '3D视图',
+                  value: '3d',
+                  icon: <AppstoreOutlined />,
+                },
+                {
+                  label: '2D视图',
+                  value: 'topology',
+                  icon: <ApartmentOutlined />,
+                },
+              ]}
+            />
+          )}
+          {/* 面包屑导航 */}
           <Breadcrumb
             items={breadcrumbs.map((item, index) => ({
               key: item.id,

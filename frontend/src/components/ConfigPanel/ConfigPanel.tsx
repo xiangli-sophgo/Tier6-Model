@@ -44,7 +44,6 @@ import {
   saveCachedConfig,
 } from './shared'
 import { SwitchLevelConfig, ConnectionEditPanel } from './components'
-import { DeploymentAnalysisPanel } from './DeploymentAnalysis'
 import { BaseCard } from '../common/BaseCard'
 import { getChipList, getChipConfig, saveCustomChipPreset, deleteCustomChipPreset, getChipInterconnectConfig } from '../../utils/llmDeployment/presets'
 import { ChipHardwareConfig } from '../../utils/llmDeployment/types'
@@ -1200,56 +1199,10 @@ export const ConfigPanel: React.FC<ConfigPanelProps> = ({
     </div>
   )
 
-  // 顶层页面Tab状态
-  const [activePageTab, setActivePageTab] = useState<'topology' | 'deployment'>('topology')
-
-  // 自定义Tab样式
-  const tabButtonStyle = (isActive: boolean): React.CSSProperties => ({
-    flex: 1,
-    padding: '12px 16px',
-    border: 'none',
-    background: isActive ? '#fff' : 'transparent',
-    color: isActive ? '#5E6AD2' : '#666',
-    fontWeight: isActive ? 600 : 400,
-    fontSize: 14,
-    cursor: 'pointer',
-    borderRadius: isActive ? '8px' : '8px',
-    boxShadow: isActive ? '0 2px 8px rgba(94, 106, 210, 0.15)' : 'none',
-    transition: 'all 0.2s ease',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-  })
-
   return (
     <div style={{ display: 'flex', flexDirection: 'column' }}>
-      {/* 顶层页面切换 - 自定义样式 */}
-      <div style={{
-        display: 'flex',
-        gap: 8,
-        padding: 4,
-        background: '#E8E8E8',
-        borderRadius: 10,
-        marginBottom: 16,
-      }}>
-        <button
-          style={tabButtonStyle(activePageTab === 'topology')}
-          onClick={() => setActivePageTab('topology')}
-        >
-          拓扑设置
-        </button>
-        <button
-          style={tabButtonStyle(activePageTab === 'deployment')}
-          onClick={() => setActivePageTab('deployment')}
-        >
-          部署分析
-        </button>
-      </div>
-
-      {/* 内容区域 - 使用 display 控制显示，避免组件卸载导致状态丢失 */}
-      <div style={{ display: activePageTab === 'topology' ? 'block' : 'none' }}>
-        <>
+      {/* 拓扑配置内容 */}
+      <>
           {/* 拓扑汇总 */}
           <div style={{ marginBottom: 12 }}>
             <BaseCard
@@ -1359,21 +1312,6 @@ export const ConfigPanel: React.FC<ConfigPanelProps> = ({
             </Col>
           </Row>
         </>
-      </div>
-      <div style={{ display: activePageTab === 'deployment' ? 'block' : 'none' }}>
-        <DeploymentAnalysisPanel
-          topology={topology}
-          onTrafficResultChange={onTrafficResultChange}
-          onAnalysisDataChange={onAnalysisDataChange}
-          rackConfig={rackConfig}
-          podCount={podCount}
-          racksPerPod={racksPerPod}
-          history={analysisHistory}
-          onAddToHistory={onAddToHistory}
-          onDeleteHistory={onDeleteHistory}
-          onClearHistory={onClearHistory}
-        />
-      </div>
 
       {/* 保存配置模态框 */}
       <Modal

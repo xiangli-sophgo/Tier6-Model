@@ -17,11 +17,17 @@ export default defineConfig(({ mode }) => {
 
   return {
     plugins: [react()],
+    resolve: {
+      alias: {
+        '@': path.resolve(__dirname, './src'),
+      },
+    },
     define: {
       __APP_VERSION__: JSON.stringify(version),
     },
     server: {
       port: 3100,
+      strictPort: true,
       host: '127.0.0.1',
       proxy: {
         '/api': {

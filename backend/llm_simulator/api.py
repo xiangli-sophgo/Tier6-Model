@@ -7,10 +7,11 @@ FastAPI 接口模块
 import json
 import logging
 from pathlib import Path
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from typing import Any
+from typing import Any, Optional
+from sqlalchemy.orm import Session
 
 from .simulator import (
     run_simulation,
@@ -22,6 +23,10 @@ from .simulator import (
 )
 from .evaluators import ARCH_PRESETS
 from .types import ProtocolConfig, NetworkInfraConfig
+from .database import get_db, init_db
+from .websocket_manager import ws_manager
+from . import task_manager
+from .db_models import Experiment, EvaluationTask, TaskStatus
 
 # 配置日志
 logging.basicConfig(
@@ -60,6 +65,25 @@ class BenchmarkConfig(BaseModel):
     inference: dict[str, Any]
 
 
+class EvaluationRequest(BaseModel):
+    """评估请求"""
+    experiment_name: str
+    description: str = ""
+    topology: dict[str, Any]
+    model: dict[str, Any]
+    hardware: dict[str, Any]
+    inference: dict[str, Any]
+    search_mode: str  # 'manual' or 'auto'
+    manual_parallelism: Optional[dict[str, Any]] = None
+    search_constraints: Optional[dict[str, Any]] = None
+
+
+class TaskSubmitResponse(BaseModel):
+    """任务提交响应"""
+    task_id: str
+    message: str
+
+
 # Benchmark 文件存储目录
 BENCHMARKS_DIR = Path(__file__).parent.parent / "benchmarks"
 BENCHMARKS_DIR.mkdir(exist_ok=True)
@@ -83,6 +107,17 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+# 启动事件：初始化数据库和 WebSocket 回调
+@app.on_event("startup")
+async def startup_event():
+    """应用启动时的初始化"""
+    logger.info("初始化数据库...")
+    init_db()
+    logger.info("设置 WebSocket 广播回调...")
+    task_manager.set_ws_broadcast_callback(ws_manager.broadcast_task_update)
+    logger.info("应用启动完成")
 
 
 @app.get("/")
@@ -382,6 +417,210 @@ async def delete_benchmark(benchmark_id: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+# ============================================
+# 评估任务管理 API
+# ============================================
+
+@app.post("/api/evaluation/submit", response_model=TaskSubmitResponse)
+async def submit_evaluation(request: EvaluationRequest):
+    """
+    提交评估任务到后台执行
+
+    Args:
+        request: 评估请求，包含实验名称、拓扑、模型、硬件、推理配置等
+
+    Returns:
+        任务 ID 和提示消息
+    """
+    try:
+        task_id = task_manager.create_and_submit_task(
+            experiment_name=request.experiment_name,
+            description=request.description,
+            topology=request.topology,
+            model_config=request.model,
+            hardware_config=request.hardware,
+            inference_config=request.inference,
+            search_mode=request.search_mode,
+            manual_parallelism=request.manual_parallelism,
+            search_constraints=request.search_constraints,
+        )
+        logger.info(f"评估任务已提交: {task_id}")
+        return TaskSubmitResponse(
+            task_id=task_id,
+            message="评估任务已提交，正在后台运行"
+        )
+    except Exception as e:
+        logger.error(f"提交评估任务失败: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"提交评估任务失败: {str(e)}")
+
+
+@app.get("/api/evaluation/tasks/{task_id}")
+async def get_task_status_endpoint(task_id: str):
+    """获取任务状态"""
+    status = task_manager.get_task_status(task_id)
+    if not status:
+        raise HTTPException(status_code=404, detail=f"任务不存在: {task_id}")
+    return status
+
+
+@app.get("/api/evaluation/tasks/{task_id}/results")
+async def get_task_results_endpoint(task_id: str):
+    """获取任务的完整结果"""
+    results = task_manager.get_task_results(task_id)
+    if not results:
+        raise HTTPException(status_code=404, detail=f"任务不存在: {task_id}")
+    return results
+
+
+@app.post("/api/evaluation/tasks/{task_id}/cancel")
+async def cancel_task_endpoint(task_id: str):
+    """取消任务"""
+    success = task_manager.cancel_task(task_id)
+    if not success:
+        raise HTTPException(status_code=404, detail=f"任务不存在: {task_id}")
+    return {"success": True, "message": "任务已取消"}
+
+
+@app.delete("/api/evaluation/tasks/{task_id}")
+async def delete_task_endpoint(task_id: str):
+    """删除任务（及其结果）"""
+    success = task_manager.delete_task(task_id)
+    if not success:
+        raise HTTPException(status_code=404, detail=f"任务不存在: {task_id}")
+    return {"success": True, "message": "任务已删除"}
+
+
+@app.get("/api/evaluation/tasks")
+async def list_tasks(
+    status: Optional[str] = None,
+    experiment_name: Optional[str] = None,
+    limit: int = 50,
+    db: Session = Depends(get_db)
+):
+    """
+    获取任务列表
+
+    Args:
+        status: 过滤状态 (pending, running, completed, failed, cancelled)
+        experiment_name: 过滤实验名称
+        limit: 返回数量限制
+    """
+    query = db.query(EvaluationTask).join(Experiment)
+
+    if status:
+        try:
+            status_enum = TaskStatus(status)
+            query = query.filter(EvaluationTask.status == status_enum)
+        except ValueError:
+            raise HTTPException(status_code=400, detail=f"无效的状态: {status}")
+
+    if experiment_name:
+        query = query.filter(Experiment.name == experiment_name)
+
+    tasks = query.order_by(EvaluationTask.created_at.desc()).limit(limit).all()
+
+    return {
+        "tasks": [
+            {
+                "task_id": task.task_id,
+                "experiment_name": task.experiment.name,
+                "status": task.status.value,
+                "progress": task.progress,
+                "message": task.message,
+                "created_at": task.created_at.isoformat() if task.created_at else None,
+                "started_at": task.started_at.isoformat() if task.started_at else None,
+                "completed_at": task.completed_at.isoformat() if task.completed_at else None,
+            }
+            for task in tasks
+        ]
+    }
+
+
+@app.get("/api/evaluation/running")
+async def get_running_tasks_endpoint():
+    """获取所有运行中的任务"""
+    return {"tasks": task_manager.get_running_tasks()}
+
+
+@app.get("/api/evaluation/experiments")
+async def list_experiments(db: Session = Depends(get_db)):
+    """获取所有实验列表"""
+    experiments = db.query(Experiment).order_by(Experiment.created_at.desc()).all()
+    return {
+        "experiments": [
+            {
+                "id": exp.id,
+                "name": exp.name,
+                "description": exp.description,
+                "total_tasks": exp.total_tasks,
+                "completed_tasks": exp.completed_tasks,
+                "created_at": exp.created_at.isoformat() if exp.created_at else None,
+            }
+            for exp in experiments
+        ]
+    }
+
+
+@app.get("/api/evaluation/experiments/{experiment_id}")
+async def get_experiment_details(experiment_id: int, db: Session = Depends(get_db)):
+    """获取实验详情（包含所有任务）"""
+    experiment = db.query(Experiment).filter(Experiment.id == experiment_id).first()
+    if not experiment:
+        raise HTTPException(status_code=404, detail=f"实验不存在: {experiment_id}")
+
+    tasks = db.query(EvaluationTask).filter(EvaluationTask.experiment_id == experiment_id).all()
+
+    return {
+        "id": experiment.id,
+        "name": experiment.name,
+        "description": experiment.description,
+        "model_config": experiment.model_config,
+        "hardware_config": experiment.hardware_config,
+        "inference_config": experiment.inference_config,
+        "total_tasks": experiment.total_tasks,
+        "completed_tasks": experiment.completed_tasks,
+        "created_at": experiment.created_at.isoformat() if experiment.created_at else None,
+        "tasks": [
+            {
+                "task_id": task.task_id,
+                "status": task.status.value,
+                "progress": task.progress,
+                "created_at": task.created_at.isoformat() if task.created_at else None,
+            }
+            for task in tasks
+        ]
+    }
+
+
+# ============================================
+# WebSocket 端点
+# ============================================
+
+@app.websocket("/ws/tasks")
+async def websocket_endpoint(websocket: WebSocket):
+    """
+    WebSocket 端点：实时推送任务状态更新
+
+    客户端连接后会收到所有任务的状态变化推送
+    消息格式:
+    {
+        "type": "task_update",
+        "task_id": "...",
+        "status": "running",
+        "progress": 50.0,
+        "message": "...",
+        ...
+    }
+    """
+    await ws_manager.connect(websocket)
+    try:
+        while True:
+            # 保持连接，等待客户端消息（目前不处理客户端消息）
+            await websocket.receive_text()
+    except WebSocketDisconnect:
+        ws_manager.disconnect(websocket)
+
+
 if __name__ == "__main__":
     import os
     import uvicorn
@@ -390,8 +629,9 @@ if __name__ == "__main__":
 
     # 加载 Tier6+model/.env 共享配置
     env_path = Path(__file__).parent.parent.parent / ".env"
-    load_dotenv(env_path)
+    if env_path.exists():
+        load_dotenv(env_path)
 
-    port = int(os.environ["VITE_API_PORT"])
+    port = int(os.environ.get("VITE_API_PORT", "8001"))
     print(f"Tier6+互联建模平台启动在端口: {port}")
     uvicorn.run("llm_simulator.api:app", host="0.0.0.0", port=port, reload=True)

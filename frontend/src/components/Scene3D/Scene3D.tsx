@@ -2,8 +2,8 @@ import React, { useMemo, useRef, useState, useCallback, useEffect } from 'react'
 import { Canvas } from '@react-three/fiber'
 import { PerspectiveCamera } from '@react-three/drei'
 import { EffectComposer, Bloom } from '@react-three/postprocessing'
-import { Breadcrumb, Button, Tooltip } from 'antd'
-import { ReloadOutlined, QuestionCircleOutlined } from '@ant-design/icons'
+import { Breadcrumb, Button, Tooltip, Segmented } from 'antd'
+import { ReloadOutlined, QuestionCircleOutlined, AppstoreOutlined, ApartmentOutlined } from '@ant-design/icons'
 import * as THREE from 'three'
 import {
   HierarchicalTopology,
@@ -46,6 +46,9 @@ interface Scene3DProps {
   canGoHistoryForward?: boolean
   // 节点选择（显示详情）
   onNodeSelect?: (nodeType: 'pod' | 'rack' | 'board' | 'chip' | 'switch', nodeId: string, label: string, info: Record<string, string | number>, subType?: string) => void
+  // 视图切换
+  viewMode?: '3d' | 'topology'
+  onViewModeChange?: (mode: '3d' | 'topology') => void
 }
 
 // ============================================
@@ -437,7 +440,9 @@ const NavigationOverlay: React.FC<{
   onBreadcrumbClick: (index: number) => void
   onBack: () => void
   canGoBack: boolean
-}> = ({ breadcrumbs, onBreadcrumbClick }) => {
+  viewMode?: '3d' | 'topology'
+  onViewModeChange?: (mode: '3d' | 'topology') => void
+}> = ({ breadcrumbs, onBreadcrumbClick, viewMode, onViewModeChange }) => {
   return (
     <div style={{
       position: 'absolute',
@@ -448,7 +453,31 @@ const NavigationOverlay: React.FC<{
       padding: '8px 16px',
       borderRadius: 8,
       boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
+      display: 'flex',
+      alignItems: 'center',
+      gap: 12,
     }}>
+      {/* 视图切换器 */}
+      {viewMode && onViewModeChange && (
+        <Segmented
+          size="small"
+          value={viewMode}
+          onChange={(value) => onViewModeChange(value as '3d' | 'topology')}
+          options={[
+            {
+              label: '3D视图',
+              value: '3d',
+              icon: <AppstoreOutlined />,
+            },
+            {
+              label: '2D视图',
+              value: 'topology',
+              icon: <ApartmentOutlined />,
+            },
+          ]}
+        />
+      )}
+      {/* 面包屑导航 */}
       <Breadcrumb
         items={breadcrumbs.map((item, index) => ({
           title: (
@@ -491,6 +520,8 @@ export const Scene3D: React.FC<Scene3DProps> = ({
   canGoBack,
   visible = true,
   onNodeSelect,
+  viewMode,
+  onViewModeChange,
 }) => {
   // 用于强制重置相机位置的 key
   const [resetKey, setResetKey] = useState(0)
@@ -744,6 +775,8 @@ export const Scene3D: React.FC<Scene3DProps> = ({
         onBreadcrumbClick={onBreadcrumbClick}
         onBack={onNavigateBack}
         canGoBack={canGoBack}
+        viewMode={viewMode}
+        onViewModeChange={onViewModeChange}
       />
 
       {/* 右上角按钮组 */}

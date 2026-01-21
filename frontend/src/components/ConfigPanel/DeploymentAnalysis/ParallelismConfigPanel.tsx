@@ -43,7 +43,8 @@ export const ParallelismConfigPanel: React.FC<ParallelismConfigPanelProps> = ({
   modelConfig,
   hardwareConfig,
 }) => {
-  const totalParallelism = manualStrategy.dp * manualStrategy.tp * manualStrategy.pp * manualStrategy.ep
+  // 总芯片数 = dp * tp（不包括 PP）
+  const totalParallelism = manualStrategy.dp * manualStrategy.tp
   const [showConstraints, setShowConstraints] = React.useState(true)
 
   // 计算搜索约束范围
@@ -130,7 +131,7 @@ export const ParallelismConfigPanel: React.FC<ParallelismConfigPanelProps> = ({
           </div>
           <div style={{ marginTop: 8, textAlign: 'center' }}>
             <Text type={totalParallelism > maxChips ? 'danger' : 'secondary'} style={{ fontSize: 12 }}>
-              总芯片数: {isMoE ? manualStrategy.dp * manualStrategy.tp * manualStrategy.ep : manualStrategy.dp * manualStrategy.tp} / {maxChips}
+              总芯片数: {totalParallelism} / {maxChips}
             </Text>
             {isMoE && (
               <div style={{ marginTop: 4 }}>

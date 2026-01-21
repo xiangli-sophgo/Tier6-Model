@@ -167,7 +167,7 @@ function extractBandwidthFromConnections(connections: ConnectionConfig[]): {
 /**
  * 从 FlexBoardChipConfig 列表提取芯片组信息
  *
- * 这个函数用于从 ConfigPanel 的配置中提取芯片信息
+ * 优先从保存的配置中读取硬件参数，不依赖后端 API
  */
 export function extractChipGroupsFromConfig(
   boards: Array<{ chips: FlexBoardChipConfig[], count: number }>
@@ -187,19 +187,55 @@ export function extractChipGroupsFromConfig(
       const key = chip.preset_id || chip.name
       const existing = chipGroupMap.get(key)
 
-      // 获取芯片配置（从后端预设或自定义）
+      // 优先从保存的配置中读取硬件参数
       let chipConfig: ChipHardwareConfig
-      const presetConfig = chip.preset_id ? getChipConfig(chip.preset_id) : null
-      if (presetConfig) {
-        chipConfig = presetConfig
-      } else {
-        // 自定义芯片
+
+      // 方案1: 如果配置中已有完整的硬件参数，直接使用（不依赖后端）
+      if (chip.compute_tflops_fp16 && chip.memory_gb && chip.memory_bandwidth_gbps) {
+        chipConfig = {
+          chip_type: chip.name,
+          flops_dtype: 'BF16', // 默认 BF16
+          compute_tflops_fp16: chip.compute_tflops_fp16,
+          compute_tops_int8: chip.compute_tflops_fp16 * 2, // 估算 INT8 为 FP16 的2倍
+          num_cores: 108, // 默认核心数
+          memory_gb: chip.memory_gb,
+          memory_bandwidth_gbps: chip.memory_bandwidth_gbps,
+          memory_bandwidth_utilization: chip.memory_bandwidth_utilization || 0.85,
+        }
+      }
+      // 方案2: 从本地自定义预设获取（用户在前端保存的）
+      else if (chip.preset_id) {
+        const customPresets = getCustomChipPresets()
+        const localPreset = customPresets[chip.preset_id]
+        if (localPreset) {
+          chipConfig = localPreset
+        } else {
+          // 预设ID找不到，使用合理的默认值并警告
+          console.warn(`芯片预设 '${chip.preset_id}' 未找到，使用默认参数`)
+          chipConfig = {
+            chip_type: chip.name,
+            flops_dtype: 'BF16',
+            compute_tflops_fp16: 800, // 默认 800 TFLOPs (接近主流 AI 芯片)
+            compute_tops_int8: 1600,
+            num_cores: 256,
+            memory_gb: 64,
+            memory_bandwidth_gbps: 1200,
+            memory_bandwidth_utilization: 0.85,
+          }
+        }
+      }
+      // 方案3: 使用默认值
+      else {
+        console.warn(`芯片 '${chip.name}' 缺少硬件参数，请在拓扑设置中完善配置`)
         chipConfig = {
           chip_type: chip.name,
           flops_dtype: 'BF16',
-          compute_tflops_fp16: chip.compute_tflops_fp16 || 100,
-          memory_gb: chip.memory_gb || 32,
-          memory_bandwidth_gbps: chip.memory_bandwidth_gbps || 1000,
+          compute_tflops_fp16: 800,
+          compute_tops_int8: 1600,
+          num_cores: 256,
+          memory_gb: 64,
+          memory_bandwidth_gbps: 1200,
+          memory_bandwidth_utilization: 0.85,
         }
       }
 

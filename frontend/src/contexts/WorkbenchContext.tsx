@@ -166,6 +166,8 @@ interface UIState {
   selectedNode: NodeDetail | null
   selectedLink: LinkDetail | null
   focusedLevel: 'datacenter' | 'pod' | 'rack' | 'board' | null
+  // 拓扑页面视图模式（3D/2D切换）
+  topologyPageViewMode: '3d' | 'topology'
   // 知识图谱状态
   knowledgeSelectedNodes: ForceKnowledgeNode[]  // 支持多个选中节点（用于详情卡片）
   knowledgeHighlightedNodeId: string | null  // 当前高亮的节点ID（用于图中高亮效果）
@@ -177,6 +179,7 @@ interface UIState {
   setSelectedNode: (node: NodeDetail | null) => void
   setSelectedLink: (link: LinkDetail | null) => void
   setFocusedLevel: (level: 'datacenter' | 'pod' | 'rack' | 'board' | null) => void
+  setTopologyPageViewMode: (mode: '3d' | 'topology') => void
   addKnowledgeSelectedNode: (node: ForceKnowledgeNode) => void  // 添加节点到列表
   removeKnowledgeSelectedNode: (nodeId: string) => void  // 从列表移除节点
   clearKnowledgeHighlight: () => void  // 清除高亮（不影响详情卡片）
@@ -273,6 +276,8 @@ export const WorkbenchProvider: React.FC<WorkbenchProviderProps> = ({ children }
   const [selectedNode, setSelectedNode] = useState<NodeDetail | null>(null)
   const [selectedLink, setSelectedLink] = useState<LinkDetail | null>(null)
   const [focusedLevel, setFocusedLevel] = useState<'datacenter' | 'pod' | 'rack' | 'board' | null>(null)
+  // 拓扑页面视图模式（默认2D）
+  const [topologyPageViewMode, setTopologyPageViewMode] = useState<'3d' | 'topology'>('topology')
   // 知识图谱状态
   const [knowledgeSelectedNodes, setKnowledgeSelectedNodes] = useState<ForceKnowledgeNode[]>([])
   const [knowledgeHighlightedNodeId, setKnowledgeHighlightedNodeId] = useState<string | null>(null)
@@ -847,6 +852,7 @@ export const WorkbenchProvider: React.FC<WorkbenchProviderProps> = ({ children }
       selectedNode,
       selectedLink,
       focusedLevel,
+      topologyPageViewMode,
       knowledgeSelectedNodes,
       knowledgeHighlightedNodeId,
       knowledgeVisibleCategories,
@@ -857,6 +863,7 @@ export const WorkbenchProvider: React.FC<WorkbenchProviderProps> = ({ children }
       setSelectedNode,
       setSelectedLink,
       setFocusedLevel,
+      setTopologyPageViewMode,
       addKnowledgeSelectedNode,
       removeKnowledgeSelectedNode,
       clearKnowledgeHighlight,

@@ -179,12 +179,13 @@ class TopologyParser:
             ParallelGroupAssignment: 并行组分配结果
         """
         chip_ids = self.get_all_chip_ids()
-        total_chips = strategy.dp * strategy.tp * strategy.pp * strategy.ep
+        # 总芯片数 = dp * tp（不包括 PP）
+        total_chips = strategy.dp * strategy.tp
 
         if len(chip_ids) < total_chips:
             raise ValueError(
                 f"芯片数量不足: 需要 {total_chips} 个芯片 "
-                f"(DP={strategy.dp} × TP={strategy.tp} × PP={strategy.pp} × EP={strategy.ep})，"
+                f"(DP={strategy.dp} × TP={strategy.tp})，"
                 f"但只有 {len(chip_ids)} 个芯片"
             )
 

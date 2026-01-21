@@ -13,6 +13,8 @@ import {
   message,
   InputNumber,
   Tooltip,
+  Row,
+  Col,
 } from 'antd'
 import {
   PlayCircleOutlined,
@@ -104,33 +106,57 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
   const [chipGroups, setChipGroups] = useState<ChipGroupInfo[]>([])
   const [selectedChipType, setSelectedChipType] = useState<string | undefined>()
 
-  // 硬件配置状态（初始为 null，等待后端芯片预设加载完成）
+  // 硬件配置状态（从保存的拓扑配置中提取）
   const [hardwareConfig, setHardwareConfig] = useState<HardwareConfig | null>(null)
 
-  // 初始化硬件配置：等待后端芯片预设加载完成
+  // 从拓扑配置中提取硬件配置（不依赖后端）
   React.useEffect(() => {
-    const backendPresets = getBackendChipPresets()
-    // 如果后端预设已加载且硬件配置还未初始化
-    if (Object.keys(backendPresets).length > 0 && !hardwareConfig) {
-      // 从拓扑配置中提取硬件配置
-      if (rackConfig && rackConfig.boards.length > 0 && topology?.connections) {
-        const groups = extractChipGroupsFromConfig(rackConfig.boards)
-        if (groups.length > 0) {
-          const firstChipType = groups[0].presetId || groups[0].chipType
-          const config = generateHardwareConfigFromPanelConfig(
-            podCount,
-            racksPerPod,
-            rackConfig.boards.map(b => ({ chips: b.chips, count: b.count })),
-            topology.connections,
-            firstChipType
-          )
-          if (config) {
-            setHardwareConfig(config)
-          }
+    // 从拓扑配置提取硬件参数
+    if (rackConfig && rackConfig.boards.length > 0 && topology?.connections) {
+      const groups = extractChipGroupsFromConfig(rackConfig.boards)
+      if (groups.length > 0) {
+        const firstChipType = groups[0].presetId || groups[0].chipType
+        const config = generateHardwareConfigFromPanelConfig(
+          podCount,
+          racksPerPod,
+          rackConfig.boards.map(b => ({ chips: b.chips, count: b.count })),
+          topology.connections,
+          firstChipType
+        )
+        if (config) {
+          setHardwareConfig(config)
         }
       }
+    } else if (!hardwareConfig) {
+      // 如果没有拓扑配置，使用默认值
+      console.warn('未找到拓扑配置，使用默认硬件配置')
+      const defaultConfig: HardwareConfig = {
+        chip: {
+          chip_type: 'SG2260',
+          flops_dtype: 'BF16',
+          compute_tflops_fp16: 800,
+          compute_tops_int8: 1600,
+          num_cores: 256,
+          memory_gb: 64,
+          memory_bandwidth_gbps: 1200,
+          memory_bandwidth_utilization: 0.85,
+        },
+        node: {
+          chips_per_node: 8,
+          intra_node_bandwidth_gbps: 450,
+          intra_node_latency_us: 0.35,
+          intra_node_topology: 'nvlink',
+        },
+        cluster: {
+          num_nodes: 1,
+          inter_node_bandwidth_gbps: 200,
+          inter_node_latency_us: 2,
+          inter_node_topology: 'ib',
+        },
+      }
+      setHardwareConfig(defaultConfig)
     }
-  }, [hardwareConfig, rackConfig, topology, podCount, racksPerPod])
+  }, [rackConfig, topology, podCount, racksPerPod])
 
   // 序列化 rackConfig 用于深度比较
   const rackConfigJson = React.useMemo(() =>
@@ -509,32 +535,39 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
     }
   }, [modelConfig, inferenceConfig, hardwareConfig, parallelismMode, manualStrategy, searchConstraints, maxChips, onAddToHistory, topology])
 
-  // 等待后端芯片预设加载完成
+  // 如果硬件配置未加载，显示提示（不再是加载中）
   if (!hardwareConfig) {
     return (
-      <div style={{ padding: 16, textAlign: 'center' }}>
-        <Spin tip="正在加载芯片预设..." />
+      <div style={{ padding: 40, textAlign: 'center' }}>
+        <Text type="secondary" style={{ display: 'block', marginBottom: 16, fontSize: 14 }}>
+          未找到拓扑配置
+        </Text>
+        <Text type="secondary" style={{ fontSize: 13 }}>
+          请先在「拓扑设置」页面配置芯片和网络拓扑
+        </Text>
       </div>
     )
   }
 
   return (
     <div style={{ padding: 0 }}>
-      {/* Benchmark 设置 (模型 + 推理参数) */}
-      <div style={{ marginBottom: 12 }}>
-        <BaseCard title="Benchmark 设置" accentColor="#5E6AD2" collapsible defaultExpanded>
-          <BenchmarkConfigSelector
-            modelConfig={modelConfig}
-            onModelChange={setModelConfig}
-            inferenceConfig={inferenceConfig}
-            onInferenceChange={setInferenceConfig}
-          />
-        </BaseCard>
-      </div>
+      {/* 上方：Benchmark 设置和部署设置（左右两列） */}
+      <Row gutter={16} style={{ marginBottom: 16 }}>
+        {/* 左列：Benchmark 设置 */}
+        <Col span={12}>
+          <BaseCard title="Benchmark 设置" accentColor="#5E6AD2" collapsible defaultExpanded>
+            <BenchmarkConfigSelector
+              modelConfig={modelConfig}
+              onModelChange={setModelConfig}
+              inferenceConfig={inferenceConfig}
+              onInferenceChange={setInferenceConfig}
+            />
+          </BaseCard>
+        </Col>
 
-      {/* 部署设置（合并：硬件配置 + 延迟设置 + 并行策略） */}
-      <div style={{ marginBottom: 12 }}>
-        <BaseCard title="部署设置" accentColor="#722ed1" collapsible defaultExpanded>
+        {/* 右列：部署设置 */}
+        <Col span={12}>
+          <BaseCard title="部署设置" accentColor="#722ed1" collapsible defaultExpanded>
           {/* 硬件配置 */}
           <div style={{ marginBottom: 16 }}>
             <div style={{ fontSize: 13, fontWeight: 600, color: '#1A1A1A', marginBottom: 10 }}>
@@ -601,8 +634,8 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
             <div style={{ fontSize: 13, fontWeight: 600, color: '#1A1A1A', marginBottom: 10 }}>
               延迟设置
             </div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-              <div style={configRowStyle}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, rowGap: 4 }}>
+              <div style={{ ...configRowStyle, marginBottom: 4 }}>
                 <Tooltip title="Tensor Parallelism Round Trip Time: 张量并行通信的往返延迟，包括节点内 NVLink/PCIe 通信开销">
                   <Text style={{ fontSize: 12, cursor: 'help', borderBottom: '1px dashed #d9d9d9' }}>TP RTT (µs)</Text>
                 </Tooltip>
@@ -616,7 +649,7 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
                   style={{ width: 70 }}
                 />
               </div>
-              <div style={configRowStyle}>
+              <div style={{ ...configRowStyle, marginBottom: 4 }}>
                 <Tooltip title="Expert Parallelism Round Trip Time: 专家并行 (MoE) 通信的往返延迟，包括跨节点的专家路由开销">
                   <Text style={{ fontSize: 12, cursor: 'help', borderBottom: '1px dashed #d9d9d9' }}>EP RTT (µs)</Text>
                 </Tooltip>
@@ -630,7 +663,7 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
                   style={{ width: 70 }}
                 />
               </div>
-              <div style={configRowStyle}>
+              <div style={{ ...configRowStyle, marginBottom: 4 }}>
                 <Tooltip title="实际可用带宽与理论峰值带宽的比例，考虑了协议开销、拥塞等因素 (典型值: 0.85-0.95)">
                   <Text style={{ fontSize: 12, cursor: 'help', borderBottom: '1px dashed #d9d9d9' }}>带宽利用率</Text>
                 </Tooltip>
@@ -644,7 +677,7 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
                   style={{ width: 70 }}
                 />
               </div>
-              <div style={configRowStyle}>
+              <div style={{ ...configRowStyle, marginBottom: 4 }}>
                 <Tooltip title="多卡同步操作的固定开销，如 Barrier、AllReduce 的初始化延迟">
                   <Text style={{ fontSize: 12, cursor: 'help', borderBottom: '1px dashed #d9d9d9' }}>同步延迟 (µs)</Text>
                 </Tooltip>
@@ -658,7 +691,7 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
                   style={{ width: 70 }}
                 />
               </div>
-              <div style={configRowStyle}>
+              <div style={{ ...configRowStyle, marginBottom: 4 }}>
                 <Tooltip title="网络交换机的数据包转发延迟 (典型值: 0.1-0.5 µs)">
                   <Text style={{ fontSize: 12, cursor: 'help', borderBottom: '1px dashed #d9d9d9' }}>交换机延迟 (µs)</Text>
                 </Tooltip>
@@ -679,7 +712,7 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
                   style={{ width: 70 }}
                 />
               </div>
-              <div style={configRowStyle}>
+              <div style={{ ...configRowStyle, marginBottom: 4 }}>
                 <Tooltip title="网络线缆的光/电信号传输延迟，约 5 ns/米 (典型值: 0.01-0.05 µs)">
                   <Text style={{ fontSize: 12, cursor: 'help', borderBottom: '1px dashed #d9d9d9' }}>线缆延迟 (µs)</Text>
                 </Tooltip>
@@ -730,10 +763,11 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
               hardwareConfig={hardwareConfig}
             />
           </div>
-        </BaseCard>
-      </div>
+          </BaseCard>
+        </Col>
+      </Row>
 
-      {/* 运行按钮 */}
+      {/* 下方：运行按钮 */}
       <Button
         type="primary"
         icon={parallelismMode === 'auto' ? <SearchOutlined /> : <PlayCircleOutlined />}
