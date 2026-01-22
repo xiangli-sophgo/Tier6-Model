@@ -106,9 +106,10 @@ export const ResultAnalysis: React.FC<ResultAnalysisProps> = ({ experimentId, on
     )
   }
 
-  // 计算统计数据
-  const modelConfig = experiment.model_config as Record<string, unknown> || {}
-  const inferenceConfig = experiment.inference_config as Record<string, unknown> || {}
+  // 从第一个任务的 config_snapshot 中提取配置
+  const firstTask = experiment.tasks && experiment.tasks.length > 0 ? experiment.tasks[0] : null
+  const modelConfig = firstTask?.config_snapshot?.model as Record<string, unknown> || {}
+  const inferenceConfig = firstTask?.config_snapshot?.inference as Record<string, unknown> || {}
 
   const progress =
     experiment.total_tasks > 0

@@ -56,6 +56,13 @@ export interface EvaluationTask {
   manual_parallelism?: Record<string, unknown>
   search_constraints?: Record<string, unknown>
   search_stats?: Record<string, unknown>
+  config_snapshot?: {
+    model: Record<string, unknown>
+    inference: Record<string, unknown>
+    topology: Record<string, unknown>
+  }
+  benchmark_name?: string
+  topology_config_name?: string
   results?: EvaluationResult[]
 }
 
@@ -65,9 +72,6 @@ export interface Experiment {
   description?: string
   created_at: string
   updated_at: string
-  model_config: Record<string, unknown>
-  hardware_config: Record<string, unknown>
-  inference_config: Record<string, unknown>
   total_tasks: number
   completed_tasks: number
   tasks?: EvaluationTask[]

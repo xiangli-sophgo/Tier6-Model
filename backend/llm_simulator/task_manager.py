@@ -100,7 +100,7 @@ def _update_task_status(
 
 
 def _save_results(task_id: str, results: list, db: Session):
-    """保存评估结果到数据库"""
+    """保存评估结果到数据库（对齐 DS_TPU 数据格式）"""
     task = db.query(EvaluationTask).filter(EvaluationTask.task_id == task_id).first()
     if not task:
         raise ValueError(f"Task {task_id} not found")
@@ -115,12 +115,16 @@ def _save_results(task_id: str, results: list, db: Session):
             sp=result_data["parallelism"].get("sp", 1),
             moe_tp=result_data["parallelism"].get("moe_tp"),
             chips=result_data["chips"],
-            throughput=result_data["throughput"],
+            # DS_TPU 字段
+            total_elapse_us=result_data["total_elapse_us"],
+            total_elapse_ms=result_data["total_elapse_ms"],
+            comm_elapse_us=result_data["comm_elapse_us"],
+            tps=result_data["tps"],
+            tps_per_batch=result_data["tps_per_batch"],
             tps_per_chip=result_data["tps_per_chip"],
-            ttft=result_data["ttft"],
-            tpot=result_data["tpot"],
             mfu=result_data["mfu"],
-            mbu=result_data["mbu"],
+            flops=result_data["flops"],
+            dram_occupy=result_data["dram_occupy"],
             score=result_data["score"],
             is_feasible=1 if result_data.get("is_feasible", True) else 0,
             infeasible_reason=result_data.get("infeasible_reason"),
@@ -137,7 +141,6 @@ def _execute_evaluation(
     task_id: str,
     topology: dict,
     model_config: dict,
-    hardware_config: dict,
     inference_config: dict,
     search_mode: str,
     manual_parallelism: Optional[dict],
@@ -157,7 +160,6 @@ def _execute_evaluation(
         result = evaluate_deployment(
             topology=topology,
             model_config=model_config,
-            hardware_config=hardware_config,
             inference_config=inference_config,
             search_mode=search_mode,
             manual_parallelism=manual_parallelism,
@@ -218,14 +220,27 @@ def create_and_submit_task(
     description: str,
     topology: dict,
     model_config: dict,
-    hardware_config: dict,
     inference_config: dict,
     search_mode: str,
+    benchmark_name: Optional[str] = None,
+    topology_config_name: Optional[str] = None,
     manual_parallelism: Optional[dict] = None,
     search_constraints: Optional[dict] = None,
 ) -> str:
     """
     创建评估任务并提交到后台执行
+
+    Args:
+        experiment_name: 实验名称
+        description: 实验描述
+        topology: 完整拓扑数据（包含物理拓扑 + protocol_config + network_config + chip_latency_config）
+        model_config: 模型配置
+        inference_config: 推理配置
+        search_mode: 搜索模式 ('manual' or 'auto')
+        benchmark_name: Benchmark 配置文件名称（可选）
+        topology_config_name: 拓扑配置文件名称（可选）
+        manual_parallelism: 手动并行策略（可选）
+        search_constraints: 搜索约束（可选）
 
     Returns:
         task_id: 任务 UUID
@@ -238,12 +253,16 @@ def create_and_submit_task(
             experiment = Experiment(
                 name=experiment_name,
                 description=description,
-                model_config=model_config,
-                hardware_config=hardware_config,
-                inference_config=inference_config,
             )
             db.add(experiment)
             db.flush()
+
+        # 构建完整配置快照（topology 已包含所有硬件和延迟配置）
+        config_snapshot = {
+            "model": model_config,
+            "inference": inference_config,
+            "topology": topology,  # 包含 pods/racks/boards/chips/connections + protocol_config + network_config + chip_latency_config
+        }
 
         # 创建任务记录
         task_id = str(uuid.uuid4())
@@ -251,6 +270,9 @@ def create_and_submit_task(
             task_id=task_id,
             experiment_id=experiment.id,
             status=TaskStatus.PENDING,
+            config_snapshot=config_snapshot,
+            benchmark_name=benchmark_name,
+            topology_config_name=topology_config_name,
             search_mode=search_mode,
             manual_parallelism=manual_parallelism,
             search_constraints=search_constraints,
@@ -265,7 +287,6 @@ def create_and_submit_task(
             task_id,
             topology,
             model_config,
-            hardware_config,
             inference_config,
             search_mode,
             manual_parallelism,

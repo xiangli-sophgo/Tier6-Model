@@ -20,7 +20,7 @@ class TaskStatus(str, enum.Enum):
 
 
 class Experiment(Base):
-    """实验元数据表"""
+    """实验元数据表（轻量级容器）"""
     __tablename__ = "experiments"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -28,11 +28,6 @@ class Experiment(Base):
     description = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
-
-    # 配置快照（JSON）
-    model_config = Column(JSON, nullable=False)
-    hardware_config = Column(JSON, nullable=False)
-    inference_config = Column(JSON, nullable=False)
 
     # 统计信息
     total_tasks = Column(Integer, default=0)
@@ -43,7 +38,7 @@ class Experiment(Base):
 
 
 class EvaluationTask(Base):
-    """评估任务表"""
+    """评估任务表（保存完整配置快照）"""
     __tablename__ = "evaluation_tasks"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -60,6 +55,13 @@ class EvaluationTask(Base):
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     started_at = Column(DateTime, nullable=True)
     completed_at = Column(DateTime, nullable=True)
+
+    # 完整配置快照（每个任务独立保存所有配置）
+    config_snapshot = Column(JSON, nullable=False)  # 包含 model, inference, topology, protocol, network, chip_latency
+
+    # 配置文件引用（追溯配置来源）
+    benchmark_name = Column(String(255), nullable=True)  # Benchmark 配置文件名称
+    topology_config_name = Column(String(255), nullable=True)  # 拓扑配置文件名称
 
     # 搜索配置
     search_mode = Column(String(20), nullable=False)  # 'manual' or 'auto'
@@ -92,13 +94,18 @@ class EvaluationResult(Base):
     # 资源使用
     chips = Column(Integer, nullable=False)
 
-    # 性能指标
-    throughput = Column(Float, nullable=False)  # tokens/s (total)
-    tps_per_chip = Column(Float, nullable=False)  # tokens/s/chip
-    ttft = Column(Float, nullable=False)  # ms
-    tpot = Column(Float, nullable=False)  # ms
-    mfu = Column(Float, nullable=False)
-    mbu = Column(Float, nullable=False)
+    # 性能指标（对齐 DS_TPU）
+    total_elapse_us = Column(Float, nullable=False)  # 总延迟 (微秒)
+    total_elapse_ms = Column(Float, nullable=False)  # 总延迟 (毫秒)
+    comm_elapse_us = Column(Float, nullable=False)   # 通信延迟 (微秒)
+    tps = Column(Float, nullable=False)              # tokens/s (total throughput)
+    tps_per_batch = Column(Float, nullable=False)    # tokens/s per batch
+    tps_per_chip = Column(Float, nullable=False)     # tokens/s/chip
+    mfu = Column(Float, nullable=False)              # Model FLOPs Utilization (0-1)
+
+    # 计算量和内存
+    flops = Column(Float, nullable=False)            # 总 FLOPs
+    dram_occupy = Column(Float, nullable=False)      # 内存占用 (bytes)
 
     # 综合得分
     score = Column(Float, nullable=False)

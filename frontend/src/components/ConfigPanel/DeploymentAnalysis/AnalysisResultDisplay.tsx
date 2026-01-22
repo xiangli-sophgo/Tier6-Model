@@ -41,6 +41,7 @@ import { BaseCard } from '../../common/BaseCard'
 import { MetricDetailCard } from './components/MetricDetailCard'
 import { ModelInfoCard } from './components/ModelInfoCard'
 import { ParallelismInfo, ParallelismCard, type ParallelismType } from './components/ParallelismInfo'
+import { ConfigSnapshotDisplay } from './components/ConfigSnapshotDisplay'
 
 const { Text } = Typography
 
@@ -263,6 +264,14 @@ interface AnalysisResultDisplayProps {
   hardware?: HardwareConfig
   model?: LLMModelConfig
   inference?: InferenceConfig
+  // 配置快照（从任务中获取）
+  configSnapshot?: {
+    model: Record<string, unknown>
+    inference: Record<string, unknown>
+    topology: Record<string, unknown>
+  }
+  benchmarkName?: string
+  topologyConfigName?: string
 }
 
 type MetricType = 'ttft' | 'tpot' | 'throughput' | 'tps_batch' | 'tps_chip' | 'mfu' | 'mbu' | 'cost' | 'percentiles' | 'bottleneck' | 'e2e' | 'chips' | 'memory' | null
@@ -289,6 +298,9 @@ export const AnalysisResultDisplay: React.FC<AnalysisResultDisplayProps> = ({
   hardware: _hardware,
   model,
   inference,
+  configSnapshot,
+  benchmarkName,
+  topologyConfigName,
 }) => {
   const [selectedMetric, setSelectedMetric] = useState<MetricType>(null)
   const [showScoreDetails, setShowScoreDetails] = useState(false)
@@ -797,6 +809,25 @@ export const AnalysisResultDisplay: React.FC<AnalysisResultDisplayProps> = ({
                   清除映射
                 </Button>
               </div>
+            </div>
+          )}
+
+          {/* 配置快照展示 */}
+          {configSnapshot && (
+            <div style={{ marginTop: 16 }}>
+              <div style={{
+                fontSize: 13,
+                fontWeight: 500,
+                color: colors.text,
+                marginBottom: 12,
+              }}>
+                完整配置快照
+              </div>
+              <ConfigSnapshotDisplay
+                configSnapshot={configSnapshot}
+                benchmarkName={benchmarkName}
+                topologyConfigName={topologyConfigName}
+              />
             </div>
           )}
         </BaseCard>

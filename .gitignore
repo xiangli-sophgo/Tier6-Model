@@ -45,3 +45,9 @@ Thumbs.db
 *.temp
 .cache/
 .claude/
+
+# Database files
+*.db
+*.db-shm
+*.db-wal
+backend/data/

@@ -69,10 +69,17 @@ class EvaluationRequest(BaseModel):
     """评估请求"""
     experiment_name: str
     description: str = ""
-    topology: dict[str, Any]
-    model: dict[str, Any]
-    hardware: dict[str, Any]
-    inference: dict[str, Any]
+
+    # 配置文件引用（追溯来源）
+    benchmark_name: Optional[str] = None  # Benchmark 配置文件名称
+    topology_config_name: Optional[str] = None  # 拓扑配置文件名称
+
+    # 完整配置数据
+    topology: dict[str, Any]  # 完整拓扑数据（包含 pods/racks/boards/chips/connections + protocol_config + network_config + chip_latency_config）
+    model: dict[str, Any]  # 模型配置
+    inference: dict[str, Any]  # 推理配置
+
+    # 搜索配置
     search_mode: str  # 'manual' or 'auto'
     manual_parallelism: Optional[dict[str, Any]] = None
     search_constraints: Optional[dict[str, Any]] = None
@@ -438,9 +445,10 @@ async def submit_evaluation(request: EvaluationRequest):
             description=request.description,
             topology=request.topology,
             model_config=request.model,
-            hardware_config=request.hardware,
             inference_config=request.inference,
             search_mode=request.search_mode,
+            benchmark_name=request.benchmark_name,
+            topology_config_name=request.topology_config_name,
             manual_parallelism=request.manual_parallelism,
             search_constraints=request.search_constraints,
         )
@@ -564,42 +572,49 @@ async def list_experiments(db: Session = Depends(get_db)):
 @app.get("/api/evaluation/experiments/{experiment_id}")
 async def get_experiment_details(experiment_id: int, db: Session = Depends(get_db)):
     """获取实验详情（包含所有任务）"""
-    experiment = db.query(Experiment).filter(Experiment.id == experiment_id).first()
-    if not experiment:
-        raise HTTPException(status_code=404, detail=f"实验不存在: {experiment_id}")
+    try:
+        experiment = db.query(Experiment).filter(Experiment.id == experiment_id).first()
+        if not experiment:
+            raise HTTPException(status_code=404, detail=f"实验不存在: {experiment_id}")
 
-    tasks = db.query(EvaluationTask).filter(EvaluationTask.experiment_id == experiment_id).all()
+        tasks = db.query(EvaluationTask).filter(EvaluationTask.experiment_id == experiment_id).all()
 
-    return {
-        "id": experiment.id,
-        "name": experiment.name,
-        "description": experiment.description,
-        "model_config": experiment.model_config,
-        "hardware_config": experiment.hardware_config,
-        "inference_config": experiment.inference_config,
-        "total_tasks": experiment.total_tasks,
-        "completed_tasks": experiment.completed_tasks,
-        "created_at": experiment.created_at.isoformat() if experiment.created_at else None,
-        "tasks": [
-            {
-                "id": task.id,
-                "task_id": task.task_id,
-                "experiment_id": task.experiment_id,
-                "status": task.status.value,
-                "progress": task.progress,
-                "message": task.message,
-                "error": task.error,
-                "created_at": task.created_at.isoformat() if task.created_at else None,
-                "started_at": task.started_at.isoformat() if task.started_at else None,
-                "completed_at": task.completed_at.isoformat() if task.completed_at else None,
-                "search_mode": task.search_mode,
-                "manual_parallelism": task.manual_parallelism,
-                "search_constraints": task.search_constraints,
-                "search_stats": task.search_stats,
-            }
-            for task in tasks
-        ]
-    }
+        return {
+            "id": experiment.id,
+            "name": experiment.name,
+            "description": experiment.description,
+            "total_tasks": experiment.total_tasks,
+            "completed_tasks": experiment.completed_tasks,
+            "created_at": experiment.created_at.isoformat() if experiment.created_at else None,
+            "updated_at": experiment.updated_at.isoformat() if experiment.updated_at else None,
+            "tasks": [
+                {
+                    "id": task.id,
+                    "task_id": task.task_id,
+                    "experiment_id": task.experiment_id,
+                    "status": task.status.value,
+                    "progress": task.progress,
+                    "message": task.message,
+                    "error": task.error,
+                    "created_at": task.created_at.isoformat() if task.created_at else None,
+                    "started_at": task.started_at.isoformat() if task.started_at else None,
+                    "completed_at": task.completed_at.isoformat() if task.completed_at else None,
+                    "config_snapshot": task.config_snapshot,
+                    "benchmark_name": task.benchmark_name,
+                    "topology_config_name": task.topology_config_name,
+                    "search_mode": task.search_mode,
+                    "manual_parallelism": task.manual_parallelism,
+                    "search_constraints": task.search_constraints,
+                    "search_stats": task.search_stats,
+                }
+                for task in tasks
+            ]
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"获取实验详情失败: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"获取失败: {str(e)}")
 
 
 @app.delete("/api/evaluation/experiments/{experiment_id}")

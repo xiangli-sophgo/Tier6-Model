@@ -16,9 +16,6 @@ import {
   Popconfirm,
   Empty,
   Spin,
-  Row,
-  Col,
-  Statistic,
   Alert,
 } from 'antd'
 import {
@@ -36,24 +33,9 @@ import { listExperiments, deleteExperiment, getExperimentDetail, getTaskResults,
 import { AnalysisResultDisplay } from '@/components/ConfigPanel/DeploymentAnalysis/AnalysisResultDisplay'
 import { ChartsPanel } from '@/components/ConfigPanel/DeploymentAnalysis/charts'
 import { PlanAnalysisResult, HardwareConfig, LLMModelConfig, InferenceConfig } from '@/utils/llmDeployment/types'
+import TaskTable from './components/TaskTable'
 
 const { Text } = Typography
-
-// 统计项组件
-interface StatItemProps {
-  label: string
-  value: string | number
-  precision?: number
-}
-
-const StatItem: React.FC<StatItemProps> = ({ label, value, precision = 2 }) => (
-  <div style={{ padding: 16, background: '#fafafa', borderRadius: 4 }}>
-    <div style={{ color: '#8c8c8c', fontSize: 12, marginBottom: 4 }}>{label}</div>
-    <div style={{ fontSize: 18, fontWeight: 600, color: '#1a1a1a' }}>
-      {typeof value === 'number' ? value.toFixed(precision) : value}
-    </div>
-  </div>
-)
 
 // 实验状态配置
 const statusConfig: Record<string, { color: string; text: string; icon: React.ReactNode }> = {
@@ -79,15 +61,15 @@ const statusConfig: Record<string, { color: string; text: string; icon: React.Re
   },
 }
 
-// 颜色配置
-const colors = {
-  primary: '#1890ff',
-  success: '#52c41a',
-  warning: '#faad14',
-  error: '#ff4d4f',
-  border: '#e8e8e8',
-  textSecondary: '#8c8c8c',
-}
+// 颜色配置 (保留以供其他地方使用)
+// const colors = {
+//   primary: '#1890ff',
+//   success: '#52c41a',
+//   warning: '#faad14',
+//   error: '#ff4d4f',
+//   border: '#e8e8e8',
+//   textSecondary: '#8c8c8c',
+// }
 
 export const Results: React.FC = () => {
   const [experiments, setExperiments] = useState<Experiment[]>([])
@@ -358,9 +340,6 @@ export const Results: React.FC = () => {
 
   // 如果选中了实验，显示详情视图
   if (selectedExperiment) {
-    const modelConfig = selectedExperiment.model_config as Record<string, unknown> || {}
-    const inferenceConfig = selectedExperiment.inference_config as Record<string, unknown> || {}
-    const hardwareConfig = selectedExperiment.hardware_config as unknown as HardwareConfig | undefined
     const progress =
       selectedExperiment.total_tasks > 0
         ? Math.round((selectedExperiment.completed_tasks / selectedExperiment.total_tasks) * 100)
@@ -368,6 +347,36 @@ export const Results: React.FC = () => {
 
     // 如果选中了任务，显示任务分析视图
     if (selectedTask) {
+      // 从任务的 config_snapshot 中提取配置
+      const modelConfig = selectedTask.config_snapshot?.model as Record<string, unknown> || {}
+      const inferenceConfig = selectedTask.config_snapshot?.inference as Record<string, unknown> || {}
+      const topology = selectedTask.config_snapshot?.topology as Record<string, unknown> || {}
+
+      // 从拓扑中提取硬件配置（简化版）
+      const hardwareConfig: HardwareConfig | undefined = (() => {
+        const pods = (topology.pods as any[]) || []
+        if (pods.length > 0 && pods[0].racks && pods[0].racks[0].boards && pods[0].racks[0].boards[0].chips) {
+          const chip = pods[0].racks[0].boards[0].chips[0]
+          return {
+            chip: {
+              chip_type: chip.name || 'Unknown',
+              compute_tflops_fp16: chip.compute_tflops_fp16 || 0,
+              memory_gb: chip.memory_gb || 0,
+              memory_bandwidth_gbps: chip.memory_bandwidth_gbps || 0,
+              memory_bandwidth_utilization: chip.memory_bandwidth_utilization || 0.9,
+            },
+            node: {
+              chips_per_node: 8, // 默认值
+              intra_node_bandwidth_gbps: 900,
+            },
+            cluster: {
+              inter_node_bandwidth_gbps: 400,
+            },
+          } as HardwareConfig
+        }
+        return undefined
+      })()
+
       const analysisResults = convertToAnalysisResults(taskResults)
       const bestResult = analysisResults.length > 0 ? analysisResults[0] : null
 
@@ -415,6 +424,9 @@ export const Results: React.FC = () => {
                 hardware={hardwareConfig}
                 model={modelConfig as unknown as LLMModelConfig}
                 inference={inferenceConfig as unknown as InferenceConfig}
+                configSnapshot={selectedTask.config_snapshot}
+                benchmarkName={selectedTask.benchmark_name}
+                topologyConfigName={selectedTask.topology_config_name}
                 onSelectPlan={(plan) => {
                   // 切换选中的方案
                   const idx = analysisResults.findIndex(p => p.plan?.plan_id === plan.plan?.plan_id)
@@ -500,207 +512,35 @@ export const Results: React.FC = () => {
             />
           )}
 
-          {/* 任务进度卡片 */}
-          <Card title="任务进度" style={{ marginBottom: 16 }}>
-            <Row gutter={16}>
-              <Col span={12}>
-                <Statistic
-                  title="已完成任务"
-                  value={selectedExperiment.completed_tasks}
-                  suffix={`/ ${selectedExperiment.total_tasks}`}
-                />
-              </Col>
-              <Col span={12}>
-                <div style={{ padding: '16px 0' }}>
-                  <div style={{ marginBottom: 8 }}>进度: {progress}%</div>
-                  <div
-                    style={{
-                      width: '100%',
-                      height: 8,
-                      backgroundColor: '#f0f0f0',
-                      borderRadius: 4,
-                    }}
-                  >
-                    <div
-                      style={{
-                        width: `${progress}%`,
-                        height: '100%',
-                        backgroundColor: progress === 100 ? '#52c41a' : '#1890ff',
-                        borderRadius: 4,
-                        transition: 'width 0.3s',
-                      }}
-                    />
-                  </div>
-                </div>
-              </Col>
-            </Row>
-          </Card>
-
-          {/* 模型配置 */}
-          <Card title="模型配置" style={{ marginBottom: 16 }}>
-            <Row gutter={[16, 16]}>
-              <Col span={8}>
-                <StatItem
-                  label="模型名称"
-                  value={modelConfig.model_name as string || '-'}
-                />
-              </Col>
-              <Col span={8}>
-                <StatItem
-                  label="隐藏层尺寸"
-                  value={modelConfig.hidden_size as number || '-'}
-                />
-              </Col>
-              <Col span={8}>
-                <StatItem
-                  label="层数"
-                  value={modelConfig.num_layers as number || '-'}
-                />
-              </Col>
-            </Row>
-          </Card>
-
-          {/* 推理配置 */}
-          <Card title="推理配置" style={{ marginBottom: 16 }}>
-            <Row gutter={[16, 16]}>
-              <Col span={8}>
-                <StatItem
-                  label="批次大小"
-                  value={inferenceConfig.batch_size as number || '-'}
-                />
-              </Col>
-              <Col span={8}>
-                <StatItem
-                  label="输入序列长度"
-                  value={inferenceConfig.input_seq_length as number || '-'}
-                />
-              </Col>
-              <Col span={8}>
-                <StatItem
-                  label="输出序列长度"
-                  value={inferenceConfig.output_seq_length as number || '-'}
-                />
-              </Col>
-            </Row>
-          </Card>
-
-          {/* 任务列表 */}
+          {/* 任务列表表格 */}
           <Card
             title={
               <Space>
                 <span>任务列表 ({selectedExperiment.tasks?.length || 0})</span>
                 <Text type="secondary" style={{ fontSize: 12, fontWeight: 400 }}>
-                  点击任务查看详细分析结果
+                  双击任务查看详细分析结果
                 </Text>
               </Space>
             }
             style={{ marginBottom: 16 }}
           >
-            {selectedExperiment.tasks && selectedExperiment.tasks.length > 0 ? (
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 16 }}>
-                {selectedExperiment.tasks.map((task) => {
-                  const taskStatusConfig = statusConfig[task.status] || { color: 'default', text: task.status, icon: null }
-                  const searchStats = task.search_stats as { total?: number; feasible?: number; infeasible?: number } | undefined
-
-                  return (
-                    <Card
-                      key={task.task_id}
-                      size="small"
-                      hoverable={task.status === 'completed'}
-                      onClick={() => task.status === 'completed' && loadTaskResults(task)}
-                      style={{
-                        cursor: task.status === 'completed' ? 'pointer' : 'default',
-                        borderColor: task.status === 'completed' ? colors.success : colors.border,
-                        opacity: task.status === 'completed' ? 1 : 0.7,
-                      }}
-                    >
-                      {/* 标题行：任务ID + 状态 */}
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                        <Text strong style={{ fontSize: 13 }}>
-                          {task.task_id.slice(0, 8)}...
-                        </Text>
-                        <Tag color={taskStatusConfig.color} icon={taskStatusConfig.icon} style={{ margin: 0 }}>
-                          {taskStatusConfig.text}
-                        </Tag>
-                      </div>
-
-                      {/* 进度条 */}
-                      <div style={{ marginBottom: 8 }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-                          <Text type="secondary" style={{ fontSize: 11 }}>进度</Text>
-                          <Text style={{ fontSize: 11 }}>{task.progress.toFixed(0)}%</Text>
-                        </div>
-                        <div style={{ width: '100%', height: 4, backgroundColor: '#f0f0f0', borderRadius: 2 }}>
-                          <div
-                            style={{
-                              width: `${task.progress}%`,
-                              height: '100%',
-                              backgroundColor: task.status === 'completed' ? colors.success : colors.primary,
-                              borderRadius: 2,
-                              transition: 'width 0.3s',
-                            }}
-                          />
-                        </div>
-                      </div>
-
-                      {/* 搜索统计 */}
-                      {searchStats && (
-                        <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
-                          {searchStats.total !== undefined && (
-                            <Tag color="default" style={{ margin: 0, fontSize: 10 }}>
-                              总计 {searchStats.total}
-                            </Tag>
-                          )}
-                          {searchStats.feasible !== undefined && searchStats.feasible > 0 && (
-                            <Tag color="success" style={{ margin: 0, fontSize: 10 }}>
-                              可行 {searchStats.feasible}
-                            </Tag>
-                          )}
-                          {searchStats.infeasible !== undefined && searchStats.infeasible > 0 && (
-                            <Tag color="warning" style={{ margin: 0, fontSize: 10 }}>
-                              不可行 {searchStats.infeasible}
-                            </Tag>
-                          )}
-                        </div>
-                      )}
-
-                      {/* 创建时间 */}
-                      <div style={{ fontSize: 11, color: colors.textSecondary }}>
-                        {new Date(task.created_at).toLocaleString('zh-CN')}
-                      </div>
-
-                      {/* 查看分析提示 */}
-                      {task.status === 'completed' && (
-                        <div style={{
-                          marginTop: 8,
-                          paddingTop: 8,
-                          borderTop: `1px dashed ${colors.border}`,
-                          display: 'flex',
-                          justifyContent: 'center',
-                          alignItems: 'center',
-                          gap: 4,
-                        }}>
-                          <BarChartOutlined style={{ color: colors.primary, fontSize: 12 }} />
-                          <Text style={{ color: colors.primary, fontSize: 11 }}>点击查看详细分析</Text>
-                        </div>
-                      )}
-
-                      {/* 错误消息 */}
-                      {task.error && (
-                        <Alert
-                          message={task.error}
-                          type="error"
-                          style={{ marginTop: 8, fontSize: 11 }}
-                          showIcon
-                        />
-                      )}
-                    </Card>
-                  )
-                })}
-              </div>
-            ) : (
-              <Alert message="暂无任务" type="info" />
-            )}
+            <TaskTable
+              tasks={selectedExperiment.tasks || []}
+              loading={false}
+              experimentId={selectedExperiment.id}
+              onTaskSelect={(task) => {
+                if (task.status === 'completed') {
+                  loadTaskResults(task)
+                } else {
+                  message.info('该任务尚未完成')
+                }
+              }}
+              onTasksDelete={async (taskIds) => {
+                // TODO: 实现批量删除任务的API调用
+                console.log('删除任务:', taskIds)
+                message.info('批量删除功能待实现')
+              }}
+            />
           </Card>
           </div>
         </div>
