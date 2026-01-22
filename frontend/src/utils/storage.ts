@@ -4,7 +4,8 @@
  * 替代后端 JSON 文件存储，实现配置的本地持久化
  */
 
-import { ManualConnectionConfig, ManualConnection, GlobalSwitchConfig } from '../types';
+import { ManualConnectionConfig, ManualConnection, GlobalSwitchConfig, HierarchicalTopology } from '../types';
+import { ChipHardwareConfig } from './llmDeployment/types';
 
 // 数据库名称和版本
 const DB_NAME = 'Tier6TopologyDB';
@@ -15,6 +16,34 @@ const STORES = {
   CONFIGS: 'savedConfigs',
   MANUAL_CONNECTIONS: 'manualConnections',
 };
+
+/**
+ * 网络配置 - 存储带宽和延迟参数
+ */
+export interface NetworkConfig {
+  /** 节点内互联带宽 (GB/s) - 如 NVLink */
+  intra_node_bandwidth_gbps: number;
+  /** 节点间互联带宽 (GB/s) - 如 InfiniBand */
+  inter_node_bandwidth_gbps: number;
+  /** 节点内延迟 (us) */
+  intra_node_latency_us: number;
+  /** 节点间延迟 (us) */
+  inter_node_latency_us: number;
+}
+
+/**
+ * 芯片配置项 - 包含预设ID和完整硬件参数
+ */
+export interface SavedChipConfig {
+  /** 预设ID (如 'h100-sxm') */
+  preset_id?: string;
+  /** 芯片硬件配置 */
+  hardware: ChipHardwareConfig;
+  /** 芯片总数 */
+  total_count: number;
+  /** 每个 Board 的芯片数量 */
+  chips_per_board: number;
+}
 
 // 保存的配置接口
 export interface SavedConfig {
@@ -34,13 +63,55 @@ export interface SavedConfig {
       name: string;
       u_height: number;
       count: number;
-      chips: Array<{ name: string; count: number }>;
+      chips: Array<{
+        name: string;
+        count: number;
+        preset_id?: string;
+        compute_tflops_fp16?: number;
+        memory_gb?: number;
+        memory_bandwidth_gbps?: number;
+        memory_bandwidth_utilization?: number;
+      }>;
     }>;
   };
   switch_config?: GlobalSwitchConfig;
   manual_connections?: ManualConnectionConfig;
   created_at?: string;
   updated_at?: string;
+
+  // ============================================
+  // 扩展字段 - 用于部署分析
+  // ============================================
+
+  /** 生成的完整拓扑数据 */
+  generated_topology?: HierarchicalTopology;
+  /** 芯片硬件配置列表 (已解析的完整硬件参数) */
+  chip_configs?: SavedChipConfig[];
+  /** 网络配置 (带宽/延迟参数) */
+  network_config?: NetworkConfig;
+
+  /** 协议延迟配置 (TP RTT, EP RTT 等) */
+  protocol_config?: {
+    rtt_tp_us: number;
+    rtt_ep_us: number;
+    bandwidth_utilization: number;
+    sync_latency_us: number;
+  };
+
+  /** 网络基础设施配置 (互联相关: 交换机延迟, 线缆延迟) */
+  network_infra_config?: {
+    switch_delay_us: number;
+    cable_delay_us: number;
+  };
+
+  /** 芯片延迟配置 (C2C相关) */
+  chip_latency_config?: {
+    c2c_lat_us: number;
+    ddr_r_lat_us: number;
+    ddr_w_lat_us: number;
+    noc_lat_us: number;
+    d2d_lat_us: number;
+  };
 }
 
 /**

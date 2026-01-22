@@ -204,20 +204,28 @@ export interface ChipHardwareConfig {
   flops_dtype: FlopsDtype;
   /** 算力 (TFLOPs) - 对应 flops_dtype 精度 */
   compute_tflops_fp16: number;
+  /** FP8 算力 (TFLOPs) */
+  compute_tflops_fp8?: number;
   /** INT8 算力 (TOPs) */
   compute_tops_int8?: number;
   /** 计算核心数 */
   num_cores?: number;
-  /** 显存容量 (GB) */
+  /** 内存容量 (GB) */
   memory_gb: number;
-  /** 显存带宽 (GB/s) - 理论带宽 */
+  /** 内存带宽 (GB/s) - 理论带宽 */
   memory_bandwidth_gbps: number;
-  /** 显存带宽利用率 (0-1)，默认 0.9 */
+  /** 内存带宽利用率 (0-1)，默认 0.9 */
   memory_bandwidth_utilization?: number;
+  /** LMEM/SRAM 片上缓存容量 (MB) */
+  lmem_mb?: number;
   /** L2 缓存容量 (MB) */
   l2_cache_mb?: number;
   /** L2 缓存带宽 (GB/s) */
   l2_bandwidth_gbps?: number;
+  /** C2C 单向带宽 (GB/s) - 芯片间互联 */
+  c2c_bandwidth_gbps?: number;
+  /** C2C 双向带宽 (GB/s) - 芯片间互联 */
+  c2c_bandwidth_bidirectional_gbps?: number;
   /** 成本 ($/hour) - 云服务商按需实例价格 */
   cost_per_hour?: number;
 }
@@ -748,14 +756,26 @@ export interface ProtocolConfig {
   sync_latency_us: number;
 }
 
-/** 网络基础设施配置 */
+/** 网络基础设施配置 (互联相关) */
 export interface NetworkInfraConfig {
   /** 交换机延迟 (微秒) */
   switch_delay_us: number;
   /** 线缆延迟 (微秒) */
   cable_delay_us: number;
-  /** 链路延迟 (微秒, 计算值) */
-  link_delay_us: number;
+}
+
+/** 芯片延迟配置 (C2C相关) */
+export interface ChipLatencyConfig {
+  /** 芯片间物理互联延迟 (微秒) - c2c_lat */
+  c2c_lat_us: number;
+  /** DDR 读延迟 (微秒) - ddr_r_lat */
+  ddr_r_lat_us: number;
+  /** DDR 写延迟 (微秒) - ddr_w_lat */
+  ddr_w_lat_us: number;
+  /** NoC 延迟 (微秒) - noc_lat */
+  noc_lat_us: number;
+  /** Die-to-Die 延迟 (微秒) - d2d_lat */
+  d2d_lat_us: number;
 }
 
 /** 运行时配置 (汇总) */
@@ -764,6 +784,8 @@ export interface RuntimeConfig {
   protocol: ProtocolConfig;
   /** 网络配置 */
   network: NetworkInfraConfig;
+  /** 芯片延迟配置 */
+  chipLatency: ChipLatencyConfig;
 }
 
 /** 默认协议配置 */
@@ -774,11 +796,19 @@ export const DEFAULT_PROTOCOL_CONFIG: ProtocolConfig = {
   sync_latency_us: 0.0,
 };
 
-/** 默认网络配置 */
+/** 默认网络配置 (互联相关) */
 export const DEFAULT_NETWORK_CONFIG: NetworkInfraConfig = {
-  switch_delay_us: 0.25,
+  switch_delay_us: 1.0,
   cable_delay_us: 0.025,
-  link_delay_us: 0.55,  // 2 * 0.25 + 2 * 0.025
+};
+
+/** 默认芯片延迟配置 (C2C相关) */
+export const DEFAULT_CHIP_LATENCY_CONFIG: ChipLatencyConfig = {
+  c2c_lat_us: 0.2,
+  ddr_r_lat_us: 0.15,
+  ddr_w_lat_us: 0.01,
+  noc_lat_us: 0.05,
+  d2d_lat_us: 0.04,
 };
 
 // ============================================

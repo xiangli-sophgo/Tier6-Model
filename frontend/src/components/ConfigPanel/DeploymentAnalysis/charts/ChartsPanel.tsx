@@ -122,7 +122,7 @@ export const ChartsPanel: React.FC<ChartsPanelProps> = ({
           cluster: hardware.cluster,
         },
         config: {
-          maxSimulatedTokens: 16,
+          maxSimulatedTokens: 1,
           enableDataTransferSimulation: true,
           enableDetailedTransformerOps: true,
           enableKVCacheAccessSimulation: true,

@@ -24,6 +24,11 @@ import { ForceKnowledgeNode, KnowledgeCategory, CORE_RELATION_TYPES, MAX_EDGES_P
 import knowledgeData from '../data/knowledge-graph'
 
 // ============================================
+// 类型定义
+// ============================================
+export type ViewMode = 'dashboard' | 'topology' | 'deployment' | 'results' | 'knowledge' | '3d'
+
+// ============================================
 // 常量
 // ============================================
 const CONFIG_CACHE_KEY = 'tier6_topology_config_cache'
@@ -82,12 +87,36 @@ const findConnection = <T extends ConnectionLike>(source: string, target: string
 // Context 类型定义
 // ============================================
 
+// Rack 配置类型（用于部署分析）
+interface RackConfigForAnalysis {
+  total_u: number
+  boards: Array<{
+    id: string
+    name: string
+    u_height: number
+    count: number
+    chips: Array<{
+      name: string
+      count: number
+      preset_id?: string
+      compute_tflops_fp16?: number
+      memory_gb?: number
+      memory_bandwidth_gbps?: number
+      memory_bandwidth_utilization?: number
+    }>
+  }>
+}
+
 // 拓扑状态
 interface TopologyState {
   topology: HierarchicalTopology | null
   loading: boolean
   loadTopology: () => Promise<void>
   handleGenerate: (config: GenerateConfig) => Promise<void>
+  // 用于部署分析的配置数据
+  rackConfig: RackConfigForAnalysis | null
+  podCount: number
+  racksPerPod: number
 }
 
 // 生成配置类型
@@ -162,7 +191,7 @@ interface KnowledgeViewBox {
 
 // UI 状态
 interface UIState {
-  viewMode: '3d' | 'topology' | 'analysis' | 'knowledge'
+  viewMode: 'dashboard' | 'topology' | 'deployment' | 'results' | 'knowledge' | '3d'
   selectedNode: NodeDetail | null
   selectedLink: LinkDetail | null
   focusedLevel: 'datacenter' | 'pod' | 'rack' | 'board' | null
@@ -175,7 +204,7 @@ interface UIState {
   knowledgeNodes: ForceKnowledgeNode[]
   knowledgeInitialized: boolean
   knowledgeViewBox: KnowledgeViewBox | null
-  setViewMode: (mode: '3d' | 'topology' | 'analysis' | 'knowledge') => void
+  setViewMode: (mode: 'dashboard' | 'topology' | 'deployment' | 'results' | 'knowledge' | '3d') => void
   setSelectedNode: (node: NodeDetail | null) => void
   setSelectedLink: (link: LinkDetail | null) => void
   setFocusedLevel: (level: 'datacenter' | 'pod' | 'rack' | 'board' | null) => void
@@ -226,6 +255,10 @@ export const WorkbenchProvider: React.FC<WorkbenchProviderProps> = ({ children }
   // ==================== 拓扑状态 ====================
   const [topology, setTopology] = useState<HierarchicalTopology | null>(null)
   const [loading, setLoading] = useState(true)
+  // 用于部署分析的配置数据
+  const [rackConfig, setRackConfig] = useState<RackConfigForAnalysis | null>(null)
+  const [podCount, setPodCount] = useState(1)
+  const [racksPerPod, setRacksPerPod] = useState(1)
 
   // 视图导航
   const navigation = useViewNavigation(topology)
@@ -272,7 +305,7 @@ export const WorkbenchProvider: React.FC<WorkbenchProviderProps> = ({ children }
   const [trafficResult, setTrafficResult] = useState<TopologyTrafficResult | null>(null)
 
   // ==================== UI 状态 ====================
-  const [viewMode, setViewModeInternal] = useState<'3d' | 'topology' | 'analysis' | 'knowledge'>('topology')
+  const [viewMode, setViewModeInternal] = useState<'dashboard' | 'topology' | 'deployment' | 'results' | 'knowledge' | '3d'>('dashboard')
   const [selectedNode, setSelectedNode] = useState<NodeDetail | null>(null)
   const [selectedLink, setSelectedLink] = useState<LinkDetail | null>(null)
   const [focusedLevel, setFocusedLevel] = useState<'datacenter' | 'pod' | 'rack' | 'board' | null>(null)
@@ -309,7 +342,7 @@ export const WorkbenchProvider: React.FC<WorkbenchProviderProps> = ({ children }
     setKnowledgeHighlightedNodeId(null)
   }, [])
   // 切换视图模式，离开knowledge时清空选中节点和高亮
-  const setViewMode = useCallback((mode: '3d' | 'topology' | 'analysis' | 'knowledge') => {
+  const setViewMode = useCallback((mode: 'dashboard' | 'topology' | 'deployment' | 'results' | 'knowledge' | '3d') => {
     if (viewMode === 'knowledge' && mode !== 'knowledge') {
       setKnowledgeSelectedNodes([])
       setKnowledgeHighlightedNodeId(null)
@@ -328,10 +361,17 @@ export const WorkbenchProvider: React.FC<WorkbenchProviderProps> = ({ children }
           pod_count: cached.podCount,
           racks_per_pod: cached.racksPerPod,
           board_configs: cached.boardConfigs,
+          rack_config: cached.rackConfig,
           switch_config: cached.switchConfig,
           manual_connections: cached.manualConnectionConfig,
         })
         setTopology(data)
+        // 保存用于部署分析的配置数据
+        setPodCount(cached.podCount || 1)
+        setRacksPerPod(cached.racksPerPod || 1)
+        if (cached.rackConfig) {
+          setRackConfig(cached.rackConfig)
+        }
       } else {
         const data = await getTopology()
         setTopology(data)
@@ -348,6 +388,12 @@ export const WorkbenchProvider: React.FC<WorkbenchProviderProps> = ({ children }
     try {
       const data = await generateTopology(config)
       setTopology(data)
+      // 更新用于部署分析的配置数据
+      setPodCount(config.pod_count || 1)
+      setRacksPerPod(config.racks_per_pod || 1)
+      if (config.rack_config) {
+        setRackConfig(config.rack_config as RackConfigForAnalysis)
+      }
     } catch (error) {
       console.error('生成拓扑失败:', error)
       message.error('生成拓扑失败')
@@ -686,7 +732,7 @@ export const WorkbenchProvider: React.FC<WorkbenchProviderProps> = ({ children }
   const prevResultRef = useRef<typeof deploymentAnalysisData>(null)
   useEffect(() => {
     if (deploymentAnalysisData?.result && !prevResultRef.current?.result) {
-      setViewMode('analysis')
+      // 分析完成后切换到详情视图（保持在当前页面）
       setAnalysisViewMode('detail')
     }
     if (deploymentAnalysisData?.history) {
@@ -812,6 +858,9 @@ export const WorkbenchProvider: React.FC<WorkbenchProviderProps> = ({ children }
       loading,
       loadTopology,
       handleGenerate,
+      rackConfig,
+      podCount,
+      racksPerPod,
     },
     connection: {
       manualConnectionConfig,

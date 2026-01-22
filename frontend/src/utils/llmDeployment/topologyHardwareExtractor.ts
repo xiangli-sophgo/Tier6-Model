@@ -7,7 +7,7 @@
 import { HierarchicalTopology, ConnectionConfig } from '../../types'
 import { FlexBoardChipConfig } from '../../components/ConfigPanel/shared'
 import { ChipHardwareConfig, HardwareConfig, NodeConfig, ClusterConfig } from './types'
-import { getChipConfig } from './presets'
+import { getCustomChipPresets } from './presets'
 
 /**
  * 芯片组信息

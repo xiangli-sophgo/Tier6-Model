@@ -27,6 +27,23 @@ export interface TaskStatus {
     feasible_plans: number
     infeasible_plans: number
   }
+  top_plan?: {
+    parallelism: {
+      dp: number
+      tp: number
+      pp: number
+      ep: number
+      sp: number
+      moe_tp?: number
+    }
+    throughput: number
+    tps_per_chip: number
+    ttft: number
+    tpot: number
+    mfu: number
+    mbu: number
+    score: number
+  }
   experiment_name: string
   created_at: string
 }
@@ -92,10 +109,24 @@ export const TaskStatusCard: React.FC<TaskStatusCardProps> = ({
   }, [startTime, task.status])
 
   const formatTime = (seconds: number) => {
-    const m = Math.floor(seconds / 60)
+    const h = Math.floor(seconds / 3600)
+    const m = Math.floor((seconds % 3600) / 60)
     const s = seconds % 60
+    if (h > 0) {
+      return `${h}h${m}m${s}s`
+    }
     return `${m}:${s.toString().padStart(2, '0')}`
   }
+
+  // 根据进度估计总耗时和剩余时间
+  const estimateTotalTime = () => {
+    if (task.progress <= 0 || elapsedTime <= 0) return null
+    const totalTime = Math.ceil(elapsedTime / (task.progress / 100))
+    const remainingTime = Math.max(0, totalTime - elapsedTime)
+    return { totalTime, remainingTime }
+  }
+
+  const timeEstimate = estimateTotalTime()
 
   return (
     <Card
@@ -148,9 +179,27 @@ export const TaskStatusCard: React.FC<TaskStatusCardProps> = ({
             </Text>
           </div>
           {startTime && (task.status === 'running' || task.status === 'pending') && (
-            <Text type="secondary" style={{ fontSize: 11 }}>
-              {formatTime(elapsedTime)}
-            </Text>
+            <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+              <Tooltip title="已用时间">
+                <Text type="secondary" style={{ fontSize: 11, fontWeight: 500 }}>
+                  ⏱️ {formatTime(elapsedTime)}
+                </Text>
+              </Tooltip>
+              {timeEstimate && (
+                <>
+                  <Tooltip title="预计总时间">
+                    <Text type="secondary" style={{ fontSize: 11 }}>
+                      / {formatTime(timeEstimate.totalTime)}
+                    </Text>
+                  </Tooltip>
+                  <Tooltip title="剩余时间">
+                    <Text style={{ fontSize: 11, color: '#faad14', fontWeight: 500 }}>
+                      剩余: {formatTime(timeEstimate.remainingTime)}
+                    </Text>
+                  </Tooltip>
+                </>
+              )}
+            </div>
           )}
         </div>
 
@@ -184,6 +233,56 @@ export const TaskStatusCard: React.FC<TaskStatusCardProps> = ({
             <Text type="secondary">
               不可行: <Text>{task.search_stats.infeasible_plans}</Text>
             </Text>
+          </div>
+        )}
+
+        {/* Benchmark 信息（完成时显示最优方案） */}
+        {task.status === 'completed' && task.top_plan && (
+          <div
+            style={{
+              background: '#f6ffed',
+              border: '1px solid #b7eb8f',
+              borderRadius: 4,
+              padding: 8,
+              marginTop: 4,
+            }}
+          >
+            <div style={{ marginBottom: 6 }}>
+              <Text strong style={{ fontSize: 12, color: '#52c41a' }}>
+                🏆 最优方案 (得分: {task.top_plan.score.toFixed(2)})
+              </Text>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, fontSize: 11 }}>
+              <div>
+                <Text type="secondary">并行策略:</Text>
+                <div>
+                  DP={task.top_plan.parallelism.dp}, TP={task.top_plan.parallelism.tp},
+                  PP={task.top_plan.parallelism.pp}, EP={task.top_plan.parallelism.ep}
+                </div>
+              </div>
+              <div>
+                <Text type="secondary">性能指标:</Text>
+                <div>
+                  吞吐量: {task.top_plan.throughput.toFixed(2)} tokens/s
+                </div>
+              </div>
+              <div>
+                <Text type="secondary">TTFT:</Text>
+                <div>{task.top_plan.ttft.toFixed(2)} ms</div>
+              </div>
+              <div>
+                <Text type="secondary">TPOT:</Text>
+                <div>{task.top_plan.tpot.toFixed(3)} ms/token</div>
+              </div>
+              <div>
+                <Text type="secondary">MFU:</Text>
+                <div>{(task.top_plan.mfu * 100).toFixed(1)}%</div>
+              </div>
+              <div>
+                <Text type="secondary">MBU:</Text>
+                <div>{(task.top_plan.mbu * 100).toFixed(1)}%</div>
+              </div>
+            </div>
           </div>
         )}
 

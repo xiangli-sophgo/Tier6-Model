@@ -50,6 +50,7 @@ def _update_task_status(
     message: Optional[str] = None,
     error: Optional[str] = None,
     search_stats: Optional[dict] = None,
+    top_plan: Optional[dict] = None,
 ):
     """更新任务状态到数据库并广播"""
     db = SessionLocal()
@@ -67,6 +68,11 @@ def _update_task_status(
             task.error = error
         if search_stats:
             task.search_stats = search_stats
+        if top_plan:
+            # 将最优方案保存到search_stats中
+            if not task.search_stats:
+                task.search_stats = {}
+            task.search_stats['top_plan'] = top_plan
 
         if status == TaskStatus.RUNNING and not task.started_at:
             task.started_at = datetime.utcnow()
@@ -164,7 +170,28 @@ def _execute_evaluation(
             _save_results(task_id, result["top_k_plans"], db)
 
         # 保存搜索统计
-        search_stats = result.get("search_stats")
+        search_stats = result.get("search_stats", {})
+
+        # 获取最优方案信息
+        top_plan = None
+        if result["top_k_plans"]:
+            best = result["top_k_plans"][0]
+            top_plan = {
+                "parallelism": {
+                    "dp": best.get("dp", best.get("parallelism", {}).get("dp", 1)),
+                    "tp": best.get("tp", best.get("parallelism", {}).get("tp", 1)),
+                    "pp": best.get("pp", best.get("parallelism", {}).get("pp", 1)),
+                    "ep": best.get("ep", best.get("parallelism", {}).get("ep", 1)),
+                    "sp": best.get("sp", best.get("parallelism", {}).get("sp", 1)),
+                },
+                "throughput": float(best.get("throughput", 0)),
+                "tps_per_chip": float(best.get("tps_per_chip", 0)),
+                "ttft": float(best.get("ttft", 0)),
+                "tpot": float(best.get("tpot", 0)),
+                "mfu": float(best.get("mfu", 0)),
+                "mbu": float(best.get("mbu", 0)),
+                "score": float(best.get("score", 0)),
+            }
 
         _update_task_status(
             task_id,
@@ -172,6 +199,7 @@ def _execute_evaluation(
             100.0,
             f"评估完成，找到 {len(result['top_k_plans'])} 个方案",
             search_stats=search_stats,
+            top_plan=top_plan,
         )
         logger.info(f"[Task {task_id}] Completed successfully")
 

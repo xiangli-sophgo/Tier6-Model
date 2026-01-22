@@ -36,7 +36,7 @@ interface SwitchLevelConfigProps {
   switchTypes: SwitchTypeConfig[]
   onChange: (config: HierarchyLevelSwitchConfig) => void
   configRowStyle: React.CSSProperties
-  viewMode?: '3d' | 'topology' | 'analysis' | 'knowledge'
+  viewMode?: '3d' | 'topology' | 'knowledge'
 }
 
 export const SwitchLevelConfig: React.FC<SwitchLevelConfigProps> = ({

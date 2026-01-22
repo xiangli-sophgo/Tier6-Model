@@ -456,19 +456,24 @@ class DispatchEval:
             prefill_factor: Prefill 系数
         """
         self.arch = arch
-        self.allgather_eval = AllGatherEval(arch, protocol_config, network_config)
 
         # 芯片特定的延迟参数 (从 arch.comm_latency 获取)
         self.c2c_lat = arch.comm_latency.chip_to_chip_us
         self.ddr_r_lat = arch.comm_latency.memory_read_latency_us
         self.ddr_w_lat = arch.comm_latency.memory_write_latency_us
-        self.start_lat = arch.comm_latency.comm_start_overhead_us
+        self.noc_lat = arch.comm_latency.noc_latency_us
+        self.d2d_lat = arch.comm_latency.die_to_die_latency_us
 
         # 网络基础设施参数 (从 network_config 获取，或使用 dataclass 默认值)
         net = network_config if network_config is not None else NetworkInfraConfig()
         self.switch_delay = net.switch_delay_us
         self.cable_delay = net.cable_delay_us
-        self.link_delay = net.link_delay_us
+
+        # Dispatch/Combine 专用 start_lat (包含 switch_delay 和 cable_delay)
+        # start_lat = 2*c2c_lat + ddr_r_lat + ddr_w_lat + noc_lat + 2*d2d_lat + 2*switch_delay + 2*cable_delay
+        self.start_lat = arch.comm_latency.dispatch_combine_start_lat(
+            self.switch_delay, self.cable_delay
+        )
 
         # 协议参数 (从 protocol_config 获取，或使用 dataclass 默认值)
         proto = protocol_config if protocol_config is not None else ProtocolConfig()
@@ -478,7 +483,6 @@ class DispatchEval:
         # MoE 参数
         self.topk = moe_topk
         self.prefill_factor = prefill_factor
-        self.cpu_fetch_delay = 0.0  # CPU fetch 延迟 (通常为 0)
 
     def evaluate_raw(
         self,
@@ -492,6 +496,10 @@ class DispatchEval:
         """
         评估 Dispatch 延迟
 
+        公式:
+        T = (data_size / inter_bw / bw_urate) + start_lat  # dispatch to each EP group
+        T += ((moe_tp - 1) * data_size / intra_bw / bw_urate) * 1e6 + (moe_tp - 1) * start_lat  # all-gather in EP group
+
         Args:
             moe_tp: MoE 张量并行度
             ep: Expert 并行度
@@ -503,28 +511,19 @@ class DispatchEval:
         Returns:
             (latency_us, comm_bytes)
         """
-        # EP 通信延迟 (跨节点)
-        t_us = (data_bytes / self.arch.inter_bw / self.bw_urate) * 1e6
-        t_us += self.start_lat + self.cpu_fetch_delay
+        # Step 1: EP 通信 (dispatch to each EP group)
+        # T = (data_size / inter_bw / bw_urate) * 1e6 + start_lat
+        t_us = (data_bytes / self.arch.inter_bw / self.bw_urate) * 1e6 + self.start_lat
 
-        # RTT 开销
-        if comm_protocol == 2:
-            if is_prefill:
-                t_us += self.rtt_ep * batch_size * self.topk * self.prefill_factor
-            else:
-                t_us += self.rtt_ep * batch_size * self.topk
-        elif comm_protocol == 3:
-            if is_prefill:
-                t_us += self.rtt_ep * min(1, batch_size * self.topk * self.prefill_factor)
-            else:
-                t_us += self.rtt_ep * min(1, batch_size * self.topk)
+        # Step 2: AllGather in EP group (moe_tp 内的通信)
+        # T += ((moe_tp - 1) * data_size / intra_bw / bw_urate) * 1e6 + (moe_tp - 1) * start_lat
+        if moe_tp > 1:
+            allgather_comm = (moe_tp - 1) * data_bytes
+            t_us += (allgather_comm / self.arch.intra_bw / self.bw_urate) * 1e6
+            t_us += (moe_tp - 1) * self.start_lat
 
-        # 加上 AllGather 延迟 (MoE_TP)
-        agather_lat, agather_comm = self.allgather_eval.evaluate_raw(moe_tp, data_bytes)
-        t_us += agather_lat
-
-        # 总通信量
-        total_comm = data_bytes + agather_comm
+        # 总通信量: EP 通信 + AllGather 通信
+        total_comm = data_bytes + (moe_tp - 1) * data_bytes if moe_tp > 1 else data_bytes
 
         return t_us, total_comm
 
@@ -569,19 +568,24 @@ class CombineEval:
             prefill_factor: Prefill 系数
         """
         self.arch = arch
-        self.allgather_eval = AllGatherEval(arch, protocol_config, network_config)
 
         # 芯片特定的延迟参数 (从 arch.comm_latency 获取)
         self.c2c_lat = arch.comm_latency.chip_to_chip_us
         self.ddr_r_lat = arch.comm_latency.memory_read_latency_us
         self.ddr_w_lat = arch.comm_latency.memory_write_latency_us
-        self.start_lat = arch.comm_latency.comm_start_overhead_us
+        self.noc_lat = arch.comm_latency.noc_latency_us
+        self.d2d_lat = arch.comm_latency.die_to_die_latency_us
 
         # 网络基础设施参数 (从 network_config 获取，或使用 dataclass 默认值)
         net = network_config if network_config is not None else NetworkInfraConfig()
         self.switch_delay = net.switch_delay_us
         self.cable_delay = net.cable_delay_us
-        self.link_delay = net.link_delay_us
+
+        # Combine 专用 start_lat (包含 switch_delay 和 cable_delay)
+        # start_lat = 2*c2c_lat + ddr_r_lat + ddr_w_lat + noc_lat + 2*d2d_lat + 2*switch_delay + 2*cable_delay
+        self.start_lat = arch.comm_latency.dispatch_combine_start_lat(
+            self.switch_delay, self.cable_delay
+        )
 
         # 协议参数 (从 protocol_config 获取，或使用 dataclass 默认值)
         proto = protocol_config if protocol_config is not None else ProtocolConfig()
@@ -591,7 +595,6 @@ class CombineEval:
         # MoE 参数
         self.topk = moe_topk
         self.prefill_factor = prefill_factor
-        self.cpu_fetch_delay = 0.0  # CPU fetch 延迟 (通常为 0)
 
     def evaluate_raw(
         self,
@@ -605,6 +608,10 @@ class CombineEval:
         """
         评估 Combine 延迟
 
+        公式:
+        T = (data_size / inter_bw / bw_urate) + start_lat  # combine from each EP group
+        T += ((moe_tp - 1) * data_size / intra_bw / bw_urate) * 1e6 + (moe_tp - 1) * start_lat  # all-gather in EP group
+
         Args:
             moe_tp: MoE 张量并行度
             ep: Expert 并行度
@@ -616,28 +623,19 @@ class CombineEval:
         Returns:
             (latency_us, comm_bytes)
         """
-        # EP 通信延迟 (跨节点)
-        t_us = (data_bytes / self.arch.inter_bw / self.bw_urate) * 1e6
-        t_us += self.start_lat + self.cpu_fetch_delay
+        # Step 1: EP 通信 (combine from each EP group)
+        # T = (data_size / inter_bw / bw_urate) * 1e6 + start_lat
+        t_us = (data_bytes / self.arch.inter_bw / self.bw_urate) * 1e6 + self.start_lat
 
-        # RTT 开销
-        if comm_protocol == 2:
-            if is_prefill:
-                t_us += self.rtt_ep * batch_size * self.topk * self.prefill_factor
-            else:
-                t_us += self.rtt_ep * batch_size * self.topk
-        elif comm_protocol == 3:
-            if is_prefill:
-                t_us += self.rtt_ep * min(1, batch_size * self.topk * self.prefill_factor)
-            else:
-                t_us += self.rtt_ep * min(1, batch_size * self.topk)
+        # Step 2: AllGather in EP group (moe_tp 内的通信)
+        # T += ((moe_tp - 1) * data_size / intra_bw / bw_urate) * 1e6 + (moe_tp - 1) * start_lat
+        if moe_tp > 1:
+            allgather_comm = (moe_tp - 1) * data_bytes
+            t_us += (allgather_comm / self.arch.intra_bw / self.bw_urate) * 1e6
+            t_us += (moe_tp - 1) * self.start_lat
 
-        # 加上 AllGather 延迟 (MoE_TP)
-        agather_lat, agather_comm = self.allgather_eval.evaluate_raw(moe_tp, data_bytes)
-        t_us += agather_lat
-
-        # 总通信量
-        total_comm = data_bytes + agather_comm
+        # 总通信量: EP 通信 + AllGather 通信
+        total_comm = data_bytes + (moe_tp - 1) * data_bytes if moe_tp > 1 else data_bytes
 
         return t_us, total_comm
 

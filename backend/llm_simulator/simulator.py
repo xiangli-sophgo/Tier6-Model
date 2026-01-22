@@ -6,6 +6,7 @@ LLM 推理模拟器核心
 - 推理计算阶段（细化为Attention/FFN/LayerNorm子操作）
 - 结果收集阶段（HBM读取、PCIe回传）
 """
+
 from __future__ import annotations
 
 import time
@@ -13,13 +14,22 @@ from typing import Any
 from dataclasses import dataclass, field
 
 from .types import (
-    LLMModelConfig, InferenceConfig, ParallelismStrategy,
-    HardwareConfig, HierarchicalTopology,
-    ChipHardwareConfig, NodeConfig, ClusterConfig,
-    SimulationResult, SimulationStats, PhaseTimeStats,
-    GanttTaskType, InferencePhase,
+    LLMModelConfig,
+    InferenceConfig,
+    ParallelismStrategy,
+    HardwareConfig,
+    HierarchicalTopology,
+    ChipHardwareConfig,
+    NodeConfig,
+    ClusterConfig,
+    SimulationResult,
+    SimulationStats,
+    PhaseTimeStats,
+    GanttTaskType,
+    InferencePhase,
     get_bytes_per_element,
-    MLAConfig, MoEConfig,
+    MLAConfig,
+    MoEConfig,
 )
 from .topology import TopologyParser
 from .gantt import GanttChartBuilder, convert_to_frontend_format
@@ -50,6 +60,7 @@ from .operators.base import ComputeOpType, CommOpType
 # ============================================
 # 配置验证函数
 # ============================================
+
 
 def validate_mla_config(mla_dict: dict) -> MLAConfig:
     """
@@ -227,21 +238,20 @@ def validate_parallelism_config(parallelism_dict: dict, model_dict: dict | None 
             moe_chips = moe_tp * ep
 
             if attention_chips != moe_chips:
-                raise ValueError(
-                    f"MoE 并行约束不满足: dp*tp ({dp}*{tp}={attention_chips}) 必须等于 moe_tp*ep ({moe_tp}*{ep}={moe_chips})"
-                )
+                raise ValueError(f"MoE 并行约束不满足: dp*tp ({dp}*{tp}={attention_chips}) 必须等于 moe_tp*ep ({moe_tp}*{ep}={moe_chips})")
 
 
 @dataclass
 class SimulationConfig:
     """模拟配置"""
+
     max_simulated_tokens: int = 16
     enable_data_transfer: bool = True
     enable_detailed_ops: bool = True
     enable_kv_cache: bool = True
     enable_overlap: bool = True
     # 新增: Kernel Fusion 和 MLA 优化
-    enable_fusion: bool = True      # 启用 Kernel Fusion 优化
+    enable_fusion: bool = True  # 启用 Kernel Fusion 优化
     enable_comm_overlap: bool = True  # 启用计算-通信重叠
     # 训练模式配置
     enable_training_mode: bool = False  # 启用训练模式（模拟DP梯度同步）
@@ -256,6 +266,7 @@ class SimulationConfig:
 @dataclass
 class ChipState:
     """芯片状态"""
+
     chip_id: str
     pp_stage: int
     tp_rank: int
@@ -302,7 +313,7 @@ class LLMInferenceSimulator:
             except KeyError:
                 # 如果没有预设，使用默认 SG2260E
                 print(f"警告: 未找到 {chip_type} 的架构预设，使用 SG2260E")
-                self.arch = get_arch_preset('SG2260E')
+                self.arch = get_arch_preset("SG2260E")
 
             # 全局评估缓存（跨层复用）
             self.eval_cache: dict = {}
@@ -317,27 +328,21 @@ class LLMInferenceSimulator:
 
         # 获取 TP 组的链路参数
         if self.group_assignment.tp_groups and len(self.group_assignment.tp_groups[0]) > 1:
-            self.tp_bandwidth, self.tp_latency = self.topo_parser.get_link_params_for_group(
-                self.group_assignment.tp_groups[0], 'allreduce'
-            )
+            self.tp_bandwidth, self.tp_latency = self.topo_parser.get_link_params_for_group(self.group_assignment.tp_groups[0], "allreduce")
         else:
             self.tp_bandwidth = hardware.node.intra_node_bandwidth_gbps
             self.tp_latency = hardware.node.intra_node_latency_us
 
         # 获取 PP 组的链路参数
         if self.group_assignment.pp_groups and len(self.group_assignment.pp_groups[0]) > 1:
-            self.pp_bandwidth, self.pp_latency = self.topo_parser.get_link_params_for_group(
-                self.group_assignment.pp_groups[0], 'p2p'
-            )
+            self.pp_bandwidth, self.pp_latency = self.topo_parser.get_link_params_for_group(self.group_assignment.pp_groups[0], "p2p")
         else:
             self.pp_bandwidth = hardware.cluster.inter_node_bandwidth_gbps
             self.pp_latency = hardware.cluster.inter_node_latency_us
 
         # 获取 EP 组的链路参数 (MoE Expert Parallelism)
         if self.group_assignment.ep_groups and len(self.group_assignment.ep_groups[0]) > 1:
-            self.ep_bandwidth, self.ep_latency = self.topo_parser.get_link_params_for_group(
-                self.group_assignment.ep_groups[0], 'alltoall'
-            )
+            self.ep_bandwidth, self.ep_latency = self.topo_parser.get_link_params_for_group(self.group_assignment.ep_groups[0], "alltoall")
         else:
             # 默认使用节点内带宽 (EP 通常在节点内)
             self.ep_bandwidth = hardware.node.intra_node_bandwidth_gbps
@@ -367,15 +372,15 @@ class LLMInferenceSimulator:
         """将计算算子类型映射到 Gantt 任务类型"""
         if op_type == ComputeOpType.MATMUL:
             # 根据算子名称细分
-            if 'qkv' in op_name or 'q_a' in op_name or 'q_b' in op_name or 'kv_a' in op_name:
+            if "qkv" in op_name or "q_a" in op_name or "q_b" in op_name or "kv_a" in op_name:
                 return GanttTaskType.ATTENTION_QKV
-            elif 'o_proj' in op_name:
+            elif "o_proj" in op_name:
                 return GanttTaskType.ATTENTION_OUTPUT
-            elif 'gate' in op_name:
+            elif "gate" in op_name:
                 return GanttTaskType.FFN_GATE
-            elif 'up' in op_name:
+            elif "up" in op_name:
                 return GanttTaskType.FFN_UP
-            elif 'down' in op_name:
+            elif "down" in op_name:
                 return GanttTaskType.FFN_DOWN
             else:
                 return GanttTaskType.COMPUTE
@@ -390,26 +395,20 @@ class LLMInferenceSimulator:
 
     def _map_comm_op_to_task_type(self, comm_kind: str) -> GanttTaskType:
         """将通信算子类型映射到 Gantt 任务类型"""
-        if comm_kind == 'allreduce':
+        if comm_kind == "allreduce":
             return GanttTaskType.TP_COMM
-        elif comm_kind == 'allgather':
+        elif comm_kind == "allgather":
             return GanttTaskType.SP_ALLGATHER
-        elif comm_kind == 'reducescatter':
+        elif comm_kind == "reducescatter":
             return GanttTaskType.SP_REDUCE_SCATTER
-        elif comm_kind == 'dispatch':
+        elif comm_kind == "dispatch":
             return GanttTaskType.EP_DISPATCH
-        elif comm_kind == 'combine':
+        elif comm_kind == "combine":
             return GanttTaskType.EP_COMBINE
         else:
             return GanttTaskType.TP_COMM
 
-    def _build_layer_for_evaluation(
-        self,
-        layer_index: int,
-        num_tokens: int,
-        context_length: int,
-        phase: InferencePhase
-    ):
+    def _build_layer_for_evaluation(self, layer_index: int, num_tokens: int, context_length: int, phase: InferencePhase):
         """
         为指定层构建算子并评估
 
@@ -423,36 +422,34 @@ class LLMInferenceSimulator:
             评估后的层对象，包含所有算子的性能数据
         """
         # 判断层类型
-        use_mla = self.model.attention_type == 'mla' and self.model.mla_config is not None
+        use_mla = self.model.attention_type == "mla" and self.model.mla_config is not None
 
         # 判断是否为 MoE 层
-        is_moe = (
-            self.model.model_type == "moe" and
-            self.model.moe_config is not None and
-            layer_index >= self.model.moe_config.first_k_dense_replace
-        )
+        is_moe = self.model.model_type == "moe" and self.model.moe_config is not None and layer_index >= self.model.moe_config.first_k_dense_replace
 
         # 构建层配置
         layer_config = {
-            'hidden_dim': self.model.hidden_size,
-            'batch_size': self.inference.batch_size,
-            'seq_len': num_tokens,
-            'kv_seq_len': context_length,
-            'tp': self.parallelism.tp,
-            'comm_protocol': 1,  # 默认协议
+            "hidden_dim": self.model.hidden_size,
+            "batch_size": self.inference.batch_size,
+            "seq_len": num_tokens,
+            "kv_seq_len": context_length,
+            "tp": self.parallelism.tp,
+            "comm_protocol": 1,  # 默认协议
         }
 
         if use_mla and self.model.mla_config:
             # MLA 层配置
             mla = self.model.mla_config
-            layer_config.update({
-                'num_heads': self.model.num_attention_heads,
-                'qk_nope_dim': mla.qk_nope_head_dim,
-                'qk_rope_dim': mla.qk_rope_head_dim,
-                'v_head_dim': mla.v_head_dim,
-                'kv_lora_rank': mla.kv_lora_rank,
-                'q_lora_rank': mla.q_lora_rank,
-            })
+            layer_config.update(
+                {
+                    "num_heads": self.model.num_attention_heads,
+                    "qk_nope_dim": mla.qk_nope_head_dim,
+                    "qk_rope_dim": mla.qk_rope_head_dim,
+                    "v_head_dim": mla.v_head_dim,
+                    "kv_lora_rank": mla.kv_lora_rank,
+                    "q_lora_rank": mla.q_lora_rank,
+                }
+            )
 
             # 从模型配置读取 MLA 变体（而非模拟配置）
             mla_variant = mla.variant
@@ -466,11 +463,13 @@ class LLMInferenceSimulator:
                 layer = MLALayer(name=f"layer_{layer_index}_mla", config=layer_config)
         else:
             # 标准 MHA 层
-            layer_config.update({
-                'num_heads': self.model.num_attention_heads,
-                'num_kv_heads': self.model.num_kv_heads,
-                'head_dim': self.model.hidden_size // self.model.num_attention_heads,
-            })
+            layer_config.update(
+                {
+                    "num_heads": self.model.num_attention_heads,
+                    "num_kv_heads": self.model.num_kv_heads,
+                    "head_dim": self.model.hidden_size // self.model.num_attention_heads,
+                }
+            )
             layer = MHALayer(name=f"layer_{layer_index}_mha", config=layer_config)
 
         # 使用评估器直接评估层中的所有算子
@@ -509,14 +508,14 @@ class LLMInferenceSimulator:
                 continue
 
             # 评估算子
-            if op.operator_type == 'MatMulOperator':
+            if op.operator_type == "MatMulOperator":
                 result = gemm_eval.evaluate(
-                    G=op.parallel_params.get('G', 1),
-                    M=op.parallel_params.get('M', 1),
-                    K=op.parallel_params.get('K', 1),
-                    N=op.parallel_params.get('N', 1),
-                    input_dtype=op.parallel_params.get('input_dtype', 'bf16'),
-                    output_dtype=op.parallel_params.get('output_dtype', 'bf16'),
+                    G=op.parallel_params.get("G", 1),
+                    M=op.parallel_params.get("M", 1),
+                    K=op.parallel_params.get("K", 1),
+                    N=op.parallel_params.get("N", 1),
+                    input_dtype=op.parallel_params.get("input_dtype", "bf16"),
+                    output_dtype=op.parallel_params.get("output_dtype", "bf16"),
                 )
                 op.elapse = result.latency_us
                 op.comp_elapse = result.compute_time_us
@@ -524,13 +523,13 @@ class LLMInferenceSimulator:
                 op.dram_traffic = result.dram_traffic_bytes
                 op.urate = result.effective_utilization
 
-            elif op.operator_type == 'FA2Operator':
+            elif op.operator_type == "FA2Operator":
                 result = fa2_eval.evaluate(
-                    B=op.parallel_params.get('B', 1),
-                    QS=op.parallel_params.get('QS', 1),
-                    KS=op.parallel_params.get('KS', 1),
-                    QD=op.parallel_params.get('QD', 1),
-                    VD=op.parallel_params.get('VD', 1),
+                    B=op.parallel_params.get("B", 1),
+                    QS=op.parallel_params.get("QS", 1),
+                    KS=op.parallel_params.get("KS", 1),
+                    QD=op.parallel_params.get("QD", 1),
+                    VD=op.parallel_params.get("VD", 1),
                 )
                 op.elapse = result.latency_us
                 op.comp_elapse = result.compute_time_us
@@ -538,16 +537,16 @@ class LLMInferenceSimulator:
                 op.dram_traffic = result.dram_traffic_bytes
                 op.urate = result.effective_utilization
 
-            elif op.operator_type == 'MHAOperator':
+            elif op.operator_type == "MHAOperator":
                 # MHA 使用 FA2 评估器，等效 B = B * H
-                B = op.parallel_params.get('B', 1)
-                H = op.parallel_params.get('H', 1)
+                B = op.parallel_params.get("B", 1)
+                H = op.parallel_params.get("H", 1)
                 result = fa2_eval.evaluate(
                     B=B * H,
-                    QS=op.parallel_params.get('QS', 1),
-                    KS=op.parallel_params.get('KS', 1),
-                    QD=op.parallel_params.get('QD', 1),
-                    VD=op.parallel_params.get('VD', 1),
+                    QS=op.parallel_params.get("QS", 1),
+                    KS=op.parallel_params.get("KS", 1),
+                    QD=op.parallel_params.get("QD", 1),
+                    VD=op.parallel_params.get("VD", 1),
                 )
                 op.elapse = result.latency_us
                 op.comp_elapse = result.compute_time_us
@@ -555,14 +554,14 @@ class LLMInferenceSimulator:
                 op.dram_traffic = result.dram_traffic_bytes
                 op.urate = result.effective_utilization
 
-            elif op.operator_type == 'MQAOperator':
+            elif op.operator_type == "MQAOperator":
                 # MQA 也使用 FA2 评估器
                 result = fa2_eval.evaluate(
-                    B=op.parallel_params.get('B', 1),
-                    QS=op.parallel_params.get('QS', 1),
-                    KS=op.parallel_params.get('KS', 1),
-                    QD=op.parallel_params.get('QD', 1),
-                    VD=op.parallel_params.get('VD', 1),
+                    B=op.parallel_params.get("B", 1),
+                    QS=op.parallel_params.get("QS", 1),
+                    KS=op.parallel_params.get("KS", 1),
+                    QD=op.parallel_params.get("QD", 1),
+                    VD=op.parallel_params.get("VD", 1),
                 )
                 op.elapse = result.latency_us
                 op.comp_elapse = result.compute_time_us
@@ -570,15 +569,15 @@ class LLMInferenceSimulator:
                 op.dram_traffic = result.dram_traffic_bytes
                 op.urate = result.effective_utilization
 
-            elif op.operator_type == 'RMSNormOperator':
+            elif op.operator_type == "RMSNormOperator":
                 result = rmsnorm_eval.evaluate(
-                    batch_size=op.parallel_params.get('batch_size', 1),
-                    hidden_dim=op.parallel_params.get('hidden_dim', 1),
-                    has_scale=op.parallel_params.get('has_scale', True),
-                    has_bias=op.parallel_params.get('has_bias', False),
+                    batch_size=op.parallel_params.get("batch_size", 1),
+                    hidden_dim=op.parallel_params.get("hidden_dim", 1),
+                    has_scale=op.parallel_params.get("has_scale", True),
+                    has_bias=op.parallel_params.get("has_bias", False),
                 )
                 # RMSNorm 主要受带宽限制
-                data_bytes = op.parallel_params.get('batch_size', 1) * op.parallel_params.get('hidden_dim', 1) * 2 * 2
+                data_bytes = op.parallel_params.get("batch_size", 1) * op.parallel_params.get("hidden_dim", 1) * 2 * 2
                 op.elapse = (data_bytes / self.arch.dram_bandwidth_bytes) * 1e6
                 op.comp_elapse = op.elapse * 0.1
                 op.dma_elapse = op.elapse * 0.9
@@ -587,11 +586,11 @@ class LLMInferenceSimulator:
 
             # 缓存结果
             self.eval_cache[cache_key] = {
-                'elapse': op.elapse,
-                'comp_elapse': op.comp_elapse,
-                'dma_elapse': op.dma_elapse,
-                'dram_traffic': op.dram_traffic,
-                'urate': op.urate,
+                "elapse": op.elapse,
+                "comp_elapse": op.comp_elapse,
+                "dma_elapse": op.dma_elapse,
+                "dram_traffic": op.dram_traffic,
+                "urate": op.urate,
             }
 
         # 评估所有通信算子
@@ -603,17 +602,17 @@ class LLMInferenceSimulator:
                 continue
 
             # 评估通信算子
-            tp = op.parallel_params.get('tp', 1)
-            comm_size = op.parallel_params.get('comm_size', 0)
-            comm_protocol = op.parallel_params.get('comm_protocol', 1)
+            tp = op.parallel_params.get("tp", 1)
+            comm_size = op.parallel_params.get("comm_size", 0)
+            comm_protocol = op.parallel_params.get("comm_protocol", 1)
 
-            if op.comm_kind == 'allreduce':
+            if op.comm_kind == "allreduce":
                 result = allreduce_eval.evaluate(tp, comm_size, comm_protocol)
                 op.comm_elapse = result.latency_us
-            elif op.comm_kind == 'allgather':
+            elif op.comm_kind == "allgather":
                 result = allgather_eval.evaluate(tp, comm_size, comm_protocol)
                 op.comm_elapse = result.latency_us
-            elif op.comm_kind == 'reducescatter':
+            elif op.comm_kind == "reducescatter":
                 result = reducescatter_eval.evaluate(tp, comm_size, comm_protocol)
                 op.comm_elapse = result.latency_us
             else:
@@ -621,7 +620,7 @@ class LLMInferenceSimulator:
                 op.comm_elapse = (comm_size / self.tp_bandwidth) * 1e6
 
             # 缓存结果
-            self.eval_cache[cache_key] = {'comm_elapse': op.comm_elapse}
+            self.eval_cache[cache_key] = {"comm_elapse": op.comm_elapse}
 
     def simulate(self) -> SimulationResult:
         """
@@ -667,10 +666,7 @@ class LLMInferenceSimulator:
         """模拟 Host to Device 数据传输"""
         # 计算输入数据大小
         bytes_per_elem = get_bytes_per_element(self.model.dtype)
-        input_size_gb = (
-            self.inference.batch_size * self.inference.input_seq_length *
-            self.model.hidden_size * bytes_per_elem
-        ) / (1024 ** 3)
+        input_size_gb = (self.inference.batch_size * self.inference.input_seq_length * self.model.hidden_size * bytes_per_elem) / (1024**3)
 
         # PCIe 传输延迟 (简化公式: 数据量 / 带宽 + 固定延迟)
         pcie_bw_gbps = self.hardware.chip.pcie_bandwidth_gbps
@@ -697,9 +693,7 @@ class LLMInferenceSimulator:
         """模拟 Device to Host 数据传输"""
         # 计算输出数据大小 (logits)
         bytes_per_elem = get_bytes_per_element(self.model.dtype)
-        output_size_gb = (
-            self.inference.batch_size * self.model.vocab_size * bytes_per_elem
-        ) / (1024 ** 3)
+        output_size_gb = (self.inference.batch_size * self.model.vocab_size * bytes_per_elem) / (1024**3)
 
         # PCIe 传输延迟 (简化公式: 数据量 / 带宽 + 固定延迟)
         pcie_bw_gbps = self.hardware.chip.pcie_bandwidth_gbps
@@ -797,10 +791,7 @@ class LLMInferenceSimulator:
     def _simulate_decode(self, start_time: float) -> float:
         """模拟 Decode 阶段"""
         current_time = start_time
-        num_tokens_to_simulate = min(
-            self.config.max_simulated_tokens,
-            self.inference.output_seq_length
-        )
+        num_tokens_to_simulate = min(self.config.max_simulated_tokens, self.inference.output_seq_length)
 
         # 每个 PP stage 处理的层数（至少为 1，防止除零）
         layers_per_stage = max(1, self.model.num_layers // self.parallelism.pp)
@@ -881,16 +872,10 @@ class LLMInferenceSimulator:
 
         # 使用新的精确评估器
         if self.config.use_precise_evaluator and self.arch is not None:
-            return self._simulate_single_layer_precise(
-                current_time, layer_index, num_tokens, context_length,
-                phase, chip_id, pp_stage, token_index
-            )
+            return self._simulate_single_layer_precise(current_time, layer_index, num_tokens, context_length, phase, chip_id, pp_stage, token_index)
 
         # 回退到简化模拟（粗粒度）
-        return self._simulate_single_layer_coarse(
-            current_time, layer_index, num_tokens, context_length,
-            phase, chip_id, pp_stage, token_index
-        )
+        return self._simulate_single_layer_coarse(current_time, layer_index, num_tokens, context_length, phase, chip_id, pp_stage, token_index)
 
     def _simulate_single_layer_precise(
         self,
@@ -915,20 +900,14 @@ class LLMInferenceSimulator:
                 task_type = self._map_compute_op_to_task_type(op.op_type, op.name)
                 # 延迟单位：评估器返回 us，Gantt 需要 ms
                 latency_ms = op.elapse / 1000
-                self.gantt_builder.add_compute_task(
-                    task_type, current_time, latency_ms,
-                    phase, chip_id, pp_stage, layer_index, token_index
-                )
+                self.gantt_builder.add_compute_task(task_type, current_time, latency_ms, phase, chip_id, pp_stage, layer_index, token_index)
                 current_time += latency_ms
 
             # 遍历所有通信算子
             for op in layer.comm_ops:
                 task_type = self._map_comm_op_to_task_type(op.comm_kind)
                 latency_ms = op.comm_elapse / 1000
-                self.gantt_builder.add_comm_task(
-                    task_type, current_time, latency_ms,
-                    phase, chip_id, pp_stage, layer_index, token_index
-                )
+                self.gantt_builder.add_comm_task(task_type, current_time, latency_ms, phase, chip_id, pp_stage, layer_index, token_index)
                 current_time += latency_ms
         else:
             # 粗粒度：聚合整层
@@ -936,17 +915,11 @@ class LLMInferenceSimulator:
             total_comm_time = sum(op.comm_elapse for op in layer.comm_ops) / 1000
 
             if total_compute_time > 0:
-                self.gantt_builder.add_compute_task(
-                    GanttTaskType.COMPUTE, current_time, total_compute_time,
-                    phase, chip_id, pp_stage, layer_index, token_index
-                )
+                self.gantt_builder.add_compute_task(GanttTaskType.COMPUTE, current_time, total_compute_time, phase, chip_id, pp_stage, layer_index, token_index)
                 current_time += total_compute_time
 
             if total_comm_time > 0:
-                self.gantt_builder.add_comm_task(
-                    GanttTaskType.TP_COMM, current_time, total_comm_time,
-                    phase, chip_id, pp_stage, layer_index, token_index
-                )
+                self.gantt_builder.add_comm_task(GanttTaskType.TP_COMM, current_time, total_comm_time, phase, chip_id, pp_stage, layer_index, token_index)
                 current_time += total_comm_time
 
         return current_time
@@ -985,30 +958,21 @@ class LLMInferenceSimulator:
 
         total_compute_ms = attn_latency_ms + ffn_latency_ms
 
-        self.gantt_builder.add_compute_task(
-            GanttTaskType.COMPUTE, current_time, total_compute_ms,
-            phase, chip_id, pp_stage, layer_index, token_index
-        )
+        self.gantt_builder.add_compute_task(GanttTaskType.COMPUTE, current_time, total_compute_ms, phase, chip_id, pp_stage, layer_index, token_index)
         current_time += total_compute_ms
 
         # TP 通信
         if self.parallelism.tp > 1:
             tp_comm_latency = self._calc_tp_allreduce_latency(num_tokens)
-            self.gantt_builder.add_comm_task(
-                GanttTaskType.TP_COMM, current_time, tp_comm_latency,
-                phase, chip_id, pp_stage, layer_index, token_index
-            )
+            self.gantt_builder.add_comm_task(GanttTaskType.TP_COMM, current_time, tp_comm_latency, phase, chip_id, pp_stage, layer_index, token_index)
             current_time += tp_comm_latency
 
         return current_time
 
-
     def _calc_tp_allreduce_latency(self, num_tokens: int) -> float:
         """计算 TP AllReduce 延迟（Ring AllReduce 算法）"""
         bytes_per_elem = get_bytes_per_element(self.model.dtype)
-        data_size_gb = (
-            self.inference.batch_size * num_tokens * self.model.hidden_size * bytes_per_elem
-        ) / (1024 ** 3)
+        data_size_gb = (self.inference.batch_size * num_tokens * self.model.hidden_size * bytes_per_elem) / (1024**3)
 
         # Ring AllReduce: 2 * (N-1) / N * data_size / bandwidth + latency
         tp = self.parallelism.tp
@@ -1022,9 +986,7 @@ class LLMInferenceSimulator:
     def _calc_pp_comm_latency(self, num_tokens: int) -> float:
         """计算 PP P2P 通信延迟"""
         bytes_per_elem = get_bytes_per_element(self.model.dtype)
-        data_size_gb = (
-            self.inference.batch_size * num_tokens * self.model.hidden_size * bytes_per_elem
-        ) / (1024 ** 3)
+        data_size_gb = (self.inference.batch_size * num_tokens * self.model.hidden_size * bytes_per_elem) / (1024**3)
 
         # P2P: data_size / bandwidth + latency
         transfer_time = data_size_gb / self.pp_bandwidth * 1000  # ms
@@ -1038,9 +1000,7 @@ class LLMInferenceSimulator:
 
         # 计算数据量
         bytes_per_elem = get_bytes_per_element(self.model.dtype)
-        data_size_gb = (
-            self.inference.batch_size * num_tokens * self.model.hidden_size * bytes_per_elem
-        ) / (1024 ** 3)
+        data_size_gb = (self.inference.batch_size * num_tokens * self.model.hidden_size * bytes_per_elem) / (1024**3)
 
         # AllGather: (N-1) / N * data_size / bandwidth + latency
         sp = self.parallelism.sp
@@ -1055,9 +1015,7 @@ class LLMInferenceSimulator:
 
         # 计算数据量
         bytes_per_elem = get_bytes_per_element(self.model.dtype)
-        data_size_gb = (
-            self.inference.batch_size * num_tokens * self.model.hidden_size * bytes_per_elem
-        ) / (1024 ** 3)
+        data_size_gb = (self.inference.batch_size * num_tokens * self.model.hidden_size * bytes_per_elem) / (1024**3)
 
         # ReduceScatter: (N-1) / N * data_size / bandwidth + latency
         sp = self.parallelism.sp
@@ -1215,9 +1173,7 @@ class LLMInferenceSimulator:
             # Output: W_O (num_heads × v_head_dim × H)
             o_params = num_heads * mla.v_head_dim * H
 
-            attn_params_per_layer = (q_down_params + q_up_params + q_rope_params +
-                                     kv_down_params + k_up_params + v_up_params +
-                                     k_rope_params + o_params)
+            attn_params_per_layer = q_down_params + q_up_params + q_rope_params + kv_down_params + k_up_params + v_up_params + k_rope_params + o_params
             attn_params = attn_params_per_layer * L
         else:
             # 标准 Attention: Q + K + V + O
@@ -1256,7 +1212,7 @@ class LLMInferenceSimulator:
         embed_params = V * H
 
         total_params = attn_params + ffn_params + embed_params
-        return (total_params * bytes_per_elem) / (1024 ** 3)
+        return (total_params * bytes_per_elem) / (1024**3)
 
     def _calc_kv_cache_size_gb(self, context_length: int) -> float:
         """计算 KV Cache 大小 (GB)
@@ -1285,7 +1241,7 @@ class LLMInferenceSimulator:
             head_dim = H // num_heads
             kv_cache_bytes = 2 * B * context_length * num_kv_heads * head_dim * L * bytes_per_elem
 
-        return kv_cache_bytes / (1024 ** 3)
+        return kv_cache_bytes / (1024**3)
 
 
 def run_simulation(
@@ -1395,7 +1351,7 @@ def run_simulation(
     )
 
     config = SimulationConfig(
-        max_simulated_tokens=config_dict.get("maxSimulatedTokens", 16) if config_dict else 16,
+        max_simulated_tokens=config_dict.get("maxSimulatedTokens", 4) if config_dict else 4,
         enable_data_transfer=config_dict.get("enableDataTransferSimulation", True) if config_dict else True,
         enable_detailed_ops=config_dict.get("enableDetailedTransformerOps", True) if config_dict else True,
         enable_kv_cache=config_dict.get("enableKVCacheAccessSimulation", True) if config_dict else True,

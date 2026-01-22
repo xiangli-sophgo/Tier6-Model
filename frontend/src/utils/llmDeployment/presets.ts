@@ -265,11 +265,15 @@ export async function loadBackendChipPresets(): Promise<void> {
         chip_type: chip.name,
         flops_dtype: chip.flops_dtype as FlopsDtype,
         compute_tflops_fp16: chip.compute_tflops,
+        compute_tflops_fp8: chip.compute_tflops * 2,  // FP8 = 2 × BF16/FP16
         compute_tops_int8: chip.compute_tflops * 2,  // 估算
         num_cores: chip.num_cores,
-        memory_gb: 64,  // 默认值，后端可扩展
+        memory_gb: chip.name.includes('SG2262') ? 128 : 64,  // SG2262: 128GB, 其他默认 64GB
         memory_bandwidth_gbps: chip.dram_bandwidth_gbps,
         memory_bandwidth_utilization: 0.85,
+        lmem_mb: 2,  // 默认 2MB LMEM
+        c2c_bandwidth_gbps: chip.intra_bw_gbps,  // C2C 单向带宽
+        c2c_bandwidth_bidirectional_gbps: chip.intra_bw_gbps * 2.2,  // C2C 双向带宽 (约 2.2 倍)
       };
       // 保存互联配置
       backendChipInterconnectCache[chip.id] = {

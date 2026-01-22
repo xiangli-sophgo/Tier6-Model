@@ -5,22 +5,30 @@
  */
 
 import React, { useState, useCallback, useRef } from 'react'
+import { useWorkbench } from '../../../contexts/WorkbenchContext'
 import {
   Typography,
   Button,
   Select,
-  Spin,
   message,
   InputNumber,
   Tooltip,
   Row,
   Col,
+  Modal,
+  Input,
+  Space,
+  Collapse,
+  Divider,
 } from 'antd'
 import {
   PlayCircleOutlined,
   SearchOutlined,
   WarningOutlined,
   CheckCircleOutlined,
+  SaveOutlined,
+  CopyOutlined,
+  ReloadOutlined,
 } from '@ant-design/icons'
 import {
   LLMModelConfig,
@@ -28,32 +36,48 @@ import {
   HardwareConfig,
   ParallelismStrategy,
   PlanAnalysisResult,
-  SearchConstraints,
   TopologyTrafficResult,
   ProtocolConfig,
   NetworkInfraConfig,
+  ChipLatencyConfig,
   DEFAULT_PROTOCOL_CONFIG,
   DEFAULT_NETWORK_CONFIG,
+  DEFAULT_CHIP_LATENCY_CONFIG,
 } from '../../../utils/llmDeployment/types'
 import { HierarchicalTopology } from '../../../types'
 import {
   MODEL_PRESETS,
   INFERENCE_PRESETS,
-  getBackendChipPresets,
 } from '../../../utils/llmDeployment/presets'
-import { simulateBackend, searchWithFixedChips, InfeasibleResult, SearchResult } from '../../../utils/llmDeployment'
-import { adaptSimulationResult } from '../../../utils/llmDeployment/resultAdapter'
+import { InfeasibleResult } from '../../../utils/llmDeployment'
 import { analyzeTopologyTraffic } from '../../../utils/llmDeployment/trafficMapper'
+import {
+  submitEvaluation,
+  getTaskStatus,
+  getTaskResults,
+  cancelTask as cancelBackendTask,
+} from '../../../api/tasks'
 import {
   extractChipGroupsFromConfig,
   generateHardwareConfigFromPanelConfig,
   ChipGroupInfo,
 } from '../../../utils/llmDeployment/topologyHardwareExtractor'
-import { RackConfig, DeploymentAnalysisData, AnalysisHistoryItem, AnalysisViewMode } from '../shared'
+import {
+  RackConfig,
+  DeploymentAnalysisData,
+  AnalysisHistoryItem,
+  AnalysisViewMode,
+  AnalysisTask,
+  loadAnalysisTasks,
+  saveAnalysisTasks,
+} from '../shared'
+import { AnalysisTaskList } from './AnalysisTaskList'
+import { listConfigs, saveConfig, SavedConfig } from '../../../api/topology'
 import {
   BenchmarkConfigSelector,
   colors,
   configRowStyle,
+  generateBenchmarkName,
 } from './ConfigSelectors'
 import { BaseCard } from '../../common/BaseCard'
 import { ParallelismConfigPanel } from './ParallelismConfigPanel'
@@ -92,6 +116,9 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
   onDeleteHistory,
   onClearHistory,
 }) => {
+  // 获取 WorkbenchContext 用于页面跳转
+  const { ui } = useWorkbench()
+
   // 模型配置状态
   const [modelConfig, setModelConfig] = useState<LLMModelConfig>(
     MODEL_PRESETS['deepseek-v3']
@@ -106,20 +133,95 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
   const [chipGroups, setChipGroups] = useState<ChipGroupInfo[]>([])
   const [selectedChipType, setSelectedChipType] = useState<string | undefined>()
 
+  // 拓扑配置文件列表
+  const [topologyConfigs, setTopologyConfigs] = useState<SavedConfig[]>([])
+  const [selectedTopologyConfig, setSelectedTopologyConfig] = useState<string | undefined>()
+  // 当前使用的拓扑配置（从文件加载或从 props 传入）
+  const [localRackConfig, setLocalRackConfig] = useState<RackConfig | undefined>(rackConfig)
+  const [localPodCount, setLocalPodCount] = useState(podCount)
+  const [localRacksPerPod, setLocalRacksPerPod] = useState(racksPerPod)
+
+  // 保存弹窗状态
+  const [saveAsModalOpen, setSaveAsModalOpen] = useState(false)
+  const [newConfigName, setNewConfigName] = useState('')
+  const [newConfigDesc, setNewConfigDesc] = useState('')
+  const [saveLoading, setSaveLoading] = useState(false)
+
   // 硬件配置状态（从保存的拓扑配置中提取）
   const [hardwareConfig, setHardwareConfig] = useState<HardwareConfig | null>(null)
+
+  // 实验名称（用户自定义，留空则使用 Benchmark 名称）
+  const [experimentName, setExperimentName] = useState<string>('')
+
+  // 加载拓扑配置列表
+  React.useEffect(() => {
+    const loadTopologyConfigs = async () => {
+      try {
+        const configs = await listConfigs()
+        setTopologyConfigs(configs)
+      } catch (error) {
+        console.error('加载拓扑配置列表失败:', error)
+      }
+    }
+    loadTopologyConfigs()
+  }, [])
+
+  // 当 props 传入的配置变化时，更新本地状态
+  React.useEffect(() => {
+    if (rackConfig && !selectedTopologyConfig) {
+      setLocalRackConfig(rackConfig)
+      setLocalPodCount(podCount)
+      setLocalRacksPerPod(racksPerPod)
+    }
+  }, [rackConfig, podCount, racksPerPod, selectedTopologyConfig])
+
+  // 选择拓扑配置文件
+  const handleSelectTopologyConfig = useCallback((configName: string | undefined) => {
+    setSelectedTopologyConfig(configName)
+    if (!configName) {
+      // 清除选择，使用 props 传入的配置
+      setLocalRackConfig(rackConfig)
+      setLocalPodCount(podCount)
+      setLocalRacksPerPod(racksPerPod)
+      // 重置延迟设置为默认值
+      setProtocolConfig({ ...DEFAULT_PROTOCOL_CONFIG })
+      setNetworkConfig({ ...DEFAULT_NETWORK_CONFIG })
+      setChipLatencyConfig({ ...DEFAULT_CHIP_LATENCY_CONFIG })
+      return
+    }
+    const config = topologyConfigs.find(c => c.name === configName)
+    if (config) {
+      // 使用保存的配置
+      if (config.rack_config) {
+        setLocalRackConfig(config.rack_config as RackConfig)
+      }
+      setLocalPodCount(config.pod_count || 1)
+      setLocalRacksPerPod(config.racks_per_pod || 1)
+      // 恢复延迟设置
+      if (config.protocol_config) {
+        setProtocolConfig(config.protocol_config)
+      }
+      if (config.network_infra_config) {
+        setNetworkConfig(config.network_infra_config)
+      }
+      if (config.chip_latency_config) {
+        setChipLatencyConfig(config.chip_latency_config)
+      }
+      message.success(`已加载拓扑配置: ${config.name}`)
+    }
+  }, [topologyConfigs, rackConfig, podCount, racksPerPod])
 
   // 从拓扑配置中提取硬件配置（不依赖后端）
   React.useEffect(() => {
     // 从拓扑配置提取硬件参数
-    if (rackConfig && rackConfig.boards.length > 0 && topology?.connections) {
-      const groups = extractChipGroupsFromConfig(rackConfig.boards)
+    if (localRackConfig && localRackConfig.boards.length > 0 && topology?.connections) {
+      const groups = extractChipGroupsFromConfig(localRackConfig.boards)
       if (groups.length > 0) {
         const firstChipType = groups[0].presetId || groups[0].chipType
         const config = generateHardwareConfigFromPanelConfig(
-          podCount,
-          racksPerPod,
-          rackConfig.boards.map(b => ({ chips: b.chips, count: b.count })),
+          localPodCount,
+          localRacksPerPod,
+          localRackConfig.boards.map(b => ({ chips: b.chips, count: b.count })),
           topology.connections,
           firstChipType
         )
@@ -145,33 +247,31 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
           chips_per_node: 8,
           intra_node_bandwidth_gbps: 450,
           intra_node_latency_us: 0.35,
-          intra_node_topology: 'nvlink',
         },
         cluster: {
           num_nodes: 1,
           inter_node_bandwidth_gbps: 200,
           inter_node_latency_us: 2,
-          inter_node_topology: 'ib',
         },
       }
       setHardwareConfig(defaultConfig)
     }
-  }, [rackConfig, topology, podCount, racksPerPod])
+  }, [localRackConfig, topology, localPodCount, localRacksPerPod])
 
-  // 序列化 rackConfig 用于深度比较
+  // 序列化 localRackConfig 用于深度比较
   const rackConfigJson = React.useMemo(() =>
-    rackConfig ? JSON.stringify(rackConfig) : '',
-    [rackConfig]
+    localRackConfig ? JSON.stringify(localRackConfig) : '',
+    [localRackConfig]
   )
 
   // 当拓扑配置变化时，提取芯片组信息并更新硬件配置
   React.useEffect(() => {
-    if (!rackConfig || rackConfig.boards.length === 0) {
+    if (!localRackConfig || localRackConfig.boards.length === 0) {
       setChipGroups([])
       return
     }
 
-    const groups = extractChipGroupsFromConfig(rackConfig.boards)
+    const groups = extractChipGroupsFromConfig(localRackConfig.boards)
     setChipGroups(groups)
 
     // 默认选择第一个芯片类型
@@ -185,9 +285,9 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
       // 使用 generateHardwareConfigFromPanelConfig 从连接配置中提取带宽和延迟
       const connections = topology?.connections || []
       const config = generateHardwareConfigFromPanelConfig(
-        podCount,
-        racksPerPod,
-        rackConfig.boards.map(b => ({ chips: b.chips, count: b.count })),
+        localPodCount,
+        localRacksPerPod,
+        localRackConfig.boards.map(b => ({ chips: b.chips, count: b.count })),
         connections,
         currentSelectedType
       )
@@ -195,17 +295,17 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
         setHardwareConfig(config)
       }
     }
-  }, [rackConfigJson, podCount, racksPerPod, topology?.connections])
+  }, [rackConfigJson, localPodCount, localRacksPerPod, topology?.connections])
 
   // 当选择的芯片类型变化时，更新硬件配置
   React.useEffect(() => {
-    if (rackConfig && chipGroups.length > 0 && selectedChipType) {
+    if (localRackConfig && chipGroups.length > 0 && selectedChipType) {
       // 使用 generateHardwareConfigFromPanelConfig 从连接配置中提取带宽和延迟
       const connections = topology?.connections || []
       const config = generateHardwareConfigFromPanelConfig(
-        podCount,
-        racksPerPod,
-        rackConfig.boards.map(b => ({ chips: b.chips, count: b.count })),
+        localPodCount,
+        localRacksPerPod,
+        localRackConfig.boards.map(b => ({ chips: b.chips, count: b.count })),
         connections,
         selectedChipType
       )
@@ -213,29 +313,194 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
         setHardwareConfig(config)
       }
     }
-  }, [selectedChipType, rackConfig, chipGroups, podCount, racksPerPod, topology?.connections])
+  }, [selectedChipType, localRackConfig, chipGroups, localPodCount, localRacksPerPod, topology?.connections])
 
   // 并行策略状态
   const [parallelismMode, setParallelismMode] = useState<'manual' | 'auto'>('auto')
   const [manualStrategy, setManualStrategy] = useState<ParallelismStrategy>({
-    dp: 1, tp: 8, pp: 1, ep: 1, sp: 1,
-  })
-  const [searchConstraints, setSearchConstraints] = useState<SearchConstraints>({
-    max_chips: 8,
-    tp_within_node: true,
+    dp: 1, tp: 1, pp: 1, ep: 1, sp: 1, moe_tp: 1,
   })
 
-  // 运行时配置 (协议和网络参数)
+  // 当模型配置或硬件配置变化时，更新手动策略为满足约束的默认值
+  React.useEffect(() => {
+    if (!hardwareConfig) return
+
+    const isMoE = modelConfig.model_type === 'moe' && modelConfig.moe_config
+    const maxTP = Math.min(128, modelConfig.num_attention_heads, hardwareConfig.node.chips_per_node)
+
+    // 找一个能整除头数的 TP 值
+    let validTP = 1
+    for (let tp = maxTP; tp >= 1; tp--) {
+      if (modelConfig.num_attention_heads % tp === 0) {
+        validTP = tp
+        break
+      }
+    }
+
+    if (isMoE) {
+      // MoE 模型：确保 DP × TP = MoE_TP × EP
+      // 默认使用 dp=1, tp=validTP, moe_tp=validTP, ep=1
+      setManualStrategy(prev => ({
+        ...prev,
+        dp: 1,
+        tp: validTP,
+        moe_tp: validTP,
+        ep: 1,
+      }))
+    } else {
+      // 非 MoE 模型
+      setManualStrategy(prev => ({
+        ...prev,
+        dp: 1,
+        tp: validTP,
+      }))
+    }
+  }, [modelConfig, hardwareConfig])
+
+  // 运行时配置 (协议、网络和芯片延迟参数)
   const [protocolConfig, setProtocolConfig] = useState<ProtocolConfig>({ ...DEFAULT_PROTOCOL_CONFIG })
   const [networkConfig, setNetworkConfig] = useState<NetworkInfraConfig>({ ...DEFAULT_NETWORK_CONFIG })
+  const [chipLatencyConfig, setChipLatencyConfig] = useState<ChipLatencyConfig>({ ...DEFAULT_CHIP_LATENCY_CONFIG })
+
+  // 刷新配置列表
+  const refreshTopologyConfigs = useCallback(async () => {
+    try {
+      const configs = await listConfigs()
+      setTopologyConfigs(configs)
+    } catch (error) {
+      console.error('刷新拓扑配置列表失败:', error)
+    }
+  }, [])
+
+  // 保存当前配置 (更新已选择的配置)
+  const handleSaveConfig = useCallback(async () => {
+    if (!selectedTopologyConfig) {
+      message.warning('请先选择一个配置文件，或使用「另存为」创建新配置')
+      return
+    }
+    const existingConfig = topologyConfigs.find(c => c.name === selectedTopologyConfig)
+    if (!existingConfig) {
+      message.error('配置文件不存在')
+      return
+    }
+    setSaveLoading(true)
+    try {
+      const updatedConfig: SavedConfig = {
+        ...existingConfig,
+        protocol_config: {
+          rtt_tp_us: protocolConfig.rtt_tp_us,
+          rtt_ep_us: protocolConfig.rtt_ep_us,
+          bandwidth_utilization: protocolConfig.bandwidth_utilization,
+          sync_latency_us: protocolConfig.sync_latency_us,
+        },
+        network_infra_config: {
+          switch_delay_us: networkConfig.switch_delay_us,
+          cable_delay_us: networkConfig.cable_delay_us,
+        },
+        chip_latency_config: {
+          c2c_lat_us: chipLatencyConfig.c2c_lat_us,
+          ddr_r_lat_us: chipLatencyConfig.ddr_r_lat_us,
+          ddr_w_lat_us: chipLatencyConfig.ddr_w_lat_us,
+          noc_lat_us: chipLatencyConfig.noc_lat_us,
+          d2d_lat_us: chipLatencyConfig.d2d_lat_us,
+        },
+      }
+      await saveConfig(updatedConfig)
+      await refreshTopologyConfigs()
+      message.success(`已保存配置: ${selectedTopologyConfig}`)
+    } catch (error) {
+      console.error('保存配置失败:', error)
+      message.error('保存配置失败')
+    } finally {
+      setSaveLoading(false)
+    }
+  }, [selectedTopologyConfig, topologyConfigs, protocolConfig, networkConfig, chipLatencyConfig, refreshTopologyConfigs])
+
+  // 另存为新配置
+  const handleSaveAsConfig = useCallback(async () => {
+    if (!newConfigName.trim()) {
+      message.warning('请输入配置名称')
+      return
+    }
+    // 检查名称是否已存在
+    if (topologyConfigs.some(c => c.name === newConfigName.trim())) {
+      message.error('配置名称已存在，请使用其他名称')
+      return
+    }
+    setSaveLoading(true)
+    try {
+      // 获取当前拓扑配置的基础数据
+      const baseConfig = selectedTopologyConfig
+        ? topologyConfigs.find(c => c.name === selectedTopologyConfig)
+        : null
+      const newConfig: SavedConfig = {
+        name: newConfigName.trim(),
+        description: newConfigDesc.trim() || undefined,
+        pod_count: localPodCount,
+        racks_per_pod: localRacksPerPod,
+        board_configs: baseConfig?.board_configs || {
+          u1: { count: 0, chips: { npu: 0, cpu: 0 } },
+          u2: { count: 0, chips: { npu: 0, cpu: 0 } },
+          u4: { count: 0, chips: { npu: 0, cpu: 0 } },
+        },
+        rack_config: localRackConfig ? {
+          total_u: localRackConfig.total_u,
+          boards: localRackConfig.boards,
+        } : undefined,
+        protocol_config: {
+          rtt_tp_us: protocolConfig.rtt_tp_us,
+          rtt_ep_us: protocolConfig.rtt_ep_us,
+          bandwidth_utilization: protocolConfig.bandwidth_utilization,
+          sync_latency_us: protocolConfig.sync_latency_us,
+        },
+        network_infra_config: {
+          switch_delay_us: networkConfig.switch_delay_us,
+          cable_delay_us: networkConfig.cable_delay_us,
+        },
+        chip_latency_config: {
+          c2c_lat_us: chipLatencyConfig.c2c_lat_us,
+          ddr_r_lat_us: chipLatencyConfig.ddr_r_lat_us,
+          ddr_w_lat_us: chipLatencyConfig.ddr_w_lat_us,
+          noc_lat_us: chipLatencyConfig.noc_lat_us,
+          d2d_lat_us: chipLatencyConfig.d2d_lat_us,
+        },
+      }
+      await saveConfig(newConfig)
+      await refreshTopologyConfigs()
+      setSelectedTopologyConfig(newConfigName.trim())
+      setSaveAsModalOpen(false)
+      setNewConfigName('')
+      setNewConfigDesc('')
+      message.success(`已创建新配置: ${newConfigName.trim()}`)
+    } catch (error) {
+      console.error('另存为配置失败:', error)
+      message.error('另存为配置失败')
+    } finally {
+      setSaveLoading(false)
+    }
+  }, [newConfigName, newConfigDesc, topologyConfigs, selectedTopologyConfig, localPodCount, localRacksPerPod, localRackConfig, protocolConfig, networkConfig, chipLatencyConfig, refreshTopologyConfigs])
+
+  // 重置延迟设置为默认值
+  const handleResetDelayConfig = useCallback(() => {
+    setProtocolConfig({ ...DEFAULT_PROTOCOL_CONFIG })
+    setNetworkConfig({ ...DEFAULT_NETWORK_CONFIG })
+    setChipLatencyConfig({ ...DEFAULT_CHIP_LATENCY_CONFIG })
+    message.success('已重置延迟设置为默认值')
+  }, [])
 
   // 分析结果状态
   const [analysisResult, setAnalysisResult] = useState<PlanAnalysisResult | null>(null)
   const [topKPlans, setTopKPlans] = useState<PlanAnalysisResult[]>([])
-  const [infeasiblePlans, setInfeasiblePlans] = useState<InfeasibleResult[]>([])
-  const [searchStats, setSearchStats] = useState<{ evaluated: number; feasible: number; timeMs: number } | null>(null)
-  const [loading, setLoading] = useState(false)
-  const [errorMsg, setErrorMsg] = useState<string | null>(null)
+  const [infeasiblePlans, _setInfeasiblePlans] = useState<InfeasibleResult[]>([])
+  const [searchStats, _setSearchStats] = useState<{ evaluated: number; feasible: number; timeMs: number } | null>(null)
+  const [loading, _setLoading] = useState(false)
+  const [errorMsg, _setErrorMsg] = useState<string | null>(null)
+
+  // 标记未使用的 setter（保留状态用于兼容性）
+  void _setInfeasiblePlans
+  void _setSearchStats
+  void _setLoading
+  void _setErrorMsg
 
   // 搜索进度状态
   const [searchProgress, setSearchProgress] = useState<{
@@ -250,8 +515,76 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
     evaluated: 0,
   })
 
-  // 取消控制器
-  const abortControllerRef = useRef<AbortController | null>(null)
+  // 取消控制器 Map（支持多个并行任务）
+  const abortControllersMap = useRef<Map<string, AbortController>>(new Map())
+
+  // 轮询间隔引用（用于清理后端任务轮询）
+  const pollingIntervalsRef = useRef<Map<string, ReturnType<typeof setInterval>>>(new Map())
+
+  // 分析任务列表（本地持久化）
+  const [analysisTasks, setAnalysisTasks] = useState<AnalysisTask[]>(() => loadAnalysisTasks())
+
+  // 任务变化时保存到 localStorage
+  React.useEffect(() => {
+    saveAnalysisTasks(analysisTasks)
+  }, [analysisTasks])
+
+  // 更新任务状态
+  const updateTask = useCallback((taskId: string, updates: Partial<AnalysisTask>) => {
+    setAnalysisTasks(prev => prev.map(t => t.id === taskId ? { ...t, ...updates } : t))
+  }, [])
+
+  // 添加新任务
+  const addTask = useCallback((task: AnalysisTask) => {
+    setAnalysisTasks(prev => [task, ...prev])
+  }, [])
+
+  // 删除任务
+  const deleteTask = useCallback((taskId: string) => {
+    // 如果任务正在运行，先取消
+    const controller = abortControllersMap.current.get(taskId)
+    if (controller) {
+      controller.abort()
+      abortControllersMap.current.delete(taskId)
+    }
+    setAnalysisTasks(prev => prev.filter(t => t.id !== taskId))
+  }, [])
+
+  // 取消任务
+  const cancelTask = useCallback(async (taskId: string) => {
+    // 清理本地轮询
+    const interval = pollingIntervalsRef.current.get(taskId)
+    if (interval) {
+      clearInterval(interval)
+      pollingIntervalsRef.current.delete(taskId)
+    }
+
+    // 取消后端任务
+    try {
+      await cancelBackendTask(taskId)
+    } catch (error) {
+      console.error('取消后端任务失败:', error)
+    }
+
+    updateTask(taskId, { status: 'cancelled', endTime: Date.now() })
+  }, [updateTask])
+
+  // 清空已完成任务
+  const clearCompletedTasks = useCallback(() => {
+    setAnalysisTasks(prev => prev.filter(t => t.status === 'running'))
+  }, [])
+
+  // 刷新任务列表（从 localStorage 重新加载）
+  const refreshTasks = useCallback(() => {
+    setAnalysisTasks(loadAnalysisTasks())
+  }, [])
+
+  // 查看任务结果（跳转到结果管理页面）
+  const viewTaskResult = useCallback((task: AnalysisTask) => {
+    // 跳转到结果管理页面
+    ui.setViewMode('results')
+    message.info(`已跳转到结果管理，请查找实验: ${task.experimentName || task.benchmarkName || task.modelName}`)
+  }, [ui])
 
   // 视图模式状态（历史列表 或 详情）
   const [viewMode, setViewMode] = useState<AnalysisViewMode>('history')
@@ -306,16 +639,16 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
     message.success('已清空历史记录')
   }, [onClearHistory])
 
-  // 取消评估
+  // 取消评估（兼容旧接口）
   const handleCancelAnalysis = useCallback(() => {
-    if (abortControllerRef.current) {
-      abortControllerRef.current.abort()
-      abortControllerRef.current = null
-      setSearchProgress(prev => ({ ...prev, stage: 'cancelled' }))
-      setLoading(false)
-      message.warning({ content: '评估已取消', key: 'search', duration: 2 })
-    }
-  }, [])
+    // 取消所有正在运行的任务
+    abortControllersMap.current.forEach((controller, taskId) => {
+      controller.abort()
+      updateTask(taskId, { status: 'cancelled', endTime: Date.now() })
+    })
+    abortControllersMap.current.clear()
+    setSearchProgress(prev => ({ ...prev, stage: 'cancelled' }))
+  }, [updateTask])
 
   // 当分析状态变化时，通知父组件
   React.useEffect(() => {
@@ -352,188 +685,202 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
   // 计算最大可用芯片数
   const maxChips = hardwareConfig ? hardwareConfig.node.chips_per_node * hardwareConfig.cluster.num_nodes : 0
 
-  // 运行分析
+  // 清理轮询
+  const clearPolling = useCallback((taskId: string) => {
+    const interval = pollingIntervalsRef.current.get(taskId)
+    if (interval) {
+      clearInterval(interval)
+      pollingIntervalsRef.current.delete(taskId)
+    }
+  }, [])
+
+  // 运行分析（提交到后端执行）
   const handleRunAnalysis = useCallback(async () => {
-    if (!hardwareConfig) return // 等待硬件配置加载
+    if (!hardwareConfig) return
     if (!topology) {
-      setErrorMsg('拓扑配置未加载，请先配置拓扑')
+      message.error('拓扑配置未加载，请先配置拓扑')
       return
     }
 
-    // 取消之前的评估
-    if (abortControllerRef.current) {
-      abortControllerRef.current.abort()
-    }
-    abortControllerRef.current = new AbortController()
+    const strategy = parallelismMode === 'manual' ? manualStrategy : { dp: 1, tp: 1, pp: 1, ep: 1, sp: 1, moe_tp: 1 }
 
-    setAnalysisResult(null)
-    setTopKPlans([])
-    setInfeasiblePlans([])
-    setSearchStats(null)
-    setErrorMsg(null)
-    setLoading(true)
-    const startTime = Date.now()
+    // 生成 Benchmark 配置名称
+    const benchmarkName = generateBenchmarkName(modelConfig, inferenceConfig)
+    // 使用用户输入的实验名称，如果为空则使用 Benchmark 名称
+    const finalExperimentName = experimentName.trim() || benchmarkName
 
-    // 实时结果收集器
-    const realtimeFeasible: SearchResult[] = []
-    const realtimeInfeasible: InfeasibleResult[] = []
+    // 捕获当前配置
+    const currentModelConfig = { ...modelConfig }
+    const currentInferenceConfig = { ...inferenceConfig }
+    const currentHardwareConfig = { ...hardwareConfig }
+    const currentParallelismMode = parallelismMode
+    const currentManualStrategy = { ...manualStrategy }
 
     try {
-      let result: PlanAnalysisResult | null = null
-      // 使用局部变量捕获新的topKPlans，避免React状态更新延迟导致保存到历史时为空
-      let newTopKPlans: PlanAnalysisResult[] = []
+      // 提交任务到后端
+      const response = await submitEvaluation({
+        experiment_name: finalExperimentName,
+        description: benchmarkName,
+        topology: topology as unknown as Record<string, unknown>,
+        model: currentModelConfig as unknown as Record<string, unknown>,
+        hardware: currentHardwareConfig as unknown as Record<string, unknown>,
+        inference: currentInferenceConfig as unknown as Record<string, unknown>,
+        search_mode: currentParallelismMode,
+        manual_parallelism: currentParallelismMode === 'manual' ? currentManualStrategy as unknown as Record<string, unknown> : undefined,
+        search_constraints: currentParallelismMode === 'auto' ? { max_chips: maxChips } : undefined,
+      })
 
-      if (parallelismMode === 'manual') {
-        // 手动模式：直接调用后端模拟
-        message.loading({ content: '正在调用后端模拟...', key: 'simulate', duration: 0 })
-        const simulation = await simulateBackend(
-          topology,
-          modelConfig,
-          inferenceConfig,
-          manualStrategy,
-          hardwareConfig
-        )
-        message.success({ content: '模拟完成', key: 'simulate', duration: 2 })
+      const backendTaskId = response.task_id
+      const localTaskId = backendTaskId // 使用后端返回的 task_id 作为本地 ID
 
-        // 适配为 PlanAnalysisResult 格式
-        result = adaptSimulationResult(simulation, modelConfig, inferenceConfig, manualStrategy, hardwareConfig)
-        setAnalysisResult(result)
-        newTopKPlans = [result]
-        setTopKPlans(newTopKPlans)
-      } else {
-        // 自动模式：搜索多个方案
-        setSearchProgress({ stage: 'generating', totalCandidates: 0, currentEvaluating: 0, evaluated: 0 })
+      // 创建本地任务记录
+      const newTask: AnalysisTask = {
+        id: localTaskId,
+        status: 'running',
+        startTime: Date.now(),
+        experimentName: finalExperimentName,
+        modelName: modelConfig.model_name,
+        benchmarkName,
+        parallelism: strategy,
+        mode: parallelismMode,
+        chips: maxChips,
+      }
+      addTask(newTask)
 
-        const searchResults = await searchWithFixedChips(
-          topology,
-          modelConfig,
-          inferenceConfig,
-          hardwareConfig,
-          searchConstraints.max_chips || maxChips,
-          {
-            maxPlans: 10,
-            abortSignal: abortControllerRef.current.signal,
-            onCandidatesGenerated: (totalCandidates) => {
-              setSearchProgress({
-                stage: 'evaluating',
-                totalCandidates,
-                currentEvaluating: 0,
-                evaluated: 0
+      message.success('任务已提交到后端执行')
+
+      // 开始轮询任务状态
+      const pollInterval = setInterval(async () => {
+        try {
+          const status = await getTaskStatus(backendTaskId)
+
+          // 更新进度
+          if (status.status === 'running') {
+            updateTask(localTaskId, {
+              progress: { current: Math.round(status.progress), total: 100 },
+            })
+          } else if (status.status === 'completed') {
+            // 任务完成，获取结果
+            clearPolling(localTaskId)
+
+            const results = await getTaskResults(backendTaskId)
+
+            if (results.top_k_plans && results.top_k_plans.length > 0) {
+              const topPlan = results.top_k_plans[0] as Record<string, unknown>
+              const parallelism = (topPlan.parallelism || {}) as ParallelismStrategy
+
+              // 生成历史记录ID
+              const historyId = `history_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`
+
+              // 转换结果格式以适配前端显示
+              const adaptedResult: PlanAnalysisResult = {
+                is_feasible: true,
+                plan: {
+                  total_chips: (topPlan.chips as number) || maxChips,
+                  parallelism: parallelism,
+                },
+                latency: {
+                  prefill_total_latency_ms: (topPlan.ttft as number) || 0,
+                  decode_per_token_latency_ms: (topPlan.tpot as number) || 0,
+                },
+                throughput: {
+                  tokens_per_second: (topPlan.throughput as number) || 0,
+                  model_flops_utilization: (topPlan.mfu as number) || 0,
+                  memory_bandwidth_utilization: (topPlan.mbu as number) || 0,
+                },
+                score: {
+                  overall_score: (topPlan.score as number) || 0,
+                },
+              } as PlanAnalysisResult
+
+              // 保存到历史记录
+              onAddToHistory?.({
+                modelName: currentModelConfig.model_name,
+                parallelism: parallelism,
+                score: adaptedResult.score.overall_score,
+                ttft: adaptedResult.latency.prefill_total_latency_ms,
+                tpot: adaptedResult.latency.decode_per_token_latency_ms,
+                throughput: adaptedResult.throughput.tokens_per_second,
+                mfu: adaptedResult.throughput.model_flops_utilization,
+                mbu: adaptedResult.throughput.memory_bandwidth_utilization,
+                cost: null,
+                chips: adaptedResult.plan.total_chips,
+                result: adaptedResult,
+                topKPlans: (results.top_k_plans as Record<string, unknown>[]).slice(0, 5).map((p) => ({
+                  is_feasible: true,
+                  plan: { total_chips: (p.chips as number) || maxChips, parallelism: (p.parallelism || {}) as ParallelismStrategy },
+                  latency: { prefill_total_latency_ms: (p.ttft as number) || 0, decode_per_token_latency_ms: (p.tpot as number) || 0 },
+                  throughput: { tokens_per_second: (p.throughput as number) || 0, model_flops_utilization: (p.mfu as number) || 0, memory_bandwidth_utilization: (p.mbu as number) || 0 },
+                  score: { overall_score: (p.score as number) || 0 },
+                } as PlanAnalysisResult)),
+                searchMode: currentParallelismMode,
+                modelConfig: currentModelConfig,
+                inferenceConfig: currentInferenceConfig,
+                hardwareConfig: currentHardwareConfig,
               })
-              message.loading({
-                content: `已生成 ${totalCandidates} 个候选方案，开始后端评估...`,
-                key: 'search',
-                duration: 2
+
+              // 更新任务状态
+              updateTask(localTaskId, {
+                status: 'completed',
+                endTime: Date.now(),
+                parallelism: parallelism,
+                score: adaptedResult.score.overall_score,
+                ttft: adaptedResult.latency.prefill_total_latency_ms,
+                tpot: adaptedResult.latency.decode_per_token_latency_ms,
+                throughput: adaptedResult.throughput.tokens_per_second,
+                mfu: adaptedResult.throughput.model_flops_utilization,
+                mbu: adaptedResult.throughput.memory_bandwidth_utilization,
+                historyId,
               })
-            },
-            onProgress: (current, total) => {
-              setSearchProgress(prev => ({
-                ...prev,
-                stage: 'evaluating',
-                currentEvaluating: current,
-                evaluated: current
-              }))
-              message.loading({
-                content: `正在评估方案 ${current}/${total}（5 并发）...`,
-                key: 'search',
-                duration: 0
+
+              // 更新当前显示的结果
+              setAnalysisResult(adaptedResult)
+              setTopKPlans((results.top_k_plans as Record<string, unknown>[]).map((p) => ({
+                is_feasible: true,
+                plan: { total_chips: (p.chips as number) || maxChips, parallelism: (p.parallelism || {}) as ParallelismStrategy },
+                latency: { prefill_total_latency_ms: (p.ttft as number) || 0, decode_per_token_latency_ms: (p.tpot as number) || 0 },
+                throughput: { tokens_per_second: (p.throughput as number) || 0, model_flops_utilization: (p.mfu as number) || 0, memory_bandwidth_utilization: (p.mbu as number) || 0 },
+                score: { overall_score: (p.score as number) || 0 },
+              } as PlanAnalysisResult)))
+              setDisplayModelConfig(currentModelConfig)
+              setDisplayInferenceConfig(currentInferenceConfig)
+
+              message.success('分析完成')
+            } else {
+              updateTask(localTaskId, {
+                status: 'failed',
+                endTime: Date.now(),
+                error: '未找到可行方案',
               })
-            },
-            onResultReady: (resultItem, _index, isFeasible) => {
-              // 实时更新结果
-              if (isFeasible) {
-                const sr = resultItem as SearchResult
-                realtimeFeasible.push(sr)
-                // 按评分排序后更新
-                realtimeFeasible.sort((a, b) => b.score - a.score)
-                const plans = realtimeFeasible.slice(0, 10).map(r =>
-                  adaptSimulationResult(r.simulation, modelConfig, inferenceConfig, r.parallelism, hardwareConfig)
-                )
-                setTopKPlans(plans)
-                if (plans.length > 0) {
-                  setAnalysisResult(plans[0])
-                }
-              } else {
-                realtimeInfeasible.push(resultItem as InfeasibleResult)
-                setInfeasiblePlans([...realtimeInfeasible])
-              }
             }
+          } else if (status.status === 'failed') {
+            clearPolling(localTaskId)
+            updateTask(localTaskId, {
+              status: 'failed',
+              endTime: Date.now(),
+              error: status.error || '任务执行失败',
+            })
+            message.error(`任务失败: ${status.error || '未知错误'}`)
+          } else if (status.status === 'cancelled') {
+            clearPolling(localTaskId)
+            updateTask(localTaskId, {
+              status: 'cancelled',
+              endTime: Date.now(),
+            })
           }
-        )
-
-        setSearchProgress(prev => ({ ...prev, stage: 'completed' }))
-        message.success({ content: '搜索完成', key: 'search', duration: 2 })
-
-        // 最终结果（可能已经通过实时回调更新）
-        setInfeasiblePlans(searchResults.infeasible)
-
-        if (searchResults.feasible.length > 0) {
-          // 将 SearchResult 转换为 PlanAnalysisResult
-          newTopKPlans = searchResults.feasible.map(sr =>
-            adaptSimulationResult(sr.simulation, modelConfig, inferenceConfig, sr.parallelism, hardwareConfig)
-          )
-          result = newTopKPlans[0]
-          setAnalysisResult(result)
-          setTopKPlans(newTopKPlans)
-          setSearchStats({
-            evaluated: searchResults.feasible.length + searchResults.infeasible.length,
-            feasible: searchResults.feasible.length,
-            timeMs: Date.now() - startTime,
-          })
-        } else {
-          setErrorMsg('未找到可行方案')
-          setSearchStats({
-            evaluated: searchResults.infeasible.length,
-            feasible: 0,
-            timeMs: Date.now() - startTime,
-          })
+        } catch (pollError) {
+          console.error('轮询任务状态失败:', pollError)
         }
-      }
-      // 保存到历史记录并切换到详情视图
-      if (result && result.is_feasible) {
-        // 设置显示配置（分析时使用的配置，不随配置面板变化）
-        setDisplayModelConfig(modelConfig)
-        setDisplayInferenceConfig(inferenceConfig)
-        // 使用局部变量newTopKPlans而不是状态变量topKPlans
-        const currentTopKPlans = parallelismMode === 'auto' ? newTopKPlans : undefined
-        const searchMode = parallelismMode === 'auto' ? 'auto' : 'manual'
-        // 通过 props 回调添加历史记录
-        onAddToHistory?.({
-          modelName: modelConfig.model_name,
-          parallelism: result.plan.parallelism,
-          score: result.score.overall_score,
-          ttft: result.latency.prefill_total_latency_ms,
-          tpot: result.latency.decode_per_token_latency_ms,
-          throughput: result.throughput.tokens_per_second,
-          mfu: result.throughput.model_flops_utilization,
-          mbu: result.throughput.memory_bandwidth_utilization,
-          cost: result.cost?.cost_per_million_tokens ?? null,
-          chips: result.plan.total_chips,
-          result,
-          topKPlans: searchMode === 'auto' ? currentTopKPlans?.slice(0, 5) : undefined,
-          searchMode,
-          modelConfig,
-          inferenceConfig,
-          hardwareConfig,
-        })
-        setViewMode('detail')  // 分析完成后切换到详情视图
-        const plansCount = currentTopKPlans ? Math.min(5, currentTopKPlans.length) : 1
-        message.success(`分析完成，已保存${plansCount}个方案到历史记录`)
-      }
+      }, 1000) // 每秒轮询一次
+
+      pollingIntervalsRef.current.set(localTaskId, pollInterval)
+
     } catch (error) {
-      // 检查是否是取消导致的错误
-      if (error instanceof DOMException && error.name === 'AbortError') {
-        // 取消不需要额外处理，已在 handleCancelAnalysis 中处理
-        return
-      }
-      console.error('分析失败:', error)
+      console.error('提交任务失败:', error)
       const msg = error instanceof Error ? error.message : '未知错误'
-      setErrorMsg(`搜索失败: ${msg}`)
-    } finally {
-      setLoading(false)
-      abortControllerRef.current = null
+      message.error(`提交任务失败: ${msg}`)
     }
-  }, [modelConfig, inferenceConfig, hardwareConfig, parallelismMode, manualStrategy, searchConstraints, maxChips, onAddToHistory, topology])
+  }, [experimentName, modelConfig, inferenceConfig, hardwareConfig, parallelismMode, manualStrategy, maxChips, onAddToHistory, topology, addTask, updateTask, clearPolling])
 
   // 如果硬件配置未加载，显示提示（不再是加载中）
   if (!hardwareConfig) {
@@ -552,8 +899,8 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
   return (
     <div style={{ padding: 0 }}>
       {/* 上方：Benchmark 设置和部署设置（左右两列） */}
-      <Row gutter={16} style={{ marginBottom: 16 }}>
-        {/* 左列：Benchmark 设置 */}
+      <Row gutter={32} style={{ marginBottom: 16 }}>
+        {/* 左列：Benchmark 设置 + 并行策略 */}
         <Col span={12}>
           <BaseCard title="Benchmark 设置" accentColor="#5E6AD2" collapsible defaultExpanded>
             <BenchmarkConfigSelector
@@ -563,28 +910,85 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
               onInferenceChange={setInferenceConfig}
             />
           </BaseCard>
+
+          {/* 部署策略卡片 */}
+          <BaseCard title="部署策略" accentColor="#13c2c2" collapsible defaultExpanded style={{ marginTop: 16 }}>
+            <ParallelismConfigPanel
+              mode={parallelismMode}
+              onModeChange={setParallelismMode}
+              manualStrategy={manualStrategy}
+              onManualStrategyChange={setManualStrategy}
+              maxChips={maxChips}
+              modelConfig={modelConfig}
+              hardwareConfig={hardwareConfig}
+            />
+
+            {/* 实验名称 */}
+            <div style={{ marginTop: 16 }}>
+              <div style={{ marginBottom: 6, fontSize: 13, color: '#666' }}>实验名称</div>
+              <Input
+                placeholder={`留空则使用 Benchmark 名称`}
+                value={experimentName}
+                onChange={(e) => setExperimentName(e.target.value)}
+                allowClear
+              />
+            </div>
+
+            {/* 运行按钮 */}
+            <Button
+              type="primary"
+              icon={parallelismMode === 'auto' ? <SearchOutlined /> : <PlayCircleOutlined />}
+              onClick={handleRunAnalysis}
+              block
+              size="large"
+              style={{
+                marginTop: 16,
+                height: 44,
+                borderRadius: 8,
+                background: colors.primary,
+                boxShadow: '0 2px 8px rgba(94, 106, 210, 0.3)',
+              }}
+            >
+              {parallelismMode === 'auto' ? '开始方案评估' : '运行分析'}
+            </Button>
+          </BaseCard>
         </Col>
 
-        {/* 右列：部署设置 */}
+        {/* 右列：拓扑设置 */}
         <Col span={12}>
-          <BaseCard title="部署设置" accentColor="#722ed1" collapsible defaultExpanded>
-          {/* 硬件配置 */}
+          <BaseCard title="拓扑设置" accentColor="#722ed1" collapsible defaultExpanded>
           <div style={{ marginBottom: 16 }}>
-            <div style={{ fontSize: 13, fontWeight: 600, color: '#1A1A1A', marginBottom: 10 }}>
-              硬件配置
+            {/* 拓扑配置文件选择 */}
+            <div style={{ ...configRowStyle, marginBottom: 10 }}>
+              <Text type="secondary" style={{ fontSize: 12 }}>
+                <span style={{ color: '#ff4d4f' }}>*</span> 拓扑配置文件
+              </Text>
+              <Select
+                size="small"
+                value={selectedTopologyConfig}
+                onChange={handleSelectTopologyConfig}
+                placeholder="使用当前拓扑"
+                allowClear
+                style={{ width: 180 }}
+                options={topologyConfigs.map(c => ({
+                  value: c.name,
+                  label: c.name,
+                }))}
+              />
             </div>
+
             {chipGroups.length === 0 ? (
               <div style={{ padding: 12, background: colors.warningLight, borderRadius: 8, border: '1px solid #ffd591' }}>
                 <Text type="warning">
                   <WarningOutlined style={{ marginRight: 6 }} />
-                  请先在「Board层级」中配置芯片类型
+                  请先在「互联拓扑」中配置芯片类型，或选择已保存的配置文件
                 </Text>
               </div>
             ) : (
               <>
                 {chipGroups.length > 1 && (
                   <div style={{ ...configRowStyle, marginBottom: 8 }}>
-                    <Text>分析芯片类型</Text>
+                    <Text style={{ fontSize: 12 }}>分析芯片类型</Text>
                     <Select
                       size="small"
                       value={selectedChipType}
@@ -592,7 +996,7 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
                       style={{ width: 140 }}
                       options={chipGroups.map(g => ({
                         value: g.presetId || g.chipType,
-                        label: `${g.chipType} (${g.totalCount * podCount * racksPerPod}个)`,
+                        label: `${g.chipType} (${g.totalCount * localPodCount * localRacksPerPod}个)`,
                       }))}
                     />
                   </div>
@@ -601,210 +1005,491 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
                 {/* 拓扑结构概览 */}
                 <div style={{ padding: 10, background: colors.successLight, borderRadius: 8, fontSize: 12, border: '1px solid #b7eb8f', marginBottom: 8 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
-                    <Text><CheckCircleOutlined style={{ color: colors.success, marginRight: 4 }} />拓扑配置</Text>
+                    <Text><CheckCircleOutlined style={{ color: colors.success, marginRight: 4 }} />拓扑概览</Text>
                     <Text>共 <b>{hardwareConfig.node.chips_per_node * hardwareConfig.cluster.num_nodes}</b> 个芯片</Text>
                   </div>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px 12px', color: colors.textSecondary }}>
-                    <span>Pod: {podCount} 个</span>
-                    <span>Rack: {racksPerPod * podCount} 个</span>
-                    <span>Board: {rackConfig ? rackConfig.boards.reduce((sum, b) => sum + b.count, 0) * racksPerPod * podCount : 0} 个</span>
+                    <span>Pod: {localPodCount} 个</span>
+                    <span>Rack: {localRacksPerPod * localPodCount} 个</span>
+                    <span>Board: {localRackConfig ? localRackConfig.boards.reduce((sum, b) => sum + b.count, 0) * localRacksPerPod * localPodCount : 0} 个</span>
                     <span>Chip: {hardwareConfig.node.chips_per_node * hardwareConfig.cluster.num_nodes} 个</span>
                   </div>
                 </div>
 
-                {/* 芯片信息 */}
-                <div style={{ padding: 10, background: '#f0f5ff', borderRadius: 8, fontSize: 12, border: '1px solid #adc6ff' }}>
-                  <div style={{ fontWeight: 600, marginBottom: 6, color: '#1A1A1A' }}>芯片: {hardwareConfig.chip.chip_type}</div>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px 12px', color: colors.textSecondary }}>
-                    <span>算力: {hardwareConfig.chip.compute_tflops_fp16} TFLOPs</span>
-                    <span>显存: {hardwareConfig.chip.memory_gb} GB</span>
-                    <span>显存带宽: {hardwareConfig.chip.memory_bandwidth_gbps.toFixed(1)} GB/s</span>
-                    <span>核心数: {hardwareConfig.chip.num_cores}</span>
-                  </div>
-                </div>
+                {/* 芯片硬件参数 */}
+                <Collapse
+                  size="small"
+                  style={{ marginBottom: 12, background: 'transparent' }}
+                  defaultActiveKey={['chip']}
+                  expandIconPosition="start"
+                  className="delay-settings-collapse"
+                  items={[
+                    {
+                      key: 'chip',
+                      label: `芯片硬件参数: ${hardwareConfig.chip.chip_type}`,
+                      children: (
+                        <div>
+                          {/* 算力 */}
+                          <Row gutter={[16, 8]}>
+                            <Col span={8}>
+                              <Tooltip title="FP8 精度算力 (通常是 BF16/FP16 的 2 倍)">
+                                <div style={{ marginBottom: 4 }}><Text type="secondary" style={{ fontSize: 12, cursor: 'help' }}>FP8 (TFLOPS)</Text></div>
+                              </Tooltip>
+                              <InputNumber
+                                size="small"
+                                min={0}
+                                value={hardwareConfig.chip.compute_tflops_fp8 ?? (hardwareConfig.chip.compute_tflops_fp16 * 2)}
+                                onChange={(v) => setHardwareConfig(prev => prev ? {
+                                  ...prev,
+                                  chip: { ...prev.chip, compute_tflops_fp8: v ?? 0, compute_tflops_fp16: (v ?? 0) / 2 }
+                                } : prev)}
+                                style={{ width: '100%' }}
+                              />
+                            </Col>
+                            <Col span={8}>
+                              <Tooltip title={`${hardwareConfig.chip.flops_dtype || 'BF16'} 精度算力`}>
+                                <div style={{ marginBottom: 4 }}><Text type="secondary" style={{ fontSize: 12, cursor: 'help' }}>{hardwareConfig.chip.flops_dtype || 'BF16'} (TFLOPS)</Text></div>
+                              </Tooltip>
+                              <InputNumber
+                                size="small"
+                                min={0}
+                                value={hardwareConfig.chip.compute_tflops_fp16}
+                                onChange={(v) => setHardwareConfig(prev => prev ? {
+                                  ...prev,
+                                  chip: { ...prev.chip, compute_tflops_fp16: v ?? 0, compute_tflops_fp8: (v ?? 0) * 2 }
+                                } : prev)}
+                                style={{ width: '100%' }}
+                              />
+                            </Col>
+                          </Row>
+
+                          {/* Memory */}
+                          <Divider orientation="left" orientationMargin={0} style={{ margin: '12px 0 8px', fontSize: 12 }}>Memory</Divider>
+                          <Row gutter={[16, 8]}>
+                            <Col span={8}>
+                              <Tooltip title="内存容量">
+                                <div style={{ marginBottom: 4 }}><Text type="secondary" style={{ fontSize: 12, cursor: 'help' }}>容量 (GB)</Text></div>
+                              </Tooltip>
+                              <InputNumber
+                                size="small"
+                                min={0}
+                                value={hardwareConfig.chip.memory_gb}
+                                onChange={(v) => setHardwareConfig(prev => prev ? {
+                                  ...prev,
+                                  chip: { ...prev.chip, memory_gb: v ?? 0 }
+                                } : prev)}
+                                style={{ width: '100%' }}
+                              />
+                            </Col>
+                            <Col span={8}>
+                              <Tooltip title="内存总带宽 (理论峰值)">
+                                <div style={{ marginBottom: 4 }}><Text type="secondary" style={{ fontSize: 12, cursor: 'help' }}>带宽 (TB/s)</Text></div>
+                              </Tooltip>
+                              <InputNumber
+                                size="small"
+                                min={0}
+                                step={0.1}
+                                value={Number((hardwareConfig.chip.memory_bandwidth_gbps / 1000).toFixed(1))}
+                                onChange={(v) => setHardwareConfig(prev => prev ? {
+                                  ...prev,
+                                  chip: { ...prev.chip, memory_bandwidth_gbps: (v ?? 0) * 1000 }
+                                } : prev)}
+                                style={{ width: '100%' }}
+                              />
+                            </Col>
+                            <Col span={8}>
+                              <Tooltip title="LMEM/SRAM 片上缓存容量">
+                                <div style={{ marginBottom: 4 }}><Text type="secondary" style={{ fontSize: 12, cursor: 'help' }}>LMEM (MB)</Text></div>
+                              </Tooltip>
+                              <InputNumber
+                                size="small"
+                                min={0}
+                                value={hardwareConfig.chip.lmem_mb ?? 2}
+                                onChange={(v) => setHardwareConfig(prev => prev ? {
+                                  ...prev,
+                                  chip: { ...prev.chip, lmem_mb: v ?? 0 }
+                                } : prev)}
+                                style={{ width: '100%' }}
+                              />
+                            </Col>
+                          </Row>
+
+                          {/* C2C BW / 互联带宽 */}
+                          <Divider orientation="left" orientationMargin={0} style={{ margin: '12px 0 8px', fontSize: 12 }}>C2C BW / 互联带宽</Divider>
+                          <Row gutter={[16, 8]}>
+                            <Col span={8}>
+                              <Tooltip title="芯片间互联单向带宽">
+                                <div style={{ marginBottom: 4 }}><Text type="secondary" style={{ fontSize: 12, cursor: 'help' }}>单向 (GB/s)</Text></div>
+                              </Tooltip>
+                              <InputNumber
+                                size="small"
+                                min={0}
+                                value={hardwareConfig.chip.c2c_bandwidth_gbps ?? hardwareConfig.node.intra_node_bandwidth_gbps}
+                                onChange={(v) => setHardwareConfig(prev => prev ? {
+                                  ...prev,
+                                  chip: { ...prev.chip, c2c_bandwidth_gbps: v ?? 0 }
+                                } : prev)}
+                                style={{ width: '100%' }}
+                              />
+                            </Col>
+                            <Col span={8}>
+                              <Tooltip title="芯片间互联双向带宽">
+                                <div style={{ marginBottom: 4 }}><Text type="secondary" style={{ fontSize: 12, cursor: 'help' }}>双向 (GB/s)</Text></div>
+                              </Tooltip>
+                              <InputNumber
+                                size="small"
+                                min={0}
+                                value={hardwareConfig.chip.c2c_bandwidth_bidirectional_gbps ?? 996}
+                                onChange={(v) => setHardwareConfig(prev => prev ? {
+                                  ...prev,
+                                  chip: { ...prev.chip, c2c_bandwidth_bidirectional_gbps: v ?? 0 }
+                                } : prev)}
+                                style={{ width: '100%' }}
+                              />
+                            </Col>
+                          </Row>
+                        </div>
+                      ),
+                    },
+                  ]}
+                />
               </>
             )}
           </div>
 
-          {/* 分隔线 */}
-          <div style={{ height: 1, background: '#E5E5E5', marginBottom: 16 }} />
+          {/* 延迟配置 - 使用 Collapse 折叠面板 */}
+          <div style={{ marginBottom: 12 }}>
+            <Collapse
+              size="small"
+              style={{ marginBottom: 12, background: 'transparent' }}
+              defaultActiveKey={['delay']}
+              expandIconPosition="start"
+              className="delay-settings-collapse"
+              items={[
+                {
+                  key: 'delay',
+                  label: '互联通信参数',
+                  children: (
+                    <div>
+                      {/* 协议参数 */}
+                      <Row gutter={[16, 8]}>
+                        <Col span={8}>
+                          <Tooltip title="Tensor Parallelism Round Trip Time: 张量并行通信的往返延迟">
+                            <div style={{ marginBottom: 4 }}><Text type="secondary" style={{ fontSize: 12, cursor: 'help' }}>TP RTT (µs)</Text></div>
+                          </Tooltip>
+                          <InputNumber
+                            size="small"
+                            min={0}
+                            max={10}
+                            step={0.05}
+                            value={protocolConfig.rtt_tp_us}
+                            onChange={(v) => setProtocolConfig(prev => ({ ...prev, rtt_tp_us: v ?? 0.35 }))}
+                            style={{ width: '100%' }}
+                          />
+                        </Col>
+                        <Col span={8}>
+                          <Tooltip title="Expert Parallelism Round Trip Time: 专家并行通信的往返延迟">
+                            <div style={{ marginBottom: 4 }}><Text type="secondary" style={{ fontSize: 12, cursor: 'help' }}>EP RTT (µs)</Text></div>
+                          </Tooltip>
+                          <InputNumber
+                            size="small"
+                            min={0}
+                            max={10}
+                            step={0.05}
+                            value={protocolConfig.rtt_ep_us}
+                            onChange={(v) => setProtocolConfig(prev => ({ ...prev, rtt_ep_us: v ?? 0.85 }))}
+                            style={{ width: '100%' }}
+                          />
+                        </Col>
+                        <Col span={8}>
+                          <Tooltip title="链路带宽利用率: 实际可用带宽与理论峰值带宽的比例 (典型值: 0.85-0.95)">
+                            <div style={{ marginBottom: 4 }}><Text type="secondary" style={{ fontSize: 12, cursor: 'help' }}>链路带宽利用率</Text></div>
+                          </Tooltip>
+                          <InputNumber
+                            size="small"
+                            min={0.5}
+                            max={1.0}
+                            step={0.01}
+                            value={protocolConfig.bandwidth_utilization}
+                            onChange={(v) => setProtocolConfig(prev => ({ ...prev, bandwidth_utilization: v ?? 0.95 }))}
+                            style={{ width: '100%' }}
+                          />
+                        </Col>
+                        <Col span={8}>
+                          <Tooltip title="多卡同步操作的固定开销，如 Barrier、AllReduce 初始化延迟">
+                            <div style={{ marginBottom: 4 }}><Text type="secondary" style={{ fontSize: 12, cursor: 'help' }}>同步延迟 (µs)</Text></div>
+                          </Tooltip>
+                          <InputNumber
+                            size="small"
+                            min={0}
+                            max={10}
+                            step={0.1}
+                            value={protocolConfig.sync_latency_us}
+                            onChange={(v) => setProtocolConfig(prev => ({ ...prev, sync_latency_us: v ?? 0 }))}
+                            style={{ width: '100%' }}
+                          />
+                        </Col>
+                      </Row>
 
-          {/* 延迟设置 */}
-          <div style={{ marginBottom: 16 }}>
-            <div style={{ fontSize: 13, fontWeight: 600, color: '#1A1A1A', marginBottom: 10 }}>
-              延迟设置
-            </div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, rowGap: 4 }}>
-              <div style={{ ...configRowStyle, marginBottom: 4 }}>
-                <Tooltip title="Tensor Parallelism Round Trip Time: 张量并行通信的往返延迟，包括节点内 NVLink/PCIe 通信开销">
-                  <Text style={{ fontSize: 12, cursor: 'help', borderBottom: '1px dashed #d9d9d9' }}>TP RTT (µs)</Text>
-                </Tooltip>
-                <InputNumber
-                  size="small"
-                  min={0}
-                  max={10}
-                  step={0.05}
-                  value={protocolConfig.rtt_tp_us}
-                  onChange={(v) => setProtocolConfig(prev => ({ ...prev, rtt_tp_us: v ?? 0.35 }))}
-                  style={{ width: 70 }}
-                />
-              </div>
-              <div style={{ ...configRowStyle, marginBottom: 4 }}>
-                <Tooltip title="Expert Parallelism Round Trip Time: 专家并行 (MoE) 通信的往返延迟，包括跨节点的专家路由开销">
-                  <Text style={{ fontSize: 12, cursor: 'help', borderBottom: '1px dashed #d9d9d9' }}>EP RTT (µs)</Text>
-                </Tooltip>
-                <InputNumber
-                  size="small"
-                  min={0}
-                  max={10}
-                  step={0.05}
-                  value={protocolConfig.rtt_ep_us}
-                  onChange={(v) => setProtocolConfig(prev => ({ ...prev, rtt_ep_us: v ?? 0.85 }))}
-                  style={{ width: 70 }}
-                />
-              </div>
-              <div style={{ ...configRowStyle, marginBottom: 4 }}>
-                <Tooltip title="实际可用带宽与理论峰值带宽的比例，考虑了协议开销、拥塞等因素 (典型值: 0.85-0.95)">
-                  <Text style={{ fontSize: 12, cursor: 'help', borderBottom: '1px dashed #d9d9d9' }}>带宽利用率</Text>
-                </Tooltip>
-                <InputNumber
-                  size="small"
-                  min={0.5}
-                  max={1.0}
-                  step={0.01}
-                  value={protocolConfig.bandwidth_utilization}
-                  onChange={(v) => setProtocolConfig(prev => ({ ...prev, bandwidth_utilization: v ?? 0.95 }))}
-                  style={{ width: 70 }}
-                />
-              </div>
-              <div style={{ ...configRowStyle, marginBottom: 4 }}>
-                <Tooltip title="多卡同步操作的固定开销，如 Barrier、AllReduce 的初始化延迟">
-                  <Text style={{ fontSize: 12, cursor: 'help', borderBottom: '1px dashed #d9d9d9' }}>同步延迟 (µs)</Text>
-                </Tooltip>
-                <InputNumber
-                  size="small"
-                  min={0}
-                  max={10}
-                  step={0.1}
-                  value={protocolConfig.sync_latency_us}
-                  onChange={(v) => setProtocolConfig(prev => ({ ...prev, sync_latency_us: v ?? 0 }))}
-                  style={{ width: 70 }}
-                />
-              </div>
-              <div style={{ ...configRowStyle, marginBottom: 4 }}>
-                <Tooltip title="网络交换机的数据包转发延迟 (典型值: 0.1-0.5 µs)">
-                  <Text style={{ fontSize: 12, cursor: 'help', borderBottom: '1px dashed #d9d9d9' }}>交换机延迟 (µs)</Text>
-                </Tooltip>
-                <InputNumber
-                  size="small"
-                  min={0}
-                  max={10}
-                  step={0.05}
-                  value={networkConfig.switch_delay_us}
-                  onChange={(v) => {
-                    const switchDelay = v ?? 0.25
-                    setNetworkConfig(prev => ({
-                      ...prev,
-                      switch_delay_us: switchDelay,
-                      link_delay_us: 2 * switchDelay + 2 * prev.cable_delay_us,
-                    }))
-                  }}
-                  style={{ width: 70 }}
-                />
-              </div>
-              <div style={{ ...configRowStyle, marginBottom: 4 }}>
-                <Tooltip title="网络线缆的光/电信号传输延迟，约 5 ns/米 (典型值: 0.01-0.05 µs)">
-                  <Text style={{ fontSize: 12, cursor: 'help', borderBottom: '1px dashed #d9d9d9' }}>线缆延迟 (µs)</Text>
-                </Tooltip>
-                <InputNumber
-                  size="small"
-                  min={0}
-                  max={1}
-                  step={0.005}
-                  value={networkConfig.cable_delay_us}
-                  onChange={(v) => {
-                    const cableDelay = v ?? 0.025
-                    setNetworkConfig(prev => ({
-                      ...prev,
-                      cable_delay_us: cableDelay,
-                      link_delay_us: 2 * prev.switch_delay_us + 2 * cableDelay,
-                    }))
-                  }}
-                  style={{ width: 70 }}
-                />
-              </div>
-            </div>
-            <div style={{ marginTop: 8, fontSize: 12, color: '#999' }}>
-              <Tooltip title="完整的端到端链路延迟 = 2 × 交换机延迟 + 2 × 线缆延迟">
-                <span style={{ cursor: 'help', borderBottom: '1px dashed #d9d9d9' }}>
-                  链路延迟: {networkConfig.link_delay_us.toFixed(3)} µs
-                </span>
-              </Tooltip>
-            </div>
-          </div>
+                      {/* 互联相关 */}
+                      <Divider orientation="left" orientationMargin={0} style={{ margin: '12px 0 8px', fontSize: 12 }}>互联相关</Divider>
+                      <Row gutter={[16, 8]}>
+                        <Col span={8}>
+                          <Tooltip title="网络交换机的数据包转发延迟 (典型值: 0.5-2 µs)">
+                            <div style={{ marginBottom: 4 }}><Text type="secondary" style={{ fontSize: 12, cursor: 'help' }}>switch_delay (µs)</Text></div>
+                          </Tooltip>
+                          <InputNumber
+                            size="small"
+                            min={0}
+                            max={10}
+                            step={0.05}
+                            value={networkConfig.switch_delay_us}
+                            onChange={(v) => setNetworkConfig(prev => ({ ...prev, switch_delay_us: v ?? 1.0 }))}
+                            style={{ width: '100%' }}
+                          />
+                        </Col>
+                        <Col span={8}>
+                          <Tooltip title="网络线缆的光/电信号传输延迟，约 5 ns/米 (典型值: 0.01-0.05 µs)">
+                            <div style={{ marginBottom: 4 }}><Text type="secondary" style={{ fontSize: 12, cursor: 'help' }}>cable_delay (µs)</Text></div>
+                          </Tooltip>
+                          <InputNumber
+                            size="small"
+                            min={0}
+                            max={1}
+                            step={0.005}
+                            value={networkConfig.cable_delay_us}
+                            onChange={(v) => setNetworkConfig(prev => ({ ...prev, cable_delay_us: v ?? 0.025 }))}
+                            style={{ width: '100%' }}
+                          />
+                        </Col>
+                      </Row>
 
-          {/* 分隔线 */}
-          <div style={{ height: 1, background: '#E5E5E5', marginBottom: 16 }} />
+                      {/* C2C相关 */}
+                      <Divider orientation="left" orientationMargin={0} style={{ margin: '12px 0 8px', fontSize: 12 }}>C2C相关</Divider>
+                      <Row gutter={[16, 8]}>
+                        <Col span={8}>
+                          <Tooltip title="芯片间物理互联延迟 (NVLink/SophgoLink)">
+                            <div style={{ marginBottom: 4 }}><Text type="secondary" style={{ fontSize: 12, cursor: 'help' }}>c2c_lat (µs)</Text></div>
+                          </Tooltip>
+                          <InputNumber
+                            size="small"
+                            min={0}
+                            max={1}
+                            step={0.01}
+                            value={chipLatencyConfig.c2c_lat_us}
+                            onChange={(v) => setChipLatencyConfig(prev => ({ ...prev, c2c_lat_us: v ?? 0.2 }))}
+                            style={{ width: '100%' }}
+                          />
+                        </Col>
+                        <Col span={8}>
+                          <Tooltip title="DDR/HBM 读延迟">
+                            <div style={{ marginBottom: 4 }}><Text type="secondary" style={{ fontSize: 12, cursor: 'help' }}>ddr_r_lat (µs)</Text></div>
+                          </Tooltip>
+                          <InputNumber
+                            size="small"
+                            min={0}
+                            max={1}
+                            step={0.01}
+                            value={chipLatencyConfig.ddr_r_lat_us}
+                            onChange={(v) => setChipLatencyConfig(prev => ({ ...prev, ddr_r_lat_us: v ?? 0.15 }))}
+                            style={{ width: '100%' }}
+                          />
+                        </Col>
+                        <Col span={8}>
+                          <Tooltip title="DDR/HBM 写延迟">
+                            <div style={{ marginBottom: 4 }}><Text type="secondary" style={{ fontSize: 12, cursor: 'help' }}>ddr_w_lat (µs)</Text></div>
+                          </Tooltip>
+                          <InputNumber
+                            size="small"
+                            min={0}
+                            max={1}
+                            step={0.01}
+                            value={chipLatencyConfig.ddr_w_lat_us}
+                            onChange={(v) => setChipLatencyConfig(prev => ({ ...prev, ddr_w_lat_us: v ?? 0.01 }))}
+                            style={{ width: '100%' }}
+                          />
+                        </Col>
+                        <Col span={8}>
+                          <Tooltip title="片上网络延迟 (NoC)">
+                            <div style={{ marginBottom: 4 }}><Text type="secondary" style={{ fontSize: 12, cursor: 'help' }}>noc_lat (µs)</Text></div>
+                          </Tooltip>
+                          <InputNumber
+                            size="small"
+                            min={0}
+                            max={1}
+                            step={0.01}
+                            value={chipLatencyConfig.noc_lat_us}
+                            onChange={(v) => setChipLatencyConfig(prev => ({ ...prev, noc_lat_us: v ?? 0.05 }))}
+                            style={{ width: '100%' }}
+                          />
+                        </Col>
+                        <Col span={8}>
+                          <Tooltip title="Die-to-Die 延迟 (多Die芯片)">
+                            <div style={{ marginBottom: 4 }}><Text type="secondary" style={{ fontSize: 12, cursor: 'help' }}>d2d_lat (µs)</Text></div>
+                          </Tooltip>
+                          <InputNumber
+                            size="small"
+                            min={0}
+                            max={1}
+                            step={0.01}
+                            value={chipLatencyConfig.d2d_lat_us}
+                            onChange={(v) => setChipLatencyConfig(prev => ({ ...prev, d2d_lat_us: v ?? 0.04 }))}
+                            style={{ width: '100%' }}
+                          />
+                        </Col>
+                      </Row>
 
-          {/* 并行策略 */}
-          <div>
-            <div style={{ fontSize: 13, fontWeight: 600, color: '#1A1A1A', marginBottom: 10 }}>
-              并行策略
-            </div>
-            <ParallelismConfigPanel
-              mode={parallelismMode}
-              onModeChange={setParallelismMode}
-              manualStrategy={manualStrategy}
-              onManualStrategyChange={setManualStrategy}
-              searchConstraints={searchConstraints}
-              onSearchConstraintsChange={setSearchConstraints}
-              maxChips={maxChips}
-              modelConfig={modelConfig}
-              hardwareConfig={hardwareConfig}
+                      {/* 计算结果：通信启动开销 */}
+                      <Divider orientation="left" orientationMargin={0} style={{ margin: '12px 0 8px', fontSize: 12 }}>通信启动开销 (start_lat)</Divider>
+                      <Row gutter={[16, 8]}>
+                        <Col span={12}>
+                          <Tooltip
+                            title={
+                              <div style={{ fontSize: 12 }}>
+                                <div style={{ fontWeight: 500, marginBottom: 4 }}>AllReduce start_lat 计算公式:</div>
+                                <div style={{ fontFamily: 'monospace' }}>2×c2c + ddr_r + ddr_w + noc + 2×d2d</div>
+                                <div style={{ marginTop: 8, borderTop: '1px solid rgba(255,255,255,0.2)', paddingTop: 8 }}>
+                                  <div>= 2×{chipLatencyConfig.c2c_lat_us} + {chipLatencyConfig.ddr_r_lat_us} + {chipLatencyConfig.ddr_w_lat_us} + {chipLatencyConfig.noc_lat_us} + 2×{chipLatencyConfig.d2d_lat_us}</div>
+                                  <div style={{ fontWeight: 500, marginTop: 4 }}>= {(2 * chipLatencyConfig.c2c_lat_us + chipLatencyConfig.ddr_r_lat_us + chipLatencyConfig.ddr_w_lat_us + chipLatencyConfig.noc_lat_us + 2 * chipLatencyConfig.d2d_lat_us).toFixed(2)} µs</div>
+                                </div>
+                              </div>
+                            }
+                            placement="top"
+                          >
+                            <div style={{
+                              padding: '8px 12px',
+                              background: '#f5f5f5',
+                              borderRadius: 4,
+                              cursor: 'help',
+                              border: '1px solid #d9d9d9'
+                            }}>
+                              <Text type="secondary" style={{ fontSize: 12 }}>AllReduce start_lat</Text>
+                              <div style={{ fontSize: 14, fontWeight: 500, color: '#1890ff' }}>
+                                {(2 * chipLatencyConfig.c2c_lat_us + chipLatencyConfig.ddr_r_lat_us + chipLatencyConfig.ddr_w_lat_us + chipLatencyConfig.noc_lat_us + 2 * chipLatencyConfig.d2d_lat_us).toFixed(2)} µs
+                              </div>
+                            </div>
+                          </Tooltip>
+                        </Col>
+                        <Col span={12}>
+                          <Tooltip
+                            title={
+                              <div style={{ fontSize: 12 }}>
+                                <div style={{ fontWeight: 500, marginBottom: 4 }}>Dispatch/Combine start_lat 计算公式:</div>
+                                <div style={{ fontFamily: 'monospace' }}>2×c2c + ddr_r + ddr_w + noc + 2×d2d + 2×switch + 2×cable</div>
+                                <div style={{ marginTop: 8, borderTop: '1px solid rgba(255,255,255,0.2)', paddingTop: 8 }}>
+                                  <div>= 2×{chipLatencyConfig.c2c_lat_us} + {chipLatencyConfig.ddr_r_lat_us} + {chipLatencyConfig.ddr_w_lat_us} + {chipLatencyConfig.noc_lat_us} + 2×{chipLatencyConfig.d2d_lat_us} + 2×{networkConfig.switch_delay_us} + 2×{networkConfig.cable_delay_us}</div>
+                                  <div style={{ fontWeight: 500, marginTop: 4 }}>= {(2 * chipLatencyConfig.c2c_lat_us + chipLatencyConfig.ddr_r_lat_us + chipLatencyConfig.ddr_w_lat_us + chipLatencyConfig.noc_lat_us + 2 * chipLatencyConfig.d2d_lat_us + 2 * networkConfig.switch_delay_us + 2 * networkConfig.cable_delay_us).toFixed(2)} µs</div>
+                                </div>
+                              </div>
+                            }
+                            placement="top"
+                          >
+                            <div style={{
+                              padding: '8px 12px',
+                              background: '#f5f5f5',
+                              borderRadius: 4,
+                              cursor: 'help',
+                              border: '1px solid #d9d9d9'
+                            }}>
+                              <Text type="secondary" style={{ fontSize: 12 }}>Dispatch/Combine start_lat</Text>
+                              <div style={{ fontSize: 14, fontWeight: 500, color: '#722ed1' }}>
+                                {(2 * chipLatencyConfig.c2c_lat_us + chipLatencyConfig.ddr_r_lat_us + chipLatencyConfig.ddr_w_lat_us + chipLatencyConfig.noc_lat_us + 2 * chipLatencyConfig.d2d_lat_us + 2 * networkConfig.switch_delay_us + 2 * networkConfig.cable_delay_us).toFixed(2)} µs
+                              </div>
+                            </div>
+                          </Tooltip>
+                        </Col>
+                      </Row>
+                    </div>
+                  ),
+                },
+              ]}
             />
+            <style>{`
+              .delay-settings-collapse .ant-collapse-header {
+                background: #f0f0f0 !important;
+                border-radius: 4px !important;
+                font-weight: 500;
+              }
+              .delay-settings-collapse .ant-collapse-content {
+                background: #fff;
+              }
+            `}</style>
+
+            {/* 保存、另存为、重置按钮 */}
+            <Space>
+              <Button
+                size="small"
+                icon={<SaveOutlined />}
+                onClick={handleSaveConfig}
+                loading={saveLoading}
+                disabled={!selectedTopologyConfig}
+              >
+                保存
+              </Button>
+              <Button
+                size="small"
+                icon={<CopyOutlined />}
+                onClick={() => setSaveAsModalOpen(true)}
+              >
+                另存为
+              </Button>
+              <Button
+                size="small"
+                icon={<ReloadOutlined />}
+                onClick={handleResetDelayConfig}
+              >
+                重置
+              </Button>
+            </Space>
           </div>
           </BaseCard>
         </Col>
       </Row>
 
-      {/* 下方：运行按钮 */}
-      <Button
-        type="primary"
-        icon={parallelismMode === 'auto' ? <SearchOutlined /> : <PlayCircleOutlined />}
-        onClick={handleRunAnalysis}
-        loading={loading}
-        block
-        size="large"
-        style={{
-          marginBottom: 16,
-          height: 44,
-          borderRadius: 8,
-          background: colors.primary,
-          boxShadow: '0 2px 8px rgba(94, 106, 210, 0.3)',
+      {/* 另存为弹窗 */}
+      <Modal
+        title="另存为新配置"
+        open={saveAsModalOpen}
+        onOk={handleSaveAsConfig}
+        onCancel={() => {
+          setSaveAsModalOpen(false)
+          setNewConfigName('')
+          setNewConfigDesc('')
         }}
+        confirmLoading={saveLoading}
+        okText="保存"
+        cancelText="取消"
       >
-        {parallelismMode === 'auto' ? '搜索最优方案' : '运行分析'}
-      </Button>
-
-      {/* 分析状态提示 */}
-      {(loading || errorMsg) && (
-        <div style={{
-          marginTop: 12,
-          padding: 12,
-          background: loading ? '#e6f7ff' : '#fff2f0',
-          borderRadius: 8,
-          border: `1px solid ${loading ? '#91d5ff' : '#ffccc7'}`,
-          textAlign: 'center',
-          fontSize: 13,
-        }}>
-          {loading ? (
-            <span><Spin size="small" style={{ marginRight: 8 }} />正在分析...</span>
-          ) : (
-            <span style={{ color: '#ff4d4f' }}><WarningOutlined style={{ marginRight: 6 }} />{errorMsg}</span>
-          )}
+        <div style={{ marginBottom: 16 }}>
+          <Text style={{ display: 'block', marginBottom: 8 }}>配置名称 <span style={{ color: '#ff4d4f' }}>*</span></Text>
+          <Input
+            value={newConfigName}
+            onChange={(e) => setNewConfigName(e.target.value)}
+            placeholder="请输入配置名称"
+          />
         </div>
-      )}
+        <div>
+          <Text style={{ display: 'block', marginBottom: 8 }}>描述 (可选)</Text>
+          <Input.TextArea
+            value={newConfigDesc}
+            onChange={(e) => setNewConfigDesc(e.target.value)}
+            placeholder="请输入配置描述"
+            rows={3}
+          />
+        </div>
+      </Modal>
 
+      {/* 分析任务列表 */}
+      <BaseCard title="分析任务" accentColor="#fa8c16" collapsible defaultExpanded style={{ marginTop: 16 }}>
+        <AnalysisTaskList
+          tasks={analysisTasks}
+          onViewTask={viewTaskResult}
+          onCancelTask={cancelTask}
+          onDeleteTask={deleteTask}
+          onClearCompleted={clearCompletedTasks}
+          onRefresh={refreshTasks}
+        />
+      </BaseCard>
     </div>
   )
 }

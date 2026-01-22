@@ -29,7 +29,7 @@ import {
 } from '@ant-design/icons'
 import { GlobalSwitchConfig } from '../../types'
 import { listConfigs, saveConfig, deleteConfig, SavedConfig } from '../../api/topology'
-import { clearAllCache } from '../../utils/storage'
+import { clearAllCache, NetworkConfig, SavedChipConfig } from '../../utils/storage'
 import {
   ChipIcon,
   BoardIcon,
@@ -84,6 +84,12 @@ export const ConfigPanel: React.FC<ConfigPanelProps> = ({
 }) => {
   void _layoutType
   void _onLayoutTypeChange
+  void onTrafficResultChange
+  void onAnalysisDataChange
+  void analysisHistory
+  void onAddToHistory
+  void onDeleteHistory
+  void onClearHistory
   // 从缓存加载初始配置
   const cachedConfig = loadCachedConfig()
 
@@ -190,6 +196,79 @@ export const ConfigPanel: React.FC<ConfigPanelProps> = ({
     return () => clearTimeout(timer)
   }, [podCount, racksPerPod, boardConfigs, rackConfig, switchConfig, manualConnectionConfig, onGenerate])
 
+  // 从 rackConfig 提取芯片配置列表
+  const extractChipConfigs = (): SavedChipConfig[] => {
+    const chipConfigMap = new Map<string, SavedChipConfig>()
+
+    for (const board of rackConfig.boards) {
+      const boardCount = board.count || 1
+      for (const chip of board.chips) {
+        const key = chip.preset_id || chip.name
+
+        // 获取硬件参数 (优先使用自定义值，其次预设值)
+        const presetConfig = chip.preset_id ? getChipConfig(chip.preset_id) : null
+        const hardware = {
+          chip_type: chip.name,
+          flops_dtype: (presetConfig?.flops_dtype || 'BF16') as 'BF16' | 'FP16' | 'FP8' | 'INT8',
+          compute_tflops_fp16: chip.compute_tflops_fp16 ?? presetConfig?.compute_tflops_fp16 ?? 100,
+          compute_tops_int8: presetConfig?.compute_tops_int8,
+          num_cores: presetConfig?.num_cores,
+          memory_gb: chip.memory_gb ?? presetConfig?.memory_gb ?? 32,
+          memory_bandwidth_gbps: chip.memory_bandwidth_gbps ?? presetConfig?.memory_bandwidth_gbps ?? 1000,
+          memory_bandwidth_utilization: chip.memory_bandwidth_utilization ?? presetConfig?.memory_bandwidth_utilization ?? 0.9,
+          l2_cache_mb: presetConfig?.l2_cache_mb,
+          l2_bandwidth_gbps: presetConfig?.l2_bandwidth_gbps,
+        }
+
+        const existing = chipConfigMap.get(key)
+        if (existing) {
+          existing.total_count += chip.count * boardCount * podCount * racksPerPod
+        } else {
+          chipConfigMap.set(key, {
+            preset_id: chip.preset_id,
+            hardware,
+            total_count: chip.count * boardCount * podCount * racksPerPod,
+            chips_per_board: chip.count,
+          })
+        }
+      }
+    }
+
+    return Array.from(chipConfigMap.values())
+  }
+
+  // 从连接配置提取网络参数
+  const extractNetworkConfig = (): NetworkConfig => {
+    // 默认值
+    let intraNodeBandwidth = 900  // NVLink 4.0 GB/s
+    let interNodeBandwidth = 50   // InfiniBand NDR GB/s
+    let intraNodeLatency = 1      // us
+    let interNodeLatency = 2      // us
+
+    // 从 manualConnectionConfig 的 level_defaults 获取
+    if (manualConnectionConfig?.level_defaults) {
+      if (manualConnectionConfig.level_defaults.board?.bandwidth) {
+        intraNodeBandwidth = manualConnectionConfig.level_defaults.board.bandwidth
+      }
+      if (manualConnectionConfig.level_defaults.board?.latency) {
+        intraNodeLatency = manualConnectionConfig.level_defaults.board.latency
+      }
+      if (manualConnectionConfig.level_defaults.rack?.bandwidth) {
+        interNodeBandwidth = manualConnectionConfig.level_defaults.rack.bandwidth
+      }
+      if (manualConnectionConfig.level_defaults.rack?.latency) {
+        interNodeLatency = manualConnectionConfig.level_defaults.rack.latency
+      }
+    }
+
+    return {
+      intra_node_bandwidth_gbps: intraNodeBandwidth,
+      inter_node_bandwidth_gbps: interNodeBandwidth,
+      intra_node_latency_us: intraNodeLatency,
+      inter_node_latency_us: interNodeLatency,
+    }
+  }
+
   // 保存当前配置
   const handleSaveConfig = async () => {
     if (!configName.trim()) {
@@ -197,12 +276,23 @@ export const ConfigPanel: React.FC<ConfigPanelProps> = ({
       return
     }
     try {
+      // 提取芯片配置和网络配置
+      const chipConfigs = extractChipConfigs()
+      const networkConfig = extractNetworkConfig()
+
       await saveConfig({
         name: configName.trim(),
         description: configDesc.trim() || undefined,
         pod_count: podCount,
         racks_per_pod: racksPerPod,
         board_configs: boardConfigs,
+        // 扩展字段 - 保存完整配置用于部署分析
+        rack_config: rackConfig,
+        switch_config: switchConfig,
+        manual_connections: manualConnectionConfig,
+        generated_topology: topology || undefined,
+        chip_configs: chipConfigs,
+        network_config: networkConfig,
       })
       message.success('配置保存成功')
       setSaveModalOpen(false)
@@ -220,6 +310,18 @@ export const ConfigPanel: React.FC<ConfigPanelProps> = ({
     setPodCount(config.pod_count)
     setRacksPerPod(config.racks_per_pod)
     setBoardConfigs(config.board_configs)
+
+    // 加载扩展配置 (如果存在)
+    if (config.rack_config) {
+      setRackConfig(config.rack_config as RackConfig)
+    }
+    if (config.switch_config) {
+      setSwitchConfig(config.switch_config)
+    }
+    if (config.manual_connections && onManualConnectionConfigChange) {
+      onManualConnectionConfigChange(config.manual_connections)
+    }
+
     setLoadModalOpen(false)
     message.success(`已加载配置: ${config.name}`)
   }
@@ -1366,48 +1468,62 @@ export const ConfigPanel: React.FC<ConfigPanelProps> = ({
           <Text type="secondary">暂无保存的配置</Text>
         ) : (
           <Space direction="vertical" style={{ width: '100%' }}>
-            {savedConfigs.map(config => (
-              <Card
-                key={config.name}
-                size="small"
-                style={{ cursor: 'pointer' }}
-                hoverable
-                onClick={() => handleLoadConfig(config)}
-              >
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                  <div style={{ flex: 1 }}>
-                    <Text strong>{config.name}</Text>
-                    {config.description && (
-                      <div><Text type="secondary" style={{ fontSize: 12 }}>{config.description}</Text></div>
-                    )}
-                    <div style={{ marginTop: 4 }}>
-                      <Text type="secondary" style={{ fontSize: 11 }}>
-                        Pod:{config.pod_count} | Rack:{config.racks_per_pod} |
-                        1U:{config.board_configs.u1.count} 2U:{config.board_configs.u2.count} 4U:{config.board_configs.u4.count}
-                      </Text>
+            {savedConfigs.map(config => {
+              // 计算汇总信息
+              const hasExtendedConfig = Boolean(config.rack_config || config.chip_configs)
+              const totalChips = config.chip_configs?.reduce((sum, c) => sum + c.total_count, 0) || 0
+              const chipTypeNames = config.chip_configs?.map(c => c.hardware.chip_type).join(', ') || ''
+
+              return (
+                <Card
+                  key={config.name}
+                  size="small"
+                  style={{ cursor: 'pointer' }}
+                  hoverable
+                  onClick={() => handleLoadConfig(config)}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                    <div style={{ flex: 1 }}>
+                      <Text strong>{config.name}</Text>
+                      {config.description && (
+                        <div><Text type="secondary" style={{ fontSize: 12 }}>{config.description}</Text></div>
+                      )}
+                      <div style={{ marginTop: 4 }}>
+                        <Text type="secondary" style={{ fontSize: 11 }}>
+                          Pod:{config.pod_count} | Rack:{config.racks_per_pod}
+                          {hasExtendedConfig && totalChips > 0 && ` | Chip: ${totalChips}`}
+                        </Text>
+                      </div>
+                      {hasExtendedConfig && chipTypeNames && (
+                        <div style={{ marginTop: 2 }}>
+                          <Text type="secondary" style={{ fontSize: 10, color: '#52c41a' }}>
+                            芯片: {chipTypeNames}
+                          </Text>
+                        </div>
+                      )}
                     </div>
+                    <Popconfirm
+                      title="确定删除此配置？"
+                      onConfirm={(e) => {
+                        e?.stopPropagation()
+                        handleDeleteConfig(config.name)
+                      }}
+                      onCancel={(e) => e?.stopPropagation()}
+                      okText="删除"
+                      cancelText="取消"
+                    >
+                      <Button
+                        type="text"
+                        danger
+                        size="small"
+                        icon={<DeleteOutlined />}
+                        onClick={(e) => e.stopPropagation()}
+                      />
+                    </Popconfirm>
                   </div>
-                  <Popconfirm
-                    title="确定删除此配置？"
-                    onConfirm={(e) => {
-                      e?.stopPropagation()
-                      handleDeleteConfig(config.name)
-                    }}
-                    onCancel={(e) => e?.stopPropagation()}
-                    okText="删除"
-                    cancelText="取消"
-                  >
-                    <Button
-                      type="text"
-                      danger
-                      size="small"
-                      icon={<DeleteOutlined />}
-                      onClick={(e) => e.stopPropagation()}
-                    />
-                  </Popconfirm>
-                </div>
-              </Card>
-            ))}
+                </Card>
+              )
+            })}
           </Space>
         )}
       </Modal>

@@ -7,47 +7,42 @@ import React, { useState, useRef } from 'react'
 import { KnowledgeGraph, KnowledgeNodeCards } from '@/components/KnowledgeGraph'
 import { useWorkbench } from '@/contexts/WorkbenchContext'
 
-const CARD_WIDTH_KEY = 'knowledge_card_width'
-const MIN_CARD_WIDTH = 250
-const MAX_CARD_WIDTH = 600
-const DEFAULT_CARD_WIDTH = 340
-
 export const Knowledge: React.FC = () => {
   const { ui } = useWorkbench()
-  const [cardWidth, setCardWidth] = useState(() => {
-    const cached = localStorage.getItem(CARD_WIDTH_KEY)
-    return cached ? Math.max(MIN_CARD_WIDTH, Math.min(MAX_CARD_WIDTH, parseInt(cached, 10))) : DEFAULT_CARD_WIDTH
-  })
+  const [cardWidth, setCardWidth] = useState(320)
   const [isDragging, setIsDragging] = useState(false)
-  const dragStartX = useRef(0)
-  const dragStartWidth = useRef(0)
+  const containerRef = useRef<HTMLDivElement>(null)
 
-  const handleDragStart = (e: React.MouseEvent) => {
+  const handleMouseDown = () => {
     setIsDragging(true)
-    dragStartX.current = e.clientX
-    dragStartWidth.current = cardWidth
-  }
-
-  const handleDragMove = (e: MouseEvent) => {
-    if (!isDragging) return
-    const delta = e.clientX - dragStartX.current
-    const newWidth = Math.max(MIN_CARD_WIDTH, Math.min(MAX_CARD_WIDTH, dragStartWidth.current + delta))
-    setCardWidth(newWidth)
-    localStorage.setItem(CARD_WIDTH_KEY, String(newWidth))
-  }
-
-  const handleDragEnd = () => {
-    setIsDragging(false)
   }
 
   React.useEffect(() => {
-    if (isDragging) {
-      window.addEventListener('mousemove', handleDragMove)
-      window.addEventListener('mouseup', handleDragEnd)
-      return () => {
-        window.removeEventListener('mousemove', handleDragMove)
-        window.removeEventListener('mouseup', handleDragEnd)
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!isDragging || !containerRef.current) return
+
+      const container = containerRef.current
+      const rect = container.getBoundingClientRect()
+      const newWidth = e.clientX - rect.left
+
+      // 限制宽度范围：200-600px
+      if (newWidth >= 200 && newWidth <= 600) {
+        setCardWidth(newWidth)
       }
+    }
+
+    const handleMouseUp = () => {
+      setIsDragging(false)
+    }
+
+    if (isDragging) {
+      document.addEventListener('mousemove', handleMouseMove)
+      document.addEventListener('mouseup', handleMouseUp)
+    }
+
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove)
+      document.removeEventListener('mouseup', handleMouseUp)
     }
   }, [isDragging])
 
@@ -71,43 +66,53 @@ export const Knowledge: React.FC = () => {
         </div>
       </div>
 
-      {/* 内容区 - 分为左侧卡片和右侧图形 */}
-      <div style={{ flex: 1, overflow: 'hidden', display: 'flex' }}>
-        {/* 左侧 - 节点详情卡片 */}
+      {/* 内容区 - 左侧卡片 + 右侧知识图谱 */}
+      <div ref={containerRef} style={{ flex: 1, overflow: 'hidden', display: 'flex' }}>
+        {/* 左侧信息卡片 */}
         {ui.knowledgeSelectedNodes.length > 0 && (
           <>
             <div style={{
               width: cardWidth,
               borderRight: '1px solid #f0f0f0',
-              background: '#fff',
+              overflow: 'hidden',
               display: 'flex',
               flexDirection: 'column',
-              padding: 12,
-              overflow: 'hidden',
+              background: '#fff',
+              minWidth: '200px',
+              maxWidth: '600px',
             }}>
               <KnowledgeNodeCards
                 nodes={ui.knowledgeSelectedNodes}
-                onClose={(nodeId) => ui.removeKnowledgeSelectedNode(nodeId)}
-                onNodeClick={(node) => ui.addKnowledgeSelectedNode(node)}
+                onClose={ui.removeKnowledgeSelectedNode}
+                onNodeClick={ui.addKnowledgeSelectedNode}
               />
             </div>
 
-            {/* 拖拽分割线 */}
+            {/* 可拖动分隔符 */}
             <div
-              onMouseDown={handleDragStart}
-              style={{
-                width: 4,
-                cursor: isDragging ? 'col-resize' : 'ew-resize',
-                background: isDragging ? '#5e6ad2' : '#f0f0f0',
-                transition: isDragging ? 'none' : 'background 0.2s ease',
-                flexShrink: 0,
+              onMouseDown={handleMouseDown}
+              onMouseEnter={(e) => {
+                if (!isDragging) {
+                  (e.currentTarget as HTMLDivElement).style.background = '#e5e5e5'
+                }
               }}
-              title="拖拽调整卡片宽度"
+              onMouseLeave={(e) => {
+                if (!isDragging) {
+                  (e.currentTarget as HTMLDivElement).style.background = 'transparent'
+                }
+              }}
+              style={{
+                width: 6,
+                background: isDragging ? '#1890ff' : 'transparent',
+                cursor: 'col-resize',
+                transition: isDragging ? 'none' : 'background 0.2s',
+                userSelect: 'none',
+              }}
             />
           </>
         )}
 
-        {/* 右侧 - 知识图谱 */}
+        {/* 右侧知识图谱 */}
         <div style={{ flex: 1, overflow: 'hidden' }}>
           <KnowledgeGraph />
         </div>

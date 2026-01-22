@@ -4,8 +4,7 @@
  */
 
 import React, { useCallback, useState, useRef, useEffect } from 'react'
-import { Layout, Spin, Card, Descriptions, Tag, Collapse, Segmented } from 'antd'
-import { AppstoreOutlined, ApartmentOutlined } from '@ant-design/icons'
+import { Layout, Spin, Card, Descriptions, Tag, Collapse } from 'antd'
 import { Scene3D } from '@/components/Scene3D'
 import { TopologyGraph, NodeDetail } from '@/components/TopologyGraph'
 import { ConfigPanel } from '@/components/ConfigPanel'

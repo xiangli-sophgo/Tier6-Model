@@ -45,7 +45,27 @@ const descStyle: React.CSSProperties = {
 }
 
 export const MetricDetailCard: React.FC<MetricDetailCardProps> = ({ metric, result }) => {
-  const { plan, memory, latency, throughput } = result
+  // 防御性检查：确保 result 及其属性存在
+  const plan = result?.plan || {}
+  const memory = result?.memory || {}
+  const latency = result?.latency || {}
+  const throughput = result?.throughput || {}
+
+  // 检查是否有足够的数据来显示详情
+  const hasDetailedLatency = latency && typeof latency.prefill_compute_latency_ms === 'number'
+  const hasDetailedThroughput = throughput && typeof throughput.tokens_per_second === 'number'
+  const hasDetailedMemory = memory && typeof memory.model_memory_gb === 'number'
+
+  // 如果数据不完整，显示简化版本
+  if (!hasDetailedLatency && !hasDetailedThroughput && !hasDetailedMemory) {
+    return (
+      <div style={detailWrapperStyle}>
+        <div style={{ fontSize: 14, color: '#8c8c8c', textAlign: 'center', padding: 24 }}>
+          详细分析数据暂不可用
+        </div>
+      </div>
+    )
+  }
 
   switch (metric) {
     case 'ttft':

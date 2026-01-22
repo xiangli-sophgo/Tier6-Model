@@ -1,32 +1,33 @@
 /**
- * Dashboard 首页
+ * Dashboard 概览
  * 显示系统概览、快速操作和最近任务
  */
 
 import React, { useEffect, useState } from 'react'
-import { Row, Col, Card, Space, Typography, Skeleton } from 'antd'
-import { useNavigate } from 'react-router-dom'
+import { Card, Space, Typography } from 'antd'
 import {
   ThunderboltOutlined,
   DatabaseOutlined,
-  CheckCircleOutlined,
-  ClockCircleOutlined,
   ApartmentOutlined,
-  BarChartOutlined,
   PartitionOutlined,
   RocketOutlined,
 } from '@ant-design/icons'
 import { getTasks, getRunningTasks } from '@/api/tasks'
-import { StatCard } from './StatCard'
 import { QuickAction } from './QuickAction'
 import { RecentTasks } from './RecentTasks'
+import { useWorkbench, ViewMode } from '@/contexts/WorkbenchContext'
 
 const { Title } = Typography
 
 export const Dashboard: React.FC = () => {
-  const navigate = useNavigate()
+  const { ui } = useWorkbench()
 
-  const [stats, setStats] = useState({
+  // 导航到指定视图
+  const navigateTo = (mode: ViewMode) => {
+    ui.setViewMode(mode)
+  }
+
+  const [, setStats] = useState({
     totalTasks: 0,
     runningTasks: 0,
     completedToday: 0,
@@ -77,7 +78,7 @@ export const Dashboard: React.FC = () => {
   }
 
   return (
-    <div style={{ padding: 24, height: '100%', overflow: 'auto' }}>
+    <div style={{ padding: 24, height: '100%', overflow: 'auto', background: '#fff' }}>
       {/* 欢迎区域 */}
       <div style={{ marginBottom: 24 }}>
         <Title level={3} style={{ marginBottom: 0 }}>
@@ -103,7 +104,7 @@ export const Dashboard: React.FC = () => {
               title="互联拓扑"
               description="配置Tier6+互联拓扑"
               color="#1890ff"
-              onClick={() => navigate('/topology')}
+              onClick={() => navigateTo('topology')}
             />
           </div>
           <div style={{ flex: 1 }}>
@@ -112,25 +113,16 @@ export const Dashboard: React.FC = () => {
               title="部署分析"
               description="评估 LLM 部署推理方案"
               color="#52c41a"
-              onClick={() => navigate('/deployment')}
+              onClick={() => navigateTo('deployment')}
             />
           </div>
           <div style={{ flex: 1 }}>
             <QuickAction
               icon={<DatabaseOutlined />}
-              title="结果汇总"
-              description="查看历史评估结果"
+              title="结果管理"
+              description="实验结果查看与详细分析"
               color="#722ed1"
-              onClick={() => navigate('/results')}
-            />
-          </div>
-          <div style={{ flex: 1 }}>
-            <QuickAction
-              icon={<BarChartOutlined />}
-              title="结果分析"
-              description="性能指标详细分析"
-              color="#fa8c16"
-              onClick={() => navigate('/analysis')}
+              onClick={() => navigateTo('results')}
             />
           </div>
           <div style={{ flex: 1 }}>
@@ -139,14 +131,14 @@ export const Dashboard: React.FC = () => {
               title="知识网络"
               description="分布式计算知识图谱"
               color="#13c2c2"
-              onClick={() => navigate('/knowledge')}
+              onClick={() => navigateTo('knowledge')}
             />
           </div>
         </div>
       </Card>
 
       {/* 最近任务 */}
-      <RecentTasks tasks={recentTasks} loading={loading} />
+      <RecentTasks tasks={recentTasks} loading={loading} onNavigate={() => navigateTo('deployment')} />
     </div>
   )
 }

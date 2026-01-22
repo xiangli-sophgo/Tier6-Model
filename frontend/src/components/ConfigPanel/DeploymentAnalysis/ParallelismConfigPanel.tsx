@@ -12,7 +12,6 @@ import {
 } from 'antd'
 import {
   ParallelismStrategy,
-  SearchConstraints,
   LLMModelConfig,
   HardwareConfig,
 } from '../../../utils/llmDeployment/types'
@@ -25,8 +24,6 @@ interface ParallelismConfigPanelProps {
   onModeChange: (mode: 'manual' | 'auto') => void
   manualStrategy: ParallelismStrategy
   onManualStrategyChange: (strategy: ParallelismStrategy) => void
-  searchConstraints: SearchConstraints
-  onSearchConstraintsChange: (constraints: SearchConstraints) => void
   maxChips: number
   modelConfig: LLMModelConfig
   hardwareConfig: HardwareConfig
@@ -37,8 +34,6 @@ export const ParallelismConfigPanel: React.FC<ParallelismConfigPanelProps> = ({
   onModeChange,
   manualStrategy,
   onManualStrategyChange,
-  searchConstraints,
-  onSearchConstraintsChange,
   maxChips,
   modelConfig,
   hardwareConfig,
@@ -150,20 +145,15 @@ export const ParallelismConfigPanel: React.FC<ParallelismConfigPanelProps> = ({
       ) : (
         <div>
           <div style={configRowStyle}>
-            <Text style={{ fontSize: 12 }}>最大芯片数</Text>
-            <InputNumber
-              size="small"
-              min={1}
-              max={1024}
-              value={searchConstraints.max_chips || maxChips}
-              onChange={(v) => onSearchConstraintsChange({ ...searchConstraints, max_chips: v || maxChips })}
-              style={{ width: 80 }}
-            />
+            <Text style={{ fontSize: 12 }}>使用芯片数</Text>
+            <Tag color="green" style={{ fontSize: 11 }}>
+              {maxChips} 个
+            </Tag>
           </div>
           <div style={configRowStyle}>
             <Text style={{ fontSize: 12 }}>优化目标</Text>
             <Tag color="blue" style={{ fontSize: 11 }}>
-              TPS per Chip (单芯片吞吐量)
+              TPS per Chip
             </Tag>
           </div>
 
@@ -182,9 +172,9 @@ export const ParallelismConfigPanel: React.FC<ParallelismConfigPanelProps> = ({
                 <div style={{ display: 'grid', gap: 6, fontSize: 11 }}>
                   {/* 并行模式说明 */}
                   <div style={{ marginBottom: 4, paddingBottom: 4, borderBottom: '1px dashed #d9d9d9' }}>
-                    <Tag color="green" style={{ fontSize: 10, margin: 0 }}>
+                    {/* <Tag color="green" style={{ fontSize: 10, margin: 0 }}>
                       DS_TPU 模式
-                    </Tag>
+                    </Tag> */}
                     <Text type="secondary" style={{ fontSize: 10, marginLeft: 8 }}>
                       DP × TP {isMoE ? '× EP' : ''}（无 PP/SP）
                     </Text>
@@ -192,18 +182,22 @@ export const ParallelismConfigPanel: React.FC<ParallelismConfigPanelProps> = ({
 
                   {/* TP 约束 */}
                   <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <Text style={{ fontSize: 11 }}>TP 范围</Text>
+                    <Text style={{ fontSize: 11 }}>TP 约束</Text>
                     <Text type="secondary" style={{ fontSize: 11 }}>
-                      1 ~ {maxTP} (需整除 {modelConfig.num_attention_heads} 个头)
+                      ≤ min(128, 头数{modelConfig.num_attention_heads}, Board内芯片数{hardwareConfig.node.chips_per_node}) = {maxTP}
+                      <span style={{ margin: '0 12px' }}>&</span>
+                      头数 {modelConfig.num_attention_heads} % TP == 0
                     </Text>
                   </div>
 
                   {/* EP 约束 - 仅 MoE */}
                   {isMoE && (
                     <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                      <Text style={{ fontSize: 11 }}>EP 范围</Text>
+                      <Text style={{ fontSize: 11 }}>EP 约束</Text>
                       <Text type="secondary" style={{ fontSize: 11 }}>
-                        1 ~ {maxEP} (需整除 {modelConfig.moe_config?.num_experts} 个专家)
+                        ≤ 专家数 {maxEP}
+                        <span style={{ margin: '0 12px' }}>&</span>
+                        专家数 {maxEP} % EP == 0
                       </Text>
                     </div>
                   )}
@@ -211,28 +205,30 @@ export const ParallelismConfigPanel: React.FC<ParallelismConfigPanelProps> = ({
                   {/* moe_tp 约束 - 仅 MoE */}
                   {isMoE && (
                     <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                      <Text style={{ fontSize: 11 }}>MoE_TP 范围</Text>
+                      <Text style={{ fontSize: 11 }}>MoE_TP 约束</Text>
                       <Text type="secondary" style={{ fontSize: 11 }}>
-                        1 ~ {maxTP} (需整除 {modelConfig.num_attention_heads} 个头)
+                        ≤ min(128, 头数{modelConfig.num_attention_heads}, Board内芯片数{hardwareConfig.node.chips_per_node}) = {maxTP}
+                        <span style={{ margin: '0 12px' }}>&</span>
+                        头数 {modelConfig.num_attention_heads} % MoE_TP == 0
                       </Text>
                     </div>
                   )}
 
                   {/* MoE 约束 */}
                   {isMoE && (
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                       <Text style={{ fontSize: 11 }}>MoE 约束</Text>
-                      <Tag color="blue" style={{ fontSize: 10, margin: 0 }}>
-                        dp × tp = moe_tp × ep
-                      </Tag>
+                      <Text type="secondary" style={{ fontSize: 11 }}>
+                        DP × TP = MoE_TP × EP
+                      </Text>
                     </div>
                   )}
 
-                  {/* 节点约束 */}
+                  {/* Board 约束 */}
                   <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <Text style={{ fontSize: 11 }}>节点内芯片</Text>
+                    <Text style={{ fontSize: 11 }}>Board 内芯片数量</Text>
                     <Text type="secondary" style={{ fontSize: 11 }}>
-                      {hardwareConfig.node.chips_per_node} 个/节点
+                      {hardwareConfig.node.chips_per_node} 个/Board
                     </Text>
                   </div>
 

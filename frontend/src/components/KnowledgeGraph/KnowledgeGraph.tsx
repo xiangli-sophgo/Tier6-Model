@@ -2,14 +2,12 @@
  * 知识网络可视化组件
  * 使用 react-force-graph 实现高性能力导向布局
  */
-import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
+import React, { useState, useRef, useCallback, useMemo } from 'react'
 import { Input, Tag, Button, Typography, Switch } from 'antd'
 import { SearchOutlined, ReloadOutlined, ApartmentOutlined, DragOutlined } from '@ant-design/icons'
 import ForceGraph2D, { ForceGraphMethods, NodeObject, LinkObject } from 'react-force-graph-2d'
 import {
-  KnowledgeRelation,
   KnowledgeGraphData,
-  KnowledgeNode,
   KnowledgeCategory,
   CATEGORY_COLORS,
   CATEGORY_NAMES,
@@ -47,15 +45,21 @@ export const KnowledgeGraph: React.FC = () => {
   const {
     knowledgeHighlightedNodeId: highlightedNodeId,
     knowledgeVisibleCategories: visibleCategories,
+    knowledgeNodes: cachedNodes,
+    knowledgeViewBox: _cachedViewBox,
     addKnowledgeSelectedNode,
     clearKnowledgeHighlight,
     setKnowledgeVisibleCategories: setVisibleCategories,
     resetKnowledgeCategories,
   } = ui
 
+  // 从原始数据获取关系
+  const allRelations = useMemo(() => {
+    const data = knowledgeData as KnowledgeGraphData
+    return data.relations
+  }, [])
+
   // 本地状态
-  const [allNodes, setAllNodes] = useState<KnowledgeNode[]>([])
-  const [allRelations, setAllRelations] = useState<KnowledgeRelation[]>([])
   const [hoveredNode, setHoveredNode] = useState<GraphNode | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
   const [enableDrag, setEnableDrag] = useState(false)
@@ -63,12 +67,14 @@ export const KnowledgeGraph: React.FC = () => {
   // Refs
   const graphRef = useRef<ForceGraphMethods<GraphNode, GraphLink>>()
 
-  // 加载数据
-  useEffect(() => {
+  // 获取节点列表 - 优先使用预初始化的缓存，否则从原始数据加载
+  const allNodes = useMemo(() => {
+    if (cachedNodes.length > 0) {
+      return cachedNodes
+    }
     const data = knowledgeData as KnowledgeGraphData
-    setAllNodes(data.nodes)
-    setAllRelations(data.relations)
-  }, [])
+    return data.nodes
+  }, [cachedNodes])
 
   // 计算每个节点的连接数（度数）
   const nodeDegrees = useMemo(() => {

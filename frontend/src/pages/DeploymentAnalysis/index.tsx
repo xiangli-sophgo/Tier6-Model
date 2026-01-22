@@ -4,7 +4,7 @@
  */
 
 import React from 'react'
-import { Row, Col, Card, Spin, Typography, Alert, Progress, Button } from 'antd'
+import { Card, Spin, Typography, Alert, Progress, Button } from 'antd'
 import {
   LoadingOutlined,
   CheckCircleOutlined,
@@ -26,7 +26,7 @@ export const DeploymentAnalysis: React.FC = () => {
   const onCancelEvaluation = analysis.deploymentAnalysisData?.onCancelEvaluation
 
   return (
-    <div style={{ height: '100%', display: 'flex', flexDirection: 'column', background: '#fafafa' }}>
+    <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
       {/* 标题栏 */}
       <div
         style={{
@@ -46,15 +46,15 @@ export const DeploymentAnalysis: React.FC = () => {
       </div>
 
       {/* 主内容区 */}
-      <div style={{ flex: 1, overflow: 'auto', padding: 24 }}>
-        <div style={{ maxWidth: 1400, margin: '0 auto' }}>
-          {/* 配置面板 - 暂时保持原有布局，待后续重构 */}
-          <div style={{ padding: 16, background: '#fff', borderRadius: 8 }}>
+      <div style={{ flex: 1, overflow: 'auto', padding: 24, background: '#fff' }}>
+        <div>
+          {/* 配置面板 */}
+          <div>
             <DeploymentAnalysisPanel
               topology={topology.topology}
               onTrafficResultChange={analysis.setTrafficResult}
               onAnalysisDataChange={analysis.setDeploymentAnalysisData}
-              rackConfig={topology.rackConfig}
+              rackConfig={topology.rackConfig || undefined}
               podCount={topology.podCount}
               racksPerPod={topology.racksPerPod}
               history={analysis.analysisHistory}

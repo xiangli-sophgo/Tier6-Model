@@ -32,6 +32,39 @@ export interface AnalysisHistoryItem {
   hardwareConfig: HardwareConfig
 }
 
+// 分析任务（轻量级，用于任务列表）
+export interface AnalysisTask {
+  id: string                                    // 唯一ID (uuid，与后端 task_id 一致)
+  status: 'running' | 'completed' | 'failed' | 'cancelled'
+  startTime: number                             // 开始时间戳
+  endTime?: number                              // 结束时间戳
+
+  // 实验信息
+  experimentName?: string                       // 实验名称（用于跳转到结果管理页面）
+
+  // 配置摘要
+  modelName: string
+  benchmarkName?: string                        // Benchmark描述 (如: "B=64, Seq=1024/4096")
+  parallelism: ParallelismStrategy
+  mode: 'manual' | 'auto'
+  chips: number
+
+  // 结果摘要（完成时填充）
+  score?: number
+  ttft?: number                                 // ms
+  tpot?: number                                 // ms/token
+  throughput?: number                           // tokens/s
+  mfu?: number                                  // Model FLOPs Utilization (0-1)
+  mbu?: number                                  // Memory Bandwidth Utilization (0-1)
+  error?: string                                // 失败原因
+
+  // 进度（自动搜索模式）
+  progress?: { current: number; total: number }
+
+  // 关联的历史记录ID（完成后自动保存到历史记录）
+  historyId?: string
+}
+
 // 视图模式：历史列表（第一层） 或 结果详情（第二层）
 export type AnalysisViewMode = 'history' | 'detail'
 
@@ -207,7 +240,7 @@ export interface ConfigPanelProps {
   // 布局相关
   layoutType?: LayoutType
   onLayoutTypeChange?: (type: LayoutType) => void
-  viewMode?: '3d' | 'topology' | 'analysis' | 'knowledge'
+  viewMode?: '3d' | 'topology' | 'knowledge'
   // Switch 3D显示配置
   switchDisplayConfig?: SwitchDisplayConfig
   onSwitchDisplayConfigChange?: (config: SwitchDisplayConfig) => void
@@ -231,6 +264,7 @@ export interface ConfigPanelProps {
 
 // localStorage缓存key
 export const CONFIG_CACHE_KEY = 'tier6_topology_config_cache'
+export const ANALYSIS_TASKS_KEY = 'tier6_analysis_tasks'
 
 // 默认配置
 export const DEFAULT_BOARD_CONFIGS: BoardConfigs = {
@@ -289,4 +323,31 @@ export const saveCachedConfig = (config: {
   } catch (error) {
     console.error('缓存配置失败:', error)
   }
+}
+
+// 从localStorage加载分析任务列表
+export const loadAnalysisTasks = (): AnalysisTask[] => {
+  try {
+    const cached = localStorage.getItem(ANALYSIS_TASKS_KEY)
+    if (cached) {
+      return JSON.parse(cached)
+    }
+  } catch (error) {
+    console.error('加载分析任务失败:', error)
+  }
+  return []
+}
+
+// 保存分析任务列表到localStorage
+export const saveAnalysisTasks = (tasks: AnalysisTask[]) => {
+  try {
+    localStorage.setItem(ANALYSIS_TASKS_KEY, JSON.stringify(tasks))
+  } catch (error) {
+    console.error('保存分析任务失败:', error)
+  }
+}
+
+// 生成唯一ID
+export const generateTaskId = (): string => {
+  return `task_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`
 }

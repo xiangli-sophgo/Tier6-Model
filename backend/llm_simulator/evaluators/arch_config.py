@@ -92,9 +92,9 @@ class CommunicationLatency:
 
     @property
     def comm_start_overhead_us(self) -> float:
-        """通信操作启动开销 (start_lat)
+        """AllReduce 通信启动开销 (start_lat)
 
-        动态计算公式 (对齐 DS_TPU):
+        动态计算公式:
         start_lat = 2*c2c_lat + ddr_r_lat + ddr_w_lat + noc_lat + 2*d2d_lat
 
         返回值单位：微秒 (us)
@@ -105,6 +105,28 @@ class CommunicationLatency:
             self.memory_write_latency_us +
             self.noc_latency_us +
             2 * self.die_to_die_latency_us
+        )
+
+    def dispatch_combine_start_lat(self, switch_delay_us: float, cable_delay_us: float) -> float:
+        """Dispatch/Combine 通信启动开销 (start_lat)
+
+        动态计算公式:
+        start_lat = 2*c2c_lat + ddr_r_lat + ddr_w_lat + noc_lat + 2*d2d_lat + 2*switch_delay + 2*cable_delay
+
+        Args:
+            switch_delay_us: 交换机延迟 (us)
+            cable_delay_us: 线缆延迟 (us)
+
+        返回值单位：微秒 (us)
+        """
+        return (
+            2 * self.chip_to_chip_us +
+            self.memory_read_latency_us +
+            self.memory_write_latency_us +
+            self.noc_latency_us +
+            2 * self.die_to_die_latency_us +
+            2 * switch_delay_us +
+            2 * cable_delay_us
         )
 
 

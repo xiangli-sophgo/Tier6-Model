@@ -582,14 +582,41 @@ async def get_experiment_details(experiment_id: int, db: Session = Depends(get_d
         "created_at": experiment.created_at.isoformat() if experiment.created_at else None,
         "tasks": [
             {
+                "id": task.id,
                 "task_id": task.task_id,
+                "experiment_id": task.experiment_id,
                 "status": task.status.value,
                 "progress": task.progress,
+                "message": task.message,
+                "error": task.error,
                 "created_at": task.created_at.isoformat() if task.created_at else None,
+                "started_at": task.started_at.isoformat() if task.started_at else None,
+                "completed_at": task.completed_at.isoformat() if task.completed_at else None,
+                "search_mode": task.search_mode,
+                "manual_parallelism": task.manual_parallelism,
+                "search_constraints": task.search_constraints,
+                "search_stats": task.search_stats,
             }
             for task in tasks
         ]
     }
+
+
+@app.delete("/api/evaluation/experiments/{experiment_id}")
+async def delete_experiment(experiment_id: int, db: Session = Depends(get_db)):
+    """删除实验及其所有任务和结果"""
+    experiment = db.query(Experiment).filter(Experiment.id == experiment_id).first()
+    if not experiment:
+        raise HTTPException(status_code=404, detail=f"实验不存在: {experiment_id}")
+
+    try:
+        # 删除实验（级联删除任务和结果）
+        db.delete(experiment)
+        db.commit()
+        return {"message": f"实验 '{experiment.name}' 已删除"}
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"删除失败: {str(e)}")
 
 
 # ============================================

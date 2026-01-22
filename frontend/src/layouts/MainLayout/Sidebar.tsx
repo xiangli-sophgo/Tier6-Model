@@ -1,19 +1,17 @@
 /**
  * 左侧导航栏组件
+ * 使用全局视角模式：点击菜单项调用 setViewMode 而不是路由导航
  */
 
 import React, { useState } from 'react'
-import { Layout, Menu, Button } from 'antd'
-import { useNavigate, useLocation } from 'react-router-dom'
+import { Layout, Menu } from 'antd'
+import { useWorkbench } from '@/contexts/WorkbenchContext'
 import {
   DashboardOutlined,
   ApartmentOutlined,
   ThunderboltOutlined,
   DatabaseOutlined,
-  BarChartOutlined,
   PartitionOutlined,
-  LeftOutlined,
-  RightOutlined,
 } from '@ant-design/icons'
 import type { MenuProps } from 'antd'
 
@@ -21,56 +19,42 @@ const { Sider } = Layout
 
 type MenuItem = Required<MenuProps>['items'][number]
 
-// 菜单项配置
+// 菜单项配置 - 使用 viewMode 值作为 key
 const menuItems: MenuItem[] = [
   {
-    key: '/',
+    key: 'dashboard',
     icon: <DashboardOutlined />,
-    label: '首页',
+    label: '概览',
   },
   {
-    key: '/topology',
+    key: 'topology',
     icon: <ApartmentOutlined />,
     label: '互联拓扑',
   },
   {
-    key: '/deployment',
+    key: 'deployment',
     icon: <ThunderboltOutlined />,
     label: '部署分析',
   },
   {
-    key: '/results',
+    key: 'results',
     icon: <DatabaseOutlined />,
-    label: '结果汇总',
+    label: '结果管理',
   },
   {
-    key: '/analysis',
-    icon: <BarChartOutlined />,
-    label: '结果分析',
-  },
-  {
-    key: '/knowledge',
+    key: 'knowledge',
     icon: <PartitionOutlined />,
     label: '知识网络',
   },
 ]
 
 export const Sidebar: React.FC = () => {
-  const navigate = useNavigate()
-  const location = useLocation()
+  const { ui } = useWorkbench()
   const [collapsed, setCollapsed] = useState(false)
 
-  // 获取当前激活的菜单项
-  const getSelectedKeys = () => {
-    const path = location.pathname
-    // 如果是详情页（如 /analysis/xxx），则高亮父级菜单
-    if (path.startsWith('/analysis/')) return ['/analysis']
-    if (path.startsWith('/results/')) return ['/results']
-    return [path]
-  }
-
   const handleMenuClick: MenuProps['onClick'] = (e) => {
-    navigate(e.key)
+    const mode = e.key as 'dashboard' | 'topology' | 'deployment' | 'results' | 'knowledge' | '3d'
+    ui.setViewMode(mode)
   }
 
   return (
@@ -79,7 +63,7 @@ export const Sidebar: React.FC = () => {
       collapsed={collapsed}
       onCollapse={setCollapsed}
       trigger={null}
-      width={150}
+      width={180}
       collapsedWidth={80}
       style={{
         overflow: 'hidden',
@@ -89,6 +73,7 @@ export const Sidebar: React.FC = () => {
         left: 0,
         display: 'flex',
         flexDirection: 'column',
+        background: '#f0f0f0',
       }}
       theme="light"
     >
@@ -101,6 +86,7 @@ export const Sidebar: React.FC = () => {
           justifyContent: 'center',
           borderBottom: '1px solid #f0f0f0',
           flexShrink: 0,
+          background: '#f0f0f0',
         }}
       >
         <div
@@ -122,27 +108,28 @@ export const Sidebar: React.FC = () => {
       </div>
 
       {/* 导航菜单 */}
-      <div style={{ flex: 1, overflow: 'auto' }}>
+      <div style={{ flex: 1, overflow: 'auto', background: '#f0f0f0' }}>
         <Menu
           mode="inline"
-          selectedKeys={getSelectedKeys()}
+          selectedKeys={[ui.viewMode]}
           items={menuItems}
           onClick={handleMenuClick}
-          style={{ borderRight: 0 }}
+          style={{ borderRight: 0, background: '#f0f0f0' }}
         />
       </div>
 
       {/* 底部固定区域：版本号 + 折叠按钮 */}
-      <div style={{ flexShrink: 0 }}>
+      <div style={{ flexShrink: 0, background: '#f0f0f0' }}>
         {/* 版本号区域 */}
         <div
           style={{
-            height: 1250,
+            height: 1300,
             borderTop: '1px solid #f0f0f0',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
             padding: collapsed ? '0 8px' : '0 16px',
+            background: '#f0f0f0',
           }}
         >
           {!collapsed ? (

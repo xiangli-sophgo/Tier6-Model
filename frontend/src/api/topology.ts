@@ -162,7 +162,7 @@ export async function getLevelConnectionDefaults(): Promise<{
 // 配置保存/加载 API
 // ============================================
 
-export type { SavedConfig } from '../utils/storage';
+export type { SavedConfig, NetworkConfig, SavedChipConfig } from '../utils/storage';
 
 /**
  * 获取所有保存的配置

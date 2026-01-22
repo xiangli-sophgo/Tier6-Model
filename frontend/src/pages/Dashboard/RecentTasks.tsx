@@ -3,7 +3,7 @@
  */
 
 import React from 'react'
-import { Card, List, Tag, Typography, Button, Empty, Space } from 'antd'
+import { Card, List, Tag, Typography, Button, Space } from 'antd'
 import {
   HistoryOutlined,
   ArrowRightOutlined,
@@ -13,7 +13,6 @@ import {
   CloseCircleOutlined,
   ThunderboltOutlined,
 } from '@ant-design/icons'
-import { useNavigate } from 'react-router-dom'
 
 const { Text } = Typography
 
@@ -29,6 +28,7 @@ interface TaskSummary {
 interface RecentTasksProps {
   tasks: TaskSummary[]
   loading: boolean
+  onNavigate: () => void
 }
 
 const getStatusConfig = (status: string) => {
@@ -45,9 +45,7 @@ const getStatusConfig = (status: string) => {
   return statusMap[status] || { color: 'default', text: status, icon: null }
 }
 
-export const RecentTasks: React.FC<RecentTasksProps> = ({ tasks, loading }) => {
-  const navigate = useNavigate()
-
+export const RecentTasks: React.FC<RecentTasksProps> = ({ tasks, loading, onNavigate }) => {
   return (
     <Card
       title={
@@ -59,7 +57,7 @@ export const RecentTasks: React.FC<RecentTasksProps> = ({ tasks, loading }) => {
       extra={
         <Button
           type="link"
-          onClick={() => navigate('/deployment')}
+          onClick={onNavigate}
           style={{ padding: 0 }}
         >
           查看全部 <ArrowRightOutlined />
@@ -75,7 +73,7 @@ export const RecentTasks: React.FC<RecentTasksProps> = ({ tasks, loading }) => {
           <Button
             type="primary"
             style={{ marginTop: 16 }}
-            onClick={() => navigate('/deployment')}
+            onClick={onNavigate}
           >
             开始第一次评估
           </Button>

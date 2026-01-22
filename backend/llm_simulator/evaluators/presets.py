@@ -164,7 +164,10 @@ SG2261_ARCH = _create_sg2261()
 def _create_sg2262() -> AcceleratorMicroArch:
     """
     算能 SG2262 多芯片配置
-    与 DS_TPU SG2262 (原 TPUV1) 配置一致
+    硬件参数:
+    - 算力: 768T FP8, 384T BF16
+    - Memory: 128GB 容量, 12TB/s 总带宽, 2MB LMEM
+    - C2C BW: 448GB/s 单向, 996GB/s 双向
     """
     arch = AcceleratorMicroArch(
         name="SG2262",
@@ -173,15 +176,15 @@ def _create_sg2262() -> AcceleratorMicroArch:
         cube_m=16,
         cube_k=32,
         cube_n=8,
-        sram_size_bytes=2 * 1024 * 1024,  # 2MB
+        sram_size_bytes=2 * 1024 * 1024,  # 2MB LMEM
         sram_utilization=0.45,
-        dram_bandwidth_bytes=3 * 4096e9,  # 3 × 4096 GB/s = 12288 GB/s (峰值带宽)
+        dram_bandwidth_bytes=12e12,  # 12 TB/s (峰值带宽)
         lane_num=16,
         align_bytes=32,
         compute_dma_overlap_rate=0.8,
         eu_num=512,
-        # DS_TPU 通信带宽
-        intra_bw=448e9,  # 448 GB/s
+        # C2C 通信带宽
+        intra_bw=448e9,  # 448 GB/s 单向带宽
         inter_bw=448e9,  # 448 GB/s
         intra_latency_us=1.0,  # SophgoLink 延迟 1 us (粗粒度)
         inter_latency_us=1.0,  # SG2262 芯片间也是高速互联 1 us (粗粒度)
@@ -195,8 +198,8 @@ def _create_sg2262() -> AcceleratorMicroArch:
             # start_lat = 2*0.15 + 0.15 + 0.01 + 0.05 + 2*0.04 = 0.59 us
         ),
     )
-    # SG2262: 768 TFLOPS BF16
-    arch.freq_ghz = arch.compute_freq_from_flops(768e12)
+    # SG2262: 384 TFLOPS BF16 (768 TFLOPS FP8)
+    arch.freq_ghz = arch.compute_freq_from_flops(384e12)
     return arch
 
 
