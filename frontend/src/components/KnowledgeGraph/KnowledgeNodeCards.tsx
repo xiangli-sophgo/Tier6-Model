@@ -110,7 +110,7 @@ export const KnowledgeNodeCards: React.FC<KnowledgeNodeCardsProps> = ({ nodes, o
         }
         size="small"
         style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}
-        bodyStyle={{ flex: 1, overflow: 'auto', minHeight: 0 }}
+        styles={{ body: { flex: 1, overflow: 'auto', minHeight: 0 } }}
         extra={<a onClick={() => onClose(node.id)}>关闭</a>}
       >
         {/* 定义区域 */}

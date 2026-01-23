@@ -28,6 +28,7 @@ export interface EvaluationRequest {
   search_mode: 'manual' | 'auto'
   manual_parallelism?: Record<string, unknown>
   search_constraints?: Record<string, unknown>
+  max_workers?: number // 本任务的最大并发数（默认 4）
 }
 
 export interface TaskSubmitResponse {
@@ -171,5 +172,45 @@ export async function getExperimentDetails(experimentId: number): Promise<{
   tasks: TaskListItem[]
 }> {
   const response = await api.get(`/evaluation/experiments/${experimentId}`)
+  return response.data
+}
+
+// ============================================
+// 执行器配置 API
+// ============================================
+
+export interface ExecutorConfig {
+  max_workers: number
+  running_tasks: number
+  active_tasks: number
+  note: string
+}
+
+export interface ExecutorConfigUpdateRequest {
+  max_workers: number
+}
+
+export interface ExecutorConfigUpdateResponse {
+  success: boolean
+  message: string
+  current_max_workers: number
+  new_max_workers: number
+}
+
+/**
+ * 获取执行器配置
+ */
+export async function getExecutorConfig(): Promise<ExecutorConfig> {
+  const response = await api.get<ExecutorConfig>('/evaluation/config')
+  return response.data
+}
+
+/**
+ * 更新执行器配置
+ */
+export async function updateExecutorConfig(
+  request: ExecutorConfigUpdateRequest
+): Promise<ExecutorConfigUpdateResponse> {
+  const response = await api.put<ExecutorConfigUpdateResponse>('/evaluation/config', request)
   return response.data
 }

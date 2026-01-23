@@ -23,10 +23,11 @@ from .simulator import (
 )
 from .evaluators import ARCH_PRESETS
 from .types import ProtocolConfig, NetworkInfraConfig
-from .database import get_db, init_db
+from .database import get_db, get_db_session, init_db
 from .websocket_manager import ws_manager
 from . import task_manager
 from .db_models import Experiment, EvaluationTask, TaskStatus
+from .config import get_max_global_workers, set_max_global_workers
 
 # 配置日志
 logging.basicConfig(
@@ -84,11 +85,27 @@ class EvaluationRequest(BaseModel):
     manual_parallelism: Optional[dict[str, Any]] = None
     search_constraints: Optional[dict[str, Any]] = None
 
+    # 任务并发配置
+    max_workers: int = 4  # 本任务的最大并发数（默认 4，范围 1-16）
+
 
 class TaskSubmitResponse(BaseModel):
     """任务提交响应"""
     task_id: str
     message: str
+
+
+class ExecutorConfigResponse(BaseModel):
+    """全局资源池配置响应"""
+    max_workers: int  # 全局资源池最大 worker 数量
+    running_tasks: int  # 当前已分配的 worker 总数
+    active_tasks: int  # 活跃任务数量
+    note: str = "修改 max_workers 需要重启服务后生效"
+
+
+class ExecutorConfigUpdateRequest(BaseModel):
+    """全局资源池配置更新请求"""
+    max_workers: int  # 全局资源池最大 worker 数量（1-32）
 
 
 # Benchmark 文件存储目录
@@ -122,9 +139,40 @@ async def startup_event():
     """应用启动时的初始化"""
     logger.info("初始化数据库...")
     init_db()
+
+    logger.info("恢复孤儿任务状态...")
+    _recover_orphaned_tasks()
+
     logger.info("设置 WebSocket 广播回调...")
     task_manager.set_ws_broadcast_callback(ws_manager.broadcast_task_update)
     logger.info("应用启动完成")
+
+
+def _recover_orphaned_tasks():
+    """
+    恢复孤儿任务状态
+
+    服务重启后，将所有处于 RUNNING 或 PENDING 状态的任务标记为 FAILED，
+    避免状态不一致问题。
+    """
+    with get_db_session() as db:
+        orphaned_tasks = db.query(EvaluationTask).filter(
+            EvaluationTask.status.in_([TaskStatus.RUNNING, TaskStatus.PENDING])
+        ).all()
+
+        if orphaned_tasks:
+            logger.info(f"发现 {len(orphaned_tasks)} 个孤儿任务，标记为失败")
+            for task in orphaned_tasks:
+                task.status = TaskStatus.FAILED
+                task.error = "服务重启导致任务中断"
+                if task.started_at and not task.completed_at:
+                    from datetime import datetime
+                    task.completed_at = datetime.utcnow()
+
+            db.commit()
+            logger.info("孤儿任务状态恢复完成")
+        else:
+            logger.info("未发现孤儿任务")
 
 
 @app.get("/")
@@ -447,15 +495,16 @@ async def submit_evaluation(request: EvaluationRequest):
             model_config=request.model,
             inference_config=request.inference,
             search_mode=request.search_mode,
+            max_workers=request.max_workers,
             benchmark_name=request.benchmark_name,
             topology_config_name=request.topology_config_name,
             manual_parallelism=request.manual_parallelism,
             search_constraints=request.search_constraints,
         )
-        logger.info(f"评估任务已提交: {task_id}")
+        logger.info(f"评估任务已提交: {task_id}, max_workers={request.max_workers}")
         return TaskSubmitResponse(
             task_id=task_id,
-            message="评估任务已提交，正在后台运行"
+            message=f"评估任务已提交（使用 {request.max_workers} workers），正在后台运行"
         )
     except Exception as e:
         logger.error(f"提交评估任务失败: {e}", exc_info=True)
@@ -548,6 +597,50 @@ async def list_tasks(
 async def get_running_tasks_endpoint():
     """获取所有运行中的任务"""
     return {"tasks": task_manager.get_running_tasks()}
+
+
+@app.get("/api/evaluation/config", response_model=ExecutorConfigResponse)
+async def get_executor_config():
+    """
+    获取全局资源池配置
+
+    返回全局资源池的配置信息，包括最大 worker 数量和当前分配情况
+    """
+    info = task_manager.get_executor_info()
+    return ExecutorConfigResponse(
+        max_workers=info["max_workers"],
+        running_tasks=info["running_tasks"],
+        active_tasks=info["active_tasks"],
+    )
+
+
+@app.put("/api/evaluation/config")
+async def update_executor_config(request: ExecutorConfigUpdateRequest):
+    """
+    更新全局资源池配置
+
+    更新全局资源池最大 worker 数量，需要重启服务后生效
+
+    Args:
+        request: 配置更新请求，包含 max_workers (1-32)
+
+    Returns:
+        更新后的配置信息
+    """
+    try:
+        set_max_global_workers(request.max_workers)
+        info = task_manager.get_executor_info()
+        return {
+            "success": True,
+            "message": f"全局资源池最大 worker 数量已设置为 {request.max_workers}，重启服务后生效",
+            "current_max_workers": info["max_workers"],  # 当前运行中的配置
+            "new_max_workers": request.max_workers,  # 新配置（重启后生效）
+        }
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"更新配置失败: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"更新配置失败: {str(e)}")
 
 
 @app.get("/api/evaluation/experiments")

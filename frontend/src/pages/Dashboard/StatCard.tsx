@@ -31,7 +31,7 @@ export const StatCard: React.FC<StatCardProps> = ({
       hoverable={!!onClick}
       onClick={onClick}
       style={{ cursor: onClick ? 'pointer' : 'default' }}
-      bodyStyle={{ padding: 20 }}
+      styles={{ body: { padding: 20 } }}
     >
       <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16 }}>
         <div

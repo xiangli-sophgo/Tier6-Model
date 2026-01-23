@@ -82,6 +82,7 @@ import {
 import { BaseCard } from '../../common/BaseCard'
 import { ParallelismConfigPanel } from './ParallelismConfigPanel'
 import { AnalysisResultDisplay } from './AnalysisResultDisplay'
+import { ExecutorConfigPanel } from './ExecutorConfigPanel'
 
 const { Text } = Typography
 
@@ -152,6 +153,9 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
 
   // 实验名称（用户自定义，留空则使用 Benchmark 名称）
   const [experimentName, setExperimentName] = useState<string>('')
+
+  // 任务并发数（本次评估使用的 worker 数量）
+  const [taskMaxWorkers, setTaskMaxWorkers] = useState<number>(4)
 
   // 加载拓扑配置列表
   React.useEffect(() => {
@@ -728,6 +732,7 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
         search_mode: currentParallelismMode,
         manual_parallelism: currentParallelismMode === 'manual' ? currentManualStrategy as unknown as Record<string, unknown> : undefined,
         search_constraints: currentParallelismMode === 'auto' ? { max_chips: maxChips } : undefined,
+        max_workers: taskMaxWorkers,
       })
 
       const backendTaskId = response.task_id
@@ -880,7 +885,7 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
       const msg = error instanceof Error ? error.message : '未知错误'
       message.error(`提交任务失败: ${msg}`)
     }
-  }, [experimentName, modelConfig, inferenceConfig, hardwareConfig, parallelismMode, manualStrategy, maxChips, onAddToHistory, topology, addTask, updateTask, clearPolling])
+  }, [experimentName, taskMaxWorkers, modelConfig, inferenceConfig, hardwareConfig, parallelismMode, manualStrategy, maxChips, onAddToHistory, topology, addTask, updateTask, clearPolling])
 
   // 如果硬件配置未加载，显示提示（不再是加载中）
   if (!hardwareConfig) {
@@ -923,16 +928,33 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
               hardwareConfig={hardwareConfig}
             />
 
-            {/* 实验名称 */}
-            <div style={{ marginTop: 16 }}>
-              <div style={{ marginBottom: 6, fontSize: 13, color: '#666' }}>实验名称</div>
-              <Input
-                placeholder={`留空则使用 Benchmark 名称`}
-                value={experimentName}
-                onChange={(e) => setExperimentName(e.target.value)}
-                allowClear
-              />
-            </div>
+            {/* 实验名称和任务并发数 */}
+            <Row gutter={16} style={{ marginTop: 16 }}>
+              <Col span={14}>
+                <div style={{ marginBottom: 6, fontSize: 13, color: '#666' }}>实验名称</div>
+                <Input
+                  placeholder="留空则使用 Benchmark 名称"
+                  value={experimentName}
+                  onChange={(e) => setExperimentName(e.target.value)}
+                  allowClear
+                />
+              </Col>
+              <Col span={10}>
+                <div style={{ marginBottom: 6, fontSize: 13, color: '#666' }}>
+                  任务并发数
+                  <Tooltip title="本次评估使用的 worker 数量（1-16）">
+                    <span style={{ marginLeft: 4, color: '#8c8c8c', cursor: 'help' }}>ⓘ</span>
+                  </Tooltip>
+                </div>
+                <InputNumber
+                  min={1}
+                  max={16}
+                  value={taskMaxWorkers}
+                  onChange={(value) => setTaskMaxWorkers(value || 4)}
+                  style={{ width: '100%' }}
+                />
+              </Col>
+            </Row>
 
             {/* 运行按钮 */}
             <Button

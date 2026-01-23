@@ -451,6 +451,10 @@ class GEMMEvaluator:
         # 检查缓存
         cache_key = (G, M, K, N, input_dtype, output_dtype)
         if cache_key in self._cache:
+            # 📊 缓存命中日志（仅在 DEBUG 模式下）
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.debug(f"✅ GEMM 缓存命中: ({G}, {M}, {K}, {N})")
             return self._cache[cache_key]
 
         input_bytes = DTYPE_BYTES.get(input_dtype, 2)

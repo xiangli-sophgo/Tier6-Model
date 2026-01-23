@@ -95,7 +95,7 @@ export const Dashboard: React.FC = () => {
           </Space>
         }
         style={{ marginBottom: 24 }}
-        bodyStyle={{ padding: 16 }}
+        styles={{ body: { padding: 16 } }}
       >
         <div style={{ display: 'flex', gap: 16 }}>
           <div style={{ flex: 1 }}>
@@ -138,7 +138,7 @@ export const Dashboard: React.FC = () => {
       </Card>
 
       {/* 最近任务 */}
-      <RecentTasks tasks={recentTasks} loading={loading} onNavigate={() => navigateTo('deployment')} />
+      <RecentTasks tasks={recentTasks} loading={loading} onNavigate={() => navigateTo('results')} />
     </div>
   )
 }

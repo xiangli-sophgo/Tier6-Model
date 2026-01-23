@@ -27,7 +27,7 @@ export const QuickAction: React.FC<QuickActionProps> = ({
       hoverable
       onClick={onClick}
       style={{ textAlign: 'center', borderRadius: 12 }}
-      bodyStyle={{ padding: '24px 16px' }}
+      styles={{ body: { padding: '24px 16px' } }}
     >
       <div
         style={{

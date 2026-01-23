@@ -4,12 +4,13 @@
  */
 
 import React, { useState, useRef } from 'react'
+import { Layout } from 'antd'
 import { KnowledgeGraph, KnowledgeNodeCards } from '@/components/KnowledgeGraph'
 import { useWorkbench } from '@/contexts/WorkbenchContext'
 
 export const Knowledge: React.FC = () => {
-  const { ui } = useWorkbench()
-  const [cardWidth, setCardWidth] = useState(320)
+  const { knowledge } = useWorkbench()
+  const [cardWidth, setCardWidth] = useState(400)  // 增加默认宽度 320 -> 400
   const [isDragging, setIsDragging] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
 
@@ -47,13 +48,15 @@ export const Knowledge: React.FC = () => {
   }, [isDragging])
 
   return (
-    <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
+    <Layout style={{ height: '100%', width: '100%', background: '#fff', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
       {/* 标题栏 */}
       <div
         style={{
+          width: '100%',
           padding: '16px 24px',
           borderBottom: '1px solid #f0f0f0',
           background: '#fff',
+          flexShrink: 0
         }}
       >
         <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
@@ -66,12 +69,26 @@ export const Knowledge: React.FC = () => {
         </div>
       </div>
 
-      {/* 内容区 - 左侧卡片 + 右侧知识图谱 */}
-      <div ref={containerRef} style={{ flex: 1, overflow: 'hidden', display: 'flex' }}>
-        {/* 左侧信息卡片 */}
-        {ui.knowledgeSelectedNodes.length > 0 && (
+      {/* 工具栏 - 独立层级，横跨整个宽度，在卡片上方 */}
+      <div style={{ width: '100%', minWidth: 0, flexShrink: 0, overflow: 'hidden' }}>
+        <KnowledgeGraph renderMode="toolbar-only" />
+      </div>
+
+      {/* 内容区 - 知识图谱画布 + 悬浮卡片 */}
+      <div ref={containerRef} style={{ flex: 1, overflow: 'hidden', position: 'relative' }}>
+        {/* 知识图谱画布 - 占满整个容器 */}
+        <div style={{ width: '100%', height: '100%' }}>
+          <KnowledgeGraph renderMode="canvas-only" />
+        </div>
+
+        {/* 左侧悬浮信息卡片 */}
+        {knowledge.knowledgeSelectedNodes.length > 0 && (
           <>
             <div style={{
+              position: 'absolute',
+              left: 0,
+              top: 0,
+              bottom: 0,
               width: cardWidth,
               borderRight: '1px solid #f0f0f0',
               overflow: 'hidden',
@@ -80,11 +97,13 @@ export const Knowledge: React.FC = () => {
               background: '#fff',
               minWidth: '200px',
               maxWidth: '600px',
+              boxShadow: '2px 0 8px rgba(0,0,0,0.1)',
+              zIndex: 10
             }}>
               <KnowledgeNodeCards
-                nodes={ui.knowledgeSelectedNodes}
-                onClose={ui.removeKnowledgeSelectedNode}
-                onNodeClick={ui.addKnowledgeSelectedNode}
+                nodes={knowledge.knowledgeSelectedNodes}
+                onClose={knowledge.removeKnowledgeSelectedNode}
+                onNodeClick={knowledge.addKnowledgeSelectedNode}
               />
             </div>
 
@@ -102,21 +121,21 @@ export const Knowledge: React.FC = () => {
                 }
               }}
               style={{
+                position: 'absolute',
+                left: cardWidth,
+                top: 0,
+                bottom: 0,
                 width: 6,
                 background: isDragging ? '#1890ff' : 'transparent',
                 cursor: 'col-resize',
                 transition: isDragging ? 'none' : 'background 0.2s',
                 userSelect: 'none',
+                zIndex: 11
               }}
             />
           </>
         )}
-
-        {/* 右侧知识图谱 */}
-        <div style={{ flex: 1, overflow: 'hidden' }}>
-          <KnowledgeGraph />
-        </div>
       </div>
-    </div>
+    </Layout>
   )
 }

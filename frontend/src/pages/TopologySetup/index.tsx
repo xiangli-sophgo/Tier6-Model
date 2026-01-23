@@ -1,14 +1,17 @@
 /**
  * 拓扑设置页面
  * 包含 3D 视图、拓扑图视图、配置面板等
+ * 3D 视图使用懒加载优化初始包体积
  */
 
-import React, { useCallback, useState, useRef, useEffect } from 'react'
+import React, { useCallback, useState, useRef, useEffect, lazy, Suspense } from 'react'
 import { Layout, Spin, Card, Descriptions, Tag, Collapse } from 'antd'
-import { Scene3D } from '@/components/Scene3D'
 import { TopologyGraph, NodeDetail } from '@/components/TopologyGraph'
 import { ConfigPanel } from '@/components/ConfigPanel'
 import { useWorkbench } from '@/contexts/WorkbenchContext'
+
+// 懒加载 Scene3D 组件（只在需要时加载 Three.js 相关代码）
+const Scene3D = lazy(() => import('@/components/Scene3D').then(module => ({ default: module.Scene3D })))
 
 const { Sider, Content } = Layout
 
@@ -410,28 +413,49 @@ export const TopologySetup: React.FC = () => {
                 justifyContent: 'center',
                 alignItems: 'center',
                 height: '100%',
+                flexDirection: 'column',
+                gap: 12,
               }}
             >
-              <Spin size="large" tip="加载中..." />
+              <Spin size="large" />
+              <div style={{ color: '#666', fontSize: 14 }}>加载中...</div>
             </div>
           ) : viewMode === '3d' ? (
-            <Scene3D
-              topology={topology.topology}
-              viewState={navigation.viewState}
-              breadcrumbs={navigation.breadcrumbs}
-              currentPod={navigation.currentPod}
-              currentRack={navigation.currentRack}
-              currentBoard={navigation.currentBoard}
-              onNavigate={navigation.navigateTo}
-              onNavigateToPod={navigation.navigateToPod}
-              onNavigateToRack={navigation.navigateToRack}
-              onNavigateBack={navigation.navigateBack}
-              onBreadcrumbClick={navigation.navigateToBreadcrumb}
-              canGoBack={navigation.canGoBack}
-              onNodeSelect={handleScene3DNodeSelect}
-              viewMode={viewMode}
-              onViewModeChange={setViewMode}
-            />
+            <Suspense
+              fallback={
+                <div
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'center',
+                    alignItems: 'center',
+                    height: '100%',
+                    flexDirection: 'column',
+                    gap: 12,
+                  }}
+                >
+                  <Spin size="large" />
+                  <div style={{ color: '#666', fontSize: 14 }}>正在加载 3D 视图...</div>
+                </div>
+              }
+            >
+              <Scene3D
+                topology={topology.topology}
+                viewState={navigation.viewState}
+                breadcrumbs={navigation.breadcrumbs}
+                currentPod={navigation.currentPod}
+                currentRack={navigation.currentRack}
+                currentBoard={navigation.currentBoard}
+                onNavigate={navigation.navigateTo}
+                onNavigateToPod={navigation.navigateToPod}
+                onNavigateToRack={navigation.navigateToRack}
+                onNavigateBack={navigation.navigateBack}
+                onBreadcrumbClick={navigation.navigateToBreadcrumb}
+                canGoBack={navigation.canGoBack}
+                onNodeSelect={handleScene3DNodeSelect}
+                viewMode={viewMode}
+                onViewModeChange={setViewMode}
+              />
+            </Suspense>
           ) : (
             <TopologyGraph
               visible={true}

@@ -17,9 +17,10 @@ import {
   CAMERA_PRESETS,
   KEYBOARD_SHORTCUTS,
 } from '../../types'
-import { sharedGeometries, sharedBasicMaterials, CameraAnimationTarget, NodePositions } from './shared'
+import { sharedGeometries, sharedBasicMaterials, CameraAnimationTarget } from './shared'
 import { CameraController } from './materials'
 import { BoardModel, SwitchModel, PodLabel, AnimatedRack } from './models'
+import { useNodePositions } from '../../hooks/useNodePositions'
 
 // ============================================
 // Props 接口定义
@@ -67,98 +68,11 @@ const UnifiedScene: React.FC<{
   const [hoveredPodId, setHoveredPodId] = useState<string | null>(null)
   const [hoveredRackId, setHoveredRackId] = useState<string | null>(null)
 
-  const rackSpacingX = 1.5
-  const rackSpacingZ = 2
   const { uHeight, totalU, width: rackWidth, depth: rackDepth } = RACK_DIMENSIONS
   const rackHeight = totalU * uHeight
 
-  // 计算Pod布局参数
-  const { podSpacingX, podSpacingZ, podCols } = useMemo(() => {
-    const firstPod = topology.pods[0]
-    if (!firstPod) return { podSpacingX: 6, podSpacingZ: 4, podCols: 2 }
-
-    const rackCols = firstPod.grid_size[1]
-    const rackRows = firstPod.grid_size[0]
-    const podWidth = rackCols * rackSpacingX + 2
-    const podDepth = rackRows * rackSpacingZ + 1
-
-    const totalPods = topology.pods.length
-    let cols: number
-    if (totalPods <= 2) cols = totalPods
-    else if (totalPods <= 4) cols = 2
-    else if (totalPods <= 6) cols = 3
-    else if (totalPods <= 9) cols = 3
-    else cols = 4
-
-    return { podSpacingX: podWidth, podSpacingZ: podDepth, podCols: cols }
-  }, [topology.pods])
-
-  // 计算所有节点的世界坐标
-  const nodePositions = useMemo((): NodePositions => {
-    const pods = new Map<string, THREE.Vector3>()
-    const racks = new Map<string, THREE.Vector3>()
-    const boards = new Map<string, THREE.Vector3>()
-
-    // 计算Pod网格位置
-    const getPodGridPosition = (podIndex: number) => {
-      const row = Math.floor(podIndex / podCols)
-      const col = podIndex % podCols
-      return { row, col }
-    }
-
-    // 首先计算所有Rack位置以找出中心
-    let minX = Infinity, maxX = -Infinity
-    let minZ = Infinity, maxZ = -Infinity
-
-    topology.pods.forEach((pod, podIndex) => {
-      const { row, col } = getPodGridPosition(podIndex)
-      const podOffsetX = col * podSpacingX
-      const podOffsetZ = row * podSpacingZ
-      pod.racks.forEach(rack => {
-        const x = podOffsetX + rack.position[1] * rackSpacingX
-        const z = podOffsetZ + rack.position[0] * rackSpacingZ
-        minX = Math.min(minX, x)
-        maxX = Math.max(maxX, x)
-        minZ = Math.min(minZ, z)
-        maxZ = Math.max(maxZ, z)
-      })
-    })
-
-    const centerX = (minX + maxX) / 2
-    const centerZ = (minZ + maxZ) / 2
-
-    // 设置所有节点位置
-    topology.pods.forEach((pod, podIndex) => {
-      const { row, col } = getPodGridPosition(podIndex)
-      const podOffsetX = col * podSpacingX
-      const podOffsetZ = row * podSpacingZ
-
-      let podSumX = 0, podSumZ = 0, podCount = 0
-
-      pod.racks.forEach(rack => {
-        const rackX = podOffsetX + rack.position[1] * rackSpacingX - centerX
-        const rackZ = podOffsetZ + rack.position[0] * rackSpacingZ - centerZ
-        racks.set(rack.id, new THREE.Vector3(rackX, 0, rackZ))
-
-        podSumX += rackX
-        podSumZ += rackZ
-        podCount++
-
-        // 计算Board位置
-        rack.boards.forEach(board => {
-          const boardY = (board.u_position - 1) * uHeight + (board.u_height * uHeight) / 2 - rackHeight / 2
-          boards.set(board.id, new THREE.Vector3(rackX, boardY, rackZ))
-        })
-      })
-
-      // Pod中心
-      if (podCount > 0) {
-        pods.set(pod.id, new THREE.Vector3(podSumX / podCount, 0, podSumZ / podCount))
-      }
-    })
-
-    return { pods, racks, boards }
-  }, [topology, podSpacingX, podSpacingZ, podCols, uHeight, rackHeight])
+  // 使用自定义 hook 计算所有节点的世界坐标
+  const nodePositions = useNodePositions(topology)
 
 
   // 获取节点目标透明度 - 非聚焦内容完全隐藏
@@ -246,8 +160,8 @@ const UnifiedScene: React.FC<{
         position={[10, 15, 10]}
         intensity={1}
         castShadow
-        shadow-mapSize-width={2048}
-        shadow-mapSize-height={2048}
+        shadow-mapSize-width={1024}
+        shadow-mapSize-height={1024}
       />
       <directionalLight position={[-5, 10, -5]} intensity={0.3} />
       <pointLight position={[0, 5, 0]} intensity={0.5} />
@@ -331,6 +245,7 @@ const UnifiedScene: React.FC<{
                     showChips={showChips}
                     interactive={showBoardDetails}
                     targetOpacity={boardOpacity}
+                    focusLevel={focusLevel}
                     onDoubleClick={() => onNavigateToBoard(board.id)}
                     onClick={() => onNodeClick?.('board', board.id, board.label, {
                       'U位置': board.u_position,
@@ -529,6 +444,8 @@ export const Scene3D: React.FC<Scene3DProps> = ({
   const [showKeyboardHelp, setShowKeyboardHelp] = useState(false)
   // 初始相机位置（只用于首次渲染）
   const initialCameraPositionRef = useRef<[number, number, number] | null>(null)
+  // WebGL 上下文状态
+  const [webglContextLost, setWebglContextLost] = useState(false)
 
   // 重置视图（相机位置）
   const handleResetView = useCallback(() => {
@@ -563,95 +480,8 @@ export const Scene3D: React.FC<Scene3DProps> = ({
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [])
 
-  // 计算所有节点的世界坐标（与 UnifiedScene 保持一致）
-  const nodePositions = useMemo(() => {
-    if (!topology) return { pods: new Map(), racks: new Map(), boards: new Map() }
-
-    const rackSpacingX = 1.5
-    const rackSpacingZ = 2
-    const { uHeight, totalU } = RACK_DIMENSIONS
-    const rackHeight = totalU * uHeight
-
-    const pods = new Map<string, THREE.Vector3>()
-    const racks = new Map<string, THREE.Vector3>()
-    const boards = new Map<string, THREE.Vector3>()
-
-    // 计算Pod布局参数
-    const firstPod = topology.pods[0]
-    let podSpacingX = 6, podSpacingZ = 4, podCols = 2
-    if (firstPod) {
-      const rackCols = firstPod.grid_size[1]
-      const rackRows = firstPod.grid_size[0]
-      podSpacingX = rackCols * rackSpacingX + 2
-      podSpacingZ = rackRows * rackSpacingZ + 1
-
-      const totalPods = topology.pods.length
-      if (totalPods <= 2) podCols = totalPods
-      else if (totalPods <= 4) podCols = 2
-      else if (totalPods <= 6) podCols = 3
-      else if (totalPods <= 9) podCols = 3
-      else podCols = 4
-    }
-
-    const getPodGridPosition = (podIndex: number) => {
-      const row = Math.floor(podIndex / podCols)
-      const col = podIndex % podCols
-      return { row, col }
-    }
-
-    // 首先计算所有Rack位置以找出中心
-    let minX = Infinity, maxX = -Infinity
-    let minZ = Infinity, maxZ = -Infinity
-
-    topology.pods.forEach((pod, podIndex) => {
-      const { row, col } = getPodGridPosition(podIndex)
-      const podOffsetX = col * podSpacingX
-      const podOffsetZ = row * podSpacingZ
-      pod.racks.forEach(rack => {
-        const x = podOffsetX + rack.position[1] * rackSpacingX
-        const z = podOffsetZ + rack.position[0] * rackSpacingZ
-        minX = Math.min(minX, x)
-        maxX = Math.max(maxX, x)
-        minZ = Math.min(minZ, z)
-        maxZ = Math.max(maxZ, z)
-      })
-    })
-
-    const centerX = (minX + maxX) / 2
-    const centerZ = (minZ + maxZ) / 2
-
-    // 设置所有节点位置
-    topology.pods.forEach((pod, podIndex) => {
-      const { row, col } = getPodGridPosition(podIndex)
-      const podOffsetX = col * podSpacingX
-      const podOffsetZ = row * podSpacingZ
-
-      let podSumX = 0, podSumZ = 0, podCount = 0
-
-      pod.racks.forEach(rack => {
-        const rackX = podOffsetX + rack.position[1] * rackSpacingX - centerX
-        const rackZ = podOffsetZ + rack.position[0] * rackSpacingZ - centerZ
-        racks.set(rack.id, new THREE.Vector3(rackX, 0, rackZ))
-
-        podSumX += rackX
-        podSumZ += rackZ
-        podCount++
-
-        // 计算Board位置
-        rack.boards.forEach(board => {
-          const boardY = (board.u_position - 1) * uHeight + (board.u_height * uHeight) / 2 - rackHeight / 2
-          boards.set(board.id, new THREE.Vector3(rackX, boardY, rackZ))
-        })
-      })
-
-      // Pod中心
-      if (podCount > 0) {
-        pods.set(pod.id, new THREE.Vector3(podSumX / podCount, 0, podSumZ / podCount))
-      }
-    })
-
-    return { pods, racks, boards }
-  }, [topology])
+  // 使用自定义 hook 计算所有节点的世界坐标
+  const nodePositions = useNodePositions(topology)
 
   // 根据当前视图状态计算相机目标位置和观察点
   const cameraTarget = useMemo((): CameraAnimationTarget => {
@@ -717,7 +547,7 @@ export const Scene3D: React.FC<Scene3DProps> = ({
     // 默认
     const basePreset = CAMERA_PRESETS[viewState.level]
     return { position: new THREE.Vector3(basePreset[0], basePreset[1], basePreset[2]), lookAt: new THREE.Vector3(0, 0, 0) }
-  }, [viewState.path, viewState.level, topology, currentPod, currentRack, currentBoard, nodePositions, resetKey])
+  }, [viewState.path, viewState.level, topology, currentPod, currentRack, currentBoard, nodePositions])
 
   // 记录初始相机位置（只在首次计算cameraTarget时设置）
   if (initialCameraPositionRef.current === null) {
@@ -726,8 +556,47 @@ export const Scene3D: React.FC<Scene3DProps> = ({
 
   return (
     <div style={{ width: '100%', height: '100%', position: 'relative' }}>
+      {/* WebGL 上下文丢失提示 */}
+      {webglContextLost && (
+        <div style={{
+          position: 'absolute',
+          top: '50%',
+          left: '50%',
+          transform: 'translate(-50%, -50%)',
+          zIndex: 1000,
+          background: 'rgba(0, 0, 0, 0.8)',
+          color: '#fff',
+          padding: '20px 32px',
+          borderRadius: 8,
+          textAlign: 'center',
+        }}>
+          <div style={{ fontSize: 16, marginBottom: 12 }}>3D 渲染上下文丢失</div>
+          <div style={{ fontSize: 13, color: '#ccc', marginBottom: 16 }}>
+            GPU 资源可能被其他应用占用
+          </div>
+          <Button onClick={() => window.location.reload()}>刷新页面</Button>
+        </div>
+      )}
+
       {/* 3D Canvas */}
-      <Canvas shadows>
+      <Canvas
+        shadows
+        onCreated={({ gl }) => {
+          // 监听上下文丢失事件
+          gl.domElement.addEventListener('webglcontextlost', (event) => {
+            event.preventDefault()
+            console.error('WebGL 上下文丢失')
+            setWebglContextLost(true)
+          })
+
+          // 监听上下文恢复事件
+          gl.domElement.addEventListener('webglcontextrestored', () => {
+            console.log('WebGL 上下文已恢复')
+            setWebglContextLost(false)
+            setResetKey(k => k + 1) // 触发场景重新渲染
+          })
+        }}
+      >
         {/* PerspectiveCamera只使用初始位置，后续由CameraController控制 */}
         <PerspectiveCamera
           makeDefault

@@ -260,6 +260,7 @@ class SimulationConfig:
     # 新评估器系统配置
     use_precise_evaluator: bool = True  # 使用精确评估器（基于硬件建模）
     evaluation_granularity: str = "fine"  # 评估粒度: coarse（粗粒度）或 fine（细粒度）
+    enable_gemm_prewarm: bool = True  # 启用 GEMM 预热（离线预调优）⭐ 新增
     # 注意: mla_variant 已移至 model.mla_config.variant，从模型配置读取
 
 
@@ -312,13 +313,36 @@ class LLMInferenceSimulator:
                 self.arch = get_arch_preset(chip_type)
             except KeyError:
                 # 如果没有预设，使用默认 SG2260E
-                print(f"警告: 未找到 {chip_type} 的架构预设，使用 SG2260E")
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.warning(f"未找到 {chip_type} 的架构预设，使用 SG2260E")
                 self.arch = get_arch_preset("SG2260E")
+
+            # 创建 GEMM 评估器（全局单例，跨层复用）
+            from .evaluators import GEMMEvaluator
+            self.gemm_evaluator = GEMMEvaluator(self.arch)
+
+            # 🔥 离线预调优：预热常见的 GEMM 形状
+            if self.config.enable_gemm_prewarm:
+                from .gemm_prewarm import prewarm_gemm_evaluator
+                prewarm_gemm_evaluator(
+                    evaluator=self.gemm_evaluator,
+                    hidden_size=model.hidden_size,
+                    intermediate_size=model.intermediate_size,
+                    num_attention_heads=model.num_attention_heads,
+                    num_kv_heads=model.num_kv_heads,
+                    batch_size=inference.batch_size,
+                    input_seq_length=inference.input_seq_length,
+                    output_seq_length=inference.output_seq_length,
+                    mla_config=model.mla_config.__dict__ if model.mla_config else None,
+                    moe_config=model.moe_config.__dict__ if model.moe_config else None,
+                )
 
             # 全局评估缓存（跨层复用）
             self.eval_cache: dict = {}
         else:
             self.arch = None
+            self.gemm_evaluator = None
             self.eval_cache = None
 
         # 解析拓扑
@@ -490,8 +514,8 @@ class LLMInferenceSimulator:
             ReduceScatterEval,
         )
 
-        # 初始化评估器
-        gemm_eval = GEMMEvaluator(self.arch)
+        # 🔑 使用全局评估器（复用缓存）
+        gemm_eval = self.gemm_evaluator
         fa2_eval = FA2Evaluator(self.arch)
         rmsnorm_eval = RMSNormEvaluator(self.arch)
         allreduce_eval = AllReduceEval(self.arch)
@@ -629,32 +653,52 @@ class LLMInferenceSimulator:
         Returns:
             模拟结果
         """
-        start_time = time.time()
+        import logging
+        logger = logging.getLogger(__name__)
 
+        wall_start = time.time()
         current_time = 0.0
 
         # 阶段1: 数据搬运 (H2D)
+        phase_start = time.time()
         if self.config.enable_data_transfer:
             current_time = self._simulate_data_transfer_h2d(current_time)
+        logger.info(f"⏱️  [H2D] 墙上时间: {(time.time() - phase_start)*1000:.2f}ms")
 
         # 阶段2: Prefill 推理
+        phase_start = time.time()
         prefill_end_time = self._simulate_prefill(current_time)
         phase_transition = prefill_end_time
+        prefill_wall_time = (time.time() - phase_start) * 1000
+        logger.info(f"⏱️  [Prefill] 墙上时间: {prefill_wall_time:.2f}ms, 模拟时间: {prefill_end_time:.2f}ms")
 
         # 阶段3: Decode 推理
+        phase_start = time.time()
         decode_end_time = self._simulate_decode(prefill_end_time)
+        decode_wall_time = (time.time() - phase_start) * 1000
+        num_tokens = min(self.config.max_simulated_tokens, self.inference.output_seq_length)
+        logger.info(f"⏱️  [Decode] 墙上时间: {decode_wall_time:.2f}ms ({decode_wall_time/num_tokens:.2f}ms/token), 模拟时间: {decode_end_time - prefill_end_time:.2f}ms")
 
         # 阶段4: 数据收集 (D2H)
+        phase_start = time.time()
         if self.config.enable_data_transfer:
             final_time = self._simulate_data_transfer_d2h(decode_end_time)
         else:
             final_time = decode_end_time
+        logger.info(f"⏱️  [D2H] 墙上时间: {(time.time() - phase_start)*1000:.2f}ms")
 
         # 构建甘特图
+        phase_start = time.time()
         gantt_data = self.gantt_builder.build(phase_transition=phase_transition)
+        logger.info(f"⏱️  [Gantt Build] 墙上时间: {(time.time() - phase_start)*1000:.2f}ms")
 
         # 计算统计信息
+        phase_start = time.time()
         stats = self._compute_stats(final_time)
+        logger.info(f"⏱️  [Stats] 墙上时间: {(time.time() - phase_start)*1000:.2f}ms")
+
+        total_wall_time = (time.time() - wall_start) * 1000
+        logger.info(f"⏱️  [Total] 总墙上时间: {total_wall_time:.2f}ms")
 
         return SimulationResult(
             gantt_chart=gantt_data,
@@ -790,6 +834,9 @@ class LLMInferenceSimulator:
 
     def _simulate_decode(self, start_time: float) -> float:
         """模拟 Decode 阶段"""
+        import logging
+        logger = logging.getLogger(__name__)
+
         current_time = start_time
         num_tokens_to_simulate = min(self.config.max_simulated_tokens, self.inference.output_seq_length)
 
@@ -797,6 +844,7 @@ class LLMInferenceSimulator:
         layers_per_stage = max(1, self.model.num_layers // self.parallelism.pp)
 
         for token_idx in range(num_tokens_to_simulate):
+            token_wall_start = time.time()
             context_length = self.inference.input_seq_length + token_idx + 1
             stage_times = [current_time] * self.parallelism.pp
 
@@ -852,6 +900,10 @@ class LLMInferenceSimulator:
 
             current_time = max(stage_times)
 
+            # 📊 每个token的性能日志
+            token_wall_time = (time.time() - token_wall_start) * 1000
+            logger.info(f"    🔹 Token {token_idx}/{num_tokens_to_simulate}: 墙上时间 {token_wall_time:.2f}ms, 遍历了 {self.model.num_layers} 层")
+
         # 更新统计
         self.decode_stats.total_time = current_time - start_time
 
@@ -891,9 +943,12 @@ class LLMInferenceSimulator:
         """使用精确评估器模拟单层（基于算子）"""
 
         # 构建并评估层
+        layer_wall_start = time.time()
         layer = self._build_layer_for_evaluation(layer_index, num_tokens, context_length, phase)
+        build_time = (time.time() - layer_wall_start) * 1000
 
         # 根据评估粒度决定是否展开所有算子
+        gantt_wall_start = time.time()
         if self.config.evaluation_granularity == "fine":
             # 细粒度：遍历所有计算算子
             for op in layer.comp_ops:
@@ -921,6 +976,14 @@ class LLMInferenceSimulator:
             if total_comm_time > 0:
                 self.gantt_builder.add_comm_task(GanttTaskType.TP_COMM, current_time, total_comm_time, phase, chip_id, pp_stage, layer_index, token_index)
                 current_time += total_comm_time
+
+        gantt_time = (time.time() - gantt_wall_start) * 1000
+
+        # 📊 性能日志（仅在decode的第一个token时打印，避免刷屏）
+        if phase == InferencePhase.DECODE and token_index == 0 and layer_index == 0:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.info(f"      🔸 单层评估: build={build_time:.2f}ms, gantt={gantt_time:.2f}ms, ops={len(layer.comp_ops)}+{len(layer.comm_ops)}")
 
         return current_time
 

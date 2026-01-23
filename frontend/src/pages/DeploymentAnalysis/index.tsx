@@ -4,7 +4,7 @@
  */
 
 import React from 'react'
-import { Card, Spin, Typography, Alert, Progress, Button } from 'antd'
+import { Layout, Card, Spin, Typography, Alert, Progress, Button } from 'antd'
 import {
   LoadingOutlined,
   CheckCircleOutlined,
@@ -26,7 +26,7 @@ export const DeploymentAnalysis: React.FC = () => {
   const onCancelEvaluation = analysis.deploymentAnalysisData?.onCancelEvaluation
 
   return (
-    <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
+    <Layout style={{ height: '100%', background: '#fff' }}>
       {/* 标题栏 */}
       <div
         style={{
@@ -161,6 +161,6 @@ export const DeploymentAnalysis: React.FC = () => {
           )}
         </div>
       </div>
-    </div>
+    </Layout>
   )
 }

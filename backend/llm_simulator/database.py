@@ -4,6 +4,7 @@
 
 import os
 from pathlib import Path
+from contextlib import contextmanager
 from sqlalchemy import create_engine
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, Session
@@ -35,6 +36,26 @@ def get_db() -> Session:
     db = SessionLocal()
     try:
         yield db
+    finally:
+        db.close()
+
+
+@contextmanager
+def get_db_session():
+    """
+    获取数据库会话的上下文管理器（用于非 FastAPI 依赖注入场景）
+
+    使用示例:
+        with get_db_session() as db:
+            task = db.query(EvaluationTask).first()
+            db.commit()
+    """
+    db = SessionLocal()
+    try:
+        yield db
+    except Exception:
+        db.rollback()
+        raise
     finally:
         db.close()
 

@@ -7,40 +7,135 @@
 import uuid
 import traceback
 import logging
+import threading
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, Future
 from typing import Dict, Optional, Callable, Any
 from sqlalchemy.orm import Session
 
 from .db_models import Experiment, EvaluationTask, EvaluationResult, TaskStatus
-from .database import SessionLocal
+from .database import get_db_session
 from .deployment_evaluator import evaluate_deployment
+from .config import get_max_global_workers
 
 logger = logging.getLogger(__name__)
 
-# 全局任务执行器（最多 4 个并发任务）
-_executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="eval_worker")
 
-# 正在运行的任务 Future 映射
-_running_tasks: Dict[str, Future] = {}
+class GlobalWorkerPool:
+    """
+    全局 worker 资源池管理器（单例模式）
 
-# WebSocket 广播回调（由 websocket_manager 设置）
-_ws_broadcast_callback: Optional[Callable[[str, dict], None]] = None
+    管理所有任务共享的 worker 资源分配和释放
+    """
+
+    _instance = None
+    _lock = threading.RLock()
+
+    def __new__(cls):
+        if cls._instance is None:
+            with cls._lock:
+                if cls._instance is None:
+                    cls._instance = super().__new__(cls)
+                    cls._instance._initialized = False
+        return cls._instance
+
+    def __init__(self):
+        if self._initialized:
+            return
+
+        with self._lock:
+            if not self._initialized:
+                self._max_global_workers = get_max_global_workers()
+                logger.info(f"初始化全局资源池，最大 worker 数量: {self._max_global_workers}")
+                self._allocated_workers: Dict[str, int] = {}  # task_id -> allocated_count
+                self._task_executors: Dict[str, ThreadPoolExecutor] = {}  # task_id -> executor
+                self._ws_broadcast_callback: Optional[Callable[[str, dict], None]] = None
+                self._initialized = True
+
+    def set_ws_broadcast_callback(self, callback: Callable[[str, dict], None]):
+        """设置 WebSocket 广播回调"""
+        with self._lock:
+            self._ws_broadcast_callback = callback
+
+    def broadcast_task_update(self, task_id: str, data: dict):
+        """广播任务更新（通过 WebSocket）"""
+        with self._lock:
+            callback = self._ws_broadcast_callback
+
+        if callback:
+            try:
+                callback(task_id, data)
+            except Exception as e:
+                logger.error(f"WebSocket broadcast failed: {e}")
+
+    def allocate_workers(self, task_id: str, requested: int) -> int:
+        """
+        为任务分配 worker 资源
+
+        Args:
+            task_id: 任务 ID
+            requested: 请求的 worker 数量
+
+        Returns:
+            实际分配的 worker 数量（至少为 1）
+        """
+        with self._lock:
+            used = sum(self._allocated_workers.values())
+            available = self._max_global_workers - used
+            allocated = max(1, min(requested, available))
+            self._allocated_workers[task_id] = allocated
+            logger.info(f"Task {task_id}: 请求 {requested} workers, 可用 {available}, 分配 {allocated}")
+            return allocated
+
+    def release_workers(self, task_id: str):
+        """释放任务占用的 worker 资源"""
+        with self._lock:
+            released = self._allocated_workers.pop(task_id, 0)
+            executor = self._task_executors.pop(task_id, None)
+            if executor:
+                executor.shutdown(wait=False)
+            if released > 0:
+                logger.info(f"Task {task_id}: 释放 {released} workers")
+
+    def register_executor(self, task_id: str, executor: ThreadPoolExecutor):
+        """注册任务的 executor（用于后续清理）"""
+        with self._lock:
+            self._task_executors[task_id] = executor
+
+    def get_pool_info(self) -> dict:
+        """获取资源池信息"""
+        with self._lock:
+            return {
+                "max_global_workers": self._max_global_workers,
+                "allocated_workers": sum(self._allocated_workers.values()),
+                "active_tasks": len(self._allocated_workers),
+                "task_workers": dict(self._allocated_workers),  # 每个任务分配的 worker 数量
+            }
+
+
+# 全局单例实例
+_worker_pool = GlobalWorkerPool()
 
 
 def set_ws_broadcast_callback(callback: Callable[[str, dict], None]):
-    """设置 WebSocket 广播回调"""
-    global _ws_broadcast_callback
-    _ws_broadcast_callback = callback
+    """设置 WebSocket 广播回调（兼容性接口）"""
+    _worker_pool.set_ws_broadcast_callback(callback)
 
 
 def _broadcast_task_update(task_id: str, data: dict):
-    """广播任务更新（通过 WebSocket）"""
-    if _ws_broadcast_callback:
-        try:
-            _ws_broadcast_callback(task_id, data)
-        except Exception as e:
-            logger.error(f"WebSocket broadcast failed: {e}")
+    """广播任务更新（内部接口）"""
+    _worker_pool.broadcast_task_update(task_id, data)
+
+
+def get_executor_info() -> dict:
+    """获取资源池信息（公开接口）"""
+    info = _worker_pool.get_pool_info()
+    # 为了向后兼容，保持返回格式
+    return {
+        "max_workers": info["max_global_workers"],
+        "running_tasks": info["allocated_workers"],
+        "active_tasks": info["active_tasks"],
+    }
 
 
 def _update_task_status(
@@ -53,8 +148,7 @@ def _update_task_status(
     top_plan: Optional[dict] = None,
 ):
     """更新任务状态到数据库并广播"""
-    db = SessionLocal()
-    try:
+    with get_db_session() as db:
         task = db.query(EvaluationTask).filter(EvaluationTask.task_id == task_id).first()
         if not task:
             logger.error(f"Task {task_id} not found")
@@ -91,12 +185,6 @@ def _update_task_status(
             "error": error,
             "search_stats": search_stats,
         })
-
-    except Exception as e:
-        logger.error(f"Failed to update task status: {e}")
-        db.rollback()
-    finally:
-        db.close()
 
 
 def _save_results(task_id: str, results: list, db: Session):
@@ -139,6 +227,7 @@ def _save_results(task_id: str, results: list, db: Session):
 
 def _execute_evaluation(
     task_id: str,
+    max_workers: int,
     topology: dict,
     model_config: dict,
     inference_config: dict,
@@ -146,11 +235,17 @@ def _execute_evaluation(
     manual_parallelism: Optional[dict],
     search_constraints: Optional[dict],
 ):
-    """执行评估任务（在工作线程中运行）"""
-    logger.info(f"[Task {task_id}] Starting evaluation")
-    _update_task_status(task_id, TaskStatus.RUNNING, 0.0, "开始评估...")
+    """执行评估任务（在独立线程中运行）"""
+    logger.info(f"[Task {task_id}] Starting evaluation with max_workers={max_workers}")
 
-    db = SessionLocal()
+    # 分配 worker 资源
+    actual_workers = _worker_pool.allocate_workers(task_id, max_workers)
+    _update_task_status(task_id, TaskStatus.RUNNING, 0.0, f"开始评估（使用 {actual_workers} workers）...")
+
+    # 创建任务专属的 ThreadPoolExecutor
+    executor = ThreadPoolExecutor(max_workers=actual_workers, thread_name_prefix=f"task_{task_id[:8]}")
+    _worker_pool.register_executor(task_id, executor)
+
     try:
         # 调用评估函数
         def progress_callback(current: int, total: int, message: str = ""):
@@ -168,8 +263,9 @@ def _execute_evaluation(
         )
 
         # 保存结果
-        if result["top_k_plans"]:
-            _save_results(task_id, result["top_k_plans"], db)
+        with get_db_session() as db:
+            if result["top_k_plans"]:
+                _save_results(task_id, result["top_k_plans"], db)
 
         # 保存搜索统计
         search_stats = result.get("search_stats", {})
@@ -210,9 +306,9 @@ def _execute_evaluation(
         logger.error(f"[Task {task_id}] Failed: {error_msg}")
         _update_task_status(task_id, TaskStatus.FAILED, 0.0, "评估失败", error_msg)
     finally:
-        db.close()
-        # 清理运行中任务映射
-        _running_tasks.pop(task_id, None)
+        # 清理资源
+        executor.shutdown(wait=True)
+        _worker_pool.release_workers(task_id)
 
 
 def create_and_submit_task(
@@ -222,6 +318,7 @@ def create_and_submit_task(
     model_config: dict,
     inference_config: dict,
     search_mode: str,
+    max_workers: int = 4,
     benchmark_name: Optional[str] = None,
     topology_config_name: Optional[str] = None,
     manual_parallelism: Optional[dict] = None,
@@ -237,6 +334,7 @@ def create_and_submit_task(
         model_config: 模型配置
         inference_config: 推理配置
         search_mode: 搜索模式 ('manual' or 'auto')
+        max_workers: 本任务的最大并发数（默认 4）
         benchmark_name: Benchmark 配置文件名称（可选）
         topology_config_name: 拓扑配置文件名称（可选）
         manual_parallelism: 手动并行策略（可选）
@@ -245,8 +343,7 @@ def create_and_submit_task(
     Returns:
         task_id: 任务 UUID
     """
-    db = SessionLocal()
-    try:
+    with get_db_session() as db:
         # 查找或创建实验
         experiment = db.query(Experiment).filter(Experiment.name == experiment_name).first()
         if not experiment:
@@ -281,34 +378,31 @@ def create_and_submit_task(
         experiment.total_tasks += 1
         db.commit()
 
-        # 提交到线程池
-        future = _executor.submit(
-            _execute_evaluation,
-            task_id,
-            topology,
-            model_config,
-            inference_config,
-            search_mode,
-            manual_parallelism,
-            search_constraints,
+        # 启动独立线程执行任务（每个任务创建自己的 ThreadPoolExecutor）
+        thread = threading.Thread(
+            target=_execute_evaluation,
+            args=(
+                task_id,
+                max_workers,
+                topology,
+                model_config,
+                inference_config,
+                search_mode,
+                manual_parallelism,
+                search_constraints,
+            ),
+            daemon=True,
+            name=f"eval_{task_id[:8]}"
         )
-        _running_tasks[task_id] = future
+        thread.start()
 
-        logger.info(f"Task {task_id} submitted to executor")
+        logger.info(f"Task {task_id} started with max_workers={max_workers}")
         return task_id
-
-    except Exception as e:
-        db.rollback()
-        logger.error(f"Failed to create task: {e}")
-        raise
-    finally:
-        db.close()
 
 
 def get_task_status(task_id: str) -> Optional[dict]:
     """获取任务状态"""
-    db = SessionLocal()
-    try:
+    with get_db_session() as db:
         task = db.query(EvaluationTask).filter(EvaluationTask.task_id == task_id).first()
         if not task:
             return None
@@ -325,24 +419,23 @@ def get_task_status(task_id: str) -> Optional[dict]:
             "completed_at": task.completed_at.isoformat() if task.completed_at else None,
             "experiment_name": task.experiment.name,
         }
-    finally:
-        db.close()
 
 
 def cancel_task(task_id: str) -> bool:
-    """取消任务（尽力而为，无法中断正在运行的评估）"""
-    future = _running_tasks.get(task_id)
-    if future and not future.done():
-        future.cancel()
+    """
+    取消任务（尽力而为，无法中断正在运行的评估）
 
+    注意：由于每个任务在独立线程中运行，无法强制中断正在执行的评估。
+    此函数仅标记任务状态为已取消，并释放资源。
+    """
     _update_task_status(task_id, TaskStatus.CANCELLED, 0.0, "任务已取消")
+    _worker_pool.release_workers(task_id)
     return True
 
 
 def get_running_tasks() -> list:
     """获取所有运行中的任务"""
-    db = SessionLocal()
-    try:
+    with get_db_session() as db:
         tasks = db.query(EvaluationTask).filter(
             EvaluationTask.status.in_([TaskStatus.PENDING, TaskStatus.RUNNING])
         ).all()
@@ -357,14 +450,11 @@ def get_running_tasks() -> list:
             }
             for task in tasks
         ]
-    finally:
-        db.close()
 
 
 def get_task_results(task_id: str) -> Optional[dict]:
     """获取任务的完整结果"""
-    db = SessionLocal()
-    try:
+    with get_db_session() as db:
         task = db.query(EvaluationTask).filter(EvaluationTask.task_id == task_id).first()
         if not task:
             return None
@@ -387,14 +477,11 @@ def get_task_results(task_id: str) -> Optional[dict]:
             "infeasible_plans": [r.full_result for r in infeasible_results],
             "search_stats": task.search_stats,
         }
-    finally:
-        db.close()
 
 
 def delete_task(task_id: str) -> bool:
     """删除任务（及其结果）"""
-    db = SessionLocal()
-    try:
+    with get_db_session() as db:
         task = db.query(EvaluationTask).filter(EvaluationTask.task_id == task_id).first()
         if not task:
             return False
@@ -403,9 +490,3 @@ def delete_task(task_id: str) -> bool:
         db.delete(task)
         db.commit()
         return True
-    except Exception as e:
-        db.rollback()
-        logger.error(f"Failed to delete task: {e}")
-        return False
-    finally:
-        db.close()

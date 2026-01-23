@@ -136,7 +136,7 @@ export const TaskStatusCard: React.FC<TaskStatusCardProps> = ({
         borderLeft: `4px solid ${getStatusColor(task.status)}`,
         background: task.status === 'failed' ? '#fff1f0' : '#ffffff',
       }}
-      bodyStyle={{ padding: 12 }}
+      styles={{ body: { padding: 12 } }}
       extra={
         <Space size={4}>
           {onCancel && task.status === 'running' && (

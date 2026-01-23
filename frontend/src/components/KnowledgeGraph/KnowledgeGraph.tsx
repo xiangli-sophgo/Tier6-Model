@@ -2,10 +2,11 @@
  * 知识网络可视化组件
  * 使用 react-force-graph 实现高性能力导向布局
  */
-import React, { useState, useRef, useCallback, useMemo } from 'react'
+import React, { useState, useRef, useCallback, useMemo, useEffect } from 'react'
 import { Input, Tag, Button, Typography, Switch } from 'antd'
 import { SearchOutlined, ReloadOutlined, ApartmentOutlined, DragOutlined } from '@ant-design/icons'
 import ForceGraph2D, { ForceGraphMethods, NodeObject, LinkObject } from 'react-force-graph-2d'
+import * as d3Force from 'd3-force'
 import {
   KnowledgeGraphData,
   KnowledgeCategory,
@@ -31,6 +32,11 @@ interface GraphNode extends NodeObject {
   source?: string
   aliases?: string[]
   degree?: number
+  // react-force-graph 自动添加的属性
+  x?: number
+  y?: number
+  vx?: number
+  vy?: number
 }
 
 interface GraphLink extends LinkObject {
@@ -40,18 +46,26 @@ interface GraphLink extends LinkObject {
   description?: string
 }
 
-export const KnowledgeGraph: React.FC = () => {
-  const { ui } = useWorkbench()
+interface KnowledgeGraphProps {
+  renderMode?: 'toolbar-only' | 'canvas-only'  // 渲染模式：只渲染工具栏或只渲染画布
+}
+
+export const KnowledgeGraph: React.FC<KnowledgeGraphProps> = ({ renderMode }) => {
+  const { knowledge, ui } = useWorkbench()
   const {
     knowledgeHighlightedNodeId: highlightedNodeId,
     knowledgeVisibleCategories: visibleCategories,
     knowledgeNodes: cachedNodes,
     knowledgeViewBox: _cachedViewBox,
+    knowledgeEnableDrag: enableDrag,
+    knowledgeGraphActions,
     addKnowledgeSelectedNode,
     clearKnowledgeHighlight,
     setKnowledgeVisibleCategories: setVisibleCategories,
+    setKnowledgeEnableDrag: setEnableDrag,
+    setKnowledgeGraphActions,
     resetKnowledgeCategories,
-  } = ui
+  } = knowledge
 
   // 从原始数据获取关系
   const allRelations = useMemo(() => {
@@ -62,10 +76,11 @@ export const KnowledgeGraph: React.FC = () => {
   // 本地状态
   const [hoveredNode, setHoveredNode] = useState<GraphNode | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
-  const [enableDrag, setEnableDrag] = useState(false)
+  const [dimensions, setDimensions] = useState({ width: 800, height: 600 })
 
   // Refs
   const graphRef = useRef<ForceGraphMethods<GraphNode, GraphLink>>()
+  const containerRef = useRef<HTMLDivElement>(null)
 
   // 获取节点列表 - 优先使用预初始化的缓存，否则从原始数据加载
   const allNodes = useMemo(() => {
@@ -114,15 +129,10 @@ export const KnowledgeGraph: React.FC = () => {
     return matched
   }, [searchQuery, allNodes])
 
-  // 过滤可见节点
+  // 过滤可见节点 - 保持原始节点引用，避免不必要的对象创建
   const visibleNodes = useMemo(() => {
-    return allNodes
-      .filter(n => visibleCategories.has(n.category))
-      .map(n => ({
-        ...n,
-        degree: nodeDegrees.get(n.id) || 0,
-      }))
-  }, [allNodes, visibleCategories, nodeDegrees])
+    return allNodes.filter(n => visibleCategories.has(n.category))
+  }, [allNodes, visibleCategories])
 
   // 过滤可见边（显示所有可见节点之间的关系）
   const visibleLinks = useMemo(() => {
@@ -139,23 +149,29 @@ export const KnowledgeGraph: React.FC = () => {
       }))
   }, [visibleNodes, allRelations])
 
-  // 构建图数据
-  const graphData = useMemo(() => ({
-    nodes: visibleNodes,
-    links: visibleLinks,
-  }), [visibleNodes, visibleLinks])
-
-  // 获取相邻节点
-  const getAdjacentNodeIds = useCallback((nodeId: string): Set<string> => {
-    const adjacent = new Set<string>()
+  // 预计算相邻节点映射 - 避免在 paintNode 中重复计算
+  const adjacencyMap = useMemo(() => {
+    const map = new Map<string, Set<string>>()
     visibleLinks.forEach(link => {
       const sourceId = typeof link.source === 'object' ? (link.source as GraphNode).id : String(link.source)
       const targetId = typeof link.target === 'object' ? (link.target as GraphNode).id : String(link.target)
-      if (sourceId === nodeId) adjacent.add(targetId)
-      if (targetId === nodeId) adjacent.add(sourceId)
+
+      if (!map.has(sourceId)) map.set(sourceId, new Set())
+      if (!map.has(targetId)) map.set(targetId, new Set())
+
+      map.get(sourceId)!.add(targetId)
+      map.get(targetId)!.add(sourceId)
     })
-    return adjacent
+    return map
   }, [visibleLinks])
+
+  // 构建图数据
+  const graphData = useMemo(() => {
+    return {
+      nodes: visibleNodes,
+      links: visibleLinks,
+    }
+  }, [visibleNodes, visibleLinks])
 
   // 节点点击 - 添加到选中列表
   const handleNodeClick = useCallback((node: GraphNode) => {
@@ -186,23 +202,131 @@ export const KnowledgeGraph: React.FC = () => {
     }
   }, [visibleCategories, setVisibleCategories])
 
-  // 重新布局
+  // 重新布局辅助函数 - 重置节点位置并重新模拟
+  const performRelayout = useCallback(() => {
+    if (!graphRef.current) return
+
+    // 1. 重置所有节点到随机圆形分布
+    const radius = 300
+    graphData.nodes.forEach(node => {
+      // react-force-graph 会在运行时动态添加 x, y, vx, vy 属性
+      const forceNode = node as GraphNode
+      const angle = Math.random() * 2 * Math.PI
+      const r = Math.sqrt(Math.random()) * radius
+      forceNode.x = Math.cos(angle) * r
+      forceNode.y = Math.sin(angle) * r
+      forceNode.vx = 0
+      forceNode.vy = 0
+    })
+
+    // 2. 重新加热模拟
+    graphRef.current.d3ReheatSimulation()
+
+    // 3. 布局稳定后自动适配视角
+    setTimeout(() => {
+      if (graphRef.current) {
+        graphRef.current.zoomToFit(400, 20)
+      }
+    }, 1200)
+  }, [graphData])
+
+  // 重新布局 - 重置节点位置并重新模拟
   const handleRelayout = useCallback(() => {
-    if (graphRef.current) {
-      // 重新加热模拟
-      graphRef.current.d3ReheatSimulation()
+    // 优先使用 Context 中的 actions（适用于 toolbar-only 模式）
+    if (knowledgeGraphActions) {
+      knowledgeGraphActions.relayout()
     }
+    // 回退到本地 graphRef（适用于默认模式）
+    else {
+      performRelayout()
+    }
+  }, [knowledgeGraphActions, performRelayout])
+
+  // 优化力导向布局参数 - 让布局更紧凑
+  useEffect(() => {
+    if (!graphRef.current) return
+
+    const fg = graphRef.current
+
+    // 配置力参数让布局更紧凑
+    fg.d3Force('charge')?.strength(-50)   // 减小斥力，避免节点越来越分散
+    fg.d3Force('link')?.distance(20)      // 连接距离
+    fg.d3Force('center', d3Force.forceCenter(0, 0).strength(0.8))  // 增强中心引力，防止分散
+    fg.d3Force('collision', d3Force.forceCollide(8))  // 适当的碰撞半径
+
+    // 重新加热模拟以应用新参数
+    fg.d3ReheatSimulation()
+  }, [graphData])
+
+  // 监听容器尺寸变化
+  useEffect(() => {
+    if (!containerRef.current) return
+
+    const updateDimensions = () => {
+      if (containerRef.current) {
+        const { clientWidth, clientHeight } = containerRef.current
+        setDimensions({ width: clientWidth, height: clientHeight })
+      }
+    }
+
+    // 初始化尺寸
+    updateDimensions()
+
+    // 使用 ResizeObserver 监听容器尺寸变化
+    const resizeObserver = new ResizeObserver(updateDimensions)
+    resizeObserver.observe(containerRef.current)
+
+    return () => resizeObserver.disconnect()
   }, [])
+
+  // 自动适配视角 - 切换到知识图谱页面时
+  useEffect(() => {
+    if (ui.viewMode === 'knowledge' && graphRef.current && visibleNodes.length > 0) {
+      // 延迟执行，等待布局稳定（200 ticks 需要约 1 秒）
+      const timer = setTimeout(() => {
+        if (graphRef.current) {
+          graphRef.current.zoomToFit(400, 20)  // 400ms 动画，20px padding
+        }
+      }, 1200)  // 1.2 秒延迟，让布局基本稳定
+      return () => clearTimeout(timer)
+    }
+  }, [ui.viewMode, visibleNodes.length])
+
+  // 在 canvas-only 模式下，将 graphRef 的方法注册到 Context
+  useEffect(() => {
+    if (renderMode === 'canvas-only' && graphRef.current) {
+      setKnowledgeGraphActions({
+        reheatSimulation: () => {
+          if (graphRef.current) {
+            graphRef.current.d3ReheatSimulation()
+          }
+        },
+        zoomToFit: (duration = 400, padding = 20) => {
+          if (graphRef.current) {
+            graphRef.current.zoomToFit(duration, padding)
+          }
+        },
+        relayout: performRelayout
+      })
+    }
+
+    // 组件卸载时清除
+    return () => {
+      if (renderMode === 'canvas-only') {
+        setKnowledgeGraphActions(null)
+      }
+    }
+  }, [renderMode, setKnowledgeGraphActions, performRelayout])
 
   // 节点渲染
   const paintNode = useCallback((node: GraphNode, ctx: CanvasRenderingContext2D, _globalScale: number) => {
     const radius = getNodeRadius(node.id!)
     const color = CATEGORY_COLORS[node.category]
 
-    // 判断节点状态
+    // 判断节点状态 - 使用预计算的 adjacencyMap
     const isHighlighted = node.id === highlightedNodeId
     const isHovered = hoveredNode?.id === node.id
-    const isAdjacent = highlightedNodeId ? getAdjacentNodeIds(highlightedNodeId).has(node.id!) : false
+    const isAdjacent = highlightedNodeId ? (adjacencyMap.get(highlightedNodeId)?.has(node.id!) || false) : false
     const isMatched = matchedNodeIds ? matchedNodeIds.has(node.id!) : true
     const isFiltered = matchedNodeIds && !isMatched
     const isDimmed = highlightedNodeId && !isHighlighted && !isAdjacent
@@ -278,7 +402,7 @@ export const KnowledgeGraph: React.FC = () => {
     ctx.globalAlpha = isDimmed ? 0.5 : 1
     ctx.fillText(label, node.x!, node.y!)
     ctx.globalAlpha = 1
-  }, [highlightedNodeId, hoveredNode, matchedNodeIds, getNodeRadius, getAdjacentNodeIds])
+  }, [highlightedNodeId, hoveredNode, matchedNodeIds, getNodeRadius, adjacencyMap])
 
   // 边渲染
   const paintLink = useCallback((link: GraphLink, ctx: CanvasRenderingContext2D, _globalScale: number) => {
@@ -320,96 +444,108 @@ export const KnowledgeGraph: React.FC = () => {
     ctx.globalAlpha = 1
   }, [highlightedNodeId, matchedNodeIds])
 
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: '#fafafa' }}>
-      {/* 工具栏 */}
+  // 只渲染工具栏
+  if (renderMode === 'toolbar-only') {
+    return (
       <div style={{
+        width: '100%',
         padding: '12px 16px',
         borderBottom: '1px solid #e5e5e5',
         background: '#fff',
         display: 'flex',
         gap: 16,
         alignItems: 'center',
-        flexWrap: 'wrap'
+        justifyContent: 'space-between'
       }}>
-        {/* 搜索框 */}
-        <Input
-          placeholder="搜索名词..."
-          prefix={<SearchOutlined style={{ color: '#666' }} />}
-          value={searchQuery}
-          onChange={e => setSearchQuery(e.target.value)}
-          allowClear
-          style={{ width: 200 }}
-        />
+        {/* 左侧：搜索框 + 分类过滤 + 全部显示 */}
+        <div style={{ display: 'flex', gap: 16, alignItems: 'center', justifyContent: 'center', flex: 1, minWidth: 0 }}>
+          {/* 搜索框 */}
+          <Input
+            placeholder="搜索名词..."
+            prefix={<SearchOutlined style={{ color: '#666' }} />}
+            value={searchQuery}
+            onChange={e => setSearchQuery(e.target.value)}
+            allowClear
+            style={{ width: 200, flexShrink: 0 }}
+          />
 
-        {/* 分类过滤 */}
-        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', flex: 1 }}>
-          {Object.entries(CATEGORY_NAMES).map(([key, name]) => {
-            const category = key as KnowledgeCategory
-            const isActive = visibleCategories.has(category)
-            const count = allNodes.filter(n => n.category === category).length
-            if (count === 0) return null
-            return (
-              <Tag
-                key={category}
-                color={isActive ? CATEGORY_COLORS[category] : undefined}
-                style={{
-                  cursor: 'pointer',
-                  opacity: isActive ? 1 : 0.5,
-                  borderColor: CATEGORY_COLORS[category],
-                }}
-                onClick={(e) => handleCategoryClick(category, e.ctrlKey || e.metaKey)}
-              >
-                {name} ({count})
-              </Tag>
-            )
-          })}
+          {/* 分类过滤 */}
+          <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', minWidth: 0 }}>
+            {Object.entries(CATEGORY_NAMES).map(([key, name]) => {
+              const category = key as KnowledgeCategory
+              const isActive = visibleCategories.has(category)
+              const count = allNodes.filter(n => n.category === category).length
+              if (count === 0) return null
+              return (
+                <Tag
+                  key={category}
+                  color={isActive ? CATEGORY_COLORS[category] : undefined}
+                  style={{
+                    cursor: 'pointer',
+                    opacity: isActive ? 1 : 0.5,
+                    borderColor: CATEGORY_COLORS[category],
+                    fontSize: 12,
+                    padding: '0 8px',
+                    margin: 0
+                  }}
+                  onClick={(e) => handleCategoryClick(category, e.ctrlKey || e.metaKey)}
+                >
+                  {name}
+                </Tag>
+              )
+            })}
+          </div>
+
+          {/* 全部显示按钮 */}
+          {visibleCategories.size < 8 && (
+            <Button
+              size="small"
+              icon={<ReloadOutlined />}
+              onClick={resetKnowledgeCategories}
+              style={{ flexShrink: 0 }}
+            >
+              全部显示
+            </Button>
+          )}
         </div>
 
-        {/* 重新布局按钮 */}
-        <Button
-          size="small"
-          icon={<ApartmentOutlined />}
-          onClick={handleRelayout}
-        >
-          重新布局
-        </Button>
-
-        {/* 全部显示按钮 */}
-        {visibleCategories.size < 8 && (
+        {/* 右侧：重新布局 + 拖动开关 */}
+        <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexShrink: 0 }}>
+          {/* 重新布局按钮 */}
           <Button
             size="small"
-            icon={<ReloadOutlined />}
-            onClick={resetKnowledgeCategories}
+            icon={<ApartmentOutlined />}
+            onClick={handleRelayout}
           >
-            全部显示
+            重新布局
           </Button>
-        )}
 
-        {/* 拖动开关 */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <DragOutlined style={{ color: enableDrag ? '#1890ff' : '#999' }} />
-          <Switch
-            size="small"
-            checked={enableDrag}
-            onChange={setEnableDrag}
-          />
-          <Text type="secondary" style={{ fontSize: 12 }}>
-            {enableDrag ? '可拖动' : '不可拖动'}
-          </Text>
+          {/* 拖动开关 */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <DragOutlined style={{ color: enableDrag ? '#1890ff' : '#999' }} />
+            <Switch
+              size="small"
+              checked={enableDrag}
+              onChange={setEnableDrag}
+            />
+            <Text type="secondary" style={{ fontSize: 12 }}>
+              {enableDrag ? '可拖动' : '不可拖动'}
+            </Text>
+          </div>
         </div>
-
-        {/* 统计信息 */}
-        <Text type="secondary" style={{ fontSize: 12 }}>
-          {visibleNodes.length} 个节点 · {visibleLinks.length} 条连接
-        </Text>
       </div>
+    )
+  }
 
-      {/* 画布 */}
-      <div style={{ flex: 1, overflow: 'hidden', position: 'relative' }}>
+  // 只渲染画布
+  if (renderMode === 'canvas-only') {
+    return (
+      <div ref={containerRef} style={{ width: '100%', height: '100%', overflow: 'hidden', position: 'relative', background: '#fafafa' }}>
         <ForceGraph2D
           ref={graphRef}
           graphData={graphData}
+          width={dimensions.width}
+          height={dimensions.height}
           nodeId="id"
           nodeLabel={(node: GraphNode) => node.fullName || node.name}
           nodeCanvasObject={paintNode}
@@ -420,9 +556,134 @@ export const KnowledgeGraph: React.FC = () => {
           onNodeHover={setHoveredNode}
           onBackgroundClick={handleBackgroundClick}
           backgroundColor="#fafafa"
-          cooldownTicks={100}
-          d3AlphaDecay={0.02}
-          d3VelocityDecay={0.3}
+          cooldownTicks={200}
+          warmupTicks={0}
+          d3AlphaDecay={0.03}
+          d3VelocityDecay={0.5}
+          enableNodeDrag={enableDrag}
+          enableZoomInteraction={true}
+          enablePanInteraction={true}
+        />
+      </div>
+    )
+  }
+
+  // 默认：渲染完整视图（工具栏 + 画布）
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', width: '100%', background: '#fafafa' }}>
+      {/* 工具栏 */}
+      <div style={{
+        width: '100%',
+        padding: '12px 16px',
+        borderBottom: '1px solid #e5e5e5',
+        background: '#fff',
+        display: 'flex',
+        gap: 16,
+        alignItems: 'center',
+        justifyContent: 'space-between'
+      }}>
+        {/* 左侧：搜索框 + 分类过滤 + 全部显示 */}
+        <div style={{ display: 'flex', gap: 16, alignItems: 'center', justifyContent: 'center', flex: 1, minWidth: 0 }}>
+          {/* 搜索框 */}
+          <Input
+            placeholder="搜索名词..."
+            prefix={<SearchOutlined style={{ color: '#666' }} />}
+            value={searchQuery}
+            onChange={e => setSearchQuery(e.target.value)}
+            allowClear
+            style={{ width: 200, flexShrink: 0 }}
+          />
+
+          {/* 分类过滤 */}
+          <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', minWidth: 0 }}>
+            {Object.entries(CATEGORY_NAMES).map(([key, name]) => {
+              const category = key as KnowledgeCategory
+              const isActive = visibleCategories.has(category)
+              const count = allNodes.filter(n => n.category === category).length
+              if (count === 0) return null
+              return (
+                <Tag
+                  key={category}
+                  color={isActive ? CATEGORY_COLORS[category] : undefined}
+                  style={{
+                    cursor: 'pointer',
+                    opacity: isActive ? 1 : 0.5,
+                    borderColor: CATEGORY_COLORS[category],
+                    fontSize: 12,
+                    padding: '0 8px',
+                    margin: 0
+                  }}
+                  onClick={(e) => handleCategoryClick(category, e.ctrlKey || e.metaKey)}
+                >
+                  {name}
+                </Tag>
+              )
+            })}
+          </div>
+
+          {/* 全部显示按钮 */}
+          {visibleCategories.size < 8 && (
+            <Button
+              size="small"
+              icon={<ReloadOutlined />}
+              onClick={resetKnowledgeCategories}
+              style={{ flexShrink: 0 }}
+            >
+              全部显示
+            </Button>
+          )}
+        </div>
+
+        {/* 右侧：重新布局 + 拖动开关 */}
+        <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexShrink: 0 }}>
+          {/* 重新布局按钮 */}
+          <Button
+            size="small"
+            icon={<ApartmentOutlined />}
+            onClick={handleRelayout}
+          >
+            重新布局
+          </Button>
+
+          {/* 拖动开关 */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <DragOutlined style={{ color: enableDrag ? '#1890ff' : '#999' }} />
+            <Switch
+              size="small"
+              checked={enableDrag}
+              onChange={setEnableDrag}
+            />
+            <Text type="secondary" style={{ fontSize: 12 }}>
+              {enableDrag ? '可拖动' : '不可拖动'}
+            </Text>
+          </div>
+        </div>
+      </div>
+
+      {/* 画布 */}
+      <div ref={containerRef} style={{ flex: 1, width: '100%', overflow: 'hidden', position: 'relative' }}>
+        <ForceGraph2D
+          ref={graphRef}
+          graphData={graphData}
+          width={dimensions.width}
+          height={dimensions.height}
+          nodeId="id"
+          nodeLabel={(node: GraphNode) => node.fullName || node.name}
+          nodeCanvasObject={paintNode}
+          nodeCanvasObjectMode={() => 'replace'}
+          linkCanvasObject={paintLink}
+          linkCanvasObjectMode={() => 'replace'}
+          onNodeClick={handleNodeClick}
+          onNodeHover={setHoveredNode}
+          onBackgroundClick={handleBackgroundClick}
+          backgroundColor="#fafafa"
+          // ⚡ 让 ForceGraph2D 进行充分的力导向布局
+          // 因为组件始终挂载（display: none），布局会在后台自动进行
+          // 增加 cooldownTicks 让布局有更多时间稳定
+          cooldownTicks={200}
+          warmupTicks={0}
+          d3AlphaDecay={0.03}
+          d3VelocityDecay={0.5}
           enableNodeDrag={enableDrag}
           enableZoomInteraction={true}
           enablePanInteraction={true}

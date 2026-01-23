@@ -1,7 +1,6 @@
-import React, { useRef, useState, useMemo, useEffect } from 'react'
+import React, { useRef, useState, useMemo } from 'react'
 import { ThreeEvent } from '@react-three/fiber'
 import { Text, Html } from '@react-three/drei'
-import { useSpring } from '@react-spring/three'
 import * as THREE from 'three'
 import {
   ChipConfig,
@@ -48,15 +47,16 @@ export const getChipPosition = (
 
 // Chip模型 - 高端拟物风格，带有文字标识
 // 引脚和电路纹理由 InstancedMesh 统一渲染以提升性能
-export const ChipModel: React.FC<{
+const ChipModelComponent: React.FC<{
   chip: ChipConfig
   baseY?: number  // 底板高度
   totalChips?: number  // 总芯片数，用于计算居中
   lodLevel?: LODLevel  // LOD 级别
+  focusLevel?: number  // 聚焦层级，用于控制 Text 渲染
   onClick?: () => void
   onPointerOver?: () => void
   onPointerOut?: () => void
-}> = ({ chip, baseY = 0, totalChips = 8, lodLevel = 'high', onClick, onPointerOver, onPointerOut }) => {
+}> = ({ chip, baseY = 0, totalChips = 8, lodLevel = 'high', focusLevel = 0, onClick, onPointerOver, onPointerOut }) => {
   const [hovered, setHovered] = useState(false)
   const { x, y, z, dimensions } = getChipPosition(chip, totalChips, baseY)
 
@@ -105,8 +105,8 @@ export const ChipModel: React.FC<{
         </mesh>
       )}
 
-      {/* 芯片标识文字 - 仅高细节显示 */}
-      {lodLevel === 'high' && (
+      {/* 芯片标识文字 - 仅在聚焦到 Board 层级时显示（性能优化） */}
+      {lodLevel === 'high' && focusLevel >= 3 && (
         <Text
           position={[0, dimensions[1] / 2 + 0.002, 0]}
           fontSize={dimensions[0] * 0.35}
@@ -120,8 +120,8 @@ export const ChipModel: React.FC<{
         </Text>
       )}
 
-      {/* 悬停时显示详细信息 - 仅高细节显示 */}
-      {lodLevel === 'high' && hovered && (
+      {/* 悬停时显示详细信息 - 仅在聚焦到 Board 层级时显示 */}
+      {lodLevel === 'high' && focusLevel >= 3 && hovered && (
         <Html center position={[0, 0.06, 0]}>
           <div style={{
             background: 'rgba(0,0,0,0.9)',
@@ -141,6 +141,16 @@ export const ChipModel: React.FC<{
   )
 }
 
+// 使用 React.memo 优化性能 - 避免不必要的重渲染
+export const ChipModel = React.memo(ChipModelComponent, (prevProps, nextProps) => {
+  return (
+    prevProps.chip.id === nextProps.chip.id &&
+    prevProps.lodLevel === nextProps.lodLevel &&
+    prevProps.focusLevel === nextProps.focusLevel &&
+    prevProps.baseY === nextProps.baseY
+  )
+})
+
 // 不同U高度板卡的配色方案
 const BOARD_U_COLORS: Record<number, { main: string; mainHover: string; front: string; accent: string }> = {
   1: { main: '#4a5568', mainHover: '#38b2ac', front: '#2d3748', accent: '#63b3ed' },  // 灰蓝色 - 1U交换机/轻量设备
@@ -149,29 +159,21 @@ const BOARD_U_COLORS: Record<number, { main: string; mainHover: string; front: s
 }
 
 // Board模型 - 服务器/板卡，根据U高度显示不同样式
-export const BoardModel: React.FC<{
+const BoardModelComponent: React.FC<{
   board: BoardConfig
   showChips?: boolean
   interactive?: boolean  // 是否可以交互（高亮和点击）
-  targetOpacity?: number  // 目标透明度（会动画过渡）
+  targetOpacity?: number  // 目标透明度
   lodLevel?: LODLevel  // LOD 级别
+  focusLevel?: number  // 聚焦层级，传递给 ChipModel
   onDoubleClick?: () => void
   onClick?: () => void  // 单击显示详情
   onChipClick?: (chip: ChipConfig) => void  // 芯片点击
-}> = ({ board, showChips = false, interactive = true, targetOpacity = 1.0, lodLevel = 'high', onDoubleClick, onClick, onChipClick }) => {
+}> = ({ board, showChips = false, interactive = true, targetOpacity = 1.0, lodLevel = 'high', focusLevel = 0, onDoubleClick, onClick, onChipClick }) => {
   const groupRef = useRef<THREE.Group>(null)
   const hoveredRef = useRef(false)
   const [, forceRender] = useState(0)
   const canHover = interactive  // 可交互时才能高亮
-
-  // 跟踪是否应该渲染（动画完成后才隐藏）
-  const [shouldRender, setShouldRender] = useState(targetOpacity > 0.01)
-
-  useEffect(() => {
-    if (targetOpacity > 0.01) {
-      setShouldRender(true)
-    }
-  }, [targetOpacity])
 
   // 计算所有芯片的位置数据（供 InstancedMesh 使用）- 必须在 early return 之前
   const chipPinData = useMemo((): ChipPinData[] => {
@@ -185,19 +187,8 @@ export const BoardModel: React.FC<{
     })
   }, [board.chips, showChips])
 
-  // 使用 spring 监听动画完成
-  useSpring({
-    opacity: targetOpacity,
-    config: { tension: 120, friction: 20 },
-    onRest: () => {
-      if (targetOpacity < 0.01) {
-        setShouldRender(false)
-      }
-    }
-  })
-
-  // 动画完成后才真正隐藏
-  if (!shouldRender) return null
+  // 所有 hooks 调用完毕后才能 early return
+  if (targetOpacity < 0.01) return null
 
   // 根据U高度获取颜色方案
   const uHeight = board.u_height
@@ -298,6 +289,7 @@ export const BoardModel: React.FC<{
               baseY={0.004}
               totalChips={board.chips.length}
               lodLevel={lodLevel}
+              focusLevel={focusLevel}
               onClick={() => onChipClick?.(chip)}
             />
           ))}
@@ -427,36 +419,25 @@ export const BoardModel: React.FC<{
   )
 }
 
+// 使用 React.memo 优化性能 - 避免不必要的重渲染
+export const BoardModel = React.memo(BoardModelComponent, (prevProps, nextProps) => {
+  return (
+    prevProps.board.id === nextProps.board.id &&
+    prevProps.targetOpacity === nextProps.targetOpacity &&
+    prevProps.showChips === nextProps.showChips &&
+    prevProps.interactive === nextProps.interactive &&
+    prevProps.lodLevel === nextProps.lodLevel &&
+    prevProps.focusLevel === nextProps.focusLevel
+  )
+})
+
 // Switch模型 - 网络交换机，与服务器尺寸一致
-export const SwitchModel: React.FC<{
+const SwitchModelComponent: React.FC<{
   switchData: SwitchInstance
-  targetOpacity?: number  // 目标透明度（会动画过渡）
+  targetOpacity?: number  // 目标透明度
   onClick?: () => void
 }> = ({ switchData, targetOpacity = 1.0, onClick }) => {
   const [hovered, setHovered] = useState(false)
-
-  // 跟踪是否应该渲染（动画完成后才隐藏）
-  const [shouldRender, setShouldRender] = useState(targetOpacity > 0.01)
-
-  useEffect(() => {
-    if (targetOpacity > 0.01) {
-      setShouldRender(true)
-    }
-  }, [targetOpacity])
-
-  // 使用 spring 监听动画完成
-  useSpring({
-    opacity: targetOpacity,
-    config: { tension: 120, friction: 20 },
-    onRest: () => {
-      if (targetOpacity < 0.01) {
-        setShouldRender(false)
-      }
-    }
-  })
-
-  // 动画完成后才真正隐藏
-  if (!shouldRender) return null
 
   // 根据U高度计算实际3D尺寸 - 与BoardModel保持一致
   const { uHeight: uSize } = RACK_DIMENSIONS
@@ -479,6 +460,9 @@ export const SwitchModel: React.FC<{
   const portsPerRow = 12  // 每行12个端口
   const portSpacing = (width - 0.12) / portsPerRow  // 端口间距
   const rowSpacing = height / (portRows + 1)  // 行间距
+
+  // 所有 hooks 调用完毕后才能 early return
+  if (targetOpacity < 0.01) return null
 
   return (
     <group>
@@ -605,6 +589,13 @@ export const SwitchModel: React.FC<{
   )
 }
 
+// 使用 React.memo 优化性能
+export const SwitchModel = React.memo(SwitchModelComponent, (prevProps, nextProps) => {
+  return (
+    prevProps.switchData.id === nextProps.switchData.id &&
+    prevProps.targetOpacity === nextProps.targetOpacity
+  )
+})
 
 // Pod标签组件 - 支持悬停高亮
 export const PodLabel: React.FC<{
@@ -679,7 +670,7 @@ export interface AnimatedRackProps {
   onHoverChange: (hovered: boolean) => void
 }
 
-export const AnimatedRack: React.FC<AnimatedRackProps> = ({
+const AnimatedRackComponent: React.FC<AnimatedRackProps> = ({
   rack,
   position,
   targetOpacity,
@@ -694,26 +685,8 @@ export const AnimatedRack: React.FC<AnimatedRackProps> = ({
   onNodeClick,
   onHoverChange,
 }) => {
-  // 跟踪是否应该渲染（动画完成后才隐藏）
-  const [shouldRender, setShouldRender] = useState(targetOpacity > 0.01)
-
-  // 当目标透明度变化时更新渲染状态
-  useEffect(() => {
-    if (targetOpacity > 0.01) {
-      setShouldRender(true)
-    }
-  }, [targetOpacity])
-
-  // 使用 spring 监听动画完成
-  useSpring({
-    opacity: targetOpacity,
-    config: { tension: 120, friction: 20 },
-    onRest: () => {
-      if (targetOpacity < 0.01) {
-        setShouldRender(false)
-      }
-    }
-  })
+  // 简化：直接根据 targetOpacity 决定是否渲染
+  if (targetOpacity < 0.01) return null
 
   // 高亮效果参数 - 使用低饱和度高级灰蓝色调
   const rackFrameColor = isHighlighted ? '#2d3748' : '#1a1a1a'
@@ -722,9 +695,6 @@ export const AnimatedRack: React.FC<AnimatedRackProps> = ({
   // emissiveIntensity > 1 配合 toneMapped={false} 触发 Bloom 效果
   const rackGlowIntensity = isHighlighted ? 1.8 : 0
   const rackScale = isHighlighted ? 1.01 : 1.0
-
-  // 动画完成后才真正隐藏
-  if (!shouldRender) return null
 
   return (
     <group position={position} scale={rackScale}>
@@ -876,3 +846,13 @@ export const AnimatedRack: React.FC<AnimatedRackProps> = ({
     </group>
   )
 }
+
+// 使用 React.memo 优化性能
+export const AnimatedRack = React.memo(AnimatedRackComponent, (prevProps, nextProps) => {
+  return (
+    prevProps.rack.id === nextProps.rack.id &&
+    prevProps.targetOpacity === nextProps.targetOpacity &&
+    prevProps.isHighlighted === nextProps.isHighlighted &&
+    prevProps.focusLevel === nextProps.focusLevel
+  )
+})

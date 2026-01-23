@@ -22,7 +22,9 @@ export interface BaseCardProps {
   /** 自定义容器样式 */
   style?: React.CSSProperties
   /** 内容区域样式 */
-  bodyStyle?: React.CSSProperties
+  styles?: {
+    body?: React.CSSProperties
+  }
   /** 是否可折叠 */
   collapsible?: boolean
   /** 默认是否展开（仅在 collapsible=true 时生效） */
@@ -104,7 +106,7 @@ export const BaseCard: React.FC<BaseCardProps> = ({
   accentColor,
   children,
   style,
-  bodyStyle,
+  styles,
   collapsible = false,
   defaultExpanded = true,
   expanded: controlledExpanded,
@@ -168,7 +170,7 @@ export const BaseCard: React.FC<BaseCardProps> = ({
 
       {/* 内容区域 */}
       {(!collapsible || isExpanded) && (
-        <div style={{ ...STYLES.body, ...bodyStyle }}>
+        <div style={{ ...STYLES.body, ...styles?.body }}>
           {children}
         </div>
       )}

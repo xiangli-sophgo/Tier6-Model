@@ -963,21 +963,23 @@ export const ConfigPanel: React.FC<ConfigPanelProps> = ({
                           {/* 数量 */}
                           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
                             <Text style={{ fontSize: 12, width: 60, flexShrink: 0 }}>数量:</Text>
-                            <InputNumber
-                              size="small"
-                              min={1}
-                              max={64}
-                              value={chip.count}
-                              onChange={(v) => {
-                                const newBoards = [...rackConfig.boards]
-                                const newChips = [...newBoards[boardIndex].chips]
-                                newChips[chipIndex] = { ...newChips[chipIndex], count: v || 1 }
-                                newBoards[boardIndex] = { ...newBoards[boardIndex], chips: newChips }
-                                setRackConfig(prev => ({ ...prev, boards: newBoards }))
-                              }}
-                              style={{ flex: 1 }}
-                              addonAfter="个"
-                            />
+                            <Space.Compact style={{ flex: 1 }}>
+                              <InputNumber
+                                size="small"
+                                min={1}
+                                max={64}
+                                value={chip.count}
+                                onChange={(v) => {
+                                  const newBoards = [...rackConfig.boards]
+                                  const newChips = [...newBoards[boardIndex].chips]
+                                  newChips[chipIndex] = { ...newChips[chipIndex], count: v || 1 }
+                                  newBoards[boardIndex] = { ...newBoards[boardIndex], chips: newChips }
+                                  setRackConfig(prev => ({ ...prev, boards: newBoards }))
+                                }}
+                                style={{ flex: 1 }}
+                              />
+                              <Button size="small" disabled style={{ pointerEvents: 'none' }}>个</Button>
+                            </Space.Compact>
                           </div>
                           {/* 第二行：芯片参数（可编辑） */}
                           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
@@ -985,79 +987,82 @@ export const ConfigPanel: React.FC<ConfigPanelProps> = ({
                               <Tooltip title={`${currentFlopsDtype} 精度的理论峰值算力`}>
                                 <Text style={{ fontSize: 12, width: 60, flexShrink: 0, cursor: 'help' }}>算力:</Text>
                               </Tooltip>
-                              <InputNumber
-                                size="small"
-                                min={1}
-                                value={currentTflops}
-                                onChange={(v) => {
-                                  const newBoards = [...rackConfig.boards]
-                                  const newChips = [...newBoards[boardIndex].chips]
-                                  newChips[chipIndex] = { ...newChips[chipIndex], compute_tflops_fp16: v || undefined }
-                                  newBoards[boardIndex] = { ...newBoards[boardIndex], chips: newChips }
-                                  setRackConfig(prev => ({ ...prev, boards: newBoards }))
-                                }}
-                                formatter={(val) => {
-                                  if (val === undefined || val === null) return ''
-                                  // 四舍五入到2位小数，然后移除末尾的0
-                                  const num = Math.round(Number(val) * 100) / 100
-                                  return String(num).replace(/\.?0+$/, '')
-                                }}
-                                parser={(val) => Number(val)}
-                                style={{ flex: 1 }}
-                                addonAfter={`${currentFlopsDtype} TFLOPs`}
-                              />
+                              <Space.Compact style={{ flex: 1 }}>
+                                <InputNumber
+                                  size="small"
+                                  min={1}
+                                  value={currentTflops}
+                                  onChange={(v) => {
+                                    const newBoards = [...rackConfig.boards]
+                                    const newChips = [...newBoards[boardIndex].chips]
+                                    newChips[chipIndex] = { ...newChips[chipIndex], compute_tflops_fp16: v || undefined }
+                                    newBoards[boardIndex] = { ...newBoards[boardIndex], chips: newChips }
+                                    setRackConfig(prev => ({ ...prev, boards: newBoards }))
+                                  }}
+                                  formatter={(val) => {
+                                    if (val === undefined || val === null) return ''
+                                    const num = Math.round(Number(val) * 100) / 100
+                                    return String(num).replace(/\.?0+$/, '')
+                                  }}
+                                  parser={(val) => Number(val)}
+                                  style={{ flex: 1 }}
+                                />
+                                <Button size="small" disabled style={{ pointerEvents: 'none' }}>{`${currentFlopsDtype} TFLOPs`}</Button>
+                              </Space.Compact>
                             </div>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                               <Tooltip title="DRAM 存储容量">
                                 <Text style={{ fontSize: 12, width: 60, flexShrink: 0, cursor: 'help' }}>显存:</Text>
                               </Tooltip>
-                              <InputNumber
-                                size="small"
-                                min={1}
-                                value={currentMemory}
-                                onChange={(v) => {
-                                  const newBoards = [...rackConfig.boards]
-                                  const newChips = [...newBoards[boardIndex].chips]
-                                  newChips[chipIndex] = { ...newChips[chipIndex], memory_gb: v || undefined }
-                                  newBoards[boardIndex] = { ...newBoards[boardIndex], chips: newChips }
-                                  setRackConfig(prev => ({ ...prev, boards: newBoards }))
-                                }}
-                                formatter={(val) => {
-                                  if (val === undefined || val === null) return ''
-                                  // 四舍五入到2位小数，然后移除末尾的0
-                                  const num = Math.round(Number(val) * 100) / 100
-                                  return String(num).replace(/\.?0+$/, '')
-                                }}
-                                parser={(val) => Number(val)}
-                                style={{ flex: 1 }}
-                                addonAfter="GB"
-                              />
+                              <Space.Compact style={{ flex: 1 }}>
+                                <InputNumber
+                                  size="small"
+                                  min={1}
+                                  value={currentMemory}
+                                  onChange={(v) => {
+                                    const newBoards = [...rackConfig.boards]
+                                    const newChips = [...newBoards[boardIndex].chips]
+                                    newChips[chipIndex] = { ...newChips[chipIndex], memory_gb: v || undefined }
+                                    newBoards[boardIndex] = { ...newBoards[boardIndex], chips: newChips }
+                                    setRackConfig(prev => ({ ...prev, boards: newBoards }))
+                                  }}
+                                  formatter={(val) => {
+                                    if (val === undefined || val === null) return ''
+                                    const num = Math.round(Number(val) * 100) / 100
+                                    return String(num).replace(/\.?0+$/, '')
+                                  }}
+                                  parser={(val) => Number(val)}
+                                  style={{ flex: 1 }}
+                                />
+                                <Button size="small" disabled style={{ pointerEvents: 'none' }}>GB</Button>
+                              </Space.Compact>
                             </div>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                               <Tooltip title="DRAM 理论带宽">
                                 <Text style={{ fontSize: 12, width: 60, flexShrink: 0, cursor: 'help' }}>带宽:</Text>
                               </Tooltip>
-                              <InputNumber
-                                size="small"
-                                min={1}
-                                value={currentBandwidth}
-                                onChange={(v) => {
-                                  const newBoards = [...rackConfig.boards]
-                                  const newChips = [...newBoards[boardIndex].chips]
-                                  newChips[chipIndex] = { ...newChips[chipIndex], memory_bandwidth_gbps: v || undefined }
-                                  newBoards[boardIndex] = { ...newBoards[boardIndex], chips: newChips }
-                                  setRackConfig(prev => ({ ...prev, boards: newBoards }))
-                                }}
-                                formatter={(val) => {
-                                  if (val === undefined || val === null) return ''
-                                  // 四舍五入到2位小数，然后移除末尾的0
-                                  const num = Math.round(Number(val) * 100) / 100
-                                  return String(num).replace(/\.?0+$/, '')
-                                }}
-                                parser={(val) => Number(val)}
-                                style={{ flex: 1 }}
-                                addonAfter="GB/s"
-                              />
+                              <Space.Compact style={{ flex: 1 }}>
+                                <InputNumber
+                                  size="small"
+                                  min={1}
+                                  value={currentBandwidth}
+                                  onChange={(v) => {
+                                    const newBoards = [...rackConfig.boards]
+                                    const newChips = [...newBoards[boardIndex].chips]
+                                    newChips[chipIndex] = { ...newChips[chipIndex], memory_bandwidth_gbps: v || undefined }
+                                    newBoards[boardIndex] = { ...newBoards[boardIndex], chips: newChips }
+                                    setRackConfig(prev => ({ ...prev, boards: newBoards }))
+                                  }}
+                                  formatter={(val) => {
+                                    if (val === undefined || val === null) return ''
+                                    const num = Math.round(Number(val) * 100) / 100
+                                    return String(num).replace(/\.?0+$/, '')
+                                  }}
+                                  parser={(val) => Number(val)}
+                                  style={{ flex: 1 }}
+                                />
+                                <Button size="small" disabled style={{ pointerEvents: 'none' }}>GB/s</Button>
+                              </Space.Compact>
                             </div>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                               <Tooltip title="显存带宽的实际利用率，通常为0.8-0.95">

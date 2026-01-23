@@ -115,22 +115,6 @@ export const Results: React.FC = () => {
       const data = await getExperimentDetail(id)
       setSelectedExperiment(data)
       setSelectedExperimentId(id)
-
-      // 如果只有一个已完成的任务，自动加载该任务的分析结果
-      if (data.tasks && data.tasks.length === 1 && data.tasks[0].status === 'completed') {
-        const task = data.tasks[0]
-        setSelectedTask(task)
-        setTaskResultsLoading(true)
-        try {
-          const results = await getTaskResults(task.task_id)
-          setTaskResults(results)
-        } catch (err) {
-          console.error('自动加载任务结果失败:', err)
-          setTaskResults(null)
-        } finally {
-          setTaskResultsLoading(false)
-        }
-      }
     } catch (error) {
       message.error('加载实验详情失败')
       console.error(error)
@@ -237,36 +221,6 @@ export const Results: React.FC = () => {
       ),
     },
     {
-      title: '任务进度',
-      key: 'progress',
-      width: 150,
-      align: 'center',
-      render: (_, record) => {
-        const progress =
-          record.total_tasks > 0
-            ? Math.round((record.completed_tasks / record.total_tasks) * 100)
-            : 0
-        return (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, justifyContent: 'center' }}>
-            <div style={{ width: 60, height: 6, backgroundColor: '#f0f0f0', borderRadius: 3 }}>
-              <div
-                style={{
-                  width: `${progress}%`,
-                  height: '100%',
-                  backgroundColor: progress === 100 ? '#52c41a' : '#1890ff',
-                  borderRadius: 3,
-                  transition: 'width 0.3s',
-                }}
-              />
-            </div>
-            <span style={{ fontSize: 12, minWidth: 35 }}>
-              {progress}%
-            </span>
-          </div>
-        )
-      },
-    },
-    {
       title: '任务数',
       key: 'tasks',
       width: 100,
@@ -285,17 +239,6 @@ export const Results: React.FC = () => {
       align: 'center',
       render: (text) =>
         text ? new Date(text).toLocaleString('zh-CN') : '-',
-    },
-    {
-      title: '状态',
-      key: 'status',
-      width: 120,
-      align: 'center',
-      render: (_, record) => {
-        const status = getExperimentStatus(record)
-        const config = statusConfig[status] || { color: 'default', text: status, icon: null }
-        return <Tag color={config.color} icon={config.icon}>{config.text}</Tag>
-      },
     },
     {
       title: '描述',
@@ -415,7 +358,7 @@ export const Results: React.FC = () => {
 
           {/* 内容区 - 使用 AnalysisResultDisplay + ChartsPanel */}
           <div style={{ flex: 1, overflow: 'auto', padding: 24 }}>
-            <div style={{ maxWidth: 1600, margin: '0 auto', width: '100%' }}>
+            <div style={{ width: '100%' }}>
               <AnalysisResultDisplay
                 result={bestResult}
                 topKPlans={analysisResults}
@@ -501,7 +444,7 @@ export const Results: React.FC = () => {
 
         {/* 内容区 */}
         <div style={{ flex: 1, overflow: 'auto', padding: 24 }}>
-          <div style={{ maxWidth: 1600, margin: '0 auto', width: '100%' }}>
+          <div style={{ width: '100%' }}>
           {/* 进度提示 */}
           {progress < 100 && (
             <Alert
