@@ -25,9 +25,10 @@ class MLPLayer(BaseLayer):
     config 必须包含:
         - hidden_dim: int, 隐藏维度
         - inter_dim: int, 中间层维度 (通常是 hidden_dim * 4 或 * 8/3)
-        - batch_size: int, 批次大小
+        - batch_size: int, 全局批次大小 (对齐 DS_TPU)
         - seq_len: int, 序列长度
         - tp: int, 张量并行度
+        - dp: int, 数据并行度 (用于计算 local_batch)
         - comm_protocol: int, 通信协议
     """
     name: str = "mlp"
@@ -46,12 +47,15 @@ class MLPLayer(BaseLayer):
         cfg = self.config
         hidden_dim = cfg.get('hidden_dim', 7168)
         inter_dim = cfg.get('inter_dim', 18432)
-        batch_size = cfg.get('batch_size', 1)
+        batch_size = cfg.get('batch_size', 1)  # 全局 batch (对齐 DS_TPU)
         seq_len = cfg.get('seq_len', 1)
         tp = cfg.get('tp', 1)
+        dp = cfg.get('dp', 1)  # 数据并行度
         comm_protocol = cfg.get('comm_protocol', 1)
 
-        tokens = batch_size * seq_len
+        # 计算本地 batch (对齐 DS_TPU: local_batch = batch_size // dp)
+        local_batch = batch_size // dp if dp > 0 else batch_size
+        tokens = local_batch * seq_len
         inter_dim_per_tp = inter_dim // tp
 
         # 1. RMSNorm

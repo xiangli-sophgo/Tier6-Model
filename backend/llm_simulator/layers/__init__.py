@@ -16,6 +16,7 @@ from .attention import (
     MLAAbsorbv32Layer,
     MHALayer,
 )
+from .dsa import DSALayer
 from .ffn import MLPLayer
 from .moe import MoELayer
 from .lmhead import LMHeadLayer
@@ -30,6 +31,8 @@ __all__ = [
     'MLAAbsorbv32Layer',
     # 标准 MHA
     'MHALayer',
+    # DSA (DeepSeek V3.2 稀疏注意力)
+    'DSALayer',
     'MLPLayer',
     'MoELayer',
     'LMHeadLayer',

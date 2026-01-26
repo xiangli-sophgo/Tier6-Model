@@ -29,7 +29,7 @@ class CommunicationLatency:
     start_lat = 2*c2c_lat + ddr_r_lat + ddr_w_lat + noc_lat + 2*d2d_lat
     """
 
-    chip_to_chip_us: float = 0.15
+    chip_to_chip_us: float = 0.2
     """芯片间物理互联延迟 (c2c_lat)
 
     单位：微秒 (us)

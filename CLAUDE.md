@@ -40,6 +40,38 @@ Tier6+Model is an interactive 3D multi-level network topology configurator and L
 
 - 用户明确表示"开始修改"/"可以实现"等指令时，可跳过确认环节
 
+### 3. Project Organization Rules
+
+**文件组织规范：**
+
+- **根目录限制**: 根目录只允许放置以下文件
+
+  - `README.md` - 项目主文档
+  - `CLAUDE.md` - AI辅助开发指导
+  - `start.sh` / `start.bat` - 启动脚本
+  - `.gitignore` / `.env` 等配置文件
+- **文档管理**:
+
+  - 技术笔记、调试文档、优化分析等必须放在 `docs/` 目录
+  - 禁止在根目录创建任何技术文档（如 `*_ANALYSIS.md`, `*_DEBUG.md`, `*_PLAN.md` 等）
+- **测试脚本**:
+
+  - 测试相关脚本必须放在对应模块的 `tests/` 目录
+  - 后端测试: `backend/tests/`
+  - 前端测试: `frontend/tests/` 或 `frontend/src/__tests__/`
+- **临时文件**:
+
+  - 禁止提交任何临时测试脚本、调试脚本到根目录
+  - 如需临时测试，应使用 `scripts/` 目录并添加到 `.gitignore`
+
+**创建新文件时的检查清单：**
+
+1. 是否为用户文档？→ 应整合到 `README.md`
+2. 是否为技术笔记/分析？→ 放入 `docs/`
+3. 是否为测试脚本？→ 放入对应的 `tests/` 目录
+4. 是否为工具脚本？→ 放入 `scripts/` 目录
+5. 是否为启动脚本？→ 只允许 `start.sh` / `start.bat`
+
 ## Architecture
 
 ### Frontend (React + TypeScript + Three.js)
@@ -94,17 +126,13 @@ pnpm install
 ### Running the Application
 
 ```bash
-# Start both frontend and backend (recommended)
-./start.sh
+# First time: install dependencies and start
+./start.sh --setup   # Linux/Mac
+start.bat --setup    # Windows
 
-# Or start individually:
-# Backend (port 8100 - note: code uses 8001 in main.py but start.sh may differ)
-cd backend
-python main.py
-
-# Frontend (port 3100)
-cd frontend
-pnpm dev
+# Subsequent runs
+./start.sh           # Linux/Mac
+start.bat            # Windows
 ```
 
 ### Build
@@ -163,7 +191,7 @@ pnpm build
 ## Port Configuration
 
 - Frontend default: 3100
-- Backend default: 8001 (main.py) or 8100 (referenced in README)
+- Backend default: 8001
 - CORS is configured to allow all origins in development
 
 ## Code Style Notes

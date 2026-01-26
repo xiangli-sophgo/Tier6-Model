@@ -18,6 +18,7 @@ def generate_transformer_gemm_shapes(
     num_kv_heads: int,
     batch_sizes: List[int],
     seq_lengths: List[int],
+    tp: int = 1,  # ⭐ 新增: 张量并行度
     mla_config: Optional[dict] = None,
     moe_config: Optional[dict] = None,
 ) -> List[Tuple[int, int, int, int]]:
@@ -31,6 +32,7 @@ def generate_transformer_gemm_shapes(
         num_kv_heads: KV 头数量（GQA）
         batch_sizes: 批次大小列表（通常 [1, 2, 4, 8, ...]）
         seq_lengths: 序列长度列表（Prefill: [128, 256, 512, 1024, 2048], Decode: [1]）
+        tp: 张量并行度（默认1，无并行）
         mla_config: MLA 配置（可选）
         moe_config: MoE 配置（可选）
 
@@ -40,24 +42,26 @@ def generate_transformer_gemm_shapes(
     shapes = []
     head_dim = hidden_size // num_attention_heads
 
+    # ⭐ TP分片后的维度
+    heads_per_tp = num_attention_heads // tp
+    kv_heads_per_tp = num_kv_heads // tp
+    hidden_per_tp = hidden_size // tp
+    intermediate_per_tp = intermediate_size // tp
+
     for batch_size in batch_sizes:
         for seq_len in seq_lengths:
             M = batch_size * seq_len
 
             # ========== 标准 Attention ==========
             if not mla_config:
-                # QKV 投影: [M, hidden] × [hidden, 3*hidden] (for Q, K, V together)
-                # 或者分开: Q=[M, hidden]×[hidden, hidden], K/V=[M, hidden]×[hidden, kv_hidden]
-                shapes.append((1, M, hidden_size, hidden_size))  # Q projection
-                shapes.append((1, M, hidden_size, num_kv_heads * head_dim))  # K projection (GQA)
-                shapes.append((1, M, hidden_size, num_kv_heads * head_dim))  # V projection (GQA)
+                # ⭐ TP后的QKV投影形状
+                # QKV合并投影: qkv_dim = (heads_per_tp + 2 * kv_heads_per_tp) * head_dim
+                qkv_dim = (heads_per_tp + 2 * kv_heads_per_tp) * head_dim
+                shapes.append((1, M, hidden_size, qkv_dim))  # QKV projection (TP分片)
 
-                # Attention Score: [batch, num_heads, seq_len, head_dim] × [batch, num_heads, head_dim, seq_len]
-                # → Batched GEMM: G=batch*num_heads, M=seq_len, K=head_dim, N=seq_len
-                # 这个在 FlashAttention 中通常融合，不单独计算
-
-                # Attention Output: [M, hidden] × [hidden, hidden]
-                shapes.append((1, M, hidden_size, hidden_size))
+                # ⭐ TP后的Output投影形状
+                # Input: heads_per_tp * head_dim, Output: hidden_size (全量，后续AllReduce)
+                shapes.append((1, M, heads_per_tp * head_dim, hidden_size))
 
             # ========== MLA (DeepSeek V3) ==========
             else:
@@ -81,10 +85,12 @@ def generate_transformer_gemm_shapes(
 
             # ========== FFN ==========
             if not moe_config:
-                # Standard FFN: gate, up, down
-                shapes.append((1, M, hidden_size, intermediate_size))  # gate
-                shapes.append((1, M, hidden_size, intermediate_size))  # up
-                shapes.append((1, M, intermediate_size, hidden_size))  # down
+                # ⭐ TP后的FFN形状
+                # Gate/Up投影: hidden_size -> intermediate_per_tp
+                shapes.append((1, M, hidden_size, intermediate_per_tp))  # gate
+                shapes.append((1, M, hidden_size, intermediate_per_tp))  # up
+                # Down投影: intermediate_per_tp -> hidden_size
+                shapes.append((1, M, intermediate_per_tp, hidden_size))  # down
             else:
                 # MoE FFN
                 num_experts = moe_config.get("num_experts", 64)
@@ -117,6 +123,7 @@ def prewarm_gemm_evaluator(
     batch_size: int,
     input_seq_length: int,
     output_seq_length: int,
+    tp: int = 1,  # ⭐ 新增: 张量并行度
     mla_config: Optional[dict] = None,
     moe_config: Optional[dict] = None,
 ) -> int:
@@ -132,7 +139,9 @@ def prewarm_gemm_evaluator(
     """
     import time
 
-    logger.info("🔥 开始 GEMM 评估器预热...")
+    logger.info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+    logger.info("🔥 GEMM 评估器预热")
+    logger.info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
     start = time.time()
 
     # 生成常见的批次大小和序列长度组合
@@ -152,16 +161,24 @@ def prewarm_gemm_evaluator(
         num_kv_heads=num_kv_heads,
         batch_sizes=batch_sizes,
         seq_lengths=seq_lengths,
+        tp=tp,  # ⭐ 传递TP参数
         mla_config=mla_config,
         moe_config=moe_config,
     )
 
+    logger.info(f"   模型配置: hidden={hidden_size}, intermediate={intermediate_size}")
+    logger.info(f"   批次大小: {batch_size}, 序列长度: Prefill={input_seq_length}, Decode=1")
+    logger.info(f"   并行策略: TP={tp}")  # ⭐ 显示TP配置
     logger.info(f"   生成 {len(shapes)} 个 GEMM 形状待预热")
 
     # 预热评估
     dtype = "bf16"  # 默认使用 bf16
+    prewarm_times = []
+
     for i, (G, M, K, N) in enumerate(shapes):
         try:
+            shape_start = time.time()
+
             # 调用 evaluate 会自动缓存结果
             evaluator.evaluate(
                 G=G, M=M, K=K, N=N,
@@ -170,14 +187,28 @@ def prewarm_gemm_evaluator(
                 use_multiprocess=False,  # 预热时禁用多进程（避免启动开销）
             )
 
-            if (i + 1) % 10 == 0:
-                logger.info(f"   预热进度: {i+1}/{len(shapes)}")
+            shape_time = (time.time() - shape_start) * 1000
+            prewarm_times.append(shape_time)
+
+            # 每5个或在最后打印进度
+            if (i + 1) % 5 == 0 or (i + 1) == len(shapes):
+                avg_time = sum(prewarm_times[-5:]) / min(5, len(prewarm_times[-5:]))
+                logger.info(f"   进度: {i+1}/{len(shapes)} (平均 {avg_time:.1f}ms/形状)")
 
         except Exception as e:
-            logger.warning(f"   预热 GEMM ({G}, {M}, {K}, {N}) 失败: {e}")
+            logger.warning(f"   ⚠️  预热失败 GEMM({G},{M},{K},{N}): {e}")
 
     elapsed = time.time() - start
-    logger.info(f"✅ GEMM 预热完成，耗时 {elapsed:.2f}s，缓存 {len(shapes)} 个配置")
+    avg_prewarm_time = sum(prewarm_times) / len(prewarm_times) if prewarm_times else 0
+
+    logger.info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+    logger.info(f"✅ 预热完成")
+    logger.info(f"   总耗时: {elapsed:.2f}s")
+    logger.info(f"   已缓存: {len(shapes)} 个配置")
+    logger.info(f"   平均耗时: {avg_prewarm_time:.1f}ms/形状")
+    if prewarm_times:
+        logger.info(f"   最慢形状: {max(prewarm_times):.1f}ms")
+    logger.info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
     return len(shapes)
 

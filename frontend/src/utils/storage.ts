@@ -90,27 +90,22 @@ export interface SavedConfig {
   /** 网络配置 (带宽/延迟参数) */
   network_config?: NetworkConfig;
 
-  /** 协议延迟配置 (TP RTT, EP RTT 等) */
-  protocol_config?: {
+  /** 通信延迟配置 (统一所有延迟相关参数) */
+  comm_latency_config?: {
+    // 协议相关
     rtt_tp_us: number;
     rtt_ep_us: number;
     bandwidth_utilization: number;
     sync_latency_us: number;
-  };
-
-  /** 网络基础设施配置 (互联相关: 交换机延迟, 线缆延迟) */
-  network_infra_config?: {
+    // 网络基础设施
     switch_delay_us: number;
     cable_delay_us: number;
-  };
-
-  /** 芯片延迟配置 (C2C相关) */
-  chip_latency_config?: {
-    c2c_lat_us: number;
-    ddr_r_lat_us: number;
-    ddr_w_lat_us: number;
-    noc_lat_us: number;
-    d2d_lat_us: number;
+    // 芯片延迟
+    chip_to_chip_us: number;
+    memory_read_latency_us: number;
+    memory_write_latency_us: number;
+    noc_latency_us: number;
+    die_to_die_latency_us: number;
   };
 }
 

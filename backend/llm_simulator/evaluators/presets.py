@@ -6,6 +6,7 @@ from .arch_config import AcceleratorMicroArch, CommunicationLatency
 
 
 # ==================== 算能 SG2260E ====================
+# 注意: 此配置与 DS_TPU v1 对齐,用于验证评估器精度
 def _create_sg2260e() -> AcceleratorMicroArch:
     arch = AcceleratorMicroArch(
         name="SG2260E",
@@ -16,27 +17,29 @@ def _create_sg2260e() -> AcceleratorMicroArch:
         cube_n=8,
         sram_size_bytes=2 * 1024 * 1024,  # 2MB
         sram_utilization=0.45,
-        dram_bandwidth_bytes=273e9,  # 273 GB/s (峰值带宽)
+        # 与 DS_TPU v1 对齐的带宽和算力配置
+        dram_bandwidth_bytes=4 * 4096e9 * 0.70,  # 11468.8 GB/s (与 DS_TPU 对齐)
         lane_num=16,
         align_bytes=32,
         compute_dma_overlap_rate=0.8,
         # 通信带宽
-        intra_bw=504e9,  # 组内带宽 504 GB/s (高速互联)
-        inter_bw=100e9,  # 组间带宽 100 GB/s (跨节点)
+        intra_bw=448e9,  # 组内带宽 448 GB/s (与 DS_TPU 对齐)
+        inter_bw=448e9,  # 组间带宽 448 GB/s (与 DS_TPU 对齐)
         intra_latency_us=1.0,  # 组内延迟 1 us (粗粒度)
         inter_latency_us=2.0,  # 组间延迟 2 us (粗粒度)
-        # 细粒度通信延迟 (单位: us) - 对齐 DS_TPU
+        # 细粒度通信延迟 (单位: us) - 对齐 DS_TPU dispatch_eval.py/combine_eval.py
         comm_latency=CommunicationLatency(
-            chip_to_chip_us=0.15,         # c2c_lat: 芯片间物理互联延迟
+            chip_to_chip_us=0.2,          # c2c_lat: 芯片间物理互联延迟 (对齐 DS_TPU)
             memory_read_latency_us=0.15,  # ddr_r_lat: 显存读延迟
             memory_write_latency_us=0.01, # ddr_w_lat: 显存写延迟
             noc_latency_us=0.05,          # noc_lat: 片上网络延迟
             die_to_die_latency_us=0.04,   # d2d_lat: Die间延迟
-            # start_lat = 2*0.15 + 0.15 + 0.01 + 0.05 + 2*0.04 = 0.59 us
+            # start_lat = 2*0.2 + 0.15 + 0.01 + 0.05 + 2*0.04 = 0.69 us
+            # dispatch_combine_start_lat = 0.69 + 2*1.0 + 2*0.025 = 2.74 us (对齐 DS_TPU)
         ),
     )
-    # 从 64 TFLOPS 反推频率
-    arch.freq_ghz = arch.compute_freq_from_flops(64e12)
+    # 从 768 TFLOPS 反推频率
+    arch.freq_ghz = arch.compute_freq_from_flops(768e12)
     return arch
 
 

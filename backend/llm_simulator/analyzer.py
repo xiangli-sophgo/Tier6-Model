@@ -125,6 +125,8 @@ class PerformanceAnalyzer:
                 # 计算新结果
                 result = self._evaluate_single(operator, evaluator)
                 self.global_cache[cache_key] = result
+                # 应用结果到算子 (修复: 之前遗漏了这一步)
+                self._apply_cached_result(operator, result)
 
         hit_rate = cache_hits / total_ops * 100 if total_ops > 0 else 0
         print(f"  {op_type}: {total_ops} 算子, {cache_hits} 缓存命中 ({hit_rate:.1f}%)")
@@ -311,10 +313,19 @@ class PerformanceAnalyzer:
             comm_result = evaluator.evaluate(tp, comm_size, comm_protocol)
             latency_us = comm_result.latency_us
         elif comm_kind in ('dispatch', 'combine'):
-            # Dispatch/Combine 近似为 AllToAll
+            # Dispatch/Combine 需要更多参数
+            moe_tp = params.get('moe_tp', 1)
             ep = params.get('ep', 1)
-            # 简化: 使用 AllReduce 评估器
-            comm_result = evaluator.evaluate(ep, comm_size, comm_protocol)
+            batch_size = params.get('batch_size', 1)
+            is_prefill = params.get('is_prefill', False)
+            comm_result = evaluator.evaluate(
+                moe_tp=moe_tp,
+                ep=ep,
+                data_bytes=comm_size,
+                batch_size=batch_size,
+                comm_protocol=comm_protocol,
+                is_prefill=is_prefill,
+            )
             latency_us = comm_result.latency_us
         else:
             latency_us = 0.0

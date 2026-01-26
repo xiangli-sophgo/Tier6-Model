@@ -122,7 +122,7 @@ class AllReduceEval:
         use_hierarchical = tp in [8, 16, 32]
 
         if use_hierarchical:
-            return self._evaluate_hierarchical(tp, data_bytes)
+            return self._evaluate_hierarchical(tp, data_bytes, comm_protocol)
         else:
             return self._evaluate_flat(tp, data_bytes, comm_protocol)
 
@@ -130,6 +130,7 @@ class AllReduceEval:
         self,
         tp: int,
         data_bytes: Union[int, float],
+        comm_protocol: int = 1,
     ) -> Tuple[float, float]:
         """分层 AllReduce"""
         # 组大小: TP=16 用 2，其他用 4
@@ -141,15 +142,33 @@ class AllReduceEval:
         lat_1 = (comm_size_1 / self.arch.intra_bw / self.bw_urate) * 1e6
         lat_1 += (group_size - 1) * (self.start_lat + self.sync_lat)
 
+        # 添加协议相关的 RTT 开销 (组内通信)
+        if comm_protocol == 2:
+            lat_1 += self.rtt_tp * 2 * (group_size - 1)
+        elif comm_protocol == 3:
+            lat_1 += self.rtt_tp * min(1, 2 * (group_size - 1))
+
         # 阶段2: 组间 AllReduce
         comm_size_2 = 2 * (num_groups - 1) / num_groups * data_bytes
         lat_2 = (comm_size_2 / self.arch.inter_bw / self.bw_urate) * 1e6
         lat_2 += (num_groups - 1) * (self.start_lat + self.sync_lat + self.link_delay)
 
+        # 添加协议相关的 RTT 开销 (组间通信)
+        if comm_protocol == 2:
+            lat_2 += self.rtt_tp * 2 * (num_groups - 1)
+        elif comm_protocol == 3:
+            lat_2 += self.rtt_tp * min(1, 2 * (num_groups - 1))
+
         # 阶段3: 组内 AllGather (Broadcast)
         comm_size_3 = data_bytes
         lat_3 = (comm_size_3 / self.arch.intra_bw / self.bw_urate) * 1e6
         lat_3 += (group_size - 1) * (self.start_lat + self.sync_lat)
+
+        # 添加协议相关的 RTT 开销 (组内通信)
+        if comm_protocol == 2:
+            lat_3 += self.rtt_tp * 2 * (group_size - 1)
+        elif comm_protocol == 3:
+            lat_3 += self.rtt_tp * min(1, 2 * (group_size - 1))
 
         # 延迟取最大值 (流水线并行)
         latency_us = max(lat_1, lat_2, lat_3)
@@ -250,7 +269,7 @@ class AllGatherEval:
         use_hierarchical = tp in [8, 16, 32]
 
         if use_hierarchical:
-            return self._evaluate_hierarchical(tp, data_bytes)
+            return self._evaluate_hierarchical(tp, data_bytes, comm_protocol)
         else:
             return self._evaluate_flat(tp, data_bytes, comm_protocol)
 
@@ -258,6 +277,7 @@ class AllGatherEval:
         self,
         tp: int,
         data_bytes: Union[int, float],
+        comm_protocol: int = 1,
     ) -> Tuple[float, float]:
         """分层 AllGather"""
         # 注意: AllGather 所有 tp=8/16/32 都使用 group_size=4
@@ -270,10 +290,22 @@ class AllGatherEval:
         lat_1 = (comm_size_1 / self.arch.intra_bw / self.bw_urate) * 1e6
         lat_1 += (group_size - 1) * (self.start_lat + self.sync_lat)
 
+        # 添加协议相关的 RTT 开销 (组内通信)
+        if comm_protocol == 2:
+            lat_1 += self.rtt_tp * 2 * (group_size - 1)
+        elif comm_protocol == 3:
+            lat_1 += self.rtt_tp * min(1, 2 * (group_size - 1))
+
         # 阶段2: 组间 AllGather
         comm_size_2 = (num_groups - 1) * data_bytes
         lat_2 = (comm_size_2 / self.arch.inter_bw / self.bw_urate) * 1e6
         lat_2 += (num_groups - 1) * (self.start_lat + self.sync_lat + self.link_delay)
+
+        # 添加协议相关的 RTT 开销 (组间通信)
+        if comm_protocol == 2:
+            lat_2 += self.rtt_tp * 2 * (num_groups - 1)
+        elif comm_protocol == 3:
+            lat_2 += self.rtt_tp * min(1, 2 * (num_groups - 1))
 
         # 阶段3: 无
         comm_size_3 = 0
@@ -370,7 +402,7 @@ class ReduceScatterEval:
         use_hierarchical = tp in [8, 16, 32]
 
         if use_hierarchical:
-            return self._evaluate_hierarchical(tp, data_bytes)
+            return self._evaluate_hierarchical(tp, data_bytes, comm_protocol)
         else:
             return self._evaluate_flat(tp, data_bytes, comm_protocol)
 
@@ -378,6 +410,7 @@ class ReduceScatterEval:
         self,
         tp: int,
         data_bytes: Union[int, float],
+        comm_protocol: int = 1,
     ) -> Tuple[float, float]:
         """分层 ReduceScatter"""
         group_size = 2 if tp == 16 else 4
@@ -388,11 +421,23 @@ class ReduceScatterEval:
         lat_1 = (comm_size_1 / self.arch.intra_bw / self.bw_urate) * 1e6
         lat_1 += (group_size - 1) * (self.start_lat + self.sync_lat)
 
+        # 添加协议相关的 RTT 开销 (组内通信)
+        if comm_protocol == 2:
+            lat_1 += self.rtt_tp * 2 * (group_size - 1)
+        elif comm_protocol == 3:
+            lat_1 += self.rtt_tp * min(1, 2 * (group_size - 1))
+
         # 阶段2: 组间 ReduceScatter
         # 注意: DS_TPU 使用 intra_bw (与 AllReduce 不同)
         comm_size_2 = (num_groups - 1) / num_groups * data_bytes
         lat_2 = (comm_size_2 / self.arch.intra_bw / self.bw_urate) * 1e6
         lat_2 += (num_groups - 1) * (self.start_lat + self.sync_lat + self.link_delay)
+
+        # 添加协议相关的 RTT 开销 (组间通信)
+        if comm_protocol == 2:
+            lat_2 += self.rtt_tp * 2 * (num_groups - 1)
+        elif comm_protocol == 3:
+            lat_2 += self.rtt_tp * min(1, 2 * (num_groups - 1))
 
         # 阶段3: 无
         comm_size_3 = 0
@@ -515,12 +560,26 @@ class DispatchEval:
         # T = (data_size / inter_bw / bw_urate) * 1e6 + start_lat
         t_us = (data_bytes / self.arch.inter_bw / self.bw_urate) * 1e6 + self.start_lat
 
+        # 添加 EP 通信的协议相关 RTT 开销 (EP 是点对点通信)
+        if comm_protocol == 2:
+            t_us += self.rtt_ep * 2  # 同步写: 双倍 RTT
+        elif comm_protocol == 3:
+            t_us += self.rtt_ep * 1  # 流水线模式: 最小化 RTT
+
         # Step 2: AllGather in EP group (moe_tp 内的通信)
         # T += ((moe_tp - 1) * data_size / intra_bw / bw_urate) * 1e6 + (moe_tp - 1) * start_lat
         if moe_tp > 1:
             allgather_comm = (moe_tp - 1) * data_bytes
-            t_us += (allgather_comm / self.arch.intra_bw / self.bw_urate) * 1e6
-            t_us += (moe_tp - 1) * self.start_lat
+            allgather_lat = (allgather_comm / self.arch.intra_bw / self.bw_urate) * 1e6
+            allgather_lat += (moe_tp - 1) * self.start_lat
+
+            # 添加 AllGather 的协议相关 RTT 开销 (使用 TP RTT)
+            if comm_protocol == 2:
+                allgather_lat += self.rtt_tp * 2 * (moe_tp - 1)
+            elif comm_protocol == 3:
+                allgather_lat += self.rtt_tp * min(1, 2 * (moe_tp - 1))
+
+            t_us += allgather_lat
 
         # 总通信量: EP 通信 + AllGather 通信
         total_comm = data_bytes + (moe_tp - 1) * data_bytes if moe_tp > 1 else data_bytes
@@ -627,12 +686,26 @@ class CombineEval:
         # T = (data_size / inter_bw / bw_urate) * 1e6 + start_lat
         t_us = (data_bytes / self.arch.inter_bw / self.bw_urate) * 1e6 + self.start_lat
 
+        # 添加 EP 通信的协议相关 RTT 开销 (EP 是点对点通信)
+        if comm_protocol == 2:
+            t_us += self.rtt_ep * 2  # 同步写: 双倍 RTT
+        elif comm_protocol == 3:
+            t_us += self.rtt_ep * 1  # 流水线模式: 最小化 RTT
+
         # Step 2: AllGather in EP group (moe_tp 内的通信)
         # T += ((moe_tp - 1) * data_size / intra_bw / bw_urate) * 1e6 + (moe_tp - 1) * start_lat
         if moe_tp > 1:
             allgather_comm = (moe_tp - 1) * data_bytes
-            t_us += (allgather_comm / self.arch.intra_bw / self.bw_urate) * 1e6
-            t_us += (moe_tp - 1) * self.start_lat
+            allgather_lat = (allgather_comm / self.arch.intra_bw / self.bw_urate) * 1e6
+            allgather_lat += (moe_tp - 1) * self.start_lat
+
+            # 添加 AllGather 的协议相关 RTT 开销 (使用 TP RTT)
+            if comm_protocol == 2:
+                allgather_lat += self.rtt_tp * 2 * (moe_tp - 1)
+            elif comm_protocol == 3:
+                allgather_lat += self.rtt_tp * min(1, 2 * (moe_tp - 1))
+
+            t_us += allgather_lat
 
         # 总通信量: EP 通信 + AllGather 通信
         total_comm = data_bytes + (moe_tp - 1) * data_bytes if moe_tp > 1 else data_bytes

@@ -51,10 +51,11 @@ class MLALayer(BaseLayer):
         - v_head_dim: int, V 头维度
         - kv_lora_rank: int, KV 压缩维度
         - q_lora_rank: int, Q 压缩维度
-        - batch_size: int, 批次大小
+        - batch_size: int, 全局批次大小 (对齐 DS_TPU)
         - seq_len: int, 序列长度
         - kv_seq_len: int, KV 序列长度
         - tp: int, 张量并行度
+        - dp: int, 数据并行度 (用于计算 local_batch)
         - comm_protocol: int, 通信协议
     """
     name: str = "mla"
@@ -78,15 +79,19 @@ class MLALayer(BaseLayer):
         v_head_dim = cfg.get('v_head_dim', 128)
         kv_lora_rank = cfg.get('kv_lora_rank', 512)
         q_lora_rank = cfg.get('q_lora_rank', 1536)
-        batch_size = cfg.get('batch_size', 1)
+        batch_size = cfg.get('batch_size', 1)  # 全局 batch (对齐 DS_TPU)
         seq_len = cfg.get('seq_len', 1)
         kv_seq_len = cfg.get('kv_seq_len', seq_len)
         tp = cfg.get('tp', 1)
+        dp = cfg.get('dp', 1)  # 数据并行度
         comm_protocol = cfg.get('comm_protocol', 1)
+
+        # 计算本地 batch (对齐 DS_TPU: local_batch = batch_size // dp)
+        local_batch = batch_size // dp if dp > 0 else batch_size
 
         # 每个 TP rank 的头数
         heads_per_tp = num_heads // tp
-        seqs = batch_size * seq_len
+        seqs = local_batch * seq_len
 
         # QK 总维度
         qk_dim = qk_nope_dim + qk_rope_dim
@@ -152,7 +157,7 @@ class MLALayer(BaseLayer):
         mha_op = MHAOperator(
             name=f"{self.name}_mha",
             parallel_params={
-                'B': batch_size,
+                'B': local_batch,  # 使用本地 batch
                 'H': heads_per_tp,
                 'QS': seq_len,
                 'KS': kv_seq_len,
@@ -222,15 +227,19 @@ class MLAv32Layer(BaseLayer):
         v_head_dim = cfg.get('v_head_dim', 128)
         kv_lora_rank = cfg.get('kv_lora_rank', 512)
         q_lora_rank = cfg.get('q_lora_rank', 1536)
-        batch_size = cfg.get('batch_size', 1)
+        batch_size = cfg.get('batch_size', 1)  # 全局 batch (对齐 DS_TPU)
         seq_len = cfg.get('seq_len', 1)
         kv_seq_len = cfg.get('kv_seq_len', seq_len)
         topk_index = cfg.get('topk_index', 2048)  # DSA 稀疏注意力
         tp = cfg.get('tp', 1)
+        dp = cfg.get('dp', 1)  # 数据并行度
         comm_protocol = cfg.get('comm_protocol', 1)
 
+        # 计算本地 batch (对齐 DS_TPU: local_batch = batch_size // dp)
+        local_batch = batch_size // dp if dp > 0 else batch_size
+
         heads_per_tp = num_heads // tp
-        seqs = batch_size * seq_len
+        seqs = local_batch * seq_len
         qk_dim = qk_nope_dim + qk_rope_dim
 
         # DSA: 实际计算的 KS 是 min(kv_seq_len, topk_index)
@@ -281,7 +290,7 @@ class MLAv32Layer(BaseLayer):
         mha_op = MHAOperator(
             name=f"{self.name}_mha",
             parallel_params={
-                'B': batch_size,
+                'B': local_batch,  # 使用本地 batch
                 'H': heads_per_tp,
                 'QS': seq_len,
                 'KS': effective_kv_seq,  # DSA 稀疏注意力
@@ -352,15 +361,19 @@ class MLAAbsorbLayer(BaseLayer):
         v_head_dim = cfg.get('v_head_dim', 128)
         kv_lora_rank = cfg.get('kv_lora_rank', 512)
         q_lora_rank = cfg.get('q_lora_rank', 1536)
-        batch_size = cfg.get('batch_size', 1)
+        batch_size = cfg.get('batch_size', 1)  # 全局 batch (对齐 DS_TPU)
         seq_len = cfg.get('seq_len', 1)
         kv_seq_len = cfg.get('kv_seq_len', seq_len)
         tp = cfg.get('tp', 1)
+        dp = cfg.get('dp', 1)  # 数据并行度
         comm_protocol = cfg.get('comm_protocol', 1)
         enable_tp_sp = cfg.get('enable_tp_sp', False)
 
+        # 计算本地 batch (对齐 DS_TPU: local_batch = batch_size // dp)
+        local_batch = batch_size // dp if dp > 0 else batch_size
+
         heads_per_tp = num_heads // tp
-        seqs = batch_size * seq_len
+        seqs = local_batch * seq_len
         qk_dim = qk_nope_dim + qk_rope_dim
 
         # 1. Q_A projection
@@ -515,25 +528,29 @@ class MLAAbsorbv32Layer(BaseLayer):
         v_head_dim = cfg.get('v_head_dim', 128)
         kv_lora_rank = cfg.get('kv_lora_rank', 512)
         q_lora_rank = cfg.get('q_lora_rank', 1536)
-        batch_size = cfg.get('batch_size', 1)
+        batch_size = cfg.get('batch_size', 1)  # 全局 batch (对齐 DS_TPU)
         seq_len = cfg.get('seq_len', 1)
         kv_seq_len = cfg.get('kv_seq_len', seq_len)
         topk_index = cfg.get('topk_index', 2048)  # DSA 稀疏注意力
         tp = cfg.get('tp', 1)
+        dp = cfg.get('dp', 1)  # 数据并行度
         comm_protocol = cfg.get('comm_protocol', 1)
         enable_tp_sp = cfg.get('enable_tp_sp', False)
 
+        # 计算本地 batch (对齐 DS_TPU: local_batch = batch_size // dp)
+        local_batch = batch_size // dp if dp > 0 else batch_size
+
         heads_per_tp = num_heads // tp
-        seqs = batch_size * seq_len
+        seqs = local_batch * seq_len
         qk_dim = qk_nope_dim + qk_rope_dim
 
         # DSA: 实际计算的 KS 是 min(kv_seq_len, topk_index)
         effective_kv_seq = min(kv_seq_len, topk_index)
 
-        # SP 模式: 使用 batch_size_local
+        # SP 模式: 进一步除以 tp
         if enable_tp_sp:
-            batch_size_local = batch_size // tp
-            seqs_local = batch_size_local * seq_len
+            batch_size_sp = local_batch // tp
+            seqs_local = batch_size_sp * seq_len
         else:
             seqs_local = seqs
 
@@ -656,9 +673,10 @@ class MHALayer(BaseLayer):
         - num_heads: int, 注意力头数
         - num_kv_heads: int, KV 头数 (GQA)
         - head_dim: int, 每头维度
-        - batch_size: int, 批次大小
+        - batch_size: int, 全局批次大小 (对齐 DS_TPU)
         - seq_len: int, 序列长度
         - tp: int, 张量并行度
+        - dp: int, 数据并行度 (用于计算 local_batch)
         - comm_protocol: int, 通信协议
     """
     name: str = "mha"
@@ -679,14 +697,18 @@ class MHALayer(BaseLayer):
         num_heads = cfg.get('num_heads', 32)
         num_kv_heads = cfg.get('num_kv_heads', num_heads)
         head_dim = cfg.get('head_dim', 128)
-        batch_size = cfg.get('batch_size', 1)
+        batch_size = cfg.get('batch_size', 1)  # 全局 batch (对齐 DS_TPU)
         seq_len = cfg.get('seq_len', 1)
         tp = cfg.get('tp', 1)
+        dp = cfg.get('dp', 1)  # 数据并行度
         comm_protocol = cfg.get('comm_protocol', 1)
+
+        # 计算本地 batch (对齐 DS_TPU: local_batch = batch_size // dp)
+        local_batch = batch_size // dp if dp > 0 else batch_size
 
         heads_per_tp = num_heads // tp
         kv_heads_per_tp = num_kv_heads // tp
-        tokens = batch_size * seq_len
+        tokens = local_batch * seq_len
 
         # 1. RMSNorm
         rmsnorm_op = RMSNormOperator(

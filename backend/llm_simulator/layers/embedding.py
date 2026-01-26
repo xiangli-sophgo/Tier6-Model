@@ -19,9 +19,10 @@ class EmbeddingLayer(BaseLayer):
     config 必须包含:
         - vocab_size: int, 词表大小
         - hidden_dim: int, 隐藏维度
-        - batch_size: int, 批次大小
+        - batch_size: int, 全局批次大小 (对齐 DS_TPU)
         - seq_len: int, 序列长度
         - tp: int, 张量并行度
+        - dp: int, 数据并行度 (用于计算 local_batch)
         - comm_protocol: int, 通信协议
     """
     name: str = "embedding"
@@ -40,20 +41,25 @@ class EmbeddingLayer(BaseLayer):
         cfg = self.config
         vocab_size = cfg.get('vocab_size', 151936)
         hidden_dim = cfg.get('hidden_dim', 7168)
-        batch_size = cfg.get('batch_size', 1)
+        batch_size = cfg.get('batch_size', 1)  # 全局 batch (对齐 DS_TPU)
         seq_len = cfg.get('seq_len', 1)
         tp = cfg.get('tp', 1)
+        dp = cfg.get('dp', 1)  # 数据并行度
         comm_protocol = cfg.get('comm_protocol', 1)
 
+        # 计算本地 batch (对齐 DS_TPU: local_batch = batch_size // dp)
+        local_batch = batch_size // dp if dp > 0 else batch_size
+        tokens = local_batch * seq_len
+
         # Embedding 本质是一个查表操作，可以建模为 GEMM
-        # Input: (batch_size, seq_len) one-hot -> (batch_size, seq_len, vocab_size/tp)
+        # Input: (local_batch, seq_len) one-hot -> (local_batch, seq_len, vocab_size/tp)
         # Weight: (vocab_size/tp, hidden_dim)
-        # Output: (batch_size, seq_len, hidden_dim)
+        # Output: (local_batch, seq_len, hidden_dim)
         embed_op = MatMulOperator(
             name=f"{self.name}_embed",
             parallel_params={
                 'G': 1,
-                'M': batch_size * seq_len,
+                'M': tokens,
                 'K': vocab_size // tp,
                 'N': hidden_dim,
                 'input_dtype': 'bf16',
@@ -64,9 +70,9 @@ class EmbeddingLayer(BaseLayer):
 
         # TP > 1 时需要 AllReduce
         if tp > 1:
-            # 通信数据量 = batch_size * seq_len * hidden_dim * dtype_bytes
+            # 通信数据量 = local_batch * seq_len * hidden_dim * dtype_bytes
             dtype_bytes = 2  # bf16
-            comm_size = batch_size * seq_len * hidden_dim * dtype_bytes
+            comm_size = tokens * hidden_dim * dtype_bytes
             allreduce_op = AllReduceOperator(
                 name=f"{self.name}_allreduce",
                 parallel_params={

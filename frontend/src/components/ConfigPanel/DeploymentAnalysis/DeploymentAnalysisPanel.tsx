@@ -37,12 +37,8 @@ import {
   ParallelismStrategy,
   PlanAnalysisResult,
   TopologyTrafficResult,
-  ProtocolConfig,
-  NetworkInfraConfig,
-  ChipLatencyConfig,
-  DEFAULT_PROTOCOL_CONFIG,
-  DEFAULT_NETWORK_CONFIG,
-  DEFAULT_CHIP_LATENCY_CONFIG,
+  CommLatencyConfig,
+  DEFAULT_COMM_LATENCY_CONFIG,
 } from '../../../utils/llmDeployment/types'
 import { HierarchicalTopology } from '../../../types'
 import {
@@ -188,9 +184,7 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
       setLocalPodCount(podCount)
       setLocalRacksPerPod(racksPerPod)
       // 重置延迟设置为默认值
-      setProtocolConfig({ ...DEFAULT_PROTOCOL_CONFIG })
-      setNetworkConfig({ ...DEFAULT_NETWORK_CONFIG })
-      setChipLatencyConfig({ ...DEFAULT_CHIP_LATENCY_CONFIG })
+      setCommLatencyConfig({ ...DEFAULT_COMM_LATENCY_CONFIG })
       return
     }
     const config = topologyConfigs.find(c => c.name === configName)
@@ -202,14 +196,8 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
       setLocalPodCount(config.pod_count || 1)
       setLocalRacksPerPod(config.racks_per_pod || 1)
       // 恢复延迟设置
-      if (config.protocol_config) {
-        setProtocolConfig(config.protocol_config)
-      }
-      if (config.network_infra_config) {
-        setNetworkConfig(config.network_infra_config)
-      }
-      if (config.chip_latency_config) {
-        setChipLatencyConfig(config.chip_latency_config)
+      if (config.comm_latency_config) {
+        setCommLatencyConfig(config.comm_latency_config)
       }
       message.success(`已加载拓扑配置: ${config.name}`)
     }
@@ -361,10 +349,8 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
     }
   }, [modelConfig, hardwareConfig])
 
-  // 运行时配置 (协议、网络和芯片延迟参数)
-  const [protocolConfig, setProtocolConfig] = useState<ProtocolConfig>({ ...DEFAULT_PROTOCOL_CONFIG })
-  const [networkConfig, setNetworkConfig] = useState<NetworkInfraConfig>({ ...DEFAULT_NETWORK_CONFIG })
-  const [chipLatencyConfig, setChipLatencyConfig] = useState<ChipLatencyConfig>({ ...DEFAULT_CHIP_LATENCY_CONFIG })
+  // 通信延迟配置 (统一配置：协议、网络基础设施、芯片延迟)
+  const [commLatencyConfig, setCommLatencyConfig] = useState<CommLatencyConfig>({ ...DEFAULT_COMM_LATENCY_CONFIG })
 
   // 刷新配置列表
   const refreshTopologyConfigs = useCallback(async () => {
@@ -391,23 +377,7 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
     try {
       const updatedConfig: SavedConfig = {
         ...existingConfig,
-        protocol_config: {
-          rtt_tp_us: protocolConfig.rtt_tp_us,
-          rtt_ep_us: protocolConfig.rtt_ep_us,
-          bandwidth_utilization: protocolConfig.bandwidth_utilization,
-          sync_latency_us: protocolConfig.sync_latency_us,
-        },
-        network_infra_config: {
-          switch_delay_us: networkConfig.switch_delay_us,
-          cable_delay_us: networkConfig.cable_delay_us,
-        },
-        chip_latency_config: {
-          c2c_lat_us: chipLatencyConfig.c2c_lat_us,
-          ddr_r_lat_us: chipLatencyConfig.ddr_r_lat_us,
-          ddr_w_lat_us: chipLatencyConfig.ddr_w_lat_us,
-          noc_lat_us: chipLatencyConfig.noc_lat_us,
-          d2d_lat_us: chipLatencyConfig.d2d_lat_us,
-        },
+        comm_latency_config: { ...commLatencyConfig },
       }
       await saveConfig(updatedConfig)
       await refreshTopologyConfigs()
@@ -418,7 +388,7 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
     } finally {
       setSaveLoading(false)
     }
-  }, [selectedTopologyConfig, topologyConfigs, protocolConfig, networkConfig, chipLatencyConfig, refreshTopologyConfigs])
+  }, [selectedTopologyConfig, topologyConfigs, commLatencyConfig, refreshTopologyConfigs])
 
   // 另存为新配置
   const handleSaveAsConfig = useCallback(async () => {
@@ -451,23 +421,7 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
           total_u: localRackConfig.total_u,
           boards: localRackConfig.boards,
         } : undefined,
-        protocol_config: {
-          rtt_tp_us: protocolConfig.rtt_tp_us,
-          rtt_ep_us: protocolConfig.rtt_ep_us,
-          bandwidth_utilization: protocolConfig.bandwidth_utilization,
-          sync_latency_us: protocolConfig.sync_latency_us,
-        },
-        network_infra_config: {
-          switch_delay_us: networkConfig.switch_delay_us,
-          cable_delay_us: networkConfig.cable_delay_us,
-        },
-        chip_latency_config: {
-          c2c_lat_us: chipLatencyConfig.c2c_lat_us,
-          ddr_r_lat_us: chipLatencyConfig.ddr_r_lat_us,
-          ddr_w_lat_us: chipLatencyConfig.ddr_w_lat_us,
-          noc_lat_us: chipLatencyConfig.noc_lat_us,
-          d2d_lat_us: chipLatencyConfig.d2d_lat_us,
-        },
+        comm_latency_config: { ...commLatencyConfig },
       }
       await saveConfig(newConfig)
       await refreshTopologyConfigs()
@@ -482,13 +436,11 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
     } finally {
       setSaveLoading(false)
     }
-  }, [newConfigName, newConfigDesc, topologyConfigs, selectedTopologyConfig, localPodCount, localRacksPerPod, localRackConfig, protocolConfig, networkConfig, chipLatencyConfig, refreshTopologyConfigs])
+  }, [newConfigName, newConfigDesc, topologyConfigs, selectedTopologyConfig, localPodCount, localRacksPerPod, localRackConfig, commLatencyConfig, refreshTopologyConfigs])
 
   // 重置延迟设置为默认值
   const handleResetDelayConfig = useCallback(() => {
-    setProtocolConfig({ ...DEFAULT_PROTOCOL_CONFIG })
-    setNetworkConfig({ ...DEFAULT_NETWORK_CONFIG })
-    setChipLatencyConfig({ ...DEFAULT_CHIP_LATENCY_CONFIG })
+    setCommLatencyConfig({ ...DEFAULT_COMM_LATENCY_CONFIG })
     message.success('已重置延迟设置为默认值')
   }, [])
 
@@ -721,11 +673,17 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
     const currentManualStrategy = { ...manualStrategy }
 
     try {
+      // 构建完整的拓扑配置（物理拓扑 + 通信延迟配置）
+      const fullTopology = {
+        ...topology,
+        comm_latency_config: { ...commLatencyConfig },
+      }
+
       // 提交任务到后端
       const response = await submitEvaluation({
         experiment_name: finalExperimentName,
         description: benchmarkName,
-        topology: topology as unknown as Record<string, unknown>,
+        topology: fullTopology as unknown as Record<string, unknown>,
         model: currentModelConfig as unknown as Record<string, unknown>,
         hardware: currentHardwareConfig as unknown as Record<string, unknown>,
         inference: currentInferenceConfig as unknown as Record<string, unknown>,
@@ -1204,8 +1162,8 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
                             min={0}
                             max={10}
                             step={0.05}
-                            value={protocolConfig.rtt_tp_us}
-                            onChange={(v) => setProtocolConfig(prev => ({ ...prev, rtt_tp_us: v ?? 0.35 }))}
+                            value={commLatencyConfig.rtt_tp_us}
+                            onChange={(v) => setCommLatencyConfig(prev => ({ ...prev, rtt_tp_us: v ?? 0.35 }))}
                             style={{ width: '100%' }}
                           />
                         </Col>
@@ -1218,8 +1176,8 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
                             min={0}
                             max={10}
                             step={0.05}
-                            value={protocolConfig.rtt_ep_us}
-                            onChange={(v) => setProtocolConfig(prev => ({ ...prev, rtt_ep_us: v ?? 0.85 }))}
+                            value={commLatencyConfig.rtt_ep_us}
+                            onChange={(v) => setCommLatencyConfig(prev => ({ ...prev, rtt_ep_us: v ?? 0.85 }))}
                             style={{ width: '100%' }}
                           />
                         </Col>
@@ -1232,8 +1190,8 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
                             min={0.5}
                             max={1.0}
                             step={0.01}
-                            value={protocolConfig.bandwidth_utilization}
-                            onChange={(v) => setProtocolConfig(prev => ({ ...prev, bandwidth_utilization: v ?? 0.95 }))}
+                            value={commLatencyConfig.bandwidth_utilization}
+                            onChange={(v) => setCommLatencyConfig(prev => ({ ...prev, bandwidth_utilization: v ?? 0.95 }))}
                             style={{ width: '100%' }}
                           />
                         </Col>
@@ -1246,8 +1204,8 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
                             min={0}
                             max={10}
                             step={0.1}
-                            value={protocolConfig.sync_latency_us}
-                            onChange={(v) => setProtocolConfig(prev => ({ ...prev, sync_latency_us: v ?? 0 }))}
+                            value={commLatencyConfig.sync_latency_us}
+                            onChange={(v) => setCommLatencyConfig(prev => ({ ...prev, sync_latency_us: v ?? 0 }))}
                             style={{ width: '100%' }}
                           />
                         </Col>
@@ -1265,8 +1223,8 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
                             min={0}
                             max={10}
                             step={0.05}
-                            value={networkConfig.switch_delay_us}
-                            onChange={(v) => setNetworkConfig(prev => ({ ...prev, switch_delay_us: v ?? 1.0 }))}
+                            value={commLatencyConfig.switch_delay_us}
+                            onChange={(v) => setCommLatencyConfig(prev => ({ ...prev, switch_delay_us: v ?? 1.0 }))}
                             style={{ width: '100%' }}
                           />
                         </Col>
@@ -1279,83 +1237,83 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
                             min={0}
                             max={1}
                             step={0.005}
-                            value={networkConfig.cable_delay_us}
-                            onChange={(v) => setNetworkConfig(prev => ({ ...prev, cable_delay_us: v ?? 0.025 }))}
+                            value={commLatencyConfig.cable_delay_us}
+                            onChange={(v) => setCommLatencyConfig(prev => ({ ...prev, cable_delay_us: v ?? 0.025 }))}
                             style={{ width: '100%' }}
                           />
                         </Col>
                       </Row>
 
-                      {/* C2C相关 */}
-                      <Divider orientation="left" orientationMargin={0} style={{ margin: '12px 0 8px', fontSize: 12 }}>C2C相关</Divider>
+                      {/* 芯片延迟参数 */}
+                      <Divider orientation="left" orientationMargin={0} style={{ margin: '12px 0 8px', fontSize: 12 }}>芯片延迟参数</Divider>
                       <Row gutter={[16, 8]}>
                         <Col span={8}>
                           <Tooltip title="芯片间物理互联延迟 (NVLink/SophgoLink)">
-                            <div style={{ marginBottom: 4 }}><Text type="secondary" style={{ fontSize: 12, cursor: 'help' }}>c2c_lat (µs)</Text></div>
+                            <div style={{ marginBottom: 4 }}><Text type="secondary" style={{ fontSize: 12, cursor: 'help' }}>chip_to_chip (µs)</Text></div>
                           </Tooltip>
                           <InputNumber
                             size="small"
                             min={0}
                             max={1}
                             step={0.01}
-                            value={chipLatencyConfig.c2c_lat_us}
-                            onChange={(v) => setChipLatencyConfig(prev => ({ ...prev, c2c_lat_us: v ?? 0.2 }))}
+                            value={commLatencyConfig.chip_to_chip_us}
+                            onChange={(v) => setCommLatencyConfig(prev => ({ ...prev, chip_to_chip_us: v ?? 0.2 }))}
                             style={{ width: '100%' }}
                           />
                         </Col>
                         <Col span={8}>
-                          <Tooltip title="DDR/HBM 读延迟">
-                            <div style={{ marginBottom: 4 }}><Text type="secondary" style={{ fontSize: 12, cursor: 'help' }}>ddr_r_lat (µs)</Text></div>
+                          <Tooltip title="显存读延迟 (DDR/HBM)">
+                            <div style={{ marginBottom: 4 }}><Text type="secondary" style={{ fontSize: 12, cursor: 'help' }}>memory_read (µs)</Text></div>
                           </Tooltip>
                           <InputNumber
                             size="small"
                             min={0}
                             max={1}
                             step={0.01}
-                            value={chipLatencyConfig.ddr_r_lat_us}
-                            onChange={(v) => setChipLatencyConfig(prev => ({ ...prev, ddr_r_lat_us: v ?? 0.15 }))}
+                            value={commLatencyConfig.memory_read_latency_us}
+                            onChange={(v) => setCommLatencyConfig(prev => ({ ...prev, memory_read_latency_us: v ?? 0.15 }))}
                             style={{ width: '100%' }}
                           />
                         </Col>
                         <Col span={8}>
-                          <Tooltip title="DDR/HBM 写延迟">
-                            <div style={{ marginBottom: 4 }}><Text type="secondary" style={{ fontSize: 12, cursor: 'help' }}>ddr_w_lat (µs)</Text></div>
+                          <Tooltip title="显存写延迟 (DDR/HBM)">
+                            <div style={{ marginBottom: 4 }}><Text type="secondary" style={{ fontSize: 12, cursor: 'help' }}>memory_write (µs)</Text></div>
                           </Tooltip>
                           <InputNumber
                             size="small"
                             min={0}
                             max={1}
                             step={0.01}
-                            value={chipLatencyConfig.ddr_w_lat_us}
-                            onChange={(v) => setChipLatencyConfig(prev => ({ ...prev, ddr_w_lat_us: v ?? 0.01 }))}
+                            value={commLatencyConfig.memory_write_latency_us}
+                            onChange={(v) => setCommLatencyConfig(prev => ({ ...prev, memory_write_latency_us: v ?? 0.01 }))}
                             style={{ width: '100%' }}
                           />
                         </Col>
                         <Col span={8}>
                           <Tooltip title="片上网络延迟 (NoC)">
-                            <div style={{ marginBottom: 4 }}><Text type="secondary" style={{ fontSize: 12, cursor: 'help' }}>noc_lat (µs)</Text></div>
+                            <div style={{ marginBottom: 4 }}><Text type="secondary" style={{ fontSize: 12, cursor: 'help' }}>noc_latency (µs)</Text></div>
                           </Tooltip>
                           <InputNumber
                             size="small"
                             min={0}
                             max={1}
                             step={0.01}
-                            value={chipLatencyConfig.noc_lat_us}
-                            onChange={(v) => setChipLatencyConfig(prev => ({ ...prev, noc_lat_us: v ?? 0.05 }))}
+                            value={commLatencyConfig.noc_latency_us}
+                            onChange={(v) => setCommLatencyConfig(prev => ({ ...prev, noc_latency_us: v ?? 0.05 }))}
                             style={{ width: '100%' }}
                           />
                         </Col>
                         <Col span={8}>
                           <Tooltip title="Die-to-Die 延迟 (多Die芯片)">
-                            <div style={{ marginBottom: 4 }}><Text type="secondary" style={{ fontSize: 12, cursor: 'help' }}>d2d_lat (µs)</Text></div>
+                            <div style={{ marginBottom: 4 }}><Text type="secondary" style={{ fontSize: 12, cursor: 'help' }}>die_to_die (µs)</Text></div>
                           </Tooltip>
                           <InputNumber
                             size="small"
                             min={0}
                             max={1}
                             step={0.01}
-                            value={chipLatencyConfig.d2d_lat_us}
-                            onChange={(v) => setChipLatencyConfig(prev => ({ ...prev, d2d_lat_us: v ?? 0.04 }))}
+                            value={commLatencyConfig.die_to_die_latency_us}
+                            onChange={(v) => setCommLatencyConfig(prev => ({ ...prev, die_to_die_latency_us: v ?? 0.04 }))}
                             style={{ width: '100%' }}
                           />
                         </Col>
@@ -1369,10 +1327,10 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
                             title={
                               <div style={{ fontSize: 12 }}>
                                 <div style={{ fontWeight: 500, marginBottom: 4 }}>AllReduce start_lat 计算公式:</div>
-                                <div style={{ fontFamily: 'monospace' }}>2×c2c + ddr_r + ddr_w + noc + 2×d2d</div>
+                                <div style={{ fontFamily: 'monospace' }}>2×chip_to_chip + memory_read + memory_write + noc + 2×die_to_die</div>
                                 <div style={{ marginTop: 8, borderTop: '1px solid rgba(255,255,255,0.2)', paddingTop: 8 }}>
-                                  <div>= 2×{chipLatencyConfig.c2c_lat_us} + {chipLatencyConfig.ddr_r_lat_us} + {chipLatencyConfig.ddr_w_lat_us} + {chipLatencyConfig.noc_lat_us} + 2×{chipLatencyConfig.d2d_lat_us}</div>
-                                  <div style={{ fontWeight: 500, marginTop: 4 }}>= {(2 * chipLatencyConfig.c2c_lat_us + chipLatencyConfig.ddr_r_lat_us + chipLatencyConfig.ddr_w_lat_us + chipLatencyConfig.noc_lat_us + 2 * chipLatencyConfig.d2d_lat_us).toFixed(2)} µs</div>
+                                  <div>= 2×{commLatencyConfig.chip_to_chip_us} + {commLatencyConfig.memory_read_latency_us} + {commLatencyConfig.memory_write_latency_us} + {commLatencyConfig.noc_latency_us} + 2×{commLatencyConfig.die_to_die_latency_us}</div>
+                                  <div style={{ fontWeight: 500, marginTop: 4 }}>= {(2 * commLatencyConfig.chip_to_chip_us + commLatencyConfig.memory_read_latency_us + commLatencyConfig.memory_write_latency_us + commLatencyConfig.noc_latency_us + 2 * commLatencyConfig.die_to_die_latency_us).toFixed(2)} µs</div>
                                 </div>
                               </div>
                             }
@@ -1387,7 +1345,7 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
                             }}>
                               <Text type="secondary" style={{ fontSize: 12 }}>AllReduce start_lat</Text>
                               <div style={{ fontSize: 14, fontWeight: 500, color: '#1890ff' }}>
-                                {(2 * chipLatencyConfig.c2c_lat_us + chipLatencyConfig.ddr_r_lat_us + chipLatencyConfig.ddr_w_lat_us + chipLatencyConfig.noc_lat_us + 2 * chipLatencyConfig.d2d_lat_us).toFixed(2)} µs
+                                {(2 * commLatencyConfig.chip_to_chip_us + commLatencyConfig.memory_read_latency_us + commLatencyConfig.memory_write_latency_us + commLatencyConfig.noc_latency_us + 2 * commLatencyConfig.die_to_die_latency_us).toFixed(2)} µs
                               </div>
                             </div>
                           </Tooltip>
@@ -1397,10 +1355,10 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
                             title={
                               <div style={{ fontSize: 12 }}>
                                 <div style={{ fontWeight: 500, marginBottom: 4 }}>Dispatch/Combine start_lat 计算公式:</div>
-                                <div style={{ fontFamily: 'monospace' }}>2×c2c + ddr_r + ddr_w + noc + 2×d2d + 2×switch + 2×cable</div>
+                                <div style={{ fontFamily: 'monospace' }}>2×chip_to_chip + memory_read + memory_write + noc + 2×die_to_die + 2×switch + 2×cable</div>
                                 <div style={{ marginTop: 8, borderTop: '1px solid rgba(255,255,255,0.2)', paddingTop: 8 }}>
-                                  <div>= 2×{chipLatencyConfig.c2c_lat_us} + {chipLatencyConfig.ddr_r_lat_us} + {chipLatencyConfig.ddr_w_lat_us} + {chipLatencyConfig.noc_lat_us} + 2×{chipLatencyConfig.d2d_lat_us} + 2×{networkConfig.switch_delay_us} + 2×{networkConfig.cable_delay_us}</div>
-                                  <div style={{ fontWeight: 500, marginTop: 4 }}>= {(2 * chipLatencyConfig.c2c_lat_us + chipLatencyConfig.ddr_r_lat_us + chipLatencyConfig.ddr_w_lat_us + chipLatencyConfig.noc_lat_us + 2 * chipLatencyConfig.d2d_lat_us + 2 * networkConfig.switch_delay_us + 2 * networkConfig.cable_delay_us).toFixed(2)} µs</div>
+                                  <div>= 2×{commLatencyConfig.chip_to_chip_us} + {commLatencyConfig.memory_read_latency_us} + {commLatencyConfig.memory_write_latency_us} + {commLatencyConfig.noc_latency_us} + 2×{commLatencyConfig.die_to_die_latency_us} + 2×{commLatencyConfig.switch_delay_us} + 2×{commLatencyConfig.cable_delay_us}</div>
+                                  <div style={{ fontWeight: 500, marginTop: 4 }}>= {(2 * commLatencyConfig.chip_to_chip_us + commLatencyConfig.memory_read_latency_us + commLatencyConfig.memory_write_latency_us + commLatencyConfig.noc_latency_us + 2 * commLatencyConfig.die_to_die_latency_us + 2 * commLatencyConfig.switch_delay_us + 2 * commLatencyConfig.cable_delay_us).toFixed(2)} µs</div>
                                 </div>
                               </div>
                             }
@@ -1415,7 +1373,7 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
                             }}>
                               <Text type="secondary" style={{ fontSize: 12 }}>Dispatch/Combine start_lat</Text>
                               <div style={{ fontSize: 14, fontWeight: 500, color: '#722ed1' }}>
-                                {(2 * chipLatencyConfig.c2c_lat_us + chipLatencyConfig.ddr_r_lat_us + chipLatencyConfig.ddr_w_lat_us + chipLatencyConfig.noc_lat_us + 2 * chipLatencyConfig.d2d_lat_us + 2 * networkConfig.switch_delay_us + 2 * networkConfig.cable_delay_us).toFixed(2)} µs
+                                {(2 * commLatencyConfig.chip_to_chip_us + commLatencyConfig.memory_read_latency_us + commLatencyConfig.memory_write_latency_us + commLatencyConfig.noc_latency_us + 2 * commLatencyConfig.die_to_die_latency_us + 2 * commLatencyConfig.switch_delay_us + 2 * commLatencyConfig.cable_delay_us).toFixed(2)} µs
                               </div>
                             </div>
                           </Tooltip>

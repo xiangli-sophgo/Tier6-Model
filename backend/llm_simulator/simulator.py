@@ -253,6 +253,7 @@ class SimulationConfig:
     # 新增: Kernel Fusion 和 MLA 优化
     enable_fusion: bool = True  # 启用 Kernel Fusion 优化
     enable_comm_overlap: bool = True  # 启用计算-通信重叠
+    enable_tbo: bool = True  # 启用 TBO (Tensor-Bus Overlap) 重叠优化 (MoE专用) ⭐ 新增
     # 训练模式配置
     enable_training_mode: bool = False  # 启用训练模式（模拟DP梯度同步）
     enable_dp_gradient_sync: bool = False  # 启用DP梯度同步模拟
@@ -287,6 +288,7 @@ class LLMInferenceSimulator:
         parallelism: ParallelismStrategy,
         hardware: HardwareConfig,
         config: SimulationConfig | None = None,
+        comm_latency_config: dict[str, float] | None = None,
     ):
         """
         初始化模拟器
@@ -298,12 +300,14 @@ class LLMInferenceSimulator:
             parallelism: 并行策略
             hardware: 硬件配置
             config: 模拟配置
+            comm_latency_config: 通信延迟配置 (前端传递的统一配置，覆盖预设值)
         """
         self.model = model
         self.inference = inference
         self.parallelism = parallelism
         self.hardware = hardware
         self.config = config or SimulationConfig()
+        self.comm_latency_config = comm_latency_config
 
         # 初始化新评估器系统
         if self.config.use_precise_evaluator:
@@ -317,6 +321,35 @@ class LLMInferenceSimulator:
                 logger = logging.getLogger(__name__)
                 logger.warning(f"未找到 {chip_type} 的架构预设，使用 SG2260E")
                 self.arch = get_arch_preset("SG2260E")
+
+            # 使用前端传递的通信延迟配置覆盖预设值
+            if comm_latency_config:
+                # 覆盖芯片延迟配置
+                from .evaluators.arch_config import CommunicationLatency
+                self.arch.comm_latency = CommunicationLatency(
+                    chip_to_chip_us=comm_latency_config.get("chip_to_chip_us", self.arch.comm_latency.chip_to_chip_us),
+                    memory_read_latency_us=comm_latency_config.get("memory_read_latency_us", self.arch.comm_latency.memory_read_latency_us),
+                    memory_write_latency_us=comm_latency_config.get("memory_write_latency_us", self.arch.comm_latency.memory_write_latency_us),
+                    noc_latency_us=comm_latency_config.get("noc_latency_us", self.arch.comm_latency.noc_latency_us),
+                    die_to_die_latency_us=comm_latency_config.get("die_to_die_latency_us", self.arch.comm_latency.die_to_die_latency_us),
+                )
+
+            # 创建协议配置和网络基础设施配置对象 (供通信评估器使用)
+            from .types import ProtocolConfig, NetworkInfraConfig
+            if comm_latency_config:
+                self.protocol_cfg = ProtocolConfig(
+                    rtt_tp_us=comm_latency_config.get("rtt_tp_us", 0.35),
+                    rtt_ep_us=comm_latency_config.get("rtt_ep_us", 0.85),
+                    bandwidth_utilization=comm_latency_config.get("bandwidth_utilization", 0.95),
+                    sync_latency_us=comm_latency_config.get("sync_latency_us", 0.0),
+                )
+                self.network_cfg = NetworkInfraConfig(
+                    switch_delay_us=comm_latency_config.get("switch_delay_us", 1.0),
+                    cable_delay_us=comm_latency_config.get("cable_delay_us", 0.025),
+                )
+            else:
+                self.protocol_cfg = ProtocolConfig()
+                self.network_cfg = NetworkInfraConfig()
 
             # 创建 GEMM 评估器（全局单例，跨层复用）
             from .evaluators import GEMMEvaluator
@@ -334,6 +367,7 @@ class LLMInferenceSimulator:
                     batch_size=inference.batch_size,
                     input_seq_length=inference.input_seq_length,
                     output_seq_length=inference.output_seq_length,
+                    tp=parallelism.tp,  # ⭐ 传递TP参数
                     mla_config=model.mla_config.__dict__ if model.mla_config else None,
                     moe_config=model.moe_config.__dict__ if model.moe_config else None,
                 )
@@ -344,6 +378,8 @@ class LLMInferenceSimulator:
             self.arch = None
             self.gemm_evaluator = None
             self.eval_cache = None
+            self.protocol_cfg = None
+            self.network_cfg = None
 
         # 解析拓扑
         self.topo_parser = TopologyParser(topology_dict, hardware)
@@ -436,6 +472,8 @@ class LLMInferenceSimulator:
         """
         为指定层构建算子并评估
 
+        完整构建Transformer层 = Attention + FFN (对齐DS_TPU_1209)
+
         Args:
             layer_index: 层索引
             num_tokens: 当前处理的 token 数量
@@ -445,6 +483,8 @@ class LLMInferenceSimulator:
         Returns:
             评估后的层对象，包含所有算子的性能数据
         """
+        from .layers.base import BaseLayer
+
         # 判断层类型
         use_mla = self.model.attention_type == "mla" and self.model.mla_config is not None
 
@@ -461,6 +501,7 @@ class LLMInferenceSimulator:
             "comm_protocol": 1,  # 默认协议
         }
 
+        # ========== 1. 构建Attention层 ==========
         if use_mla and self.model.mla_config:
             # MLA 层配置
             mla = self.model.mla_config
@@ -478,13 +519,13 @@ class LLMInferenceSimulator:
             # 从模型配置读取 MLA 变体（而非模拟配置）
             mla_variant = mla.variant
             if mla_variant == "mla_v32":
-                layer = MLAv32Layer(name=f"layer_{layer_index}_mla", config=layer_config)
+                attention_layer = MLAv32Layer(name=f"layer_{layer_index}_mla", config=layer_config)
             elif mla_variant == "mla_absorb":
-                layer = MLAAbsorbLayer(name=f"layer_{layer_index}_mla", config=layer_config)
+                attention_layer = MLAAbsorbLayer(name=f"layer_{layer_index}_mla", config=layer_config)
             elif mla_variant == "mla_absorb_v32":
-                layer = MLAAbsorbv32Layer(name=f"layer_{layer_index}_mla", config=layer_config)
+                attention_layer = MLAAbsorbv32Layer(name=f"layer_{layer_index}_mla", config=layer_config)
             else:
-                layer = MLALayer(name=f"layer_{layer_index}_mla", config=layer_config)
+                attention_layer = MLALayer(name=f"layer_{layer_index}_mla", config=layer_config)
         else:
             # 标准 MHA 层
             layer_config.update(
@@ -494,13 +535,54 @@ class LLMInferenceSimulator:
                     "head_dim": self.model.hidden_size // self.model.num_attention_heads,
                 }
             )
-            layer = MHALayer(name=f"layer_{layer_index}_mha", config=layer_config)
+            attention_layer = MHALayer(name=f"layer_{layer_index}_mha", config=layer_config)
 
-        # 使用评估器直接评估层中的所有算子
+        # ========== 2. 构建FFN层 ==========
+        ffn_config = {
+            "hidden_dim": self.model.hidden_size,
+            "inter_dim": self.model.intermediate_size,
+            "batch_size": self.inference.batch_size,
+            "seq_len": num_tokens,
+            "tp": self.parallelism.tp,
+            "comm_protocol": 1,
+        }
+
+        if is_moe:
+            # MoE层
+            ffn_config.update({
+                "num_experts": self.model.moe_config.num_experts,
+                "num_activated_experts": self.model.moe_config.num_activated_experts,
+                "expert_intermediate_size": self.model.moe_config.expert_intermediate_size,
+            })
+            ffn_layer = MoELayer(name=f"layer_{layer_index}_moe", config=ffn_config)
+        else:
+            # 标准MLP层
+            ffn_layer = MLPLayer(name=f"layer_{layer_index}_mlp", config=ffn_config)
+
+        # ========== 3. 合并Attention和FFN的算子 ==========
+        # 创建组合层，包含完整的Transformer层
+        combined_layer = BaseLayer(
+            name=f"layer_{layer_index}",
+            layer_type="TransformerLayer"
+        )
+
+        # 添加Attention的所有算子
+        for op in attention_layer.comp_ops:
+            combined_layer.add_operator(op)
+        for op in attention_layer.comm_ops:
+            combined_layer.add_operator(op)
+
+        # 添加FFN的所有算子
+        for op in ffn_layer.comp_ops:
+            combined_layer.add_operator(op)
+        for op in ffn_layer.comm_ops:
+            combined_layer.add_operator(op)
+
+        # ========== 4. 评估所有算子 ==========
         if self.config.use_precise_evaluator and self.arch is not None:
-            self._evaluate_layer_operators(layer)
+            self._evaluate_layer_operators(combined_layer)
 
-        return layer
+        return combined_layer
 
     def _evaluate_layer_operators(self, layer):
         """直接评估层中的所有算子"""
@@ -518,9 +600,10 @@ class LLMInferenceSimulator:
         gemm_eval = self.gemm_evaluator
         fa2_eval = FA2Evaluator(self.arch)
         rmsnorm_eval = RMSNormEvaluator(self.arch)
-        allreduce_eval = AllReduceEval(self.arch)
-        allgather_eval = AllGatherEval(self.arch)
-        reducescatter_eval = ReduceScatterEval(self.arch)
+        # 通信评估器使用前端传递的配置
+        allreduce_eval = AllReduceEval(self.arch, self.protocol_cfg, self.network_cfg)
+        allgather_eval = AllGatherEval(self.arch, self.protocol_cfg, self.network_cfg)
+        reducescatter_eval = ReduceScatterEval(self.arch, self.protocol_cfg, self.network_cfg)
 
         # 评估所有计算算子
         for op in layer.comp_ops:
@@ -663,7 +746,8 @@ class LLMInferenceSimulator:
         phase_start = time.time()
         if self.config.enable_data_transfer:
             current_time = self._simulate_data_transfer_h2d(current_time)
-        logger.info(f"⏱️  [H2D] 墙上时间: {(time.time() - phase_start)*1000:.2f}ms")
+        h2d_wall_time = (time.time() - phase_start) * 1000
+        logger.info(f"⏱️  [H2D] 墙上时间: {h2d_wall_time:.2f}ms")
 
         # 阶段2: Prefill 推理
         phase_start = time.time()
@@ -685,20 +769,58 @@ class LLMInferenceSimulator:
             final_time = self._simulate_data_transfer_d2h(decode_end_time)
         else:
             final_time = decode_end_time
-        logger.info(f"⏱️  [D2H] 墙上时间: {(time.time() - phase_start)*1000:.2f}ms")
+        d2h_wall_time = (time.time() - phase_start) * 1000
+        logger.info(f"⏱️  [D2H] 墙上时间: {d2h_wall_time:.2f}ms")
 
         # 构建甘特图
         phase_start = time.time()
         gantt_data = self.gantt_builder.build(phase_transition=phase_transition)
-        logger.info(f"⏱️  [Gantt Build] 墙上时间: {(time.time() - phase_start)*1000:.2f}ms")
+        gantt_wall_time = (time.time() - phase_start) * 1000
+        logger.info(f"⏱️  [Gantt Build] 墙上时间: {gantt_wall_time:.2f}ms")
 
         # 计算统计信息
         phase_start = time.time()
         stats = self._compute_stats(final_time)
-        logger.info(f"⏱️  [Stats] 墙上时间: {(time.time() - phase_start)*1000:.2f}ms")
+        stats_wall_time = (time.time() - phase_start) * 1000
+        logger.info(f"⏱️  [Stats] 墙上时间: {stats_wall_time:.2f}ms")
 
         total_wall_time = (time.time() - wall_start) * 1000
         logger.info(f"⏱️  [Total] 总墙上时间: {total_wall_time:.2f}ms")
+
+        # 📊 打印 GEMM 缓存统计（如果使用了精确评估器）
+        if self.config.use_precise_evaluator and hasattr(self, 'gemm_evaluator'):
+            logger.info("")  # 空行分隔
+            self.gemm_evaluator.print_cache_stats()
+
+        # 📊 打印性能摘要
+        logger.info("")
+        logger.info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+        logger.info("📈 性能摘要 (墙上时间)")
+        logger.info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+
+        # 计算各阶段时间占比
+        stages = [
+            ("H2D数据传输", h2d_wall_time),
+            ("Prefill推理", prefill_wall_time),
+            ("Decode推理", decode_wall_time),
+            ("D2H数据传输", d2h_wall_time),
+            ("Gantt图构建", gantt_wall_time),
+            ("统计计算", stats_wall_time),
+        ]
+
+        for stage_name, stage_time in stages:
+            percent = (stage_time / total_wall_time * 100) if total_wall_time > 0 else 0
+            logger.info(f"   {stage_name:12s}: {stage_time:7.2f}ms ({percent:5.1f}%)")
+
+        logger.info(f"   {'─' * 35}")
+        logger.info(f"   {'总计':12s}: {total_wall_time:7.2f}ms")
+
+        # 识别瓶颈
+        max_stage = max(stages, key=lambda x: x[1])
+        if max_stage[1] > 0:
+            logger.info(f"   🎯 最慢阶段: {max_stage[0]} ({max_stage[1]:.2f}ms)")
+
+        logger.info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
         return SimulationResult(
             gantt_chart=gantt_data,
@@ -950,40 +1072,125 @@ class LLMInferenceSimulator:
         # 根据评估粒度决定是否展开所有算子
         gantt_wall_start = time.time()
         if self.config.evaluation_granularity == "fine":
-            # 细粒度：遍历所有计算算子
-            for op in layer.comp_ops:
-                task_type = self._map_compute_op_to_task_type(op.op_type, op.name)
-                # 延迟单位：评估器返回 us，Gantt 需要 ms
-                latency_ms = op.elapse / 1000
-                self.gantt_builder.add_compute_task(task_type, current_time, latency_ms, phase, chip_id, pp_stage, layer_index, token_index)
-                current_time += latency_ms
+            # 检查是否为 MoE 层且启用了 TBO 优化
+            from .layers import MoELayer
+            if self.config.enable_tbo and isinstance(layer, MoELayer):
+                # TBO 模式: 标记被重叠隐藏的通信算子
+                dispatch_lat = layer._get_operator_latency('dispatch')
+                combine_lat = layer._get_operator_latency('combine')
 
-            # 遍历所有通信算子
-            for op in layer.comm_ops:
-                task_type = self._map_comm_op_to_task_type(op.comm_kind)
-                latency_ms = op.comm_elapse / 1000
-                self.gantt_builder.add_comm_task(task_type, current_time, latency_ms, phase, chip_id, pp_stage, layer_index, token_index)
-                current_time += latency_ms
+                routed_gate_lat = layer._get_operator_latency('routed_gate')
+                routed_up_lat = layer._get_operator_latency('routed_up')
+                routed_down_lat = layer._get_operator_latency('routed_down')
+                routed_allreduce_lat = layer._get_operator_latency('routed_allreduce')
+                routed_compute_lat = routed_gate_lat + routed_up_lat + routed_down_lat + routed_allreduce_lat
+
+                shared_gate_lat = layer._get_operator_latency('shared_gate')
+                shared_up_lat = layer._get_operator_latency('shared_up')
+                shared_down_lat = layer._get_operator_latency('shared_down')
+                shared_allreduce_lat = layer._get_operator_latency('shared_allreduce')
+                shared_compute_lat = shared_gate_lat + shared_up_lat + shared_down_lat + shared_allreduce_lat
+
+                # 计算被隐藏的延迟
+                dispatch_hidden = min(dispatch_lat, routed_compute_lat)
+                if shared_compute_lat > 0:
+                    combine_hidden = min(combine_lat, shared_compute_lat)
+                else:
+                    combine_hidden = min(combine_lat, routed_compute_lat)
+
+                # 遍历所有计算算子 (正常添加)
+                for op in layer.comp_ops:
+                    task_type = self._map_compute_op_to_task_type(op.op_type, op.name)
+                    latency_ms = op.elapse / 1000
+                    self.gantt_builder.add_compute_task(task_type, current_time, latency_ms, phase, chip_id, pp_stage, layer_index, token_index)
+                    current_time += latency_ms
+
+                # 遍历通信算子 (应用 TBO 重叠)
+                for op in layer.comm_ops:
+                    task_type = self._map_comm_op_to_task_type(op.comm_kind)
+                    latency_ms = op.comm_elapse / 1000
+
+                    # 如果是 dispatch 或 combine，减去被隐藏的部分
+                    if op.name.endswith('dispatch') and dispatch_hidden > 0:
+                        effective_latency_ms = max(0, latency_ms - dispatch_hidden / 1000)
+                    elif op.name.endswith('combine') and combine_hidden > 0:
+                        effective_latency_ms = max(0, latency_ms - combine_hidden / 1000)
+                    else:
+                        effective_latency_ms = latency_ms
+
+                    if effective_latency_ms > 0:
+                        self.gantt_builder.add_comm_task(task_type, current_time, effective_latency_ms, phase, chip_id, pp_stage, layer_index, token_index)
+                        current_time += effective_latency_ms
+            else:
+                # 标准模式: 细粒度遍历所有算子
+                for op in layer.comp_ops:
+                    task_type = self._map_compute_op_to_task_type(op.op_type, op.name)
+                    latency_ms = op.elapse / 1000
+                    self.gantt_builder.add_compute_task(task_type, current_time, latency_ms, phase, chip_id, pp_stage, layer_index, token_index)
+                    current_time += latency_ms
+
+                # 遍历所有通信算子
+                for op in layer.comm_ops:
+                    task_type = self._map_comm_op_to_task_type(op.comm_kind)
+                    latency_ms = op.comm_elapse / 1000
+                    self.gantt_builder.add_comm_task(task_type, current_time, latency_ms, phase, chip_id, pp_stage, layer_index, token_index)
+                    current_time += latency_ms
         else:
             # 粗粒度：聚合整层
-            total_compute_time = sum(op.elapse for op in layer.comp_ops) / 1000
-            total_comm_time = sum(op.comm_elapse for op in layer.comm_ops) / 1000
+            # 检查是否为 MoE 层且启用了 TBO 优化
+            from .layers import MoELayer
+            if self.config.enable_tbo and isinstance(layer, MoELayer):
+                # 使用 TBO 优化计算延迟
+                total_layer_time = layer.calculate_latency_with_tbo() / 1000  # us -> ms
 
-            if total_compute_time > 0:
-                self.gantt_builder.add_compute_task(GanttTaskType.COMPUTE, current_time, total_compute_time, phase, chip_id, pp_stage, layer_index, token_index)
-                current_time += total_compute_time
+                # 添加聚合任务到甘特图
+                if total_layer_time > 0:
+                    self.gantt_builder.add_compute_task(
+                        GanttTaskType.MOE_EXPERT,
+                        current_time,
+                        total_layer_time,
+                        phase,
+                        chip_id,
+                        pp_stage,
+                        layer_index,
+                        token_index
+                    )
+                    current_time += total_layer_time
+            else:
+                # 标准模式：简单求和
+                total_compute_time = sum(op.elapse for op in layer.comp_ops) / 1000
+                total_comm_time = sum(op.comm_elapse for op in layer.comm_ops) / 1000
 
-            if total_comm_time > 0:
-                self.gantt_builder.add_comm_task(GanttTaskType.TP_COMM, current_time, total_comm_time, phase, chip_id, pp_stage, layer_index, token_index)
-                current_time += total_comm_time
+                if total_compute_time > 0:
+                    self.gantt_builder.add_compute_task(GanttTaskType.COMPUTE, current_time, total_compute_time, phase, chip_id, pp_stage, layer_index, token_index)
+                    current_time += total_compute_time
+
+                if total_comm_time > 0:
+                    self.gantt_builder.add_comm_task(GanttTaskType.TP_COMM, current_time, total_comm_time, phase, chip_id, pp_stage, layer_index, token_index)
+                    current_time += total_comm_time
 
         gantt_time = (time.time() - gantt_wall_start) * 1000
 
-        # 📊 性能日志（仅在decode的第一个token时打印，避免刷屏）
-        if phase == InferencePhase.DECODE and token_index == 0 and layer_index == 0:
-            import logging
-            logger = logging.getLogger(__name__)
-            logger.info(f"      🔸 单层评估: build={build_time:.2f}ms, gantt={gantt_time:.2f}ms, ops={len(layer.comp_ops)}+{len(layer.comm_ops)}")
+        # 📊 性能日志（打印前3层的详细timing，或decode第一个token的所有层）
+        import logging
+        logger = logging.getLogger(__name__)
+
+        # 条件1: Prefill阶段的前3层
+        # 条件2: Decode第一个token的前3层
+        # 条件3: 如果环境变量设置了详细日志，打印所有层
+        import os
+        verbose_logging = os.environ.get('GEMM_VERBOSE_LOGGING', '0') == '1'
+
+        should_log = False
+        if phase == InferencePhase.PREFILL and layer_index < 3:
+            should_log = True
+        elif phase == InferencePhase.DECODE and token_index == 0 and layer_index < 3:
+            should_log = True
+        elif verbose_logging:
+            should_log = True
+
+        if should_log:
+            logger.info(f"      🔸 [{phase.value}] 层{layer_index}: build={build_time:.2f}ms, gantt={gantt_time:.2f}ms, ops={len(layer.comp_ops)}+{len(layer.comm_ops)}")
 
         return current_time
 
@@ -1420,6 +1627,9 @@ def run_simulation(
         enable_kv_cache=config_dict.get("enableKVCacheAccessSimulation", True) if config_dict else True,
     )
 
+    # 从拓扑配置中提取通信延迟配置 (前端传递的统一配置)
+    comm_latency_config = topology_dict.get("comm_latency_config")
+
     # 运行模拟
     simulator = LLMInferenceSimulator(
         topology_dict=topology_dict,
@@ -1428,6 +1638,7 @@ def run_simulation(
         parallelism=parallelism,
         hardware=hardware,
         config=config,
+        comm_latency_config=comm_latency_config,
     )
 
     result = simulator.simulate()

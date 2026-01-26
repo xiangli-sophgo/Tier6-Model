@@ -31,6 +31,11 @@ DTYPE_BYTES = {
     'int8': 1,
 }
 
+# DS_TPU 对齐: 默认使用 FP8 输入精度 (W8A8 量化模式)
+# 这是 DeepSeek V3 的默认精度配置
+DEFAULT_INPUT_DTYPE = 'fp8'   # 输入/权重使用 FP8
+DEFAULT_OUTPUT_DTYPE = 'bf16'  # 输出使用 BF16
+
 
 @dataclass
 class GEMMResult:
@@ -79,6 +84,11 @@ class GEMMEvaluator:
         self.arch = arch
         self._valid_partitions = self._compute_valid_partitions()
         self._cache: Dict[Tuple, GEMMResult] = {}
+
+        # 📊 缓存统计
+        self._cache_hits = 0
+        self._cache_misses = 0
+        self._total_search_time_ms = 0.0
 
     def _compute_valid_partitions(self) -> List[Tuple[int, int, int, int]]:
         """
@@ -146,24 +156,29 @@ class GEMMEvaluator:
         n_start = align_up(n_blk, cube_n)
 
         for m_t in range(m_start, 0, -cube_m):
-            if m_t > m_blk * 2:  # 跳过过大的 tile
+            # 允许 m_t 至少达到 cube_m（最小对齐单元）
+            if m_t > max(m_blk * 2, cube_m):
                 continue
             align_row_m = align_row(m_t)
 
             for n_t in range(n_start, 0, -cube_n):
-                if n_t > n_blk * 2:
+                # 允许 n_t 至少达到 cube_n
+                if n_t > max(n_blk * 2, cube_n):
                     continue
                 align_col_n = align_col(n_t, output_dtype_bytes)
-                align_row_n = align_row(n_t)
+                align_row_n = align_row(n_t)  # 用于 B tile 计算
 
-                # C tile 必须放得下
-                c_tile_bytes = align_row_n * align_col_n
+                # C tile 必须放得下: C[m_t, n_t]
+                # 行数对齐到 lane_num，列字节数对齐到 align_bytes
+                c_tile_bytes = align_row_m * align_col_n
                 avail = sram_limit - c_tile_bytes
 
                 if avail <= 0:
                     continue
 
                 # 计算最大 k_t
+                # A tile: [m_t, k_t]，每增加 1 个 k 需要 align_row_m * input_dtype_bytes
+                # B tile: [k_t, n_t]，每增加 1 个 k 需要 align_row_n * input_dtype_bytes
                 bytes_per_k = (align_row_m + align_row_n) * input_dtype_bytes
                 if bytes_per_k <= 0:
                     max_k = k_blk
@@ -451,11 +466,16 @@ class GEMMEvaluator:
         # 检查缓存
         cache_key = (G, M, K, N, input_dtype, output_dtype)
         if cache_key in self._cache:
-            # 📊 缓存命中日志（仅在 DEBUG 模式下）
+            # 📊 缓存命中
+            self._cache_hits += 1
             import logging
             logger = logging.getLogger(__name__)
             logger.debug(f"✅ GEMM 缓存命中: ({G}, {M}, {K}, {N})")
             return self._cache[cache_key]
+
+        # 📊 缓存未命中，记录搜索时间
+        import time
+        search_start = time.time()
 
         input_bytes = DTYPE_BYTES.get(input_dtype, 2)
         output_bytes = DTYPE_BYTES.get(output_dtype, 2)
@@ -549,6 +569,16 @@ class GEMMEvaluator:
             )
 
         self._cache[cache_key] = best_result
+
+        # 📊 记录缓存未命中和搜索时间
+        self._cache_misses += 1
+        search_time_ms = (time.time() - search_start) * 1000
+        self._total_search_time_ms += search_time_ms
+
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.debug(f"🔍 GEMM 缓存未命中，搜索耗时: {search_time_ms:.2f}ms, 形状: ({G}, {M}, {K}, {N})")
+
         return best_result
 
     def _evaluate_parallel(
@@ -612,6 +642,44 @@ class GEMMEvaluator:
         """清空缓存"""
         self._cache.clear()
 
+    def get_cache_stats(self) -> dict:
+        """
+        获取缓存统计信息
+
+        Returns:
+            包含缓存命中率、搜索时间等信息的字典
+        """
+        total_requests = self._cache_hits + self._cache_misses
+        hit_rate = (self._cache_hits / total_requests * 100) if total_requests > 0 else 0.0
+
+        return {
+            "total_requests": total_requests,
+            "cache_hits": self._cache_hits,
+            "cache_misses": self._cache_misses,
+            "hit_rate_percent": hit_rate,
+            "cached_configs": len(self._cache),
+            "total_search_time_ms": self._total_search_time_ms,
+            "avg_search_time_ms": (self._total_search_time_ms / self._cache_misses) if self._cache_misses > 0 else 0.0,
+        }
+
+    def print_cache_stats(self):
+        """打印缓存统计信息"""
+        stats = self.get_cache_stats()
+        import logging
+        logger = logging.getLogger(__name__)
+
+        logger.info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+        logger.info("📊 GEMM 评估器缓存统计")
+        logger.info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+        logger.info(f"   总请求数: {stats['total_requests']}")
+        logger.info(f"   缓存命中: {stats['cache_hits']} ({stats['hit_rate_percent']:.1f}%)")
+        logger.info(f"   缓存未命中: {stats['cache_misses']}")
+        logger.info(f"   已缓存配置: {stats['cached_configs']}")
+        logger.info(f"   总搜索时间: {stats['total_search_time_ms']:.2f}ms")
+        if stats['cache_misses'] > 0:
+            logger.info(f"   平均搜索时间: {stats['avg_search_time_ms']:.2f}ms/次")
+        logger.info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+
 
 # ==================== 多进程辅助函数 ====================
 
@@ -673,22 +741,27 @@ class _PartitionEvaluator:
         n_start = align_up(n_blk, cube_n)
 
         for m_t in range(m_start, 0, -cube_m):
-            if m_t > m_blk * 2:
+            # 允许 m_t 至少达到 cube_m（最小对齐单元）
+            if m_t > max(m_blk * 2, cube_m):
                 continue
             align_row_m = align_row(m_t)
 
             for n_t in range(n_start, 0, -cube_n):
-                if n_t > n_blk * 2:
+                # 允许 n_t 至少达到 cube_n
+                if n_t > max(n_blk * 2, cube_n):
                     continue
                 align_col_n = align_col(n_t, output_dtype_bytes)
                 align_row_n = align_row(n_t)
 
-                c_tile_bytes = align_row_n * align_col_n
+                # C tile: [m_t, n_t]，行数对齐到 lane_num
+                c_tile_bytes = align_row_m * align_col_n
                 avail = sram_limit - c_tile_bytes
 
                 if avail <= 0:
                     continue
 
+                # A tile: [m_t, k_t]，B tile: [k_t, n_t]
+                # bytes_per_k = A 每增加 1 个 k 的字节数 + B 每增加 1 个 k 的字节数
                 bytes_per_k = (align_row_m + align_row_n) * input_dtype_bytes
                 if bytes_per_k <= 0:
                     max_k = k_blk

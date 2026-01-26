@@ -37,10 +37,8 @@ export const ConfigSnapshotDisplay: React.FC<ConfigSnapshotDisplayProps> = ({
 
   const { model, inference, topology } = configSnapshot
 
-  // 提取拓扑延迟配置
-  const protocolConfig = (topology as any).protocol_config
-  const networkConfig = (topology as any).network_config || (topology as any).network_infra_config
-  const chipLatencyConfig = (topology as any).chip_latency_config
+  // 提取通信延迟配置
+  const commLatencyConfig = (topology as any).comm_latency_config
 
   // 计算总芯片数
   const calculateTotalChips = () => {
@@ -160,92 +158,56 @@ export const ConfigSnapshotDisplay: React.FC<ConfigSnapshotDisplayProps> = ({
         })()}
       </Panel>
 
-      {/* 协议延迟配置 */}
-      {protocolConfig && (
-        <Panel
-          header={
-            <span>
-              <ApiOutlined style={{ marginRight: 8, color: '#fa8c16' }} />
-              <Text strong>协议延迟配置</Text>
-            </span>
-          }
-          key="protocol"
-        >
-          <Descriptions column={2} size="small" bordered>
-            <Descriptions.Item label="TP RTT (μs)">
-              {protocolConfig.rtt_tp_us || '-'}
-            </Descriptions.Item>
-            <Descriptions.Item label="EP RTT (μs)">
-              {protocolConfig.rtt_ep_us || '-'}
-            </Descriptions.Item>
-            <Descriptions.Item label="带宽利用率">
-              {protocolConfig.bandwidth_utilization
-                ? `${(protocolConfig.bandwidth_utilization * 100).toFixed(0)}%`
-                : '-'}
-            </Descriptions.Item>
-            <Descriptions.Item label="同步延迟 (μs)">
-              {protocolConfig.sync_latency_us || '-'}
-            </Descriptions.Item>
-          </Descriptions>
-        </Panel>
-      )}
-
-      {/* 网络配置 */}
-      {networkConfig && (
-        <Panel
-          header={
-            <span>
-              <ApiOutlined style={{ marginRight: 8, color: '#13c2c2' }} />
-              <Text strong>网络基础设施配置</Text>
-            </span>
-          }
-          key="network"
-        >
-          <Descriptions column={2} size="small" bordered>
-            <Descriptions.Item label="交换机延迟 (μs)">
-              {networkConfig.switch_delay_us || '-'}
-            </Descriptions.Item>
-            <Descriptions.Item label="线缆延迟 (μs)">
-              {networkConfig.cable_delay_us || '-'}
-            </Descriptions.Item>
-            {networkConfig.link_delay_us && (
-              <Descriptions.Item label="链路延迟 (μs)" span={2}>
-                {networkConfig.link_delay_us}
-              </Descriptions.Item>
-            )}
-          </Descriptions>
-        </Panel>
-      )}
-
-      {/* 芯片延迟配置 */}
-      {chipLatencyConfig && (
+      {/* 通信延迟配置 */}
+      {commLatencyConfig && (
         <Panel
           header={
             <span>
               <SettingOutlined style={{ marginRight: 8, color: '#722ed1' }} />
-              <Text strong>芯片延迟配置</Text>
+              <Text strong>通信延迟配置</Text>
             </span>
           }
-          key="chip_latency"
+          key="comm_latency"
         >
           <Descriptions column={2} size="small" bordered>
-            <Descriptions.Item label="C2C 延迟 (μs)">
-              {chipLatencyConfig.c2c_lat_us || '-'}
+            {/* 协议相关 */}
+            <Descriptions.Item label="TP RTT (μs)">
+              {commLatencyConfig.rtt_tp_us ?? '-'}
             </Descriptions.Item>
-            <Descriptions.Item label="DDR 读延迟 (μs)">
-              {chipLatencyConfig.ddr_r_lat_us || '-'}
+            <Descriptions.Item label="EP RTT (μs)">
+              {commLatencyConfig.rtt_ep_us ?? '-'}
             </Descriptions.Item>
-            <Descriptions.Item label="DDR 写延迟 (μs)">
-              {chipLatencyConfig.ddr_w_lat_us || '-'}
+            <Descriptions.Item label="带宽利用率">
+              {commLatencyConfig.bandwidth_utilization
+                ? `${(commLatencyConfig.bandwidth_utilization * 100).toFixed(0)}%`
+                : '-'}
             </Descriptions.Item>
-            <Descriptions.Item label="NoC 延迟 (μs)">
-              {chipLatencyConfig.noc_lat_us || '-'}
+            <Descriptions.Item label="同步延迟 (μs)">
+              {commLatencyConfig.sync_latency_us ?? '-'}
             </Descriptions.Item>
-            {chipLatencyConfig.d2d_lat_us && (
-              <Descriptions.Item label="D2D 延迟 (μs)" span={2}>
-                {chipLatencyConfig.d2d_lat_us}
-              </Descriptions.Item>
-            )}
+            {/* 网络基础设施 */}
+            <Descriptions.Item label="交换机延迟 (μs)">
+              {commLatencyConfig.switch_delay_us ?? '-'}
+            </Descriptions.Item>
+            <Descriptions.Item label="线缆延迟 (μs)">
+              {commLatencyConfig.cable_delay_us ?? '-'}
+            </Descriptions.Item>
+            {/* 芯片延迟 */}
+            <Descriptions.Item label="芯片间延迟 (μs)">
+              {commLatencyConfig.chip_to_chip_us ?? '-'}
+            </Descriptions.Item>
+            <Descriptions.Item label="内存读延迟 (μs)">
+              {commLatencyConfig.memory_read_latency_us ?? '-'}
+            </Descriptions.Item>
+            <Descriptions.Item label="内存写延迟 (μs)">
+              {commLatencyConfig.memory_write_latency_us ?? '-'}
+            </Descriptions.Item>
+            <Descriptions.Item label="NoC延迟 (μs)">
+              {commLatencyConfig.noc_latency_us ?? '-'}
+            </Descriptions.Item>
+            <Descriptions.Item label="Die间延迟 (μs)" span={2}>
+              {commLatencyConfig.die_to_die_latency_us ?? '-'}
+            </Descriptions.Item>
           </Descriptions>
         </Panel>
       )}

@@ -741,11 +741,12 @@ export interface TopologyTrafficResult {
 }
 
 // ============================================
-// 运行时配置 (通信协议和网络基础设施)
+// 通信延迟配置 (统一配置)
 // ============================================
 
-/** 通信协议配置 */
-export interface ProtocolConfig {
+/** 通信延迟配置 (统一所有延迟相关参数) */
+export interface CommLatencyConfig {
+  // === 协议相关 ===
   /** TP 通信 RTT (微秒) */
   rtt_tp_us: number;
   /** EP 通信 RTT (微秒) */
@@ -754,61 +755,42 @@ export interface ProtocolConfig {
   bandwidth_utilization: number;
   /** 同步延迟 (微秒) */
   sync_latency_us: number;
-}
 
-/** 网络基础设施配置 (互联相关) */
-export interface NetworkInfraConfig {
+  // === 网络基础设施 ===
   /** 交换机延迟 (微秒) */
   switch_delay_us: number;
   /** 线缆延迟 (微秒) */
   cable_delay_us: number;
+
+  // === 芯片延迟 ===
+  /** 芯片间物理互联延迟 (微秒) */
+  chip_to_chip_us: number;
+  /** 显存读延迟 (微秒) */
+  memory_read_latency_us: number;
+  /** 显存写延迟 (微秒) */
+  memory_write_latency_us: number;
+  /** 片上网络延迟 (微秒) */
+  noc_latency_us: number;
+  /** Die-to-Die 延迟 (微秒) */
+  die_to_die_latency_us: number;
 }
 
-/** 芯片延迟配置 (C2C相关) */
-export interface ChipLatencyConfig {
-  /** 芯片间物理互联延迟 (微秒) - c2c_lat */
-  c2c_lat_us: number;
-  /** DDR 读延迟 (微秒) - ddr_r_lat */
-  ddr_r_lat_us: number;
-  /** DDR 写延迟 (微秒) - ddr_w_lat */
-  ddr_w_lat_us: number;
-  /** NoC 延迟 (微秒) - noc_lat */
-  noc_lat_us: number;
-  /** Die-to-Die 延迟 (微秒) - d2d_lat */
-  d2d_lat_us: number;
-}
-
-/** 运行时配置 (汇总) */
-export interface RuntimeConfig {
-  /** 协议配置 */
-  protocol: ProtocolConfig;
-  /** 网络配置 */
-  network: NetworkInfraConfig;
-  /** 芯片延迟配置 */
-  chipLatency: ChipLatencyConfig;
-}
-
-/** 默认协议配置 */
-export const DEFAULT_PROTOCOL_CONFIG: ProtocolConfig = {
+/** 默认通信延迟配置 */
+export const DEFAULT_COMM_LATENCY_CONFIG: CommLatencyConfig = {
+  // 协议相关
   rtt_tp_us: 0.35,
   rtt_ep_us: 0.85,
   bandwidth_utilization: 0.95,
   sync_latency_us: 0.0,
-};
-
-/** 默认网络配置 (互联相关) */
-export const DEFAULT_NETWORK_CONFIG: NetworkInfraConfig = {
+  // 网络基础设施
   switch_delay_us: 1.0,
   cable_delay_us: 0.025,
-};
-
-/** 默认芯片延迟配置 (C2C相关) */
-export const DEFAULT_CHIP_LATENCY_CONFIG: ChipLatencyConfig = {
-  c2c_lat_us: 0.2,
-  ddr_r_lat_us: 0.15,
-  ddr_w_lat_us: 0.01,
-  noc_lat_us: 0.05,
-  d2d_lat_us: 0.04,
+  // 芯片延迟
+  chip_to_chip_us: 0.2,
+  memory_read_latency_us: 0.15,
+  memory_write_latency_us: 0.01,
+  noc_latency_us: 0.05,
+  die_to_die_latency_us: 0.04,
 };
 
 // ============================================

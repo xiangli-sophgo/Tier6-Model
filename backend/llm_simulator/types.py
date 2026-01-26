@@ -364,7 +364,7 @@ class NetworkInfraConfig:
 
     所有延迟单位：微秒 (us)
     """
-    switch_delay_us: float = 0.25
+    switch_delay_us: float = 1.0
     """交换机转发延迟
 
     单个交换机的数据包处理和转发延迟。

@@ -50,6 +50,12 @@ from .comm_eval import (
     eval_reducescatter,
 )
 from .utils import ceil_div, align_up
+from .moe_load_balance import (
+    get_max_expert_load,
+    get_max_expert_load_for_moe_layer,
+    estimate_moe_expert_load_impact,
+    monte_carlo_max_experts,
+)
 
 __all__ = [
     # 配置
@@ -96,4 +102,9 @@ __all__ = [
     # 工具
     'ceil_div',
     'align_up',
+    # MoE 负载均衡
+    'get_max_expert_load',
+    'get_max_expert_load_for_moe_layer',
+    'estimate_moe_expert_load_impact',
+    'monte_carlo_max_experts',
 ]
