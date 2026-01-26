@@ -11,9 +11,9 @@ PerformanceAnalyzer 负责:
 from datetime import datetime
 from typing import Dict, Any, Optional, List
 
-from .models.base import BaseModel
-from .operators.base import ComputeOperator, CommunicationOperator
-from .evaluators import (
+from ..models.base import BaseModel
+from ..operators.base import ComputeOperator, CommunicationOperator
+from ..evaluators import (
     get_arch_preset,
     AcceleratorMicroArch,
     GEMMEvaluator,
@@ -25,7 +25,7 @@ from .evaluators import (
     DispatchEval,
     CombineEval,
 )
-from .types import ProtocolConfig, NetworkInfraConfig
+from ..config import ProtocolConfig, NetworkInfraConfig
 
 
 class PerformanceAnalyzer:

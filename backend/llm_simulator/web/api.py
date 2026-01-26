@@ -6,28 +6,30 @@ FastAPI 接口模块
 
 import json
 import logging
+import os
 from pathlib import Path
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, Depends
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Any, Optional
 from sqlalchemy.orm import Session
 
-from .simulator import (
-    run_simulation,
+from ..core.simulator import run_simulation
+from ..core.database import get_db, get_db_session, init_db, Experiment, EvaluationTask, TaskStatus
+from ..evaluators import ARCH_PRESETS
+from ..config import (
+    ProtocolConfig,
+    NetworkInfraConfig,
     validate_model_config,
     validate_hardware_config,
     validate_parallelism_config,
     validate_mla_config,
     validate_moe_config,
+    get_max_global_workers,
+    set_max_global_workers,
 )
-from .evaluators import ARCH_PRESETS
-from .types import ProtocolConfig, NetworkInfraConfig
-from .database import get_db, get_db_session, init_db
-from .websocket_manager import ws_manager
-from . import task_manager
-from .db_models import Experiment, EvaluationTask, TaskStatus
-from .config import get_max_global_workers, set_max_global_workers
+from .websocket import ws_manager
+from ..tasks import manager as task_manager
 
 # 配置日志
 logging.basicConfig(
@@ -38,17 +40,90 @@ logger = logging.getLogger(__name__)
 
 
 # ============================================
-# Pydantic 模型
+# Pydantic 模型 - 严格类型定义（无默认值）
 # ============================================
 
+class ChipHardwareConfigRequest(BaseModel):
+    """芯片硬件配置请求 - 所有核心字段必须明确指定"""
+    chip_type: str = Field(..., description="芯片型号，如 SG2260E, A100, H100")
+    compute_tflops_fp16: float = Field(..., gt=0, description="FP16 算力（TFLOPS）")
+    memory_gb: float = Field(..., gt=0, description="显存容量（GB）")
+    memory_bandwidth_gbps: float = Field(..., gt=0, description="显存带宽（GB/s）")
+
+    # 可选的高级参数（有合理默认值）
+    compute_tops_int8: float = Field(0.0, ge=0, description="INT8 算力（TOPS）")
+    num_cores: int = Field(8, gt=0, description="计算核心数")
+    memory_bandwidth_utilization: float = Field(0.9, gt=0, le=1, description="显存带宽利用率")
+    l2_cache_mb: float = Field(16.0, gt=0, description="L2缓存容量（MB）")
+    l2_bandwidth_gbps: float = Field(512.0, gt=0, description="L2缓存带宽（GB/s）")
+    pcie_bandwidth_gbps: float = Field(64.0, gt=0, description="PCIe带宽（GB/s）")
+    pcie_latency_us: float = Field(1.0, gt=0, description="PCIe延迟（微秒）")
+    hbm_random_access_latency_ns: float = Field(100.0, gt=0, description="HBM随机访问延迟（纳秒）")
+
+    # 微架构参数（可选，用于精确 GEMM 评估）
+    cube_m: Optional[int] = Field(None, description="矩阵单元 M 维度")
+    cube_k: Optional[int] = Field(None, description="矩阵单元 K 维度（累加维度）")
+    cube_n: Optional[int] = Field(None, description="矩阵单元 N 维度")
+    sram_size_kb: Optional[float] = Field(None, description="每核 SRAM 大小（KB）")
+    sram_utilization: Optional[float] = Field(None, description="SRAM 可用比例（0-1）")
+    lane_num: Optional[int] = Field(None, description="SIMD lane 数量")
+    align_bytes: Optional[int] = Field(None, description="内存对齐字节数")
+    compute_dma_overlap_rate: Optional[float] = Field(None, description="计算-搬运重叠率（0-1）")
+
+
+class ModelConfigRequest(BaseModel):
+    """模型配置请求 - 所有核心字段必须明确指定"""
+    model_name: str = Field(..., description="模型名称")
+    model_type: str = Field(..., description="模型类型: dense 或 moe")
+    hidden_size: int = Field(..., gt=0, description="隐藏层维度")
+    num_layers: int = Field(..., gt=0, description="层数")
+    num_attention_heads: int = Field(..., gt=0, description="注意力头数")
+    num_kv_heads: int = Field(..., gt=0, description="KV 头数（GQA）")
+    intermediate_size: int = Field(..., gt=0, description="FFN 中间层维度")
+    vocab_size: int = Field(..., gt=0, description="词表大小")
+    dtype: str = Field(..., description="数据类型: fp32, fp16, bf16, int8, int4")
+    max_seq_length: int = Field(..., gt=0, description="最大序列长度")
+
+    # 可选配置
+    attention_type: str = Field("gqa", description="注意力类型: mha, gqa, mqa, mla")
+    norm_type: str = Field("rmsnorm", description="归一化类型: layernorm, rmsnorm")
+    moe_config: Optional[dict[str, Any]] = Field(None, description="MoE 配置")
+    mla_config: Optional[dict[str, Any]] = Field(None, description="MLA 配置（DeepSeek）")
+
+
+class InferenceConfigRequest(BaseModel):
+    """推理配置请求 - 所有核心字段必须明确指定"""
+    batch_size: int = Field(..., gt=0, description="批次大小")
+    input_seq_length: int = Field(..., gt=0, description="输入序列长度")
+    output_seq_length: int = Field(..., gt=0, description="输出序列长度")
+    max_seq_length: int = Field(..., gt=0, description="最大序列长度")
+    num_micro_batches: int = Field(1, gt=0, description="微批次数量（Pipeline Parallelism）")
+
+
+class ParallelismConfigRequest(BaseModel):
+    """并行策略配置请求 - manual 模式下所有并行度必须明确指定"""
+    dp: int = Field(..., ge=1, description="数据并行度")
+    tp: int = Field(..., ge=1, description="张量并行度")
+    pp: int = Field(..., ge=1, description="流水线并行度")
+    ep: int = Field(..., ge=1, description="专家并行度")
+    sp: int = Field(1, ge=1, description="序列并行度")
+    moe_tp: int = Field(1, ge=1, description="MoE 专家内张量并行度")
+
+
+class HardwareConfigRequest(BaseModel):
+    """硬件配置请求"""
+    chip: ChipHardwareConfigRequest = Field(..., description="芯片配置")
+    # node 和 cluster 配置可选，代码中有默认处理逻辑
+
+
 class SimulationRequest(BaseModel):
-    """模拟请求"""
-    topology: dict[str, Any]
-    model: dict[str, Any]
-    inference: dict[str, Any]
-    parallelism: dict[str, Any]
-    hardware: dict[str, Any]
-    config: dict[str, Any] | None = None
+    """模拟请求 - 使用严格类型"""
+    topology: dict[str, Any]  # 拓扑配置保持灵活，因为结构复杂
+    model: ModelConfigRequest
+    inference: InferenceConfigRequest
+    parallelism: ParallelismConfigRequest
+    hardware: HardwareConfigRequest
+    config: dict[str, Any] | None = None  # protocol_config 和 network_config 保持灵活
 
 
 class SimulationResponse(BaseModel):
@@ -67,18 +142,19 @@ class BenchmarkConfig(BaseModel):
 
 
 class EvaluationRequest(BaseModel):
-    """评估请求"""
+    """评估请求 - 保持向后兼容（使用 dict 类型）"""
     experiment_name: str
     description: str = ""
 
     # 配置文件引用（追溯来源）
-    benchmark_name: Optional[str] = None  # Benchmark 配置文件名称
-    topology_config_name: Optional[str] = None  # 拓扑配置文件名称
+    benchmark_name: Optional[str] = None
+    topology_config_name: Optional[str] = None
 
-    # 完整配置数据
-    topology: dict[str, Any]  # 完整拓扑数据（包含 pods/racks/boards/chips/connections + protocol_config + network_config + chip_latency_config）
-    model: dict[str, Any]  # 模型配置
-    inference: dict[str, Any]  # 推理配置
+    # 完整配置数据（保持灵活的 dict 类型，兼容现有前端）
+    topology: dict[str, Any]
+    model: dict[str, Any]  # 暂时保持 dict，避免破坏前端
+    hardware: dict[str, Any]  # 暂时保持 dict
+    inference: dict[str, Any]  # 暂时保持 dict
 
     # 搜索配置
     search_mode: str  # 'manual' or 'auto'
@@ -86,7 +162,7 @@ class EvaluationRequest(BaseModel):
     search_constraints: Optional[dict[str, Any]] = None
 
     # 任务并发配置
-    max_workers: int = 4  # 本任务的最大并发数（默认 4，范围 1-16）
+    max_workers: int = Field(4, ge=1, le=32, description="本任务的最大并发数")
 
 
 class TaskSubmitResponse(BaseModel):
@@ -108,9 +184,15 @@ class ExecutorConfigUpdateRequest(BaseModel):
     max_workers: int  # 全局资源池最大 worker 数量（1-32）
 
 
-# Benchmark 文件存储目录
-BENCHMARKS_DIR = Path(__file__).parent.parent / "benchmarks"
+# 配置文件存储目录 (backend/configs/)
+CONFIGS_DIR = Path(__file__).parent.parent.parent / "configs"
+BENCHMARKS_DIR = CONFIGS_DIR / "benchmarks"
+TOPOLOGIES_DIR = CONFIGS_DIR / "topologies"
+
+# 确保目录存在
+CONFIGS_DIR.mkdir(exist_ok=True)
 BENCHMARKS_DIR.mkdir(exist_ok=True)
+TOPOLOGIES_DIR.mkdir(exist_ok=True)
 
 
 # ============================================
@@ -123,13 +205,19 @@ app = FastAPI(
     version="1.0.0",
 )
 
-# 配置 CORS
+# 配置 CORS - 使用环境变量控制允许的来源
+allowed_origins_str = os.getenv(
+    "ALLOWED_ORIGINS",
+    "http://localhost:3100,http://localhost:3000,http://127.0.0.1:3100,http://127.0.0.1:3000"  # 默认：开发环境前端端口（支持 localhost 和 127.0.0.1）
+)
+allowed_origins = [origin.strip() for origin in allowed_origins_str.split(",")]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # 开发环境允许所有来源
+    allow_origins=allowed_origins,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=["Content-Type", "Authorization"],
 )
 
 
@@ -267,13 +355,19 @@ async def simulate(request: SimulationRequest):
         模拟结果，包含甘特图数据和统计信息
     """
     try:
-        logger.info(f"开始模拟: model={request.model.get('model_name', 'Unknown')}")
+        # 将 Pydantic 模型转换为 dict
+        model_dict = request.model.model_dump()
+        inference_dict = request.inference.model_dump()
+        parallelism_dict = request.parallelism.model_dump()
+        hardware_dict = request.hardware.model_dump()
+
+        logger.info(f"开始模拟: model={model_dict['model_name']}")
         result = run_simulation(
             topology_dict=request.topology,
-            model_dict=request.model,
-            inference_dict=request.inference,
-            parallelism_dict=request.parallelism,
-            hardware_dict=request.hardware,
+            model_dict=model_dict,
+            inference_dict=inference_dict,
+            parallelism_dict=parallelism_dict,
+            hardware_dict=hardware_dict,
             config_dict=request.config,
         )
         logger.info("模拟完成")
@@ -306,26 +400,31 @@ async def validate_config(request: SimulationRequest):
     """
     errors = []
 
+    # 将 Pydantic 模型转换为 dict（验证函数期望 dict 类型）
+    model_dict = request.model.model_dump()
+    hardware_dict = request.hardware.model_dump()
+    parallelism_dict = request.parallelism.model_dump()
+
     # 验证模型配置
     try:
-        validate_model_config(request.model)
+        validate_model_config(model_dict)
     except ValueError as e:
         errors.append(f"模型配置: {e}")
 
     # 验证硬件配置
     try:
-        validate_hardware_config(request.hardware)
+        validate_hardware_config(hardware_dict)
     except ValueError as e:
         errors.append(f"硬件配置: {e}")
 
     # 验证并行策略
     try:
-        validate_parallelism_config(request.parallelism, request.model)
+        validate_parallelism_config(parallelism_dict, model_dict)
     except ValueError as e:
         errors.append(f"并行策略: {e}")
 
     # 验证 MLA 配置（如果存在）
-    mla_dict = request.model.get("mla_config")
+    mla_dict = model_dict.get("mla_config")
     if mla_dict:
         try:
             validate_mla_config(mla_dict)
@@ -333,7 +432,7 @@ async def validate_config(request: SimulationRequest):
             errors.append(f"MLA 配置: {e}")
 
     # 验证 MoE 配置（如果存在）
-    moe_dict = request.model.get("moe_config")
+    moe_dict = model_dict.get("moe_config")
     if moe_dict:
         try:
             validate_moe_config(moe_dict)
@@ -342,13 +441,12 @@ async def validate_config(request: SimulationRequest):
 
     # 验证芯片数量
     topology = request.topology
-    parallelism = request.parallelism
 
     required_chips = (
-        parallelism.get("dp", 1) *
-        parallelism.get("tp", 1) *
-        parallelism.get("pp", 1) *
-        parallelism.get("ep", 1)
+        parallelism_dict["dp"] *
+        parallelism_dict["tp"] *
+        parallelism_dict["pp"] *
+        parallelism_dict["ep"]
     )
 
     available_chips = 0
@@ -375,6 +473,151 @@ async def validate_config(request: SimulationRequest):
         "required_chips": required_chips,
         "available_chips": available_chips,
     }
+
+
+# ============================================
+# 拓扑配置管理 API
+# ============================================
+
+class TopologyConfigRequest(BaseModel):
+    """拓扑配置请求"""
+    name: str = Field(..., description="配置名称（唯一标识）")
+    description: Optional[str] = Field(None, description="配置描述")
+    pod_count: int = Field(1, description="Pod 数量")
+    racks_per_pod: int = Field(1, description="每个 Pod 的 Rack 数量")
+    board_configs: Optional[dict] = Field(None, description="Board 配置")
+    rack_config: Optional[dict] = Field(None, description="Rack 配置")
+    switch_config: Optional[dict] = Field(None, description="交换机配置")
+    manual_connections: Optional[dict] = Field(None, description="手动连接配置")
+    generated_topology: Optional[dict] = Field(None, description="生成的完整拓扑数据")
+    chip_configs: Optional[list] = Field(None, description="芯片硬件配置列表")
+    network_config: Optional[dict] = Field(None, description="网络配置")
+    comm_latency_config: Optional[dict] = Field(None, description="通信延迟配置")
+
+
+@app.get("/api/topologies")
+async def list_topologies():
+    """
+    获取所有保存的拓扑配置列表
+    """
+    topologies = []
+    for file_path in TOPOLOGIES_DIR.glob("*.json"):
+        try:
+            with open(file_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                # 返回摘要信息
+                topologies.append({
+                    "name": data.get("name", file_path.stem),
+                    "description": data.get("description"),
+                    "pod_count": data.get("pod_count"),
+                    "racks_per_pod": data.get("racks_per_pod"),
+                    "created_at": data.get("created_at"),
+                    "updated_at": data.get("updated_at"),
+                })
+        except Exception as e:
+            logger.warning(f"读取拓扑配置文件失败 {file_path}: {e}")
+
+    # 按更新时间倒序排列
+    topologies.sort(key=lambda x: x.get("updated_at") or x.get("created_at") or "", reverse=True)
+    return {"topologies": topologies}
+
+
+@app.get("/api/topologies/{name}")
+async def get_topology_config(name: str):
+    """
+    获取指定名称的拓扑配置
+    """
+    file_path = TOPOLOGIES_DIR / f"{name}.json"
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail=f"拓扑配置不存在: {name}")
+
+    try:
+        with open(file_path, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception as e:
+        logger.error(f"读取拓扑配置失败: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/topologies")
+async def create_topology_config(config: TopologyConfigRequest):
+    """
+    创建新的拓扑配置
+    """
+    from datetime import datetime
+
+    file_path = TOPOLOGIES_DIR / f"{config.name}.json"
+
+    # 检查是否已存在
+    if file_path.exists():
+        raise HTTPException(status_code=409, detail=f"拓扑配置已存在: {config.name}")
+
+    try:
+        data = config.model_dump()
+        now = datetime.now().isoformat()
+        data["created_at"] = now
+        data["updated_at"] = now
+
+        with open(file_path, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+
+        logger.info(f"创建拓扑配置: {config.name}")
+        return {"success": True, "name": config.name}
+    except Exception as e:
+        logger.error(f"保存拓扑配置失败: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.put("/api/topologies/{name}")
+async def update_topology_config(name: str, config: TopologyConfigRequest):
+    """
+    更新拓扑配置
+    """
+    from datetime import datetime
+
+    file_path = TOPOLOGIES_DIR / f"{name}.json"
+
+    # 读取现有配置以保留 created_at
+    created_at = None
+    if file_path.exists():
+        try:
+            with open(file_path, "r", encoding="utf-8") as f:
+                existing = json.load(f)
+                created_at = existing.get("created_at")
+        except Exception:
+            pass
+
+    try:
+        data = config.model_dump()
+        data["created_at"] = created_at or datetime.now().isoformat()
+        data["updated_at"] = datetime.now().isoformat()
+
+        with open(file_path, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+
+        logger.info(f"更新拓扑配置: {name}")
+        return {"success": True, "name": name}
+    except Exception as e:
+        logger.error(f"更新拓扑配置失败: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.delete("/api/topologies/{name}")
+async def delete_topology_config(name: str):
+    """
+    删除拓扑配置
+    """
+    file_path = TOPOLOGIES_DIR / f"{name}.json"
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail=f"拓扑配置不存在: {name}")
+
+    try:
+        file_path.unlink()
+        logger.info(f"删除拓扑配置: {name}")
+        return {"success": True, "name": name}
+    except Exception as e:
+        logger.error(f"删除拓扑配置失败: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 # ============================================
@@ -488,6 +731,7 @@ async def submit_evaluation(request: EvaluationRequest):
         任务 ID 和提示消息
     """
     try:
+        # EvaluationRequest 使用 dict 类型（向后兼容），直接传递
         task_id = task_manager.create_and_submit_task(
             experiment_name=request.experiment_name,
             description=request.description,

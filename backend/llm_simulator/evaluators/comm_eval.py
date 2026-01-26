@@ -14,7 +14,7 @@
 from dataclasses import dataclass
 from typing import Tuple, Union, Optional
 
-from ..types import ProtocolConfig, NetworkInfraConfig
+from ..config import ProtocolConfig, NetworkInfraConfig
 
 
 @dataclass

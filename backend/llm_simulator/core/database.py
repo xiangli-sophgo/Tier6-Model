@@ -1,14 +1,82 @@
 """
-数据库 ORM 模型
+数据库配置、会话管理和 ORM 模型
+
+合并自 database.py 和 db_models.py
 """
 
-from datetime import datetime
-from sqlalchemy import Column, Integer, String, Float, Text, DateTime, ForeignKey, JSON, Enum as SQLEnum
-from sqlalchemy.orm import relationship
+import os
 import enum
+from pathlib import Path
+from datetime import datetime
+from contextlib import contextmanager
+from sqlalchemy import create_engine, Column, Integer, String, Float, Text, DateTime, ForeignKey, JSON, Enum as SQLEnum
+from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import sessionmaker, Session, relationship
 
-from .database import Base
 
+# ============================================
+# 数据库配置
+# ============================================
+
+# 数据库文件路径
+DB_DIR = Path(__file__).parent.parent / "data"
+DB_DIR.mkdir(exist_ok=True)
+DB_PATH = DB_DIR / "llm_evaluations.db"
+
+# 数据库 URL
+DATABASE_URL = os.getenv("DATABASE_URL", f"sqlite:///{DB_PATH}")
+
+# 创建引擎
+engine = create_engine(
+    DATABASE_URL,
+    connect_args={"check_same_thread": False} if "sqlite" in DATABASE_URL else {},
+    echo=False,
+)
+
+# 会话工厂
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
+# ORM 基类
+Base = declarative_base()
+
+
+def get_db() -> Session:
+    """获取数据库会话（依赖注入）"""
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+
+@contextmanager
+def get_db_session():
+    """
+    获取数据库会话的上下文管理器（用于非 FastAPI 依赖注入场景）
+
+    使用示例:
+        with get_db_session() as db:
+            task = db.query(EvaluationTask).first()
+            db.commit()
+    """
+    db = SessionLocal()
+    try:
+        yield db
+    except Exception:
+        db.rollback()
+        raise
+    finally:
+        db.close()
+
+
+def init_db():
+    """初始化数据库（创建所有表）"""
+    Base.metadata.create_all(bind=engine)
+
+
+# ============================================
+# ORM 模型
+# ============================================
 
 class TaskStatus(str, enum.Enum):
     """任务状态枚举"""
@@ -57,19 +125,19 @@ class EvaluationTask(Base):
     completed_at = Column(DateTime, nullable=True)
 
     # 完整配置快照（每个任务独立保存所有配置）
-    config_snapshot = Column(JSON, nullable=False)  # 包含 model, inference, topology, protocol, network, chip_latency
+    config_snapshot = Column(JSON, nullable=False)
 
     # 配置文件引用（追溯配置来源）
-    benchmark_name = Column(String(255), nullable=True)  # Benchmark 配置文件名称
-    topology_config_name = Column(String(255), nullable=True)  # 拓扑配置文件名称
+    benchmark_name = Column(String(255), nullable=True)
+    topology_config_name = Column(String(255), nullable=True)
 
     # 搜索配置
     search_mode = Column(String(20), nullable=False)  # 'manual' or 'auto'
-    manual_parallelism = Column(JSON, nullable=True)  # 手动模式的并行策略
-    search_constraints = Column(JSON, nullable=True)  # 自动模式的搜索约束
+    manual_parallelism = Column(JSON, nullable=True)
+    search_constraints = Column(JSON, nullable=True)
 
     # 搜索统计（自动模式）
-    search_stats = Column(JSON, nullable=True)  # 搜索统计信息
+    search_stats = Column(JSON, nullable=True)
 
     # 关系
     experiment = relationship("Experiment", back_populates="tasks")
@@ -94,25 +162,25 @@ class EvaluationResult(Base):
     # 资源使用
     chips = Column(Integer, nullable=False)
 
-    # 性能指标（对齐 DS_TPU）
-    total_elapse_us = Column(Float, nullable=False)  # 总延迟 (微秒)
-    total_elapse_ms = Column(Float, nullable=False)  # 总延迟 (毫秒)
-    comm_elapse_us = Column(Float, nullable=False)   # 通信延迟 (微秒)
-    tps = Column(Float, nullable=False)              # tokens/s (total throughput)
-    tps_per_batch = Column(Float, nullable=False)    # tokens/s per batch
-    tps_per_chip = Column(Float, nullable=False)     # tokens/s/chip
-    mfu = Column(Float, nullable=False)              # Model FLOPs Utilization (0-1)
+    # 性能指标
+    total_elapse_us = Column(Float, nullable=False)
+    total_elapse_ms = Column(Float, nullable=False)
+    comm_elapse_us = Column(Float, nullable=False)
+    tps = Column(Float, nullable=False)
+    tps_per_batch = Column(Float, nullable=False)
+    tps_per_chip = Column(Float, nullable=False)
+    mfu = Column(Float, nullable=False)
 
     # 计算量和内存
-    flops = Column(Float, nullable=False)            # 总 FLOPs
-    dram_occupy = Column(Float, nullable=False)      # 内存占用 (bytes)
+    flops = Column(Float, nullable=False)
+    dram_occupy = Column(Float, nullable=False)
 
     # 综合得分
     score = Column(Float, nullable=False)
-    is_feasible = Column(Integer, default=1)  # 1=可行, 0=不可行
+    is_feasible = Column(Integer, default=1)
     infeasible_reason = Column(Text, nullable=True)
 
-    # 完整结果数据（JSON）
+    # 完整结果数据
     full_result = Column(JSON, nullable=False)
 
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)

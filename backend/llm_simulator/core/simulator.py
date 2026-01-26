@@ -13,7 +13,7 @@ import time
 from typing import Any
 from dataclasses import dataclass, field
 
-from .types import (
+from ..config import (
     LLMModelConfig,
     InferenceConfig,
     ParallelismStrategy,
@@ -30,12 +30,18 @@ from .types import (
     get_bytes_per_element,
     MLAConfig,
     MoEConfig,
+    # 验证函数
+    validate_mla_config,
+    validate_moe_config,
+    validate_model_config,
+    validate_hardware_config,
+    validate_parallelism_config,
 )
 from .topology import TopologyParser
 from .gantt import GanttChartBuilder, convert_to_frontend_format
 
 # 新评估器系统
-from .evaluators import (
+from ..evaluators import (
     get_arch_preset,
     AcceleratorMicroArch,
     GEMMEvaluator,
@@ -45,7 +51,7 @@ from .evaluators import (
     ReduceScatterEval,
 )
 from .analyzer import PerformanceAnalyzer
-from .layers import (
+from ..layers import (
     MLALayer,
     MLAv32Layer,
     MLAAbsorbLayer,
@@ -54,191 +60,7 @@ from .layers import (
     MLPLayer,
     MoELayer,
 )
-from .operators.base import ComputeOpType, CommOpType
-
-
-# ============================================
-# 配置验证函数
-# ============================================
-
-
-def validate_mla_config(mla_dict: dict) -> MLAConfig:
-    """
-    验证并解析 MLA 配置
-
-    Args:
-        mla_dict: MLA 配置字典
-
-    Returns:
-        MLAConfig 对象
-
-    Raises:
-        ValueError: 配置无效时抛出
-    """
-    required_fields = ["kv_lora_rank", "q_lora_rank", "qk_nope_head_dim", "qk_rope_head_dim", "v_head_dim"]
-
-    # 检查必填字段
-    missing = [f for f in required_fields if f not in mla_dict]
-    if missing:
-        raise ValueError(f"MLA 配置缺少必填字段: {missing}")
-
-    # 检查值的有效性
-    for field in required_fields:
-        value = mla_dict[field]
-        if not isinstance(value, int) or value <= 0:
-            raise ValueError(f"MLA 配置 {field} 必须为正整数，当前值: {value}")
-
-    return MLAConfig(
-        kv_lora_rank=mla_dict["kv_lora_rank"],
-        q_lora_rank=mla_dict["q_lora_rank"],
-        qk_nope_head_dim=mla_dict["qk_nope_head_dim"],
-        qk_rope_head_dim=mla_dict["qk_rope_head_dim"],
-        v_head_dim=mla_dict["v_head_dim"],
-    )
-
-
-def validate_moe_config(moe_dict: dict) -> MoEConfig:
-    """
-    验证并解析 MoE 配置
-
-    Args:
-        moe_dict: MoE 配置字典
-
-    Returns:
-        MoEConfig 对象
-
-    Raises:
-        ValueError: 配置无效时抛出
-    """
-    required_fields = ["num_experts", "num_experts_per_tok"]
-
-    # 检查必填字段
-    missing = [f for f in required_fields if f not in moe_dict]
-    if missing:
-        raise ValueError(f"MoE 配置缺少必填字段: {missing}")
-
-    num_experts = moe_dict["num_experts"]
-    num_experts_per_tok = moe_dict["num_experts_per_tok"]
-
-    # 检查值的有效性
-    if not isinstance(num_experts, int) or num_experts <= 0:
-        raise ValueError(f"MoE num_experts 必须为正整数，当前值: {num_experts}")
-    if not isinstance(num_experts_per_tok, int) or num_experts_per_tok <= 0:
-        raise ValueError(f"MoE num_experts_per_tok 必须为正整数，当前值: {num_experts_per_tok}")
-    if num_experts_per_tok > num_experts:
-        raise ValueError(f"MoE num_experts_per_tok ({num_experts_per_tok}) 不能大于 num_experts ({num_experts})")
-
-    # 检查 expert_intermediate_size（MoE 模型必须指定）
-    expert_intermediate_size = moe_dict.get("expert_intermediate_size", 0)
-    if expert_intermediate_size <= 0:
-        raise ValueError(f"MoE 配置必须指定 expert_intermediate_size (> 0)，当前值: {expert_intermediate_size}")
-
-    return MoEConfig(
-        num_experts=num_experts,
-        num_experts_per_tok=num_experts_per_tok,
-        expert_capacity_factor=moe_dict.get("expert_capacity_factor", 1.0),
-        num_shared_experts=moe_dict.get("num_shared_experts", 0),
-        expert_intermediate_size=expert_intermediate_size,
-        first_k_dense_replace=moe_dict.get("first_k_dense_replace", 0),
-        moe_tp=moe_dict.get("moe_tp", 1),
-        ep_tp_strategy=moe_dict.get("ep_tp_strategy", "scatter_gather"),
-    )
-
-
-def validate_model_config(model_dict: dict) -> None:
-    """
-    验证模型配置的有效性
-
-    Args:
-        model_dict: 模型配置字典
-
-    Raises:
-        ValueError: 配置无效时抛出
-    """
-    required_fields = ["hidden_size", "num_layers", "num_attention_heads", "intermediate_size"]
-
-    missing = [f for f in required_fields if f not in model_dict]
-    if missing:
-        raise ValueError(f"模型配置缺少必填字段: {missing}")
-
-    hidden_size = model_dict["hidden_size"]
-    num_heads = model_dict["num_attention_heads"]
-
-    if hidden_size <= 0:
-        raise ValueError(f"hidden_size 必须为正数，当前值: {hidden_size}")
-    if num_heads <= 0:
-        raise ValueError(f"num_attention_heads 必须为正数，当前值: {num_heads}")
-    if hidden_size % num_heads != 0:
-        raise ValueError(f"hidden_size ({hidden_size}) 必须能被 num_attention_heads ({num_heads}) 整除")
-
-
-def validate_hardware_config(hardware_dict: dict) -> None:
-    """
-    验证硬件配置的有效性
-
-    Args:
-        hardware_dict: 硬件配置字典
-
-    Raises:
-        ValueError: 配置无效时抛出
-    """
-    chip_hw = hardware_dict.get("chip", {})
-
-    # 检查关键硬件参数
-    compute_tflops = chip_hw.get("compute_tflops_fp16", 989)
-    memory_gb = chip_hw.get("memory_gb", 80)
-    memory_bw = chip_hw.get("memory_bandwidth_gbps", 3350)
-
-    if compute_tflops <= 0:
-        raise ValueError(f"compute_tflops_fp16 必须为正数，当前值: {compute_tflops}")
-    if memory_gb <= 0:
-        raise ValueError(f"memory_gb 必须为正数，当前值: {memory_gb}")
-    if memory_bw <= 0:
-        raise ValueError(f"memory_bandwidth_gbps 必须为正数，当前值: {memory_bw}")
-
-
-def validate_parallelism_config(parallelism_dict: dict, model_dict: dict | None = None) -> None:
-    """
-    验证并行策略配置的有效性
-
-    Args:
-        parallelism_dict: 并行策略配置字典
-        model_dict: 模型配置字典（可选，用于交叉验证）
-
-    Raises:
-        ValueError: 配置无效时抛出
-    """
-    for key in ["dp", "tp", "pp", "ep"]:
-        value = parallelism_dict.get(key, 1)
-        if not isinstance(value, int) or value <= 0:
-            raise ValueError(f"并行度 {key} 必须为正整数，当前值: {value}")
-
-    # 交叉验证：PP 不能大于 num_layers
-    if model_dict:
-        pp = parallelism_dict.get("pp", 1)
-        num_layers = model_dict.get("num_layers", 1)
-        if pp > num_layers:
-            raise ValueError(f"PP ({pp}) 不能大于模型层数 ({num_layers})")
-
-        # 交叉验证：TP 不能大于 num_attention_heads
-        tp = parallelism_dict.get("tp", 1)
-        num_heads = model_dict.get("num_attention_heads", 1)
-        if tp > num_heads:
-            raise ValueError(f"TP ({tp}) 不能大于注意力头数 ({num_heads})")
-
-        # MoE 约束验证：dp * tp = moe_tp * ep
-        moe_config = model_dict.get("moe_config")
-        if moe_config:
-            dp = parallelism_dict.get("dp", 1)
-            ep = parallelism_dict.get("ep", 1)
-            moe_tp = parallelism_dict.get("moe_tp", 1)
-
-            # DS_TPU 约束：确保 Attention 芯片数 = MoE FFN 芯片数
-            attention_chips = dp * tp
-            moe_chips = moe_tp * ep
-
-            if attention_chips != moe_chips:
-                raise ValueError(f"MoE 并行约束不满足: dp*tp ({dp}*{tp}={attention_chips}) 必须等于 moe_tp*ep ({moe_tp}*{ep}={moe_chips})")
+from ..operators.base import ComputeOpType, CommOpType
 
 
 @dataclass
@@ -325,7 +147,7 @@ class LLMInferenceSimulator:
             # 使用前端传递的通信延迟配置覆盖预设值
             if comm_latency_config:
                 # 覆盖芯片延迟配置
-                from .evaluators.arch_config import CommunicationLatency
+                from ..evaluators.arch_config import CommunicationLatency
                 self.arch.comm_latency = CommunicationLatency(
                     chip_to_chip_us=comm_latency_config.get("chip_to_chip_us", self.arch.comm_latency.chip_to_chip_us),
                     memory_read_latency_us=comm_latency_config.get("memory_read_latency_us", self.arch.comm_latency.memory_read_latency_us),
@@ -335,7 +157,7 @@ class LLMInferenceSimulator:
                 )
 
             # 创建协议配置和网络基础设施配置对象 (供通信评估器使用)
-            from .types import ProtocolConfig, NetworkInfraConfig
+            from ..config import ProtocolConfig, NetworkInfraConfig
             if comm_latency_config:
                 self.protocol_cfg = ProtocolConfig(
                     rtt_tp_us=comm_latency_config.get("rtt_tp_us", 0.35),
@@ -352,7 +174,7 @@ class LLMInferenceSimulator:
                 self.network_cfg = NetworkInfraConfig()
 
             # 创建 GEMM 评估器（全局单例，跨层复用）
-            from .evaluators import GEMMEvaluator
+            from ..evaluators import GEMMEvaluator
             self.gemm_evaluator = GEMMEvaluator(self.arch)
 
             # 🔥 离线预调优：预热常见的 GEMM 形状
@@ -483,7 +305,7 @@ class LLMInferenceSimulator:
         Returns:
             评估后的层对象，包含所有算子的性能数据
         """
-        from .layers.base import BaseLayer
+        from ..layers.base import BaseLayer
 
         # 判断层类型
         use_mla = self.model.attention_type == "mla" and self.model.mla_config is not None
@@ -587,7 +409,7 @@ class LLMInferenceSimulator:
     def _evaluate_layer_operators(self, layer):
         """直接评估层中的所有算子"""
         # 导入评估器（延迟导入避免循环依赖）
-        from .evaluators import (
+        from ..evaluators import (
             GEMMEvaluator,
             FA2Evaluator,
             RMSNormEvaluator,
@@ -1073,7 +895,7 @@ class LLMInferenceSimulator:
         gantt_wall_start = time.time()
         if self.config.evaluation_granularity == "fine":
             # 检查是否为 MoE 层且启用了 TBO 优化
-            from .layers import MoELayer
+            from ..layers import MoELayer
             if self.config.enable_tbo and isinstance(layer, MoELayer):
                 # TBO 模式: 标记被重叠隐藏的通信算子
                 dispatch_lat = layer._get_operator_latency('dispatch')
@@ -1138,7 +960,7 @@ class LLMInferenceSimulator:
         else:
             # 粗粒度：聚合整层
             # 检查是否为 MoE 层且启用了 TBO 优化
-            from .layers import MoELayer
+            from ..layers import MoELayer
             if self.config.enable_tbo and isinstance(layer, MoELayer):
                 # 使用 TBO 优化计算延迟
                 total_layer_time = layer.calculate_latency_with_tbo() / 1000  # us -> ms

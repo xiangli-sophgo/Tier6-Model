@@ -4,9 +4,9 @@ LLM 推理模拟器
 基于拓扑的 GPU/加速器侧精细模拟系统。
 """
 
-from .simulator import run_simulation, LLMInferenceSimulator, SimulationConfig
-from .topology import TopologyParser
-from .types import (
+from .core.simulator import run_simulation, LLMInferenceSimulator, SimulationConfig
+from .core.topology import TopologyParser
+from .config import (
     LLMModelConfig, InferenceConfig, ParallelismStrategy,
     HardwareConfig, HierarchicalTopology,
     SimulationResult, SimulationStats,

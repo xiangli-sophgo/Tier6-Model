@@ -1,21 +1,16 @@
 /**
- * IndexedDB 存储模块
+ * 存储工具模块
  *
- * 替代后端 JSON 文件存储，实现配置的本地持久化
+ * 提供类型定义和静态配置函数
+ * 配置数据现已迁移到后端 API 存储
  */
 
-import { ManualConnectionConfig, ManualConnection, GlobalSwitchConfig, HierarchicalTopology } from '../types';
+import { ManualConnectionConfig, GlobalSwitchConfig, HierarchicalTopology } from '../types';
 import { ChipHardwareConfig } from './llmDeployment/types';
 
-// 数据库名称和版本
-const DB_NAME = 'Tier6TopologyDB';
-const DB_VERSION = 1;
-
-// 存储名称
-const STORES = {
-  CONFIGS: 'savedConfigs',
-  MANUAL_CONNECTIONS: 'manualConnections',
-};
+// ============================================
+// 类型定义
+// ============================================
 
 /**
  * 网络配置 - 存储带宽和延迟参数
@@ -45,7 +40,9 @@ export interface SavedChipConfig {
   chips_per_board: number;
 }
 
-// 保存的配置接口
+/**
+ * 保存的拓扑配置接口
+ */
 export interface SavedConfig {
   name: string;
   description?: string;
@@ -109,278 +106,8 @@ export interface SavedConfig {
   };
 }
 
-/**
- * 打开数据库连接
- */
-function openDB(): Promise<IDBDatabase> {
-  return new Promise((resolve, reject) => {
-    const request = indexedDB.open(DB_NAME, DB_VERSION);
-
-    request.onerror = () => {
-      reject(new Error('无法打开数据库'));
-    };
-
-    request.onsuccess = () => {
-      resolve(request.result);
-    };
-
-    request.onupgradeneeded = (event) => {
-      const db = (event.target as IDBOpenDBRequest).result;
-
-      // 创建配置存储
-      if (!db.objectStoreNames.contains(STORES.CONFIGS)) {
-        db.createObjectStore(STORES.CONFIGS, { keyPath: 'name' });
-      }
-
-      // 创建手动连接存储
-      if (!db.objectStoreNames.contains(STORES.MANUAL_CONNECTIONS)) {
-        db.createObjectStore(STORES.MANUAL_CONNECTIONS, { keyPath: 'id' });
-      }
-    };
-  });
-}
-
 // ============================================
-// 配置存储 API
-// ============================================
-
-/**
- * 获取所有保存的配置列表
- */
-export async function listConfigs(): Promise<SavedConfig[]> {
-  const db = await openDB();
-
-  return new Promise((resolve, reject) => {
-    const transaction = db.transaction(STORES.CONFIGS, 'readonly');
-    const store = transaction.objectStore(STORES.CONFIGS);
-    const request = store.getAll();
-
-    request.onsuccess = () => {
-      const configs = request.result as SavedConfig[];
-      // 按更新时间倒序
-      configs.sort((a, b) => {
-        const timeA = a.updated_at ?? a.created_at ?? '';
-        const timeB = b.updated_at ?? b.created_at ?? '';
-        return timeB.localeCompare(timeA);
-      });
-      resolve(configs);
-    };
-
-    request.onerror = () => {
-      reject(new Error('读取配置列表失败'));
-    };
-
-    transaction.oncomplete = () => {
-      db.close();
-    };
-  });
-}
-
-/**
- * 获取指定名称的配置
- */
-export async function getConfig(name: string): Promise<SavedConfig | null> {
-  const db = await openDB();
-
-  return new Promise((resolve, reject) => {
-    const transaction = db.transaction(STORES.CONFIGS, 'readonly');
-    const store = transaction.objectStore(STORES.CONFIGS);
-    const request = store.get(name);
-
-    request.onsuccess = () => {
-      resolve(request.result ?? null);
-    };
-
-    request.onerror = () => {
-      reject(new Error(`读取配置 '${name}' 失败`));
-    };
-
-    transaction.oncomplete = () => {
-      db.close();
-    };
-  });
-}
-
-/**
- * 保存配置
- */
-export async function saveConfig(config: SavedConfig): Promise<SavedConfig> {
-  const db = await openDB();
-  const now = new Date().toISOString();
-
-  // 检查是否存在，保留创建时间
-  const existing = await getConfig(config.name);
-  if (existing) {
-    config.created_at = existing.created_at;
-  } else {
-    config.created_at = now;
-  }
-  config.updated_at = now;
-
-  return new Promise((resolve, reject) => {
-    const transaction = db.transaction(STORES.CONFIGS, 'readwrite');
-    const store = transaction.objectStore(STORES.CONFIGS);
-    const request = store.put(config);
-
-    request.onsuccess = () => {
-      resolve(config);
-    };
-
-    request.onerror = () => {
-      reject(new Error(`保存配置 '${config.name}' 失败`));
-    };
-
-    transaction.oncomplete = () => {
-      db.close();
-    };
-  });
-}
-
-/**
- * 删除配置
- */
-export async function deleteConfig(name: string): Promise<void> {
-  const db = await openDB();
-
-  return new Promise((resolve, reject) => {
-    const transaction = db.transaction(STORES.CONFIGS, 'readwrite');
-    const store = transaction.objectStore(STORES.CONFIGS);
-    const request = store.delete(name);
-
-    request.onsuccess = () => {
-      resolve();
-    };
-
-    request.onerror = () => {
-      reject(new Error(`删除配置 '${name}' 失败`));
-    };
-
-    transaction.oncomplete = () => {
-      db.close();
-    };
-  });
-}
-
-// ============================================
-// 手动连接存储 API
-// ============================================
-
-const MANUAL_CONNECTIONS_KEY = '_manual_connections';
-
-/**
- * 获取手动连接配置
- */
-export async function getManualConnections(): Promise<ManualConnectionConfig> {
-  const db = await openDB();
-
-  return new Promise((resolve, reject) => {
-    const transaction = db.transaction(STORES.MANUAL_CONNECTIONS, 'readonly');
-    const store = transaction.objectStore(STORES.MANUAL_CONNECTIONS);
-    const request = store.get(MANUAL_CONNECTIONS_KEY);
-
-    request.onsuccess = () => {
-      const result = request.result;
-      if (result) {
-        resolve(result.config as ManualConnectionConfig);
-      } else {
-        resolve({
-          enabled: false,
-          mode: 'append',
-          connections: [],
-        });
-      }
-    };
-
-    request.onerror = () => {
-      reject(new Error('读取手动连接配置失败'));
-    };
-
-    transaction.oncomplete = () => {
-      db.close();
-    };
-  });
-}
-
-/**
- * 保存手动连接配置
- */
-export async function saveManualConnections(config: ManualConnectionConfig): Promise<ManualConnectionConfig> {
-  const db = await openDB();
-
-  return new Promise((resolve, reject) => {
-    const transaction = db.transaction(STORES.MANUAL_CONNECTIONS, 'readwrite');
-    const store = transaction.objectStore(STORES.MANUAL_CONNECTIONS);
-    const request = store.put({ id: MANUAL_CONNECTIONS_KEY, config });
-
-    request.onsuccess = () => {
-      resolve(config);
-    };
-
-    request.onerror = () => {
-      reject(new Error('保存手动连接配置失败'));
-    };
-
-    transaction.oncomplete = () => {
-      db.close();
-    };
-  });
-}
-
-/**
- * 添加单个手动连接
- */
-export async function addManualConnection(connection: ManualConnection): Promise<ManualConnectionConfig> {
-  const config = await getManualConnections();
-
-  // 检查是否已存在相同连接
-  const exists = config.connections.some(
-    c => c.source === connection.source && c.target === connection.target
-  );
-  if (exists) {
-    throw new Error('该连接已存在');
-  }
-
-  // 添加创建时间
-  if (!connection.created_at) {
-    connection.created_at = new Date().toISOString();
-  }
-
-  config.connections.push(connection);
-  return saveManualConnections(config);
-}
-
-/**
- * 删除单个手动连接
- */
-export async function deleteManualConnection(connectionId: string): Promise<void> {
-  const config = await getManualConnections();
-  const originalCount = config.connections.length;
-  config.connections = config.connections.filter(c => c.id !== connectionId);
-
-  if (config.connections.length === originalCount) {
-    throw new Error(`连接 '${connectionId}' 不存在`);
-  }
-
-  await saveManualConnections(config);
-}
-
-/**
- * 清空手动连接（可按层级清空）
- */
-export async function clearManualConnections(hierarchyLevel?: string): Promise<void> {
-  const config = await getManualConnections();
-
-  if (hierarchyLevel) {
-    config.connections = config.connections.filter(c => c.hierarchy_level !== hierarchyLevel);
-  } else {
-    config.connections = [];
-  }
-
-  await saveManualConnections(config);
-}
-
-// ============================================
-// 静态配置（原后端常量）
+// 静态配置函数
 // ============================================
 
 /**
@@ -450,30 +177,13 @@ export function getLevelConnectionDefaults(): {
 // ============================================
 
 /**
- * 清除所有缓存数据（IndexedDB + localStorage）
+ * 清除本地缓存数据（localStorage）
  */
 export async function clearAllCache(): Promise<void> {
-  // 1. 删除 IndexedDB 数据库
-  return new Promise((resolve, reject) => {
-    const request = indexedDB.deleteDatabase(DB_NAME);
-
-    request.onsuccess = () => {
-      // 2. 清除 localStorage 中的相关缓存
-      const keysToRemove = [
-        'tier6_topology_config_cache',
-        'tier6_sider_width_cache',
-      ];
-      keysToRemove.forEach(key => localStorage.removeItem(key));
-
-      resolve();
-    };
-
-    request.onerror = () => {
-      reject(new Error('清除缓存失败'));
-    };
-
-    request.onblocked = () => {
-      reject(new Error('数据库被占用，请关闭其他标签页后重试'));
-    };
-  });
+  // 清除 localStorage 中的相关缓存
+  const keysToRemove = [
+    'tier6_topology_config_cache',
+    'tier6_sider_width_cache',
+  ];
+  keysToRemove.forEach(key => localStorage.removeItem(key));
 }

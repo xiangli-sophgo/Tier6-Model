@@ -5,7 +5,7 @@
 """
 from __future__ import annotations
 
-from .types import (
+from ..config import (
     GanttTask, GanttResource, GanttChartData, GanttTaskType, InferencePhase,
     ParallelismStrategy,
 )

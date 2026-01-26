@@ -12,6 +12,7 @@ const API_BASE_URL = `http://localhost:${API_PORT}/api`
 const api = axios.create({
   baseURL: API_BASE_URL,
   timeout: 120000, // 2分钟超时
+  withCredentials: true, // 支持跨域请求携带凭证
 })
 
 // ============================================

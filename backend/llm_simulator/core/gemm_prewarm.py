@@ -6,7 +6,7 @@ GEMM 评估器离线预调优
 
 import logging
 from typing import List, Tuple, Optional
-from .evaluators import GEMMEvaluator
+from ..evaluators import GEMMEvaluator
 
 logger = logging.getLogger(__name__)
 

@@ -6,7 +6,7 @@
 """
 
 from typing import Any
-from .types import (
+from ..config import (
     HierarchicalTopology, PodConfig, RackConfig, BoardConfig, ChipConfig,
     ConnectionConfig, ChipNode, ChipLink, InterconnectGraph,
     ParallelismStrategy, ChipAssignment, ParallelGroupAssignment,

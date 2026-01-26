@@ -359,8 +359,10 @@ export const ModelConfigSelector: React.FC<ModelConfigSelectorProps> = ({ value,
             <Tooltip title="权重精度: 模型权重的存储精度，影响权重显存占用"><Text style={{ fontSize: 13, cursor: 'help' }}>权重精度</Text></Tooltip>
             <Select size="middle" value={value.weight_dtype} onChange={(v) => updateField('weight_dtype', v)} style={{ width: 90 }}
               options={[
+                { value: 'fp32', label: 'FP32' },
                 { value: 'bf16', label: 'BF16' },
                 { value: 'fp16', label: 'FP16' },
+                { value: 'fp8', label: 'FP8' },
                 { value: 'int8', label: 'INT8' },
                 { value: 'int4', label: 'INT4' },
               ]}
@@ -370,9 +372,12 @@ export const ModelConfigSelector: React.FC<ModelConfigSelectorProps> = ({ value,
             <Tooltip title="激活精度: 计算过程中的激活值和KV Cache精度"><Text style={{ fontSize: 13, cursor: 'help' }}>激活精度</Text></Tooltip>
             <Select size="middle" value={value.activation_dtype} onChange={(v) => updateField('activation_dtype', v)} style={{ width: 90 }}
               options={[
+                { value: 'fp32', label: 'FP32' },
                 { value: 'bf16', label: 'BF16' },
                 { value: 'fp16', label: 'FP16' },
+                { value: 'fp8', label: 'FP8' },
                 { value: 'int8', label: 'INT8' },
+                { value: 'int4', label: 'INT4' },
               ]}
             />
           </div>
@@ -457,7 +462,7 @@ export const ModelConfigSelector: React.FC<ModelConfigSelectorProps> = ({ value,
               <Text type="secondary" style={{ cursor: 'help' }}>FFN: {value.intermediate_size}</Text>
             </Tooltip>
             <Tooltip title="精度: W=权重精度, A=激活精度，如W4A16表示权重INT4、激活FP16">
-              <Text type="secondary" style={{ cursor: 'help' }}>精度: W{value.weight_dtype === 'int4' ? '4' : value.weight_dtype === 'int8' ? '8' : '16'}A{value.activation_dtype === 'int8' ? '8' : '16'}</Text>
+              <Text type="secondary" style={{ cursor: 'help' }}>精度: W{getDtypeBits(value.weight_dtype)}A{getDtypeBits(value.activation_dtype)}</Text>
             </Tooltip>
           </div>
           {value.model_type === 'moe' && value.moe_config && (
@@ -1041,8 +1046,10 @@ export const BenchmarkConfigSelector: React.FC<BenchmarkConfigSelectorProps> = (
             <div style={{ marginBottom: 4 }}><ConfigLabel name="weight_dtype" label="权重精度" /></div>
             <Select size="small" value={modelConfig.weight_dtype} onChange={(v) => updateModelField('weight_dtype', v)} style={{ width: '100%' }}
               options={[
+                { value: 'fp32', label: 'FP32' },
                 { value: 'bf16', label: 'BF16' },
                 { value: 'fp16', label: 'FP16' },
+                { value: 'fp8', label: 'FP8' },
                 { value: 'int8', label: 'INT8' },
                 { value: 'int4', label: 'INT4' },
               ]}
@@ -1052,9 +1059,12 @@ export const BenchmarkConfigSelector: React.FC<BenchmarkConfigSelectorProps> = (
             <div style={{ marginBottom: 4 }}><ConfigLabel name="activation_dtype" label="激活精度" /></div>
             <Select size="small" value={modelConfig.activation_dtype} onChange={(v) => updateModelField('activation_dtype', v)} style={{ width: '100%' }}
               options={[
+                { value: 'fp32', label: 'FP32' },
                 { value: 'bf16', label: 'BF16' },
                 { value: 'fp16', label: 'FP16' },
+                { value: 'fp8', label: 'FP8' },
                 { value: 'int8', label: 'INT8' },
+                { value: 'int4', label: 'INT4' },
               ]}
             />
           </Col>

@@ -6,10 +6,10 @@
 
 import logging
 from typing import Dict, Any, Optional, Callable, List
-from .simulator import run_simulation
-from .analyzer import PerformanceAnalyzer
-from .evaluators import get_arch_preset
-from .models import create_deepseek_v3, create_deepseek_v3_absorb, create_deepseek_v32
+from ..core.simulator import run_simulation
+from ..core.analyzer import PerformanceAnalyzer
+from ..evaluators import get_arch_preset
+from ..models import create_deepseek_v3, create_deepseek_v3_absorb, create_deepseek_v32
 
 logger = logging.getLogger(__name__)
 
@@ -84,12 +84,17 @@ def _evaluate_manual_mode(
     if progress_callback:
         progress_callback(0, 1, "开始手动模式评估...")
 
-    # 提取并行策略
-    dp = manual_parallelism.get("dp", 1)
-    tp = manual_parallelism.get("tp", 1)
-    pp = manual_parallelism.get("pp", 1)
-    ep = manual_parallelism.get("ep", 1)
-    sp = manual_parallelism.get("sp", 1)
+    # 提取并行策略（严格模式：不使用默认值）
+    required_parallelism_fields = ["dp", "tp", "pp", "ep"]
+    missing_fields = [f for f in required_parallelism_fields if f not in manual_parallelism]
+    if missing_fields:
+        raise ValueError(f"手动并行策略缺少必需字段: {', '.join(missing_fields)}")
+
+    dp = manual_parallelism["dp"]
+    tp = manual_parallelism["tp"]
+    pp = manual_parallelism["pp"]
+    ep = manual_parallelism["ep"]
+    sp = manual_parallelism.get("sp", 1)  # sp 是可选的，默认为 1
 
     required_chips = dp * tp * pp * ep
 
@@ -286,12 +291,13 @@ def _evaluate_single_plan(
     inference_config: dict,
     topology: dict,
 ) -> dict:
-    """评估单个方案"""
+    """评估单个方案（不使用默认值，确保数据完整性）"""
 
-    dp = parallelism.get("dp", 1)
-    tp = parallelism.get("tp", 1)
-    pp = parallelism.get("pp", 1)
-    ep = parallelism.get("ep", 1)
+    # 直接访问字段，缺失时会立即 KeyError
+    dp = parallelism["dp"]
+    tp = parallelism["tp"]
+    pp = parallelism["pp"]
+    ep = parallelism["ep"]
 
     required_chips = dp * tp * pp * ep
 
@@ -355,18 +361,19 @@ def _create_infeasible_result(parallelism: dict, chips: int, reason: str) -> dic
 
 
 def _create_model_instance(model_config: dict, inference_config: dict, parallelism: dict):
-    """根据配置创建模型实例"""
+    """根据配置创建模型实例（不使用默认值）"""
     # 准备模型配置（合并 model_config, inference_config, parallelism）
+    # 直接访问字段，缺失时会立即 KeyError
     full_config = {
         **model_config,
-        "batch_size": inference_config.get("batch_size", 1),
-        "seq_len": inference_config.get("input_seq_length", 1),
-        "kv_seq_len": inference_config.get("input_seq_length", 1),
+        "batch_size": inference_config["batch_size"],
+        "seq_len": inference_config["input_seq_length"],
+        "kv_seq_len": inference_config["input_seq_length"],
         "is_prefill": False,  # Decode 阶段
-        "tp": parallelism.get("tp", 1),
-        "dp": parallelism.get("dp", 1),
-        "moe_tp": parallelism.get("moe_tp", 1),
-        "ep": parallelism.get("ep", 1),
+        "tp": parallelism["tp"],
+        "dp": parallelism["dp"],
+        "moe_tp": parallelism.get("moe_tp", 1),  # moe_tp 是可选的，非 MoE 模型没有
+        "ep": parallelism.get("ep", 1),  # ep 也是可选的
         "comm_protocol": 1,
     }
 

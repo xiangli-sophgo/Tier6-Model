@@ -10,7 +10,7 @@ import uvicorn
 def main():
     """启动服务"""
     uvicorn.run(
-        "llm_simulator.api:app",
+        "llm_simulator.web.api:app",
         host="0.0.0.0",
         port=8001,
         reload=True,

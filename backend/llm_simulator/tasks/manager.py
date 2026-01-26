@@ -13,10 +13,9 @@ from concurrent.futures import ThreadPoolExecutor, Future
 from typing import Dict, Optional, Callable, Any
 from sqlalchemy.orm import Session
 
-from .db_models import Experiment, EvaluationTask, EvaluationResult, TaskStatus
-from .database import get_db_session
-from .deployment_evaluator import evaluate_deployment
-from .config import get_max_global_workers
+from ..core.database import Experiment, EvaluationTask, EvaluationResult, TaskStatus, get_db_session
+from .deployment import evaluate_deployment
+from ..config import get_max_global_workers
 
 logger = logging.getLogger(__name__)
 
