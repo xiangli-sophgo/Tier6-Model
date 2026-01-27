@@ -1,0 +1,1086 @@
+{
+  "run_info": {
+    "timestamp": "2026-01-27T19:50:49.827425"
+  },
+  "config": {
+    "model": {
+      "name": "DeepSeek-V3.2"
+    },
+    "tpu": {
+      "cores": 64,
+      "flops": 768000000000000.0
+    }
+  },
+  "performance": {
+    "total_elapse_us": 12244.545415282206,
+    "total_elapse_ms": 12.244545415282206,
+    "comm_elapse_us": 1193.762105263158,
+    "flops": 5749862301696.0,
+    "dram_occupy": 49148592128.0,
+    "mfu": 0.6114395935561523,
+    "tps": 125443.61165772189,
+    "tps_per_batch": 81.66901800632935,
+    "tps_per_chip": 3920.112864303809,
+    "layers": {
+      "DeepSeek-V3.2_embedding": {
+        "name": "DeepSeek-V3.2_embedding",
+        "layer_type": "Embedding",
+        "total_operators": 0,
+        "perf": {
+          "param": 926679040.0,
+          "flops": 88961187840.0,
+          "dram_occupy": 926679040.0,
+          "dram_traffic": 688128.0,
+          "elapse": 0.08000000000000002,
+          "comp_elapse": 0.0,
+          "dma_elapse": 0.0,
+          "comm_elapse": 0.0,
+          "comm_size": 0.0
+        },
+        "comp_operators": [],
+        "comm_operators": [],
+        "arch": {
+          "batch_size": 1536,
+          "batch_size_local": 48,
+          "seq_len": 1,
+          "tp": 1,
+          "dp": 32,
+          "vocab_size": 129280,
+          "hidden_dim": 7168
+        }
+      },
+      "DeepSeek-V3.2_dense_mlp": {
+        "name": "DeepSeek-V3.2_dense_mlp",
+        "layer_type": "MLP",
+        "total_operators": 3,
+        "perf": {
+          "param": 396361728.0,
+          "flops": 38050725888.0,
+          "dram_occupy": 396361728.0,
+          "dram_traffic": 434110464.0,
+          "elapse": 60.377614628571436,
+          "comp_elapse": 49.545215999999996,
+          "dma_elapse": 50.46857142857144,
+          "comm_elapse": 0.0,
+          "comm_size": 0.0
+        },
+        "comp_operators": [
+          {
+            "operator_id": "DeepSeek-V3.2_dense_mlp_gate_id",
+            "operator_type": "MatMulOperator",
+            "name": "DeepSeek-V3.2_dense_mlp_gate",
+            "param": 132120576,
+            "flops": 12683575296,
+            "dram_occupy": 132120576,
+            "dram_traffic": 144703488.0,
+            "elapsed": 20.125871542857144,
+            "comp_elapsed": 16.515072,
+            "dma_elapsed": 16.822857142857146,
+            "best_tile": {
+              "order": "mkn",
+              "M": 48,
+              "N": 336,
+              "K": 1792
+            },
+            "best_partition": {
+              "dims": {
+                "G": 1,
+                "M": 48,
+                "N": 18432,
+                "K": 7168
+              },
+              "procs": {
+                "P_G": 1,
+                "P_M": 1,
+                "P_N": 16,
+                "P_K": 4
+              }
+            },
+            "urate": 0.8205891588263341,
+            "parallel_params": {
+              "G": 1,
+              "M": 48,
+              "K": 7168,
+              "N": 18432
+            }
+          },
+          {
+            "operator_id": "DeepSeek-V3.2_dense_mlp_up_id",
+            "operator_type": "MatMulOperator",
+            "name": "DeepSeek-V3.2_dense_mlp_up",
+            "param": 132120576,
+            "flops": 12683575296,
+            "dram_occupy": 132120576,
+            "dram_traffic": 144703488.0,
+            "elapsed": 20.125871542857144,
+            "comp_elapsed": 16.515072,
+            "dma_elapsed": 16.822857142857146,
+            "best_tile": {
+              "order": "mkn",
+              "M": 48,
+              "N": 336,
+              "K": 1792
+            },
+            "best_partition": {
+              "dims": {
+                "G": 1,
+                "M": 48,
+                "N": 18432,
+                "K": 7168
+              },
+              "procs": {
+                "P_G": 1,
+                "P_M": 1,
+                "P_N": 16,
+                "P_K": 4
+              }
+            },
+            "urate": 0.8205891588263341,
+            "parallel_params": {
+              "G": 1,
+              "M": 48,
+              "K": 7168,
+              "N": 18432
+            }
+          },
+          {
+            "operator_id": "DeepSeek-V3.2_dense_mlp_down_id",
+            "operator_type": "MatMulOperator",
+            "name": "DeepSeek-V3.2_dense_mlp_down",
+            "param": 132120576,
+            "flops": 12683575296,
+            "dram_occupy": 132120576,
+            "dram_traffic": 144703488.0,
+            "elapsed": 20.125871542857144,
+            "comp_elapsed": 16.515072,
+            "dma_elapsed": 16.822857142857146,
+            "best_tile": {
+              "order": "mkn",
+              "M": 48,
+              "N": 288,
+              "K": 2304
+            },
+            "best_partition": {
+              "dims": {
+                "G": 1,
+                "M": 48,
+                "N": 7168,
+                "K": 18432
+              },
+              "procs": {
+                "P_G": 1,
+                "P_M": 1,
+                "P_N": 8,
+                "P_K": 8
+              }
+            },
+            "urate": 0.8205891588263341,
+            "parallel_params": {
+              "G": 1,
+              "M": 48,
+              "N": 7168,
+              "K": 18432
+            }
+          }
+        ],
+        "comm_operators": [],
+        "arch": {
+          "batch_size": 1536,
+          "batch_size_local": 48,
+          "seq_len": 1,
+          "tp": 1,
+          "dp": 32,
+          "hidden_dim": 7168,
+          "inter_dim": 18432,
+          "inter_dim_local": 18432
+        }
+      },
+      "DeepSeek-V3.2_mla_absorb_v3_2": {
+        "name": "DeepSeek-V3.2_mla_absorb_v3_2",
+        "layer_type": "MLAAbsorbv32",
+        "total_operators": 7,
+        "perf": {
+          "param": 187105280.0,
+          "flops": 45342523392.0,
+          "dram_occupy": 338100224.0,
+          "dram_traffic": 342917120.0,
+          "elapse": 88.5928899047619,
+          "comp_elapse": 77.39332266666666,
+          "dma_elapse": 44.392380952380954,
+          "comm_elapse": 0.0,
+          "comm_size": 0.0
+        },
+        "comp_operators": [
+          {
+            "operator_id": "DeepSeek-V3.2_mla_absorb_v3_2_q_a_proj_id",
+            "operator_type": "MatMulOperator",
+            "name": "DeepSeek-V3.2_mla_absorb_v3_2_q_a_proj",
+            "param": 11010048,
+            "flops": 1056964608,
+            "dram_occupy": 11010048,
+            "dram_traffic": 14745600.0,
+            "elapsed": 1.9895369142857144,
+            "comp_elapsed": 1.3762560000000001,
+            "dma_elapsed": 1.7142857142857144,
+            "best_tile": {
+              "order": "mnk",
+              "M": 48,
+              "N": 384,
+              "K": 448
+            },
+            "best_partition": {
+              "dims": {
+                "G": 1,
+                "M": 48,
+                "N": 1536,
+                "K": 7168
+              },
+              "procs": {
+                "P_G": 1,
+                "P_M": 1,
+                "P_N": 4,
+                "P_K": 16
+              }
+            },
+            "urate": 0.6917469035723345,
+            "parallel_params": {
+              "G": 1,
+              "M": 48,
+              "K": 7168,
+              "N": 1536
+            }
+          },
+          {
+            "operator_id": "DeepSeek-V3.2_mla_absorb_v3_2_q_b_proj_id",
+            "operator_type": "MatMulOperator",
+            "name": "DeepSeek-V3.2_mla_absorb_v3_2_q_b_proj",
+            "param": 37748736,
+            "flops": 3623878656,
+            "dram_occupy": 37748736,
+            "dram_traffic": 44826624.0,
+            "elapsed": 6.155146971428572,
+            "comp_elapsed": 4.718591999999999,
+            "dma_elapsed": 5.211428571428572,
+            "best_tile": {
+              "order": "mkn",
+              "M": 48,
+              "N": 496,
+              "K": 768
+            },
+            "best_partition": {
+              "dims": {
+                "G": 1,
+                "M": 48,
+                "N": 24576,
+                "K": 1536
+              },
+              "procs": {
+                "P_G": 1,
+                "P_M": 1,
+                "P_N": 32,
+                "P_K": 2
+              }
+            },
+            "urate": 0.7666091519671453,
+            "parallel_params": {
+              "G": 1,
+              "M": 48,
+              "K": 1536,
+              "N": 24576
+            }
+          },
+          {
+            "operator_id": "DeepSeek-V3.2_mla_absorb_v3_2_kv_a_proj_id",
+            "operator_type": "MatMulOperator",
+            "name": "DeepSeek-V3.2_mla_absorb_v3_2_kv_a_proj",
+            "param": 4128768,
+            "flops": 396361728,
+            "dram_occupy": 4128768,
+            "dram_traffic": 6389760.0,
+            "elapsed": 0.846076342857143,
+            "comp_elapsed": 0.516096,
+            "dma_elapsed": 0.742857142857143,
+            "best_tile": {
+              "order": "mnk",
+              "M": 48,
+              "N": 144,
+              "K": 448
+            },
+            "best_partition": {
+              "dims": {
+                "G": 1,
+                "M": 48,
+                "N": 576,
+                "K": 7168
+              },
+              "procs": {
+                "P_G": 1,
+                "P_M": 1,
+                "P_N": 4,
+                "P_K": 16
+              }
+            },
+            "urate": 0.6099875080506074,
+            "parallel_params": {
+              "G": 1,
+              "M": 48,
+              "K": 7168,
+              "N": 576
+            }
+          },
+          {
+            "operator_id": "DeepSeek-V3.2_mla_absorb_v3_2_w_kc_id",
+            "operator_type": "MatMulOperator",
+            "name": "DeepSeek-V3.2_mla_absorb_v3_2_w_kc",
+            "param": 8388608,
+            "flops": 805306368,
+            "dram_occupy": 8388608,
+            "dram_traffic": 15466496.0,
+            "elapsed": 2.007810438095238,
+            "comp_elapsed": 1.048576,
+            "dma_elapsed": 1.7980952380952382,
+            "best_tile": {
+              "order": "mnk",
+              "M": 48,
+              "N": 512,
+              "K": 128
+            },
+            "best_partition": {
+              "dims": {
+                "G": 128,
+                "M": 48,
+                "N": 512,
+                "K": 128
+              },
+              "procs": {
+                "P_G": 64,
+                "P_M": 1,
+                "P_N": 1,
+                "P_K": 1
+              }
+            },
+            "urate": 0.5222485051899417,
+            "parallel_params": {
+              "G": 128,
+              "M": 48,
+              "K": 128,
+              "N": 512
+            }
+          },
+          {
+            "operator_id": "DeepSeek-V3.2_mla_absorb_v3_2_w_vc_id",
+            "operator_type": "MatMulOperator",
+            "name": "DeepSeek-V3.2_mla_absorb_v3_2_w_vc",
+            "param": 8388608,
+            "flops": 805306368,
+            "dram_occupy": 8388608,
+            "dram_traffic": 15466496.0,
+            "elapsed": 2.007810438095238,
+            "comp_elapsed": 1.048576,
+            "dma_elapsed": 1.7980952380952382,
+            "best_tile": {
+              "order": "mnk",
+              "M": 48,
+              "N": 512,
+              "K": 128
+            },
+            "best_partition": {
+              "dims": {
+                "G": 128,
+                "M": 48,
+                "N": 512,
+                "K": 128
+              },
+              "procs": {
+                "P_G": 64,
+                "P_M": 1,
+                "P_N": 1,
+                "P_K": 1
+              }
+            },
+            "urate": 0.5222485051899417,
+            "parallel_params": {
+              "G": 128,
+              "M": 48,
+              "K": 128,
+              "N": 512
+            }
+          },
+          {
+            "operator_id": "DeepSeek-V3.2_mla_absorb_v3_2_mqa_id",
+            "operator_type": "MQAOperator",
+            "name": "DeepSeek-V3.2_mla_absorb_v3_2_mqa",
+            "param": 0,
+            "flops": 27380416512,
+            "dram_occupy": 150994944,
+            "dram_traffic": 116785152.0,
+            "elapsed": 57.6257340952381,
+            "comp_elapsed": 54.00516266666667,
+            "dma_elapsed": 18.102857142857143,
+            "best_tile": {
+              "QS": 128,
+              "KS": 192
+            },
+            "best_partition": {
+              "dims": {
+                "B": 48
+              },
+              "procs": {
+                "P_B": 64
+              }
+            },
+            "urate": 0.618674704274979,
+            "parallel_params": {
+              "B": 48,
+              "QS": 128,
+              "KS": 2048,
+              "QD": 576,
+              "VD": 512
+            }
+          },
+          {
+            "operator_id": "DeepSeek-V3.2_mla_absorb_v3_2_o_proj_id",
+            "operator_type": "MatMulOperator",
+            "name": "DeepSeek-V3.2_mla_absorb_v3_2_o_proj",
+            "param": 117440512,
+            "flops": 11274289152,
+            "dram_occupy": 117440512,
+            "dram_traffic": 129236992.0,
+            "elapsed": 17.960774704761906,
+            "comp_elapsed": 14.680064,
+            "dma_elapsed": 15.024761904761906,
+            "best_tile": {
+              "order": "mkn",
+              "M": 48,
+              "N": 304,
+              "K": 2048
+            },
+            "best_partition": {
+              "dims": {
+                "G": 1,
+                "M": 48,
+                "N": 7168,
+                "K": 16384
+              },
+              "procs": {
+                "P_G": 1,
+                "P_M": 1,
+                "P_N": 8,
+                "P_K": 8
+              }
+            },
+            "urate": 0.8173402451347438,
+            "parallel_params": {
+              "G": 1,
+              "M": 48,
+              "K": 16384,
+              "N": 7168
+            }
+          }
+        ],
+        "comm_operators": [],
+        "arch": {
+          "batch_size": 1536,
+          "batch_size_local": 48,
+          "q_seq_len": 1,
+          "kv_seq_len": 8192,
+          "tp": 1,
+          "dp": 32,
+          "hidden_dim": 7168,
+          "q_lora_rank": 1536,
+          "kv_lora_rank": 512,
+          "n_heads": 128,
+          "qk_nope_head_dim": 128,
+          "qk_rope_head_dim": 64,
+          "v_head_dim": 128,
+          "topk_index": 2048
+        }
+      },
+      "DeepSeek-V3.2_dsa": {
+        "name": "DeepSeek-V3.2_dsa",
+        "layer_type": "DSA",
+        "total_operators": 4,
+        "perf": {
+          "param": 13959168.0,
+          "flops": 7782531072.0,
+          "dram_occupy": 39124992.0,
+          "dram_traffic": 70631424.0,
+          "elapse": 28.33971017142857,
+          "comp_elapse": 25.87208533333333,
+          "dma_elapse": 10.184761904761906,
+          "comm_elapse": 0.0,
+          "comm_size": 0.0
+        },
+        "comp_operators": [
+          {
+            "operator_id": "DeepSeek-V3.2_dsa_wq_b_id",
+            "operator_type": "MatMulOperator",
+            "name": "DeepSeek-V3.2_dsa_wq_b",
+            "param": 12582912,
+            "flops": 1207959552,
+            "dram_occupy": 12582912,
+            "dram_traffic": 16515072.0,
+            "elapsed": 2.2345728,
+            "comp_elapsed": 1.572864,
+            "dma_elapsed": 1.9200000000000002,
+            "best_tile": {
+              "order": "mnk",
+              "M": 48,
+              "N": 256,
+              "K": 768
+            },
+            "best_partition": {
+              "dims": {
+                "G": 1,
+                "M": 48,
+                "N": 8192,
+                "K": 1536
+              },
+              "procs": {
+                "P_G": 1,
+                "P_M": 1,
+                "P_N": 32,
+                "P_K": 2
+              }
+            },
+            "urate": 0.7038768215562278,
+            "parallel_params": {
+              "G": 1,
+              "M": 48,
+              "K": 1536,
+              "N": 8192
+            }
+          },
+          {
+            "operator_id": "DeepSeek-V3.2_dsa_wk_id",
+            "operator_type": "MatMulOperator",
+            "name": "DeepSeek-V3.2_dsa_wk",
+            "param": 917504,
+            "flops": 88080384,
+            "dram_occupy": 917504,
+            "dram_traffic": 1998848.0,
+            "elapsed": 0.2553185523809524,
+            "comp_elapsed": 0.114688,
+            "dma_elapsed": 0.2323809523809524,
+            "best_tile": {
+              "order": "mnk",
+              "M": 48,
+              "N": 64,
+              "K": 224
+            },
+            "best_partition": {
+              "dims": {
+                "G": 1,
+                "M": 48,
+                "N": 128,
+                "K": 7168
+              },
+              "procs": {
+                "P_G": 1,
+                "P_M": 1,
+                "P_N": 2,
+                "P_K": 32
+              }
+            },
+            "urate": 0.4491957162160226,
+            "parallel_params": {
+              "G": 1,
+              "M": 48,
+              "K": 7168,
+              "N": 128
+            }
+          },
+          {
+            "operator_id": "DeepSeek-V3.2_dsa_weights_proj_id",
+            "operator_type": "MatMulOperator",
+            "name": "DeepSeek-V3.2_dsa_weights_proj",
+            "param": 458752,
+            "flops": 44040192,
+            "dram_occupy": 458752,
+            "dram_traffic": 1196032.0,
+            "elapsed": 0.15215481904761904,
+            "comp_elapsed": 0.065536,
+            "dma_elapsed": 0.13904761904761906,
+            "best_tile": {
+              "order": "mnk",
+              "M": 48,
+              "N": 64,
+              "K": 128
+            },
+            "best_partition": {
+              "dims": {
+                "G": 1,
+                "M": 48,
+                "N": 64,
+                "K": 7168
+              },
+              "procs": {
+                "P_G": 1,
+                "P_M": 1,
+                "P_N": 1,
+                "P_K": 64
+              }
+            },
+            "urate": 0.3768792888646752,
+            "parallel_params": {
+              "G": 1,
+              "M": 48,
+              "K": 7168,
+              "N": 64
+            }
+          },
+          {
+            "operator_id": "DeepSeek-V3.2_dsa_fp8_index_id",
+            "operator_type": "MQAOperator",
+            "name": "DeepSeek-V3.2_dsa_fp8_index",
+            "param": 0,
+            "flops": 6442450944,
+            "dram_occupy": 25165824,
+            "dram_traffic": 50921472.0,
+            "elapsed": 25.697664,
+            "comp_elapsed": 24.118997333333333,
+            "dma_elapsed": 7.893333333333334,
+            "best_tile": {
+              "QS": 64,
+              "KS": 2336
+            },
+            "best_partition": {
+              "dims": {
+                "B": 48
+              },
+              "procs": {
+                "P_B": 64
+              }
+            },
+            "urate": 0.32643465180337017,
+            "parallel_params": {
+              "B": 48,
+              "QS": 64,
+              "KS": 8192,
+              "QD": 64,
+              "VD": 64
+            }
+          }
+        ],
+        "comm_operators": [],
+        "arch": {
+          "batch_size": 1536,
+          "batch_size_local": 48,
+          "seq_len": 1,
+          "tp": 1,
+          "dp": 32,
+          "hidden_dim": 7168,
+          "q_lora_rank": 1536,
+          "n_index_heads": 64,
+          "index_head_dim": 128,
+          "topk_index": 2048
+        }
+      },
+      "DeepSeek-V3.2_moe": {
+        "name": "DeepSeek-V3.2_moe",
+        "layer_type": "MoE",
+        "total_operators": 9,
+        "perf": {
+          "param": 398196736.0,
+          "flops": 38226886656.0,
+          "dram_occupy": 398196736.0,
+          "dram_traffic": 448036864.0,
+          "elapse": 82.62464271077695,
+          "comp_elapse": 49.774592,
+          "dma_elapse": 52.08761904761904,
+          "comm_elapse": 20.582105263157896,
+          "comm_size": 8257536.0
+        },
+        "comp_operators": [
+          {
+            "operator_id": "gate_id",
+            "operator_type": "MatMulOperator",
+            "name": "gate",
+            "param": 1835008,
+            "flops": 176160768,
+            "dram_occupy": 1835008,
+            "dram_traffic": 3309568.0,
+            "elapsed": 0.4306371047619048,
+            "comp_elapsed": 0.229376,
+            "dma_elapsed": 0.3847619047619048,
+            "best_tile": {
+              "order": "mnk",
+              "M": 48,
+              "N": 128,
+              "K": 224
+            },
+            "best_partition": {
+              "dims": {
+                "G": 1,
+                "M": 48,
+                "N": 256,
+                "K": 7168
+              },
+              "procs": {
+                "P_G": 1,
+                "P_M": 1,
+                "P_N": 2,
+                "P_K": 32
+              }
+            },
+            "urate": 0.5326433729551007,
+            "parallel_params": {
+              "G": 1,
+              "M": 48,
+              "K": 7168,
+              "N": 256
+            }
+          },
+          {
+            "operator_id": "shared_gate_proj_id",
+            "operator_type": "MatMulOperator",
+            "name": "shared_gate_proj",
+            "param": 14680064,
+            "flops": 1409286144,
+            "dram_occupy": 14680064,
+            "dram_traffic": 19005440.0,
+            "elapsed": 2.5765254095238097,
+            "comp_elapsed": 1.835008,
+            "dma_elapsed": 2.2095238095238097,
+            "best_tile": {
+              "order": "mnk",
+              "M": 48,
+              "N": 256,
+              "K": 896
+            },
+            "best_partition": {
+              "dims": {
+                "G": 1,
+                "M": 48,
+                "N": 2048,
+                "K": 7168
+              },
+              "procs": {
+                "P_G": 1,
+                "P_M": 1,
+                "P_N": 8,
+                "P_K": 8
+              }
+            },
+            "urate": 0.7122025628845414,
+            "parallel_params": {
+              "G": 1,
+              "M": 48,
+              "K": 7168,
+              "N": 2048
+            }
+          },
+          {
+            "operator_id": "shared_up_proj_id",
+            "operator_type": "MatMulOperator",
+            "name": "shared_up_proj",
+            "param": 14680064,
+            "flops": 1409286144,
+            "dram_occupy": 14680064,
+            "dram_traffic": 19005440.0,
+            "elapsed": 2.5765254095238097,
+            "comp_elapsed": 1.835008,
+            "dma_elapsed": 2.2095238095238097,
+            "best_tile": {
+              "order": "mnk",
+              "M": 48,
+              "N": 256,
+              "K": 896
+            },
+            "best_partition": {
+              "dims": {
+                "G": 1,
+                "M": 48,
+                "N": 2048,
+                "K": 7168
+              },
+              "procs": {
+                "P_G": 1,
+                "P_M": 1,
+                "P_N": 8,
+                "P_K": 8
+              }
+            },
+            "urate": 0.7122025628845414,
+            "parallel_params": {
+              "G": 1,
+              "M": 48,
+              "K": 7168,
+              "N": 2048
+            }
+          },
+          {
+            "operator_id": "shared_down_proj_id",
+            "operator_type": "MatMulOperator",
+            "name": "shared_down_proj",
+            "param": 14680064,
+            "flops": 1409286144,
+            "dram_occupy": 14680064,
+            "dram_traffic": 19005440.0,
+            "elapsed": 2.5765254095238097,
+            "comp_elapsed": 1.835008,
+            "dma_elapsed": 2.2095238095238097,
+            "best_tile": {
+              "order": "mnk",
+              "M": 48,
+              "N": 448,
+              "K": 512
+            },
+            "best_partition": {
+              "dims": {
+                "G": 1,
+                "M": 48,
+                "N": 7168,
+                "K": 2048
+              },
+              "procs": {
+                "P_G": 1,
+                "P_M": 1,
+                "P_N": 16,
+                "P_K": 4
+              }
+            },
+            "urate": 0.7122025628845414,
+            "parallel_params": {
+              "G": 1,
+              "M": 48,
+              "K": 2048,
+              "N": 7168
+            }
+          },
+          {
+            "operator_id": "routed_gate_proj_id",
+            "operator_type": "MatMulOperator",
+            "name": "routed_gate_proj",
+            "param": 117440512,
+            "flops": 11274289152,
+            "dram_occupy": 117440512,
+            "dram_traffic": 129236992.0,
+            "elapsed": 17.960774704761906,
+            "comp_elapsed": 14.680064,
+            "dma_elapsed": 15.024761904761906,
+            "best_tile": {
+              "order": "mkn",
+              "M": 48,
+              "N": 336,
+              "K": 1792
+            },
+            "best_partition": {
+              "dims": {
+                "G": 8,
+                "M": 48,
+                "N": 2048,
+                "K": 7168
+              },
+              "procs": {
+                "P_G": 8,
+                "P_M": 1,
+                "P_N": 2,
+                "P_K": 4
+              }
+            },
+            "urate": 0.8173402451347438,
+            "parallel_params": {
+              "G": 8,
+              "M": 48,
+              "K": 7168,
+              "N": 2048
+            }
+          },
+          {
+            "operator_id": "routed_up_proj_id",
+            "operator_type": "MatMulOperator",
+            "name": "routed_up_proj",
+            "param": 117440512,
+            "flops": 11274289152,
+            "dram_occupy": 117440512,
+            "dram_traffic": 129236992.0,
+            "elapsed": 17.960774704761906,
+            "comp_elapsed": 14.680064,
+            "dma_elapsed": 15.024761904761906,
+            "best_tile": {
+              "order": "mkn",
+              "M": 48,
+              "N": 336,
+              "K": 1792
+            },
+            "best_partition": {
+              "dims": {
+                "G": 8,
+                "M": 48,
+                "N": 2048,
+                "K": 7168
+              },
+              "procs": {
+                "P_G": 8,
+                "P_M": 1,
+                "P_N": 2,
+                "P_K": 4
+              }
+            },
+            "urate": 0.8173402451347438,
+            "parallel_params": {
+              "G": 8,
+              "M": 48,
+              "K": 7168,
+              "N": 2048
+            }
+          },
+          {
+            "operator_id": "routed_down_proj_id",
+            "operator_type": "MatMulOperator",
+            "name": "routed_down_proj",
+            "param": 117440512,
+            "flops": 11274289152,
+            "dram_occupy": 117440512,
+            "dram_traffic": 129236992.0,
+            "elapsed": 17.960774704761906,
+            "comp_elapsed": 14.680064,
+            "dma_elapsed": 15.024761904761906,
+            "best_tile": {
+              "order": "mkn",
+              "M": 48,
+              "N": 304,
+              "K": 2048
+            },
+            "best_partition": {
+              "dims": {
+                "G": 8,
+                "M": 48,
+                "N": 7168,
+                "K": 2048
+              },
+              "procs": {
+                "P_G": 8,
+                "P_M": 1,
+                "P_N": 8,
+                "P_K": 1
+              }
+            },
+            "urate": 0.8173402451347438,
+            "parallel_params": {
+              "G": 8,
+              "M": 48,
+              "K": 2048,
+              "N": 7168
+            }
+          }
+        ],
+        "comm_operators": [
+          {
+            "operator_id": "DeepSeek-V3.2_moe_dispatch_id",
+            "operator_type": "DispatchOperator",
+            "comm_kind": "dispatch",
+            "name": "DeepSeek-V3.2_moe_dispatch",
+            "comm_size": 2752512.0,
+            "comm_elapse": 7.057368421052632,
+            "parallel_params": {
+              "moe_tp": 1,
+              "ep": 32,
+              "comm_size": 2752512,
+              "bs": 48,
+              "comm_protocol": 1,
+              "is_prefill": false
+            }
+          },
+          {
+            "operator_id": "DeepSeek-V3.2_moe_combine_id",
+            "operator_type": "CombineOperator",
+            "comm_kind": "combine",
+            "name": "DeepSeek-V3.2_moe_combine",
+            "comm_size": 5505024.0,
+            "comm_elapse": 13.524736842105265,
+            "parallel_params": {
+              "moe_tp": 1,
+              "ep": 32,
+              "comm_size": 5505024,
+              "bs": 48,
+              "comm_protocol": 1,
+              "is_prefill": false
+            }
+          }
+        ],
+        "arch": {
+          "batch_size": 1536,
+          "batch_size_local": 48,
+          "seq_len": 1,
+          "tp": 1,
+          "dp": 32,
+          "hidden_dim": 7168,
+          "moe_inter_dim": 2048,
+          "token_per_ep_group": 384,
+          "expert_per_ep_group": 8,
+          "m_per_group": 48,
+          "activated_expert_per_ep_group": 8
+        }
+      },
+      "DeepSeek-V3.2_lmhead": {
+        "name": "DeepSeek-V3.2_lmhead",
+        "layer_type": "LMHead",
+        "total_operators": 1,
+        "perf": {
+          "param": 926679040.0,
+          "flops": 88961187840.0,
+          "dram_occupy": 926679040.0,
+          "dram_traffic": 962510848.0,
+          "elapse": 138.2146895238095,
+          "comp_elapse": 115.83488,
+          "dma_elapse": 111.89904761904764,
+          "comm_elapse": 0.0,
+          "comm_size": 0.0
+        },
+        "comp_operators": [
+          {
+            "operator_id": "DeepSeek-V3.2_lmhead_matmul_id",
+            "operator_type": "MatMulOperator",
+            "name": "DeepSeek-V3.2_lmhead_matmul",
+            "param": 926679040,
+            "flops": 88961187840,
+            "dram_occupy": 926679040,
+            "dram_traffic": 962510848.0,
+            "elapsed": 138.2146895238095,
+            "comp_elapsed": 115.83488,
+            "dma_elapsed": 111.89904761904764,
+            "best_tile": {
+              "order": "mkn",
+              "M": 48,
+              "N": 192,
+              "K": 3584
+            },
+            "best_partition": {
+              "dims": {
+                "G": 1,
+                "M": 48,
+                "N": 129280,
+                "K": 7168
+              },
+              "procs": {
+                "P_G": 1,
+                "P_M": 1,
+                "P_N": 32,
+                "P_K": 2
+              }
+            },
+            "urate": 0.8380793705725885,
+            "parallel_params": {
+              "G": 1,
+              "M": 48,
+              "N": 129280,
+              "K": 7168
+            }
+          }
+        ],
+        "comm_operators": [],
+        "arch": {
+          "batch_size": 1536,
+          "batch_size_local": 48,
+          "seq_len": 1,
+          "tp": 1,
+          "dp": 32,
+          "vocab_size": 129280,
+          "hidden_dim": 7168
+        }
+      }
+    }
+  }
+}

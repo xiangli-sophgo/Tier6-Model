@@ -114,11 +114,26 @@ fi
 sleep 1
 echo "旧进程清理完成 ✓"
 
+# 查找可用的 Python
+PYTHON_CMD=""
+for cmd in /opt/homebrew/bin/python3.11 /opt/homebrew/bin/python3 /usr/local/bin/python3 /usr/bin/python3 python3; do
+    if command -v "$cmd" &> /dev/null; then
+        PYTHON_CMD="$cmd"
+        break
+    fi
+done
+
+if [ -z "$PYTHON_CMD" ]; then
+    echo "[错误] 未找到 Python，请安装 Python 3"
+    exit 1
+fi
+
 # 启动后端
 echo ""
 echo "[1/2] 启动后端服务 (端口 $API_PORT)..."
+echo "使用 Python: $PYTHON_CMD"
 cd "$SCRIPT_DIR/backend"
-python3 -m uvicorn llm_simulator.web.api:app --port $API_PORT --reload &
+$PYTHON_CMD -m uvicorn llm_simulator.web.api:app --port $API_PORT --reload &
 BACKEND_PID=$!
 echo "后端 PID: $BACKEND_PID"
 

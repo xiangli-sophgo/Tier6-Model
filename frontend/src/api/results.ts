@@ -111,8 +111,9 @@ export async function getExperimentDetail(experimentId: number): Promise<Experim
 export async function updateExperiment(
   experimentId: number,
   data: Partial<Experiment>
-): Promise<void> {
-  await api.patch(`/evaluation/experiments/${experimentId}`, data)
+): Promise<Experiment> {
+  const response = await api.patch(`/evaluation/experiments/${experimentId}`, data)
+  return response.data
 }
 
 /**
@@ -120,6 +121,18 @@ export async function updateExperiment(
  */
 export async function deleteExperiment(experimentId: number): Promise<void> {
   await api.delete(`/evaluation/experiments/${experimentId}`)
+}
+
+/**
+ * 批量删除实验
+ */
+export async function deleteExperimentsBatch(
+  experimentIds: number[]
+): Promise<{ success: boolean; message: string; deleted_count: number }> {
+  const response = await api.post('/evaluation/experiments/batch-delete', {
+    experiment_ids: experimentIds,
+  })
+  return response.data
 }
 
 // ============================================
@@ -241,6 +254,101 @@ export async function exportResultsCSV(
       columns: columns?.join(','),
     },
     responseType: 'blob',
+  })
+  return response.data
+}
+
+// ============================================
+// 导入导出相关 API
+// ============================================
+
+/**
+ * 导出实验配置
+ */
+export async function exportExperiments(experimentIds?: number[]): Promise<Record<string, unknown>> {
+  const params = new URLSearchParams()
+  if (experimentIds && experimentIds.length > 0) {
+    params.append('experiment_ids', experimentIds.join(','))
+  }
+  const response = await api.get('/evaluation/experiments/export', { params })
+  return response.data
+}
+
+/**
+ * 下载导出的实验为 JSON 文件
+ */
+export async function downloadExperimentJSON(experimentIds?: number[]): Promise<void> {
+  try {
+    const data = await exportExperiments(experimentIds)
+
+    // 创建 Blob 和下载链接
+    const element = document.createElement('a')
+    element.setAttribute(
+      'href',
+      'data:text/json;charset=utf-8,' + encodeURIComponent(JSON.stringify(data, null, 2))
+    )
+    element.setAttribute(
+      'download',
+      `experiments_${new Date().toISOString().slice(0, 10)}.json`
+    )
+    element.style.display = 'none'
+    document.body.appendChild(element)
+    element.click()
+    document.body.removeChild(element)
+  } catch (error) {
+    throw error
+  }
+}
+
+/**
+ * 检查导入文件的有效性
+ */
+export async function checkImportFile(
+  file: File
+): Promise<{
+  valid: boolean
+  error?: string
+  experiments?: Array<{
+    id?: number
+    name: string
+    description?: string
+    total_tasks: number
+    completed_tasks: number
+    conflict: boolean
+    existing_id?: number
+  }>
+  temp_file_id?: string
+}> {
+  const formData = new FormData()
+  formData.append('file', file)
+  const response = await api.post('/evaluation/experiments/check-import', formData, {
+    headers: {
+      'Content-Type': 'multipart/form-data',
+    },
+  })
+  return response.data
+}
+
+/**
+ * 执行导入操作
+ */
+export async function executeImport(
+  tempFileId: string,
+  configs: Array<{
+    original_name: string
+    action: 'rename' | 'overwrite' | 'skip'
+    new_name?: string
+  }>
+): Promise<{
+  success: boolean
+  imported_count: number
+  skipped_count: number
+  overwritten_count: number
+  message: string
+}> {
+  const response = await api.post('/evaluation/experiments/execute-import', {
+    temp_file_id: tempFileId,
+    configs,
   })
   return response.data
 }

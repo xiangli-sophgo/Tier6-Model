@@ -8,8 +8,10 @@ import asyncio
 import json
 import logging
 import os
+import uuid
 from pathlib import Path
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, Depends
+from datetime import datetime
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, Depends, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from typing import Any, Optional
@@ -171,6 +173,65 @@ class EvaluationRequest(BaseModel):
 
     # 模拟配置
     max_simulated_tokens: int = Field(4, ge=1, le=16, description="最大模拟token数（Decode阶段）")
+
+
+class ExperimentUpdateRequest(BaseModel):
+    """实验更新请求 - 用于编辑实验信息"""
+    name: Optional[str] = None
+    description: Optional[str] = None
+
+
+class BatchDeleteExperimentsRequest(BaseModel):
+    """批量删除实验请求"""
+    experiment_ids: list[int] = Field(..., min_items=1, description="要删除的实验 ID 列表")
+
+
+class ExperimentExportData(BaseModel):
+    """实验导出数据"""
+    id: int
+    name: str
+    description: Optional[str]
+    total_tasks: int
+    completed_tasks: int
+    tasks: list[dict[str, Any]]
+
+
+class ExportInfo(BaseModel):
+    """导出信息"""
+    version: str = "1.0"
+    export_time: str
+    experiments: list[dict[str, Any]]
+
+
+class CheckImportResult(BaseModel):
+    """导入包检查结果"""
+    valid: bool
+    error: Optional[str] = None
+    experiments: Optional[list[dict[str, Any]]] = None
+    temp_file_id: Optional[str] = None
+
+
+class ImportConfigItem(BaseModel):
+    """导入配置项"""
+    original_id: Optional[int] = None
+    original_name: str
+    action: str = Field(..., description="rename, overwrite, or skip")
+    new_name: Optional[str] = None
+
+
+class ImportExecuteRequest(BaseModel):
+    """执行导入请求"""
+    temp_file_id: str
+    configs: list[ImportConfigItem]
+
+
+class ImportResult(BaseModel):
+    """导入结果"""
+    success: bool
+    imported_count: int
+    skipped_count: int
+    overwritten_count: int
+    message: str
 
 
 class TaskSubmitResponse(BaseModel):
@@ -1014,6 +1075,76 @@ async def get_experiment_details(experiment_id: int, db: Session = Depends(get_d
         raise HTTPException(status_code=500, detail=f"获取失败: {str(e)}")
 
 
+@app.patch("/api/evaluation/experiments/{experiment_id}")
+async def update_experiment(
+    experiment_id: int,
+    request: ExperimentUpdateRequest,
+    db: Session = Depends(get_db)
+):
+    """更新实验信息（支持 inline 编辑）"""
+    experiment = db.query(Experiment).filter(Experiment.id == experiment_id).first()
+    if not experiment:
+        raise HTTPException(status_code=404, detail=f"实验不存在: {experiment_id}")
+
+    try:
+        if request.name is not None:
+            experiment.name = request.name
+        if request.description is not None:
+            experiment.description = request.description
+
+        db.commit()
+        db.refresh(experiment)
+
+        return {
+            "id": experiment.id,
+            "name": experiment.name,
+            "description": experiment.description,
+            "created_at": experiment.created_at.isoformat() if experiment.created_at else None,
+            "updated_at": experiment.updated_at.isoformat() if experiment.updated_at else None,
+        }
+    except Exception as e:
+        db.rollback()
+        logger.error(f"更新实验失败: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"更新失败: {str(e)}")
+
+
+@app.post("/api/evaluation/experiments/batch-delete")
+async def batch_delete_experiments(
+    request: BatchDeleteExperimentsRequest,
+    db: Session = Depends(get_db)
+):
+    """批量删除实验"""
+    try:
+        if not request.experiment_ids:
+            raise HTTPException(status_code=400, detail="实验 ID 列表不能为空")
+
+        # 查询要删除的实验
+        experiments = db.query(Experiment).filter(
+            Experiment.id.in_(request.experiment_ids)
+        ).all()
+
+        if not experiments:
+            raise HTTPException(status_code=404, detail="未找到指定的实验")
+
+        # 删除实验（级联删除任务和结果）
+        deleted_count = len(experiments)
+        for exp in experiments:
+            db.delete(exp)
+
+        db.commit()
+        return {
+            "success": True,
+            "message": f"成功删除 {deleted_count} 个实验",
+            "deleted_count": deleted_count,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        logger.error(f"批量删除实验失败: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"删除失败: {str(e)}")
+
+
 @app.delete("/api/evaluation/experiments/{experiment_id}")
 async def delete_experiment(experiment_id: int, db: Session = Depends(get_db)):
     """删除实验及其所有任务和结果"""
@@ -1029,6 +1160,220 @@ async def delete_experiment(experiment_id: int, db: Session = Depends(get_db)):
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=500, detail=f"删除失败: {str(e)}")
+
+
+# ============================================
+# 导入导出端点
+# ============================================
+
+# 存储临时导入文件
+_import_temp_files: dict[str, dict[str, Any]] = {}
+
+
+@app.get("/api/evaluation/experiments/export")
+async def export_experiments(experiment_ids: str = "", db: Session = Depends(get_db)):
+    """导出实验配置为 JSON"""
+    try:
+        # 解析实验 ID 列表
+        if experiment_ids:
+            ids = [int(id_str) for id_str in experiment_ids.split(",")]
+        else:
+            ids = []
+
+        # 查询实验
+        query = db.query(Experiment)
+        if ids:
+            experiments = query.filter(Experiment.id.in_(ids)).all()
+        else:
+            experiments = query.all()
+
+        if not experiments:
+            raise HTTPException(status_code=404, detail="未找到指定的实验")
+
+        # 构建导出数据
+        export_data = {
+            "version": "1.0",
+            "export_time": datetime.utcnow().isoformat(),
+            "experiments": [
+                {
+                    "id": exp.id,
+                    "name": exp.name,
+                    "description": exp.description,
+                    "total_tasks": exp.total_tasks,
+                    "completed_tasks": exp.completed_tasks,
+                    "created_at": exp.created_at.isoformat() if exp.created_at else None,
+                }
+                for exp in experiments
+            ],
+        }
+
+        return export_data
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"导出实验失败: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"导出失败: {str(e)}")
+
+
+@app.post("/api/evaluation/experiments/check-import")
+async def check_import_experiments(file: UploadFile = File(...), db: Session = Depends(get_db)):
+    """检查导入文件的有效性"""
+    temp_file_id = str(uuid.uuid4())[:8]
+
+    try:
+        # 读取文件内容
+        content = await file.read()
+        import_data = json.loads(content.decode("utf-8"))
+
+        # 验证格式
+        if not isinstance(import_data, dict) or "experiments" not in import_data:
+            return {
+                "valid": False,
+                "error": "无效的导入文件格式，缺少 'experiments' 字段",
+            }
+
+        # 检查现有实验的名称冲突
+        existing_names = {
+            exp.name: exp.id
+            for exp in db.query(Experiment).all()
+        }
+
+        experiments_info = []
+        for exp in import_data.get("experiments", []):
+            exp_info = {
+                "id": exp.get("id"),
+                "name": exp.get("name"),
+                "description": exp.get("description"),
+                "total_tasks": exp.get("total_tasks", 0),
+                "completed_tasks": exp.get("completed_tasks", 0),
+                "conflict": exp.get("name") in existing_names,
+                "existing_id": existing_names.get(exp.get("name")),
+            }
+            experiments_info.append(exp_info)
+
+        # 保存临时文件
+        _import_temp_files[temp_file_id] = {
+            "data": import_data,
+            "created_at": datetime.utcnow(),
+        }
+
+        return {
+            "valid": True,
+            "experiments": experiments_info,
+            "temp_file_id": temp_file_id,
+        }
+    except json.JSONDecodeError:
+        return {
+            "valid": False,
+            "error": "无法解析 JSON 文件",
+        }
+    except Exception as e:
+        logger.error(f"检查导入文件失败: {e}", exc_info=True)
+        return {
+            "valid": False,
+            "error": f"检查失败: {str(e)}",
+        }
+
+
+@app.post("/api/evaluation/experiments/execute-import")
+async def execute_import_experiments(
+    request: ImportExecuteRequest,
+    db: Session = Depends(get_db)
+):
+    """执行导入操作"""
+    try:
+        # 获取临时文件数据
+        if request.temp_file_id not in _import_temp_files:
+            raise HTTPException(status_code=404, detail="导入会话已过期，请重新上传文件")
+
+        import_data = _import_temp_files[request.temp_file_id]["data"]
+
+        # 处理导入配置
+        imported_count = 0
+        skipped_count = 0
+        overwritten_count = 0
+        error_messages = []
+
+        # 建立原始 ID 到新 ID 的映射
+        id_mapping = {}
+
+        for config in request.configs:
+            try:
+                original_name = config.original_name
+                action = config.action
+
+                # 从导入数据中找到对应的实验
+                import_exp = None
+                for exp in import_data.get("experiments", []):
+                    if exp.get("name") == original_name:
+                        import_exp = exp
+                        break
+
+                if not import_exp:
+                    skipped_count += 1
+                    continue
+
+                if action == "skip":
+                    skipped_count += 1
+                    continue
+
+                elif action == "overwrite":
+                    # 删除现有实验
+                    existing_exp = db.query(Experiment).filter(
+                        Experiment.name == original_name
+                    ).first()
+                    if existing_exp:
+                        db.delete(existing_exp)
+                        overwritten_count += 1
+
+                    # 创建新实验
+                    new_exp = Experiment(
+                        name=original_name,
+                        description=import_exp.get("description"),
+                        total_tasks=import_exp.get("total_tasks", 0),
+                        completed_tasks=import_exp.get("completed_tasks", 0),
+                    )
+                    db.add(new_exp)
+                    db.flush()
+                    id_mapping[import_exp.get("id")] = new_exp.id
+                    imported_count += 1
+
+                elif action == "rename":
+                    # 以新名称导入
+                    new_name = config.new_name or f"{original_name}_imported"
+                    new_exp = Experiment(
+                        name=new_name,
+                        description=import_exp.get("description"),
+                        total_tasks=import_exp.get("total_tasks", 0),
+                        completed_tasks=import_exp.get("completed_tasks", 0),
+                    )
+                    db.add(new_exp)
+                    db.flush()
+                    id_mapping[import_exp.get("id")] = new_exp.id
+                    imported_count += 1
+
+            except Exception as e:
+                error_messages.append(f"导入 '{original_name}' 失败: {str(e)}")
+                logger.error(f"导入实验失败: {e}", exc_info=True)
+
+        db.commit()
+
+        # 清理临时文件
+        del _import_temp_files[request.temp_file_id]
+
+        return {
+            "success": True,
+            "imported_count": imported_count,
+            "skipped_count": skipped_count,
+            "overwritten_count": overwritten_count,
+            "message": f"导入完成：{imported_count} 个成功，{skipped_count} 个跳过，{overwritten_count} 个覆盖",
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        logger.error(f"执行导入失败: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"导入失败: {str(e)}")
 
 
 # ============================================

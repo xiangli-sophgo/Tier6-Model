@@ -17,6 +17,14 @@ import {
   Empty,
   Spin,
   Alert,
+  Row,
+  Col,
+  Statistic,
+  Input,
+  Modal,
+  Upload,
+  Divider,
+  Checkbox,
 } from 'antd'
 import {
   ReloadOutlined,
@@ -27,9 +35,16 @@ import {
   SyncOutlined,
   CloseCircleOutlined,
   ArrowLeftOutlined,
+  EditOutlined,
+  SaveOutlined,
+  CloseOutlined,
+  FileTextOutlined,
+  DownloadOutlined,
+  UploadOutlined,
+  InboxOutlined,
 } from '@ant-design/icons'
 import type { ColumnsType } from 'antd/es/table'
-import { listExperiments, deleteExperiment, getExperimentDetail, getTaskResults, Experiment, EvaluationTask, TaskResultsResponse } from '@/api/results'
+import { listExperiments, deleteExperiment, deleteExperimentsBatch, getExperimentDetail, getTaskResults, updateExperiment, downloadExperimentJSON, checkImportFile, executeImport, Experiment, EvaluationTask, TaskResultsResponse } from '@/api/results'
 import { AnalysisResultDisplay } from '@/components/ConfigPanel/DeploymentAnalysis/AnalysisResultDisplay'
 import { ChartsPanel } from '@/components/ConfigPanel/DeploymentAnalysis/charts'
 import { PlanAnalysisResult, HardwareConfig, LLMModelConfig, InferenceConfig } from '@/utils/llmDeployment/types'
@@ -81,6 +96,25 @@ export const Results: React.FC = () => {
   const [selectedTask, setSelectedTask] = useState<EvaluationTask | null>(null)
   const [taskResults, setTaskResults] = useState<TaskResultsResponse | null>(null)
   const [taskResultsLoading, setTaskResultsLoading] = useState(false)
+
+  // 编辑状态
+  const [editingId, setEditingId] = useState<number | null>(null)
+  const [editingName, setEditingName] = useState('')
+  const [editingDescription, setEditingDescription] = useState('')
+  const [editingLoading, setEditingLoading] = useState(false)
+
+  // 批量选择状态
+  const [selectedExperimentIds, setSelectedExperimentIds] = useState<number[]>([])
+
+  // 导入导出状态
+  const [exportModalVisible, setExportModalVisible] = useState(false)
+  const [importModalVisible, setImportModalVisible] = useState(false)
+  const [importStep, setImportStep] = useState<'upload' | 'config' | 'importing' | 'result'>('upload')
+  const [importFile, setImportFile] = useState<File | null>(null)
+  const [importCheckResult, setImportCheckResult] = useState<any>(null)
+  const [importConfig, setImportConfig] = useState<Map<string, any>>(new Map())
+  const [importLoading, setImportLoading] = useState(false)
+  const [importResult, setImportResult] = useState<any>(null)
 
   // 加载实验列表
   const loadExperiments = async () => {
@@ -136,6 +170,140 @@ export const Results: React.FC = () => {
       message.error('删除失败')
       console.error(error)
     }
+  }
+
+  // 开始编辑
+  const handleStartEdit = (record: Experiment) => {
+    setEditingId(record.id)
+    setEditingName(record.name)
+    setEditingDescription(record.description || '')
+  }
+
+  // 保存编辑
+  const handleSaveEdit = async (id: number) => {
+    if (!editingName.trim()) {
+      message.error('实验名称不能为空')
+      return
+    }
+    setEditingLoading(true)
+    try {
+      await updateExperiment(id, {
+        name: editingName.trim(),
+        description: editingDescription.trim() || undefined,
+      })
+      message.success('实验已更新')
+      loadExperiments()
+      setEditingId(null)
+    } catch (error) {
+      message.error('更新失败')
+      console.error(error)
+    } finally {
+      setEditingLoading(false)
+    }
+  }
+
+  // 取消编辑
+  const handleCancelEdit = () => {
+    setEditingId(null)
+    setEditingName('')
+    setEditingDescription('')
+  }
+
+  // 批量删除
+  const handleBatchDelete = async () => {
+    if (selectedExperimentIds.length === 0) {
+      message.warning('请先选择要删除的实验')
+      return
+    }
+    try {
+      await deleteExperimentsBatch(selectedExperimentIds)
+      message.success(`成功删除 ${selectedExperimentIds.length} 个实验`)
+      setSelectedExperimentIds([])
+      loadExperiments()
+    } catch (error) {
+      message.error('批量删除失败')
+      console.error(error)
+    }
+  }
+
+  // 导出实验
+  const handleExport = async () => {
+    try {
+      const exportIds = selectedExperimentIds.length > 0 ? selectedExperimentIds : undefined
+      await downloadExperimentJSON(exportIds)
+      message.success('导出成功')
+      setExportModalVisible(false)
+      setSelectedExperimentIds([])
+    } catch (error) {
+      message.error('导出失败')
+      console.error(error)
+    }
+  }
+
+  // 处理导入文件上传
+  const handleImportFile = async (file: File) => {
+    setImportFile(file)
+    setImportLoading(true)
+    try {
+      const result = await checkImportFile(file)
+      if (result.valid && result.experiments) {
+        setImportCheckResult(result)
+        // 初始化导入配置
+        const config = new Map()
+        for (const exp of result.experiments) {
+          config.set(exp.name, {
+            original_name: exp.name,
+            action: exp.conflict ? 'rename' : 'rename',
+            new_name: exp.conflict ? `${exp.name}_imported` : exp.name,
+          })
+        }
+        setImportConfig(config)
+        setImportStep('config')
+      } else {
+        message.error(result.error || '导入文件无效')
+      }
+    } catch (error) {
+      message.error('检查导入文件失败')
+      console.error(error)
+    } finally {
+      setImportLoading(false)
+    }
+  }
+
+  // 执行导入
+  const handleExecuteImport = async () => {
+    if (!importCheckResult?.temp_file_id) {
+      message.error('导入会话已过期，请重新上传')
+      return
+    }
+
+    setImportLoading(true)
+    setImportStep('importing')
+    try {
+      const configs = Array.from(importConfig.values())
+      const result = await executeImport(importCheckResult.temp_file_id, configs)
+      setImportResult(result)
+      setImportStep('result')
+      if (result.success) {
+        message.success(result.message)
+        loadExperiments()
+      }
+    } catch (error) {
+      message.error('导入失败')
+      console.error(error)
+    } finally {
+      setImportLoading(false)
+    }
+  }
+
+  // 重置导入对话框
+  const resetImportModal = () => {
+    setImportModalVisible(false)
+    setImportStep('upload')
+    setImportFile(null)
+    setImportCheckResult(null)
+    setImportConfig(new Map())
+    setImportResult(null)
   }
 
   // 加载任务结果
@@ -206,36 +374,58 @@ export const Results: React.FC = () => {
       title: '实验名称',
       dataIndex: 'name',
       key: 'name',
-      width: 300,
-      ellipsis: true,
-      align: 'center',
-      render: (text, record) => (
-        <Tooltip title="点击查看详情">
-          <span
-            style={{ color: '#1890ff', cursor: 'pointer' }}
-            onClick={() => loadExperimentDetail(record.id)}
-          >
-            {text}
-          </span>
-        </Tooltip>
-      ),
+      width: 280,
+      render: (text, record) => {
+        if (editingId === record.id) {
+          return (
+            <Input
+              value={editingName}
+              onChange={(e) => setEditingName(e.target.value)}
+              placeholder="实验名称"
+              autoFocus
+              onPressEnter={() => handleSaveEdit(record.id)}
+              onBlur={() => {
+                // 按 Escape 取消编辑
+              }}
+            />
+          )
+        }
+        return (
+          <Tooltip title="点击查看详情，右键编辑">
+            <span
+              style={{ color: '#1890ff', cursor: 'pointer' }}
+              onClick={() => loadExperimentDetail(record.id)}
+              onContextMenu={(e) => {
+                e.preventDefault()
+                handleStartEdit(record)
+              }}
+            >
+              {text}
+            </span>
+          </Tooltip>
+        )
+      },
     },
     {
       title: '任务数',
       key: 'tasks',
-      width: 100,
+      width: 80,
       align: 'center',
-      render: (_, record) => (
-        <span>
-          {record.completed_tasks}/{record.total_tasks}
-        </span>
-      ),
+      render: (_, record) => {
+        const taskCount = record.tasks?.length || 0
+        const completedCount = record.tasks?.filter((t: EvaluationTask) => t.status === 'completed').length || 0
+        return (
+          <span>
+            {completedCount}/{taskCount}
+          </span>
+        )
+      },
     },
     {
       title: '创建时间',
       dataIndex: 'created_at',
       key: 'created_at',
-      width: 180,
+      width: 160,
       align: 'center',
       render: (text) =>
         text ? new Date(text).toLocaleString('zh-CN') : '-',
@@ -244,39 +434,79 @@ export const Results: React.FC = () => {
       title: '描述',
       dataIndex: 'description',
       key: 'description',
-      width: 250,
-      align: 'center',
+      width: 200,
       ellipsis: true,
-      render: (text) => (
-        <Tooltip title={text || '-'}>
-          <span>{text || '-'}</span>
-        </Tooltip>
-      ),
+      render: (text, record) => {
+        if (editingId === record.id) {
+          return (
+            <Input.TextArea
+              value={editingDescription}
+              onChange={(e) => setEditingDescription(e.target.value)}
+              placeholder="实验描述"
+              rows={2}
+              autoFocus={editingName !== ''}
+            />
+          )
+        }
+        return (
+          <Tooltip title={text || '无描述'}>
+            <span>{text || '-'}</span>
+          </Tooltip>
+        )
+      },
     },
     {
       title: '操作',
       key: 'action',
-      width: 100,
+      width: 160,
       align: 'center',
-      render: (_, record) => (
-        <Space>
-          <Tooltip title="查看详情">
-            <Button
-              type="link"
-              size="small"
-              icon={<BarChartOutlined />}
-              onClick={() => loadExperimentDetail(record.id)}
-            />
-          </Tooltip>
-          <Popconfirm
-            title="确定删除此实验吗？"
-            description="删除后将无法恢复"
-            onConfirm={() => handleDelete(record.id)}
-          >
-            <Button type="link" size="small" danger icon={<DeleteOutlined />} />
-          </Popconfirm>
-        </Space>
-      ),
+      render: (_, record) => {
+        if (editingId === record.id) {
+          return (
+            <Space size="small">
+              <Button
+                type="primary"
+                size="small"
+                icon={<SaveOutlined />}
+                loading={editingLoading}
+                onClick={() => handleSaveEdit(record.id)}
+              />
+              <Button
+                size="small"
+                icon={<CloseOutlined />}
+                onClick={handleCancelEdit}
+              />
+            </Space>
+          )
+        }
+        return (
+          <Space size="small">
+            <Tooltip title="查看详情">
+              <Button
+                type="link"
+                size="small"
+                icon={<BarChartOutlined />}
+                onClick={() => loadExperimentDetail(record.id)}
+              />
+            </Tooltip>
+            <Tooltip title="编辑">
+              <Button
+                type="link"
+                size="small"
+                icon={<EditOutlined />}
+                onClick={() => handleStartEdit(record)}
+              />
+            </Tooltip>
+            <Popconfirm
+              title="确定删除此实验吗？"
+              description="删除后将无法恢复"
+              onConfirm={() => handleDelete(record.id)}
+            >
+              <Button type="link" size="small" danger icon={<DeleteOutlined />} />
+            </Popconfirm>
+          </Space>
+        )
+      },
     },
   ]
 
@@ -465,6 +695,13 @@ export const Results: React.FC = () => {
                 </Text>
               </Space>
             }
+            extra={
+              <Space>
+                <Button size="small" onClick={() => loadExperimentDetail(selectedExperimentId!)}>
+                  <ReloadOutlined /> 刷新
+                </Button>
+              </Space>
+            }
             style={{ marginBottom: 16 }}
           >
             <TaskTable
@@ -475,7 +712,7 @@ export const Results: React.FC = () => {
                 if (task.status === 'completed') {
                   loadTaskResults(task)
                 } else {
-                  message.info('该任务尚未完成')
+                  message.info('仅已完成的任务可查看详细结果')
                 }
               }}
               onTasksDelete={async (taskIds) => {
@@ -492,7 +729,7 @@ export const Results: React.FC = () => {
   }
 
   return (
-    <div style={{ height: '100%', width: '100%', display: 'flex', flexDirection: 'column', background: '#fff' }}>
+    <div style={{ height: '100%', width: '100%', display: 'flex', flexDirection: 'column', background: '#fafafa' }}>
       {/* 内容区 */}
       <div style={{ flex: 1, overflow: 'auto', padding: 24 }}>
         {/* 实验列表 */}
@@ -503,17 +740,53 @@ export const Results: React.FC = () => {
             </Space>
           }
           extra={
-            <Tooltip title="刷新">
-              <Button icon={<ReloadOutlined />} onClick={loadExperiments} size="small" />
-            </Tooltip>
+            <Space>
+              <Tooltip title="导出">
+                <Button icon={<DownloadOutlined />} onClick={() => setExportModalVisible(true)} size="small" />
+              </Tooltip>
+              <Tooltip title="导入">
+                <Button icon={<UploadOutlined />} onClick={() => setImportModalVisible(true)} size="small" />
+              </Tooltip>
+              <Tooltip title="刷新">
+                <Button icon={<ReloadOutlined />} onClick={loadExperiments} size="small" />
+              </Tooltip>
+            </Space>
           }
         >
           <Spin spinning={loading}>
+            {selectedExperimentIds.length > 0 && (
+              <div style={{ marginBottom: 16, padding: '8px 12px', background: '#e6f7ff', borderRadius: 4 }}>
+                <Space>
+                  <span>已选择 {selectedExperimentIds.length} 个实验</span>
+                  <Button
+                    type="link"
+                    onClick={() => setSelectedExperimentIds([])}
+                  >
+                    取消选择
+                  </Button>
+                  <Popconfirm
+                    title="确定删除选中的实验吗？"
+                    description={`将删除 ${selectedExperimentIds.length} 个实验，此操作无法恢复`}
+                    onConfirm={handleBatchDelete}
+                  >
+                    <Button danger type="primary" size="small">
+                      删除选中
+                    </Button>
+                  </Popconfirm>
+                </Space>
+              </div>
+            )}
             <Table
               columns={columns}
               dataSource={experiments}
               rowKey="id"
               loading={loading}
+              rowSelection={{
+                selectedRowKeys: selectedExperimentIds,
+                onChange: (selectedKeys) => {
+                  setSelectedExperimentIds(selectedKeys as number[])
+                },
+              }}
               pagination={{
                 defaultPageSize: 20,
                 pageSizeOptions: [10, 20, 50],
@@ -535,6 +808,200 @@ export const Results: React.FC = () => {
           </Spin>
         </Card>
       </div>
+
+      {/* 导出模态框 */}
+      <Modal
+        title="导出实验"
+        open={exportModalVisible}
+        onOk={handleExport}
+        onCancel={() => setExportModalVisible(false)}
+        okText="导出"
+        cancelText="取消"
+      >
+        <div style={{ marginBottom: 16 }}>
+          {selectedExperimentIds.length > 0 ? (
+            <div>
+              <div>已选择 {selectedExperimentIds.length} 个实验</div>
+              <Button
+                type="link"
+                size="small"
+                onClick={() => setSelectedExperimentIds([])}
+              >
+                导出全部实验
+              </Button>
+            </div>
+          ) : (
+            <div>将导出所有 {experiments.length} 个实验的配置信息</div>
+          )}
+        </div>
+      </Modal>
+
+      {/* 导入模态框 */}
+      <Modal
+        title="导入实验"
+        open={importModalVisible}
+        onCancel={resetImportModal}
+        footer={null}
+        width={800}
+      >
+        {importStep === 'upload' && (
+          <div>
+            <Upload.Dragger
+              accept=".json"
+              maxCount={1}
+              beforeUpload={(file) => {
+                handleImportFile(file)
+                return false
+              }}
+              disabled={importLoading}
+            >
+              <p className="ant-upload-drag-icon">
+                <InboxOutlined />
+              </p>
+              <p className="ant-upload-text">点击或拖拽 JSON 文件到此区域上传</p>
+              <p className="ant-upload-hint">支持导出的实验配置文件</p>
+            </Upload.Dragger>
+          </div>
+        )}
+
+        {importStep === 'config' && importCheckResult && (
+          <div>
+            <div style={{ marginBottom: 16 }}>
+              <div>检测到 {importCheckResult.experiments?.length || 0} 个实验</div>
+            </div>
+            <div style={{ maxHeight: 400, overflowY: 'auto', marginBottom: 16 }}>
+              <Space direction="vertical" style={{ width: '100%' }}>
+                {importCheckResult.experiments?.map((exp: any, idx: number) => (
+                  <Card key={idx} size="small">
+                    <div style={{ marginBottom: 8 }}>
+                      <strong>实验名称：</strong> {exp.name}
+                    </div>
+                    {exp.description && (
+                      <div style={{ marginBottom: 8 }}>
+                        <strong>描述：</strong> {exp.description}
+                      </div>
+                    )}
+                    <div style={{ marginBottom: 8 }}>
+                      <strong>任务数：</strong> {exp.completed_tasks}/{exp.total_tasks}
+                    </div>
+                    {exp.conflict && (
+                      <Alert
+                        message="名称冲突"
+                        description={`与现有实验 "${exp.name}" 重名`}
+                        type="warning"
+                        style={{ marginBottom: 8 }}
+                      />
+                    )}
+                    <div>
+                      <Checkbox.Group value={[importConfig.get(exp.name)?.action || 'rename']}>
+                        <Space direction="vertical">
+                          <Checkbox
+                            value="rename"
+                            onChange={() => {
+                              const config = new Map(importConfig)
+                              config.set(exp.name, {
+                                original_name: exp.name,
+                                action: 'rename',
+                                new_name: exp.conflict ? `${exp.name}_imported` : exp.name,
+                              })
+                              setImportConfig(config)
+                            }}
+                          >
+                            重命名导入
+                            {exp.conflict && (
+                              <Input
+                                placeholder="新名称"
+                                style={{ width: 200, marginLeft: 8 }}
+                                value={importConfig.get(exp.name)?.new_name || ''}
+                                onChange={(e) => {
+                                  const config = new Map(importConfig)
+                                  const item = config.get(exp.name) || {}
+                                  item.new_name = e.target.value
+                                  config.set(exp.name, item)
+                                  setImportConfig(config)
+                                }}
+                              />
+                            )}
+                          </Checkbox>
+                          {!exp.conflict && (
+                            <>
+                              <Checkbox
+                                value="skip"
+                                onChange={() => {
+                                  const config = new Map(importConfig)
+                                  config.set(exp.name, {
+                                    original_name: exp.name,
+                                    action: 'skip',
+                                  })
+                                  setImportConfig(config)
+                                }}
+                              >
+                                跳过
+                              </Checkbox>
+                            </>
+                          )}
+                          {exp.conflict && (
+                            <Checkbox
+                              value="overwrite"
+                              onChange={() => {
+                                const config = new Map(importConfig)
+                                config.set(exp.name, {
+                                  original_name: exp.name,
+                                  action: 'overwrite',
+                                })
+                                setImportConfig(config)
+                              }}
+                            >
+                              覆盖现有实验
+                            </Checkbox>
+                          )}
+                        </Space>
+                      </Checkbox.Group>
+                    </div>
+                  </Card>
+                ))}
+              </Space>
+            </div>
+            <Space>
+              <Button onClick={() => setImportStep('upload')}>返回</Button>
+              <Button
+                type="primary"
+                onClick={handleExecuteImport}
+                loading={importLoading}
+              >
+                导入
+              </Button>
+            </Space>
+          </div>
+        )}
+
+        {importStep === 'importing' && (
+          <div style={{ textAlign: 'center', padding: 24 }}>
+            <Spin tip="正在导入..." />
+          </div>
+        )}
+
+        {importStep === 'result' && importResult && (
+          <div>
+            <Alert
+              message={importResult.success ? '导入成功' : '导入失败'}
+              description={importResult.message}
+              type={importResult.success ? 'success' : 'error'}
+              style={{ marginBottom: 16 }}
+            />
+            <div style={{ marginBottom: 16 }}>
+              <div>导入成功：{importResult.imported_count} 个</div>
+              <div>跳过：{importResult.skipped_count} 个</div>
+              <div>覆盖：{importResult.overwritten_count} 个</div>
+            </div>
+            <Button type="primary" onClick={resetImportModal} block>
+              完成
+            </Button>
+          </div>
+        )}
+      </Modal>
     </div>
   )
 }
+
+export default Results

@@ -18,6 +18,7 @@ from multiprocessing import Pool, cpu_count
 
 from .arch_config import AcceleratorMicroArch
 from .utils import ceil_div, align_up
+from .gemm_cache import GEMMPersistentCache
 
 # 是否启用多进程搜索 (可通过环境变量禁用)
 ENABLE_MULTIPROCESS = os.environ.get('GEMM_DISABLE_MULTIPROCESS', '0') != '1'
@@ -74,18 +75,22 @@ class GEMMResult:
 class GEMMEvaluator:
     """GEMM 精确评估器"""
 
-    def __init__(self, arch: AcceleratorMicroArch, enable_partition_search: bool = True):
+    def __init__(self, arch: AcceleratorMicroArch, enable_partition_search: bool = True, enable_tile_search: bool = True):
         """
         初始化评估器
 
         Args:
             arch: 硬件微架构配置
             enable_partition_search: 是否启用分区搜索（False时使用固定分区，速度提升100倍）
+            enable_tile_search: 是否启用 tile 搜索（False时使用固定 tile）
         """
         self.arch = arch
         self.enable_partition_search = enable_partition_search
+        self.enable_tile_search = enable_tile_search
         self._valid_partitions = self._compute_valid_partitions()
-        self._cache: Dict[Tuple, GEMMResult] = {}
+
+        # 持久化缓存管理器（自动加载磁盘缓存）
+        self.persistent_cache = GEMMPersistentCache(arch)
 
         # 📊 缓存统计
         self._cache_hits = 0
@@ -310,7 +315,8 @@ class GEMMEvaluator:
         arch_util = real_macs / theo_macs if theo_macs > 0 else 0.0
 
         # 计算时间 (微秒)
-        # t = theo_macs × g_blk / macs_per_cycle / freq_ghz / 1e3
+        # t_us = theo_macs × g_blk / macs_per_cycle / (freq_ghz * 1e3)
+        # freq_ghz * 1e3 = GHz * 1000 = cycles/μs
         macs_per_cycle = self.arch.macs_per_cycle
         freq = self.arch.freq_ghz
         if macs_per_cycle <= 0 or freq <= 0:
@@ -481,15 +487,15 @@ class GEMMEvaluator:
         Returns:
             GEMMResult: 包含延迟、利用率、最佳配置等
         """
-        # 检查缓存
-        cache_key = (G, M, K, N, input_dtype, output_dtype)
-        if cache_key in self._cache:
+        # 检查持久化缓存
+        cached_result = self.persistent_cache.get(
+            G, M, K, N, input_dtype, output_dtype,
+            self.enable_tile_search, self.enable_partition_search
+        )
+        if cached_result is not None:
             # 📊 缓存命中
             self._cache_hits += 1
-            # import logging
-            # logger = logging.getLogger(__name__)
-            # logger.info(f"✅ GEMM 缓存命中: ({G}, {M}, {K}, {N})")
-            return self._cache[cache_key]
+            return cached_result
 
         # 📊 缓存未命中，记录搜索时间
         import time
@@ -512,7 +518,12 @@ class GEMMEvaluator:
                 best_loop_order='mnk',
                 best_partition=(1, 1, 1, 1),
             )
-            self._cache[cache_key] = result
+            # 保存到持久化缓存
+            self.persistent_cache.put(
+                G, M, K, N, input_dtype, output_dtype,
+                self.enable_tile_search, self.enable_partition_search,
+                result, search_time_ms=0.0
+            )
             return result
 
         best_time = float('inf')
@@ -586,11 +597,16 @@ class GEMMEvaluator:
                 best_partition=best_result_dict['best_partition'],
             )
 
-        self._cache[cache_key] = best_result
+        # 保存到持久化缓存
+        search_time_ms = (time.time() - search_start) * 1000
+        self.persistent_cache.put(
+            G, M, K, N, input_dtype, output_dtype,
+            self.enable_tile_search, self.enable_partition_search,
+            best_result, search_time_ms
+        )
 
         # 📊 记录缓存未命中和搜索时间
         self._cache_misses += 1
-        search_time_ms = (time.time() - search_start) * 1000
         self._total_search_time_ms += search_time_ms
 
         import logging
@@ -635,8 +651,9 @@ class GEMMEvaluator:
             for p_g, p_m, p_n, p_k in self._valid_partitions
         ]
 
-        # 使用多进程池
-        num_processes = min(len(tasks), cpu_count())
+        # 使用多进程池（限制到 CPU 核心数的一半，避免系统过载）
+        max_workers = max(1, cpu_count() // 2)
+        num_processes = min(len(tasks), max_workers)
 
         try:
             with Pool(processes=num_processes) as pool:
@@ -657,8 +674,11 @@ class GEMMEvaluator:
         return best_result_dict
 
     def clear_cache(self):
-        """清空缓存"""
-        self._cache.clear()
+        """清空内存缓存（不影响磁盘缓存）"""
+        self.persistent_cache._cache.clear()
+        self._cache_hits = 0
+        self._cache_misses = 0
+        self._total_search_time_ms = 0.0
 
     def get_cache_stats(self) -> dict:
         """
@@ -675,9 +695,10 @@ class GEMMEvaluator:
             "cache_hits": self._cache_hits,
             "cache_misses": self._cache_misses,
             "hit_rate_percent": hit_rate,
-            "cached_configs": len(self._cache),
+            "cached_configs": len(self.persistent_cache._cache),
             "total_search_time_ms": self._total_search_time_ms,
             "avg_search_time_ms": (self._total_search_time_ms / self._cache_misses) if self._cache_misses > 0 else 0.0,
+            "cache_file": str(self.persistent_cache.cache_file),
         }
 
     def print_cache_stats(self):
@@ -687,8 +708,9 @@ class GEMMEvaluator:
         logger = logging.getLogger(__name__)
 
         logger.info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-        logger.info("📊 GEMM 评估器缓存统计")
+        logger.info("📊 GEMM 持久化缓存统计")
         logger.info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+        logger.info(f"   缓存文件: {stats['cache_file']}")
         logger.info(f"   总请求数: {stats['total_requests']}")
         logger.info(f"   缓存命中: {stats['cache_hits']} ({stats['hit_rate_percent']:.1f}%)")
         logger.info(f"   缓存未命中: {stats['cache_misses']}")
