@@ -18,6 +18,7 @@ from .gemm_eval import (
     get_gemm_evaluator,
     eval_gemm,
 )
+from .gemm_eval_fast import create_gemm_evaluator
 from .fa2_eval import (
     FA2Result,
     FA2Evaluator,
@@ -70,6 +71,7 @@ __all__ = [
     'GEMMEvaluator',
     'get_gemm_evaluator',
     'eval_gemm',
+    'create_gemm_evaluator',
     # FA2
     'FA2Result',
     'FA2Evaluator',

@@ -22,6 +22,9 @@ def evaluate_deployment(
     manual_parallelism: Optional[dict] = None,
     search_constraints: Optional[dict] = None,
     progress_callback: Optional[Callable[[int, int, str], None]] = None,
+    enable_tile_search: bool = True,
+    enable_partition_search: bool = False,
+    max_simulated_tokens: int = 4,
 ) -> dict:
     """
     评估部署方案
@@ -58,7 +61,10 @@ def evaluate_deployment(
             inference_config,
             manual_parallelism,
             total_chips,
-            progress_callback
+            progress_callback,
+            enable_tile_search,
+            enable_partition_search,
+            max_simulated_tokens
         )
     else:
         return _evaluate_auto_mode(
@@ -67,7 +73,10 @@ def evaluate_deployment(
             inference_config,
             search_constraints,
             total_chips,
-            progress_callback
+            progress_callback,
+            enable_tile_search,
+            enable_partition_search,
+            max_simulated_tokens
         )
 
 
@@ -78,11 +87,14 @@ def _evaluate_manual_mode(
     manual_parallelism: dict,
     total_chips: int,
     progress_callback: Optional[Callable[[int, int, str], None]] = None,
+    enable_tile_search: bool = True,
+    enable_partition_search: bool = False,
+    max_simulated_tokens: int = 4,
 ) -> dict:
-    """手动模式评估"""
+    """手动模式评估（带细粒度进度）"""
 
     if progress_callback:
-        progress_callback(0, 1, "开始手动模式评估...")
+        progress_callback(0, 100, "开始手动模式评估...")
 
     # 提取并行策略（严格模式：不使用默认值）
     required_parallelism_fields = ["dp", "tp", "pp", "ep"]
@@ -98,6 +110,9 @@ def _evaluate_manual_mode(
 
     required_chips = dp * tp * pp * ep
 
+    if progress_callback:
+        progress_callback(5, 100, "检查芯片数量...")
+
     # 检查芯片数量是否足够
     if required_chips > total_chips:
         result = _create_infeasible_result(
@@ -107,7 +122,7 @@ def _evaluate_manual_mode(
         )
 
         if progress_callback:
-            progress_callback(1, 1, "评估完成（不可行）")
+            progress_callback(100, 100, "评估完成（不可行）")
 
         return {
             "top_k_plans": [],
@@ -120,12 +135,23 @@ def _evaluate_manual_mode(
         }
 
     # 从拓扑配置中提取硬件配置
+    if progress_callback:
+        progress_callback(8, 100, "提取硬件配置...")
     hardware_config = _extract_hardware_config(topology)
 
-    # 调用真实的模拟器
+    # 调用真实的模拟器（带细粒度进度回调）
     try:
+        # 创建内部进度回调，将模拟器的 0-100% 映射到外部的 10-95%
+        def sim_progress_callback(percent: float, message: str):
+            print(f"[DEBUG SIM] sim_progress_callback called: percent={percent}, message={message}", flush=True)
+            if progress_callback:
+                # 映射: 模拟器的 0-100% -> 外部的 10-95%
+                external_progress = 10 + percent * 0.85
+                print(f"[DEBUG SIM] calling progress_callback: {int(external_progress)}/100", flush=True)
+                progress_callback(int(external_progress), 100, message)
+
         if progress_callback:
-            progress_callback(0, 1, "运行模拟器...")
+            progress_callback(10, 100, "运行模拟器...")
 
         sim_result = run_simulation(
             topology_dict=topology,
@@ -133,7 +159,14 @@ def _evaluate_manual_mode(
             inference_dict=inference_config,
             parallelism_dict=manual_parallelism,
             hardware_dict=hardware_config,
+            progress_callback=sim_progress_callback,
+            enable_tile_search=enable_tile_search,
+            enable_partition_search=enable_partition_search,
+            max_simulated_tokens=max_simulated_tokens,
         )
+
+        if progress_callback:
+            progress_callback(95, 100, "转换结果格式...")
 
         # 转换为 DS_TPU 格式
         result = _transform_to_ds_tpu_format(
@@ -146,7 +179,7 @@ def _evaluate_manual_mode(
         )
 
         if progress_callback:
-            progress_callback(1, 1, "评估完成")
+            progress_callback(100, 100, "评估完成")
 
         return {
             "top_k_plans": [result],
@@ -183,11 +216,23 @@ def _evaluate_auto_mode(
     search_constraints: dict,
     total_chips: int,
     progress_callback: Optional[Callable[[int, int, str], None]] = None,
+    enable_tile_search: bool = True,
+    enable_partition_search: bool = False,
+    max_simulated_tokens: int = 4,
 ) -> dict:
-    """自动模式评估（搜索最优方案）"""
+    """自动模式评估（搜索最优方案，带累加进度）
+
+    进度计算方式：
+    - 总进度 = (已完成方案数 / 总方案数) * 100% + (当前方案内部进度 / 总方案数)
+    - 例如：10 个方案，第 3 个方案执行到 50%
+      总进度 = (2/10)*100% + (50%/10) = 20% + 5% = 25%
+    """
 
     max_chips = search_constraints.get("max_chips", total_chips)
     top_k = search_constraints.get("top_k", 10)
+
+    if progress_callback:
+        progress_callback(0, 100, "准备评估...")
 
     # 从拓扑配置中提取硬件配置
     hardware_config = _extract_hardware_config(topology)
@@ -203,22 +248,45 @@ def _evaluate_auto_mode(
     logger.info(f"自动模式: 生成 {total_candidates} 个候选方案")
 
     if progress_callback:
-        progress_callback(0, total_candidates, f"开始评估 {total_candidates} 个方案...")
+        progress_callback(2, 100, f"开始评估 {total_candidates} 个方案...")
 
     # 评估所有候选方案
     feasible_plans = []
     infeasible_plans = []
 
-    for i, candidate in enumerate(candidates):
-        if progress_callback and i % 10 == 0:
-            progress_callback(i, total_candidates, f"评估方案 {i+1}/{total_candidates}...")
+    # 预留 2% 给准备工作，98% 给方案评估
+    progress_per_plan = 98.0 / total_candidates if total_candidates > 0 else 98.0
 
-        result = _evaluate_single_plan(
+    for i, candidate in enumerate(candidates):
+        # 计算当前方案开始时的基础进度
+        base_progress = 2 + i * progress_per_plan
+
+        # 创建内部进度回调，将方案的 0-100% 映射到该方案的进度份额
+        def make_inner_callback(plan_index: int, base: float, per_plan: float):
+            def inner_callback(inner_percent: float, message: str):
+                if progress_callback:
+                    # 累加进度: 基础进度 + 内部进度 * 该方案的份额
+                    total_progress = base + (inner_percent / 100.0) * per_plan
+                    progress_callback(int(total_progress), 100, f"[{plan_index + 1}/{total_candidates}] {message}")
+            return inner_callback
+
+        inner_progress = make_inner_callback(i, base_progress, progress_per_plan)
+
+        # 报告方案开始
+        if progress_callback:
+            progress_callback(int(base_progress), 100, f"评估方案 {i + 1}/{total_candidates}...")
+
+        result = _evaluate_single_plan_with_progress(
             parallelism=candidate,
             total_chips=total_chips,
             model_config=model_config,
             inference_config=inference_config,
             topology=topology,
+            hardware_config=hardware_config,
+            progress_callback=inner_progress,
+            enable_tile_search=enable_tile_search,
+            enable_partition_search=enable_partition_search,
+            max_simulated_tokens=max_simulated_tokens,
         )
 
         if result.get("is_feasible", False):
@@ -231,7 +299,7 @@ def _evaluate_auto_mode(
     top_k_plans = feasible_plans[:top_k]
 
     if progress_callback:
-        progress_callback(total_candidates, total_candidates, f"评估完成，找到 {len(feasible_plans)} 个可行方案")
+        progress_callback(100, 100, f"评估完成，找到 {len(feasible_plans)} 个可行方案")
 
     return {
         "top_k_plans": top_k_plans,
@@ -333,6 +401,98 @@ def _evaluate_single_plan(
 
     except Exception as e:
         logger.error(f"评估方案失败 {parallelism}: {e}")
+        return _create_infeasible_result(
+            parallelism,
+            required_chips,
+            f"模拟失败: {str(e)}"
+        )
+
+
+def _evaluate_single_plan_with_progress(
+    parallelism: dict,
+    total_chips: int,
+    model_config: dict,
+    inference_config: dict,
+    topology: dict,
+    hardware_config: dict,
+    progress_callback: Optional[Callable[[float, str], None]] = None,
+    enable_tile_search: bool = True,
+    enable_partition_search: bool = False,
+    max_simulated_tokens: int = 4,
+) -> dict:
+    """评估单个方案（带细粒度进度回调）
+
+    Args:
+        parallelism: 并行策略配置
+        total_chips: 可用芯片总数
+        model_config: 模型配置
+        inference_config: 推理配置
+        topology: 拓扑配置
+        hardware_config: 硬件配置（已提取）
+        progress_callback: 进度回调函数 (percent: float, message: str) -> None
+            percent: 0-100 的进度百分比
+            message: 进度描述信息
+    """
+
+    # 直接访问字段，缺失时会立即 KeyError
+    dp = parallelism["dp"]
+    tp = parallelism["tp"]
+    pp = parallelism["pp"]
+    ep = parallelism["ep"]
+
+    required_chips = dp * tp * pp * ep
+
+    # 报告检查进度
+    if progress_callback:
+        progress_callback(5, "检查芯片数量")
+
+    if required_chips > total_chips:
+        if progress_callback:
+            progress_callback(100, "芯片数量不足")
+        return _create_infeasible_result(
+            parallelism,
+            required_chips,
+            f"需要 {required_chips} 个芯片，超出 {total_chips}"
+        )
+
+    # 调用真实的模拟器（带进度回调）
+    try:
+        if progress_callback:
+            progress_callback(10, "启动模拟器")
+
+        sim_result = run_simulation(
+            topology_dict=topology,
+            model_dict=model_config,
+            inference_dict=inference_config,
+            parallelism_dict=parallelism,
+            hardware_dict=hardware_config,
+            progress_callback=progress_callback,  # 传递进度回调
+            enable_tile_search=enable_tile_search,
+            max_simulated_tokens=max_simulated_tokens,
+        )
+
+        if progress_callback:
+            progress_callback(95, "转换结果格式")
+
+        # 转换为 DS_TPU 格式
+        result = _transform_to_ds_tpu_format(
+            sim_result=sim_result,
+            parallelism=parallelism,
+            chips=required_chips,
+            model_config=model_config,
+            inference_config=inference_config,
+            topology=topology,
+        )
+
+        if progress_callback:
+            progress_callback(100, "评估完成")
+
+        return result
+
+    except Exception as e:
+        logger.error(f"评估方案失败 {parallelism}: {e}")
+        if progress_callback:
+            progress_callback(100, f"模拟失败: {str(e)}")
         return _create_infeasible_result(
             parallelism,
             required_chips,

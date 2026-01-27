@@ -5,9 +5,19 @@
 import React from 'react'
 import { Typography, Tooltip } from 'antd'
 import { FormulaVsSimComparison } from '../../../../utils/llmDeployment/types'
-import { formatDeviation, isSignificantDeviation } from '../../../../utils/llmDeployment/simulationScorer'
 
 const { Text } = Typography
+
+// 格式化偏差显示
+const formatDeviation = (pct: number): string => {
+  const sign = pct >= 0 ? '+' : ''
+  return `${sign}${pct.toFixed(1)}%`
+}
+
+// 判断偏差是否显著
+const isSignificantDeviation = (pct: number, threshold = 10): boolean => {
+  return Math.abs(pct) >= threshold
+}
 
 interface ComparisonTableProps {
   comparison: FormulaVsSimComparison

@@ -167,6 +167,8 @@ export interface TaskResultsResponse {
     mfu: number
     mbu: number
     score: number
+    dram_occupy?: number  // 显存占用 (字节)，后端返回
+    flops?: number        // 计算量 (FLOPs)，后端返回
   }>
   infeasible_plans: unknown[]
   search_stats: Record<string, unknown>

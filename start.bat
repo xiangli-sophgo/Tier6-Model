@@ -103,9 +103,33 @@ if not exist "frontend\node_modules" (
     exit /b 1
 )
 
+:: 清理旧进程
+echo [0/2] 清理旧进程...
+
+:: 读取 .env 中的端口配置
+set API_PORT=8001
+for /f "tokens=2 delims==" %%a in ('findstr /r "^VITE_API_PORT=" .env 2^>nul') do set API_PORT=%%a
+
+:: 杀死占用后端端口的进程
+for /f "tokens=5" %%a in ('netstat -ano ^| findstr ":%API_PORT% " ^| findstr "LISTENING" 2^>nul') do (
+    echo 发现旧后端进程 PID: %%a，正在终止...
+    taskkill /F /PID %%a >nul 2>&1
+)
+
+:: 杀死占用前端端口 3100 的进程
+for /f "tokens=5" %%a in ('netstat -ano ^| findstr ":3100 " ^| findstr "LISTENING" 2^>nul') do (
+    echo 发现旧前端进程 PID: %%a，正在终止...
+    taskkill /F /PID %%a >nul 2>&1
+)
+
+:: 等待进程释放端口
+timeout /t 1 /nobreak > nul
+echo 旧进程清理完成 ✓
+echo.
+
 :: 启动后端
-echo [1/2] 启动后端服务 (端口 8001)...
-start "Tier6+ Backend" cmd /k "cd /d %SCRIPT_DIR%backend && python3 -m uvicorn llm_simulator.api:app --port 8001 --reload"
+echo [1/2] 启动后端服务 (读取 .env 配置)...
+start "Tier6+ Backend" cmd /k "cd /d %SCRIPT_DIR%backend && python3 -m llm_simulator.main"
 
 :: 等待2秒
 timeout /t 2 /nobreak > nul
@@ -118,7 +142,7 @@ echo.
 echo ==========================================
 echo   服务已启动
 echo   前端: http://localhost:3100
-echo   后端: http://localhost:8001
+echo   后端: http://localhost:8002 (配置在 backend/.env)
 echo ==========================================
 echo.
 echo 提示: 关闭后端/前端窗口可停止对应服务

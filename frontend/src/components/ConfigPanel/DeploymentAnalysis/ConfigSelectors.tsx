@@ -25,7 +25,7 @@ import {
   InferenceConfig,
   HardwareConfig,
 } from '../../../utils/llmDeployment/types'
-import { calculateModelParams } from '../../../utils/llmDeployment/modelCalculator'
+import { calculateModelParams } from '../../../api/model'
 import {
   getModelList,
   getChipList,
@@ -180,7 +180,21 @@ export const ModelConfigSelector: React.FC<ModelConfigSelectorProps> = ({ value,
   const [customModels, setCustomModels] = useState<Record<string, LLMModelConfig>>(loadCustomModels)
   const [saveModalVisible, setSaveModalVisible] = useState(false)
   const [saveName, setSaveName] = useState('')
+  const [paramsStr, setParamsStr] = useState<string>('--')
   const modelList = getModelList()
+
+  // 异步获取模型参数量
+  useEffect(() => {
+    let cancelled = false
+    calculateModelParams(value)
+      .then((res) => {
+        if (!cancelled) setParamsStr(res.formatted)
+      })
+      .catch(() => {
+        if (!cancelled) setParamsStr('--')
+      })
+    return () => { cancelled = true }
+  }, [value])
 
   const handlePresetChange = (id: string) => {
     setPresetId(id)
@@ -257,11 +271,9 @@ export const ModelConfigSelector: React.FC<ModelConfigSelectorProps> = ({ value,
 
   const isCustomModel = presetId.startsWith('custom_')
 
+  // 使用状态中的参数量字符串
   const estimateParams = () => {
-    const total = calculateModelParams(value)
-    const billions = total / 1e9
-    const result = billions >= 1 ? `${billions.toFixed(1)}B` : `${(total / 1e6).toFixed(0)}M`
-    return { value: result, breakdown: `总参数量: ${result}` }
+    return { value: paramsStr, breakdown: `总参数量: ${paramsStr}` }
   }
 
   return (
@@ -674,8 +686,22 @@ export const BenchmarkConfigSelector: React.FC<BenchmarkConfigSelectorProps> = (
   const [presetId, setPresetId] = useState<string>('')
   const [customBenchmarks, setCustomBenchmarks] = useState<CustomBenchmark[]>([])
   const [activeKeys, setActiveKeys] = useState<string[]>(['basic']) // 默认展开基础参数
+  const [paramsStr, setParamsStr] = useState<string>('--')
 
   const modelList = getModelList()
+
+  // 异步获取模型参数量
+  useEffect(() => {
+    let cancelled = false
+    calculateModelParams(modelConfig)
+      .then((res) => {
+        if (!cancelled) setParamsStr(res.formatted)
+      })
+      .catch(() => {
+        if (!cancelled) setParamsStr('--')
+      })
+    return () => { cancelled = true }
+  }, [modelConfig])
 
   // 从后端加载自定义 benchmarks
   useEffect(() => {
@@ -831,12 +857,8 @@ export const BenchmarkConfigSelector: React.FC<BenchmarkConfigSelectorProps> = (
     }
   }
 
-  // 估算参数量
-  const estimateParams = () => {
-    const total = calculateModelParams(modelConfig)
-    const billions = total / 1e9
-    return billions >= 1 ? `${billions.toFixed(1)}B` : `${(total / 1e6).toFixed(0)}M`
-  }
+  // 使用状态中的参数量字符串
+  const estimateParams = () => paramsStr
 
   // 构建 Collapse items
   const collapseItems = [

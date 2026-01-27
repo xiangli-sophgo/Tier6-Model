@@ -1,0 +1,15 @@
+{
+  "name": "tier6-model",
+  "version": "2.0.4",
+  "description": "Tier6+Model: Interactive 3D Multi-level Network Topology Configurator and LLM Inference Simulator",
+  "scripts": {
+    "dev": "concurrently -n \"BACKEND,FRONTEND\" -c \"bgBlue.bold,bgMagenta.bold\" \"npm run dev:backend\" \"npm run dev:frontend\"",
+    "dev:backend": "node scripts/start-backend.js",
+    "dev:frontend": "cd frontend && npm run dev",
+    "setup": "npm install && cd frontend && npm install && cd ../backend && pip install -r requirements.txt",
+    "clean": "node scripts/cleanup.js"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1"
+  }
+}

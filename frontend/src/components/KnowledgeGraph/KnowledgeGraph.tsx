@@ -77,6 +77,7 @@ export const KnowledgeGraph: React.FC<KnowledgeGraphProps> = ({ renderMode }) =>
   const [hoveredNode, setHoveredNode] = useState<GraphNode | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
   const [dimensions, setDimensions] = useState({ width: 800, height: 600 })
+  const [searchResultCount, setSearchResultCount] = useState(0)
 
   // Refs
   const graphRef = useRef<ForceGraphMethods<GraphNode, GraphLink>>()
@@ -113,9 +114,24 @@ export const KnowledgeGraph: React.FC<KnowledgeGraphProps> = ({ renderMode }) =>
 
   // 搜索匹配
   const matchedNodeIds = useMemo(() => {
-    if (!searchQuery.trim()) return null
+    if (!searchQuery.trim()) {
+      setSearchResultCount(0)
+      return null
+    }
+
+    // 数据完整性检查
+    if (!allNodes || allNodes.length === 0) {
+      console.warn('⚠️ 搜索时 allNodes 为空', {
+        allNodes: allNodes?.length || 0,
+        cachedNodes: cachedNodes.length,
+      })
+      setSearchResultCount(0)
+      return null
+    }
+
     const query = searchQuery.toLowerCase()
     const matched = new Set<string>()
+
     allNodes.forEach(node => {
       if (
         node.name.toLowerCase().includes(query) ||
@@ -126,8 +142,32 @@ export const KnowledgeGraph: React.FC<KnowledgeGraphProps> = ({ renderMode }) =>
         matched.add(node.id)
       }
     })
+
+    setSearchResultCount(matched.size)
+
+    // 调试日志
+    if (matched.size === 0) {
+      console.log(`🔍 搜索 "${searchQuery}" - 未找到匹配节点（共${allNodes.length}个节点）`)
+    } else {
+      // 检查匹配节点是否可见
+      const matchedNodes = Array.from(matched)
+        .map(id => allNodes.find(n => n.id === id))
+        .filter(Boolean) as GraphNode[]
+
+      const visibleMatches = matchedNodes.filter(n => visibleCategories.has(n.category))
+      const hiddenMatches = matchedNodes.filter(n => !visibleCategories.has(n.category))
+
+      console.log(`🔍 搜索 "${searchQuery}" - 找到${matched.size}个匹配`)
+      console.log(`  ├─ 🟢 可见: ${visibleMatches.length}个`)
+      console.log(`  │   ${visibleMatches.map(n => `${n.name}(${n.category})`).join(', ') || '(无)'}`)
+      if (hiddenMatches.length > 0) {
+        console.log(`  └─ 🔴 被隐藏: ${hiddenMatches.length}个（需要启用分类）`)
+        console.log(`    ${hiddenMatches.map(n => `${n.name}(${n.category})`).join(', ')}`)
+      }
+    }
+
     return matched
-  }, [searchQuery, allNodes])
+  }, [searchQuery, allNodes, cachedNodes.length, visibleCategories])
 
   // 过滤可见节点 - 保持原始节点引用，避免不必要的对象创建
   const visibleNodes = useMemo(() => {
@@ -258,6 +298,45 @@ export const KnowledgeGraph: React.FC<KnowledgeGraphProps> = ({ renderMode }) =>
     fg.d3ReheatSimulation()
   }, [graphData])
 
+  // 数据加载调试
+  useEffect(() => {
+    if (allNodes.length === 0) {
+      console.warn('⚠️ KnowledgeGraph: allNodes 为空', {
+        cachedNodesLength: cachedNodes.length,
+        allNodesLength: allNodes.length,
+        hasKnowledgeData: !!knowledgeData,
+      })
+    } 
+  }, [allNodes.length, cachedNodes.length])
+
+  // 搜索时自动启用匹配分类
+  useEffect(() => {
+    if (!searchQuery.trim() || !matchedNodeIds || matchedNodeIds.size === 0) {
+      return
+    }
+
+    // 获取匹配节点的分类
+    const matchedCategories = new Set<KnowledgeCategory>()
+    matchedNodeIds.forEach(id => {
+      const node = allNodes.find(n => n.id === id)
+      if (node) {
+        matchedCategories.add(node.category)
+      }
+    })
+
+    // 如果有分类被隐藏，自动启用它们
+    const categoriesToEnable = Array.from(matchedCategories).filter(
+      cat => !visibleCategories.has(cat)
+    )
+
+    if (categoriesToEnable.length > 0) {
+      const newVisible = new Set(visibleCategories)
+      categoriesToEnable.forEach(cat => newVisible.add(cat))
+      setVisibleCategories(newVisible)
+      console.log(`🎯 搜索自动启用分类: ${categoriesToEnable.join(', ')}`)
+    }
+  }, [searchQuery, matchedNodeIds, allNodes, visibleCategories, setVisibleCategories])
+
   // 监听容器尺寸变化
   useEffect(() => {
     if (!containerRef.current) return
@@ -331,7 +410,27 @@ export const KnowledgeGraph: React.FC<KnowledgeGraphProps> = ({ renderMode }) =>
     const isFiltered = matchedNodeIds && !isMatched
     const isDimmed = highlightedNodeId && !isHighlighted && !isAdjacent
 
-    // 绘制高亮外圈
+    // 搜索时的外圈高亮（搜索匹配的节点）- 加强效果
+    if (matchedNodeIds && isMatched && !isFiltered) {
+      // 外圈 - 高对比度金色
+      ctx.beginPath()
+      ctx.arc(node.x!, node.y!, radius + 6, 0, 2 * Math.PI)
+      ctx.strokeStyle = '#FFD700'  // 金色，更显眼
+      ctx.lineWidth = 3.5
+      ctx.globalAlpha = 0.8
+      ctx.stroke()
+
+      // 内圈 - 节点颜色的浅色
+      ctx.beginPath()
+      ctx.arc(node.x!, node.y!, radius + 2, 0, 2 * Math.PI)
+      ctx.strokeStyle = color
+      ctx.lineWidth = 1.5
+      ctx.globalAlpha = 0.6
+      ctx.stroke()
+      ctx.globalAlpha = 1
+    }
+
+    // 绘制高亮外圈（节点被选中时）
     if ((isHighlighted || isAdjacent) && !isDimmed) {
       ctx.beginPath()
       ctx.arc(node.x!, node.y!, radius + 3, 0, 2 * Math.PI)
@@ -350,8 +449,8 @@ export const KnowledgeGraph: React.FC<KnowledgeGraphProps> = ({ renderMode }) =>
       ctx.fillStyle = '#ccc'
       ctx.globalAlpha = 0.3
     } else if (isFiltered) {
-      ctx.fillStyle = color + '66' // 40% opacity
-      ctx.globalAlpha = 0.4
+      ctx.fillStyle = color + '4D' // 30% opacity
+      ctx.globalAlpha = 0.3
     } else {
       ctx.fillStyle = color
       ctx.globalAlpha = 1
@@ -360,7 +459,7 @@ export const KnowledgeGraph: React.FC<KnowledgeGraphProps> = ({ renderMode }) =>
     ctx.fill()
 
     // 边框
-    ctx.strokeStyle = isDimmed ? '#999' : '#fff'
+    ctx.strokeStyle = isDimmed ? '#999' : isFiltered ? '#ccc' : '#fff'
     ctx.lineWidth = 1.5
     ctx.stroke()
 
@@ -460,14 +559,29 @@ export const KnowledgeGraph: React.FC<KnowledgeGraphProps> = ({ renderMode }) =>
         {/* 左侧：搜索框 + 分类过滤 + 全部显示 */}
         <div style={{ display: 'flex', gap: 16, alignItems: 'center', justifyContent: 'center', flex: 1, minWidth: 0 }}>
           {/* 搜索框 */}
-          <Input
-            placeholder="搜索名词..."
-            prefix={<SearchOutlined style={{ color: '#666' }} />}
-            value={searchQuery}
-            onChange={e => setSearchQuery(e.target.value)}
-            allowClear
-            style={{ width: 200, flexShrink: 0 }}
-          />
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+            <Input
+              placeholder="搜索名词..."
+              prefix={<SearchOutlined style={{ color: '#666' }} />}
+              value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
+              allowClear
+              style={{ width: 200 }}
+            />
+            {/* 搜索结果反馈 */}
+            {searchQuery.trim() && (
+              <span style={{
+                fontSize: 12,
+                color: searchResultCount > 0 ? '#52c41a' : '#ff4d4f',
+                fontWeight: 500,
+                whiteSpace: 'nowrap',
+              }}>
+                {searchResultCount > 0
+                  ? `找到 ${searchResultCount}`
+                  : '未找到'}
+              </span>
+            )}
+          </div>
 
           {/* 分类过滤 */}
           <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', minWidth: 0 }}>
@@ -585,14 +699,29 @@ export const KnowledgeGraph: React.FC<KnowledgeGraphProps> = ({ renderMode }) =>
         {/* 左侧：搜索框 + 分类过滤 + 全部显示 */}
         <div style={{ display: 'flex', gap: 16, alignItems: 'center', justifyContent: 'center', flex: 1, minWidth: 0 }}>
           {/* 搜索框 */}
-          <Input
-            placeholder="搜索名词..."
-            prefix={<SearchOutlined style={{ color: '#666' }} />}
-            value={searchQuery}
-            onChange={e => setSearchQuery(e.target.value)}
-            allowClear
-            style={{ width: 200, flexShrink: 0 }}
-          />
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+            <Input
+              placeholder="搜索名词..."
+              prefix={<SearchOutlined style={{ color: '#666' }} />}
+              value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
+              allowClear
+              style={{ width: 200 }}
+            />
+            {/* 搜索结果反馈 */}
+            {searchQuery.trim() && (
+              <span style={{
+                fontSize: 12,
+                color: searchResultCount > 0 ? '#52c41a' : '#ff4d4f',
+                fontWeight: 500,
+                whiteSpace: 'nowrap',
+              }}>
+                {searchResultCount > 0
+                  ? `找到 ${searchResultCount}`
+                  : '未找到'}
+              </span>
+            )}
+          </div>
 
           {/* 分类过滤 */}
           <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', minWidth: 0 }}>

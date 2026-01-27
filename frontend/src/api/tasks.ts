@@ -30,6 +30,9 @@ export interface EvaluationRequest {
   manual_parallelism?: Record<string, unknown>
   search_constraints?: Record<string, unknown>
   max_workers?: number // 本任务的最大并发数（默认 4）
+  enable_tile_search?: boolean // 是否启用 Tile 搜索（默认 true）
+  enable_partition_search?: boolean // 是否启用分区搜索（默认 false，关闭可大幅提升速度）
+  max_simulated_tokens?: number // 最大模拟 token 数（默认 4）
 }
 
 export interface TaskSubmitResponse {

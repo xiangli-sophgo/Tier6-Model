@@ -48,6 +48,7 @@ from ..evaluators import (
     FA2Evaluator,
     AllReduceEval,
     AllGatherEval,
+    create_gemm_evaluator,
     ReduceScatterEval,
 )
 from .analyzer import PerformanceAnalyzer
@@ -83,7 +84,7 @@ class SimulationConfig:
     # 新评估器系统配置
     use_precise_evaluator: bool = True  # 使用精确评估器（基于硬件建模）
     evaluation_granularity: str = "fine"  # 评估粒度: coarse（粗粒度）或 fine（细粒度）
-    enable_gemm_prewarm: bool = True  # 启用 GEMM 预热（离线预调优）⭐ 新增
+    enable_gemm_prewarm: bool = False  # 🚀 禁用预热，改用懒加载策略（按需搜索+全局缓存）
     # 注意: mla_variant 已移至 model.mla_config.variant，从模型配置读取
 
 
@@ -111,6 +112,9 @@ class LLMInferenceSimulator:
         hardware: HardwareConfig,
         config: SimulationConfig | None = None,
         comm_latency_config: dict[str, float] | None = None,
+        progress_callback: callable | None = None,
+        enable_tile_search: bool = True,
+        enable_partition_search: bool = False,
     ):
         """
         初始化模拟器
@@ -123,6 +127,7 @@ class LLMInferenceSimulator:
             hardware: 硬件配置
             config: 模拟配置
             comm_latency_config: 通信延迟配置 (前端传递的统一配置，覆盖预设值)
+            progress_callback: 进度回调函数 (percent: float, message: str) -> None
         """
         self.model = model
         self.inference = inference
@@ -130,6 +135,7 @@ class LLMInferenceSimulator:
         self.hardware = hardware
         self.config = config or SimulationConfig()
         self.comm_latency_config = comm_latency_config
+        self.progress_callback = progress_callback
 
         # 初始化新评估器系统
         if self.config.use_precise_evaluator:
@@ -174,25 +180,26 @@ class LLMInferenceSimulator:
                 self.network_cfg = NetworkInfraConfig()
 
             # 创建 GEMM 评估器（全局单例，跨层复用）
-            from ..evaluators import GEMMEvaluator
-            self.gemm_evaluator = GEMMEvaluator(self.arch)
+            # fast_mode=True 时使用固定tile（关闭tile搜索），显著提升评估速度
+            # enable_partition_search=False 时使用固定分区（关闭分区搜索），速度提升100倍
+            fast_mode = not enable_tile_search
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.info(f"🔧 创建 GEMM 评估器: enable_tile_search={enable_tile_search}, enable_partition_search={enable_partition_search}, fast_mode={fast_mode}")
+            self.gemm_evaluator = create_gemm_evaluator(self.arch, fast_mode=fast_mode, enable_partition_search=enable_partition_search)
+            evaluator_type = self.gemm_evaluator.__class__.__name__
+            logger.info(f"✅ 使用 GEMM 评估器: {evaluator_type}")
 
-            # 🔥 离线预调优：预热常见的 GEMM 形状
+            # 🚀 懒加载策略：不预热，运行时按需搜索（对齐 DS_TPU）
+            # 优势：
+            # - 启动时间从 17分钟 → 0秒
+            # - 只搜索实际用到的形状（避免浪费）
+            # - 多进程并行搜索 + 全局缓存复用
             if self.config.enable_gemm_prewarm:
-                from .gemm_prewarm import prewarm_gemm_evaluator
-                prewarm_gemm_evaluator(
-                    evaluator=self.gemm_evaluator,
-                    hidden_size=model.hidden_size,
-                    intermediate_size=model.intermediate_size,
-                    num_attention_heads=model.num_attention_heads,
-                    num_kv_heads=model.num_kv_heads,
-                    batch_size=inference.batch_size,
-                    input_seq_length=inference.input_seq_length,
-                    output_seq_length=inference.output_seq_length,
-                    tp=parallelism.tp,  # ⭐ 传递TP参数
-                    mla_config=model.mla_config.__dict__ if model.mla_config else None,
-                    moe_config=model.moe_config.__dict__ if model.moe_config else None,
-                )
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.info("🚀 GEMM 懒加载模式：预热已禁用，将按需搜索并缓存")
+                # 注：如需启用预热，请在 SimulationConfig 中设置 enable_gemm_prewarm=True
 
             # 全局评估缓存（跨层复用）
             self.eval_cache: dict = {}
@@ -373,7 +380,7 @@ class LLMInferenceSimulator:
             # MoE层
             ffn_config.update({
                 "num_experts": self.model.moe_config.num_experts,
-                "num_activated_experts": self.model.moe_config.num_activated_experts,
+                "num_experts_per_tok": self.model.moe_config.num_experts_per_tok,
                 "expert_intermediate_size": self.model.moe_config.expert_intermediate_size,
             })
             ffn_layer = MoELayer(name=f"layer_{layer_index}_moe", config=ffn_config)
@@ -428,13 +435,25 @@ class LLMInferenceSimulator:
         reducescatter_eval = ReduceScatterEval(self.arch, self.protocol_cfg, self.network_cfg)
 
         # 评估所有计算算子
-        for op in layer.comp_ops:
+        import logging
+        logger = logging.getLogger(__name__)
+
+        total_ops = len(layer.comp_ops)
+        cached_ops = 0
+        evaluated_ops = 0
+
+        for op_idx, op in enumerate(layer.comp_ops):
             cache_key = op.get_cache_key()
 
             # 检查缓存
             if cache_key in self.eval_cache:
                 op.apply_result(self.eval_cache[cache_key])
+                cached_ops += 1
                 continue
+
+            # 报告详细进度（每10个算子或最后一个）
+            if (op_idx + 1) % 10 == 0 or (op_idx + 1) == total_ops:
+                logger.info(f"      评估算子 {op_idx + 1}/{total_ops} (缓存命中: {cached_ops}, 已评估: {evaluated_ops})")
 
             # 评估算子
             if op.operator_type == "MatMulOperator":
@@ -445,6 +464,7 @@ class LLMInferenceSimulator:
                     N=op.parallel_params.get("N", 1),
                     input_dtype=op.parallel_params.get("input_dtype", "bf16"),
                     output_dtype=op.parallel_params.get("output_dtype", "bf16"),
+                    use_multiprocess=True,  # 🚀 运行时启用多进程搜索
                 )
                 op.elapse = result.latency_us
                 op.comp_elapse = result.compute_time_us
@@ -551,6 +571,18 @@ class LLMInferenceSimulator:
             # 缓存结果
             self.eval_cache[cache_key] = {"comm_elapse": op.comm_elapse}
 
+    def _report_progress(self, percent: float, message: str):
+        """报告进度"""
+        import sys
+        print(f"[DEBUG SIMULATOR] _report_progress: percent={percent}, message={message}", flush=True)
+        sys.stdout.flush()
+        if self.progress_callback:
+            try:
+                self.progress_callback(percent, message)
+            except Exception as e:
+                print(f"[DEBUG SIMULATOR] callback error: {e}", flush=True)
+                pass  # 忽略回调错误
+
     def simulate(self) -> SimulationResult:
         """
         运行完整模拟
@@ -564,28 +596,40 @@ class LLMInferenceSimulator:
         wall_start = time.time()
         current_time = 0.0
 
+        # 进度划分:
+        # 0-10%: H2D 数据传输
+        # 10-50%: Prefill 推理 (按层细分)
+        # 50-90%: Decode 推理 (按 token 细分)
+        # 90-100%: D2H + Gantt + 统计
+
         # 阶段1: 数据搬运 (H2D)
+        self._report_progress(0, "H2D 数据传输...")
         phase_start = time.time()
         if self.config.enable_data_transfer:
             current_time = self._simulate_data_transfer_h2d(current_time)
         h2d_wall_time = (time.time() - phase_start) * 1000
         logger.info(f"⏱️  [H2D] 墙上时间: {h2d_wall_time:.2f}ms")
+        self._report_progress(10, "H2D 完成")
 
-        # 阶段2: Prefill 推理
+        # 阶段2: Prefill 推理 (10-50%)
+        logger.info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+        logger.info("🚀 开始 Prefill 推理阶段")
+        logger.info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
         phase_start = time.time()
-        prefill_end_time = self._simulate_prefill(current_time)
+        prefill_end_time = self._simulate_prefill_with_progress(current_time)
         phase_transition = prefill_end_time
         prefill_wall_time = (time.time() - phase_start) * 1000
         logger.info(f"⏱️  [Prefill] 墙上时间: {prefill_wall_time:.2f}ms, 模拟时间: {prefill_end_time:.2f}ms")
 
-        # 阶段3: Decode 推理
+        # 阶段3: Decode 推理 (50-90%)
         phase_start = time.time()
-        decode_end_time = self._simulate_decode(prefill_end_time)
+        decode_end_time = self._simulate_decode_with_progress(prefill_end_time)
         decode_wall_time = (time.time() - phase_start) * 1000
         num_tokens = min(self.config.max_simulated_tokens, self.inference.output_seq_length)
         logger.info(f"⏱️  [Decode] 墙上时间: {decode_wall_time:.2f}ms ({decode_wall_time/num_tokens:.2f}ms/token), 模拟时间: {decode_end_time - prefill_end_time:.2f}ms")
 
         # 阶段4: 数据收集 (D2H)
+        self._report_progress(90, "D2H 数据传输...")
         phase_start = time.time()
         if self.config.enable_data_transfer:
             final_time = self._simulate_data_transfer_d2h(decode_end_time)
@@ -595,12 +639,14 @@ class LLMInferenceSimulator:
         logger.info(f"⏱️  [D2H] 墙上时间: {d2h_wall_time:.2f}ms")
 
         # 构建甘特图
+        self._report_progress(93, "构建 Gantt 图...")
         phase_start = time.time()
         gantt_data = self.gantt_builder.build(phase_transition=phase_transition)
         gantt_wall_time = (time.time() - phase_start) * 1000
         logger.info(f"⏱️  [Gantt Build] 墙上时间: {gantt_wall_time:.2f}ms")
 
         # 计算统计信息
+        self._report_progress(96, "计算统计信息...")
         phase_start = time.time()
         stats = self._compute_stats(final_time)
         stats_wall_time = (time.time() - phase_start) * 1000
@@ -776,6 +822,98 @@ class LLMInferenceSimulator:
 
         return prefill_end
 
+    def _simulate_prefill_with_progress(self, start_time: float) -> float:
+        """模拟 Prefill 阶段 (带进度报告)"""
+        num_tokens = self.inference.input_seq_length
+        context_length = self.inference.input_seq_length
+        num_layers = self.model.num_layers
+
+        # 每个 PP stage 处理的层数（至少为 1，防止除零）
+        layers_per_stage = max(1, num_layers // self.parallelism.pp)
+
+        # 为每个 PP stage 模拟
+        stage_times = [start_time] * self.parallelism.pp
+
+        # Prefill 进度: 10% - 50%
+        import logging
+        logger = logging.getLogger(__name__)
+
+        logger.info(f"━━ 开始 Prefill 阶段：共 {num_layers} 层 ━━")
+
+        for layer in range(num_layers):
+            layer_wall_start = time.time()
+
+            # 报告进度: 10% + (layer / num_layers) * 40%
+            progress = 10 + (layer / num_layers) * 40
+            layer_progress_msg = f"Prefill Layer {layer + 1}/{num_layers}"
+            self._report_progress(progress, layer_progress_msg)
+            logger.info(f"")
+            logger.info(f"  🔹 开始评估 Layer {layer + 1}/{num_layers} (进度: {progress:.1f}%)")
+
+            pp_stage = layer // layers_per_stage
+            if pp_stage >= self.parallelism.pp:
+                pp_stage = self.parallelism.pp - 1
+
+            layer_in_stage = layer % layers_per_stage
+
+            # 获取该 stage 的第一个芯片
+            chip_id = self._get_chip_for_stage(pp_stage)
+            current_time = stage_times[pp_stage]
+
+            # PP 前向传递等待上一个 stage
+            if pp_stage > 0 and layer_in_stage == 0:
+                prev_stage_end = stage_times[pp_stage - 1]
+                if prev_stage_end > current_time:
+                    # 添加气泡
+                    bubble_duration = prev_stage_end - current_time
+                    self.gantt_builder.add_bubble(
+                        start=current_time,
+                        duration=bubble_duration,
+                        phase=InferencePhase.PREFILL,
+                        chip_id=chip_id,
+                        pp_stage=pp_stage,
+                    )
+                    current_time = prev_stage_end
+
+                    # PP P2P 通信
+                    pp_comm_latency = self._calc_pp_comm_latency(num_tokens)
+                    self.gantt_builder.add_comm_task(
+                        task_type=GanttTaskType.PP_COMM,
+                        start=current_time,
+                        duration=pp_comm_latency,
+                        phase=InferencePhase.PREFILL,
+                        chip_id=chip_id,
+                        pp_stage=pp_stage,
+                        layer_index=layer,
+                    )
+                    current_time += pp_comm_latency
+
+            # 模拟单层
+            current_time = self._simulate_single_layer(
+                current_time=current_time,
+                layer_index=layer,
+                num_tokens=num_tokens,
+                context_length=context_length,
+                phase=InferencePhase.PREFILL,
+                chip_id=chip_id,
+                pp_stage=pp_stage,
+            )
+
+            stage_times[pp_stage] = current_time
+
+            # 打印层评估墙上时间
+            layer_wall_time = (time.time() - layer_wall_start) * 1000
+            logger.info(f"  ✅ Layer {layer + 1}/{num_layers} 完成，墙上时间: {layer_wall_time:.2f}ms")
+
+        # 返回最后一个 stage 的结束时间
+        prefill_end = max(stage_times)
+
+        # 更新统计
+        self.prefill_stats.total_time = prefill_end - start_time
+        self._report_progress(50, "Prefill 完成")
+
+        return prefill_end
+
     def _simulate_decode(self, start_time: float) -> float:
         """模拟 Decode 阶段"""
         import logging
@@ -850,6 +988,89 @@ class LLMInferenceSimulator:
 
         # 更新统计
         self.decode_stats.total_time = current_time - start_time
+
+        return current_time
+
+    def _simulate_decode_with_progress(self, start_time: float) -> float:
+        """模拟 Decode 阶段 (带进度报告)"""
+        import logging
+        logger = logging.getLogger(__name__)
+
+        current_time = start_time
+        num_tokens_to_simulate = min(self.config.max_simulated_tokens, self.inference.output_seq_length)
+
+        # 每个 PP stage 处理的层数（至少为 1，防止除零）
+        layers_per_stage = max(1, self.model.num_layers // self.parallelism.pp)
+
+        # Decode 进度: 50% - 90%
+        for token_idx in range(num_tokens_to_simulate):
+            # 报告进度: 50% + (token_idx / num_tokens) * 40%
+            progress = 50 + (token_idx / num_tokens_to_simulate) * 40
+            self._report_progress(progress, f"Decode Token {token_idx + 1}/{num_tokens_to_simulate}")
+
+            token_wall_start = time.time()
+            context_length = self.inference.input_seq_length + token_idx + 1
+            stage_times = [current_time] * self.parallelism.pp
+
+            for layer in range(self.model.num_layers):
+                pp_stage = layer // layers_per_stage
+                if pp_stage >= self.parallelism.pp:
+                    pp_stage = self.parallelism.pp - 1
+
+                layer_in_stage = layer % layers_per_stage
+                chip_id = self._get_chip_for_stage(pp_stage)
+                layer_start = stage_times[pp_stage]
+
+                # PP 等待
+                if pp_stage > 0 and layer_in_stage == 0:
+                    prev_end = stage_times[pp_stage - 1]
+                    if prev_end > layer_start:
+                        bubble = prev_end - layer_start
+                        self.gantt_builder.add_bubble(
+                            start=layer_start,
+                            duration=bubble,
+                            phase=InferencePhase.DECODE,
+                            chip_id=chip_id,
+                            pp_stage=pp_stage,
+                        )
+                        layer_start = prev_end
+
+                        pp_comm = self._calc_pp_comm_latency(1)
+                        self.gantt_builder.add_comm_task(
+                            task_type=GanttTaskType.PP_COMM,
+                            start=layer_start,
+                            duration=pp_comm,
+                            phase=InferencePhase.DECODE,
+                            chip_id=chip_id,
+                            pp_stage=pp_stage,
+                            layer_index=layer,
+                            token_index=token_idx,
+                        )
+                        layer_start += pp_comm
+
+                # 模拟单层 (Decode: 1 token)
+                layer_end = self._simulate_single_layer(
+                    current_time=layer_start,
+                    layer_index=layer,
+                    num_tokens=1,
+                    context_length=context_length,
+                    phase=InferencePhase.DECODE,
+                    chip_id=chip_id,
+                    pp_stage=pp_stage,
+                    token_index=token_idx,
+                )
+
+                stage_times[pp_stage] = layer_end
+
+            current_time = max(stage_times)
+
+            # 📊 每个token的性能日志
+            token_wall_time = (time.time() - token_wall_start) * 1000
+            logger.info(f"    🔹 Token {token_idx}/{num_tokens_to_simulate}: 墙上时间 {token_wall_time:.2f}ms, 遍历了 {self.model.num_layers} 层")
+
+        # 更新统计
+        self.decode_stats.total_time = current_time - start_time
+        self._report_progress(90, "Decode 完成")
 
         return current_time
 
@@ -1343,6 +1564,10 @@ def run_simulation(
     parallelism_dict: dict[str, Any],
     hardware_dict: dict[str, Any],
     config_dict: dict[str, Any] | None = None,
+    progress_callback: callable | None = None,
+    enable_tile_search: bool = True,
+    enable_partition_search: bool = False,
+    max_simulated_tokens: int = 4,
 ) -> dict[str, Any]:
     """
     运行模拟的入口函数
@@ -1354,6 +1579,7 @@ def run_simulation(
         parallelism_dict: 并行策略
         hardware_dict: 硬件配置
         config_dict: 模拟配置
+        progress_callback: 进度回调函数 (percent: float, message: str) -> None
 
     Returns:
         模拟结果字典
@@ -1443,7 +1669,7 @@ def run_simulation(
     )
 
     config = SimulationConfig(
-        max_simulated_tokens=config_dict.get("maxSimulatedTokens", 4) if config_dict else 4,
+        max_simulated_tokens=max_simulated_tokens,  # 使用传入的参数
         enable_data_transfer=config_dict.get("enableDataTransferSimulation", True) if config_dict else True,
         enable_detailed_ops=config_dict.get("enableDetailedTransformerOps", True) if config_dict else True,
         enable_kv_cache=config_dict.get("enableKVCacheAccessSimulation", True) if config_dict else True,
@@ -1461,6 +1687,9 @@ def run_simulation(
         hardware=hardware,
         config=config,
         comm_latency_config=comm_latency_config,
+        progress_callback=progress_callback,
+        enable_tile_search=enable_tile_search,
+        enable_partition_search=enable_partition_search,
     )
 
     result = simulator.simulate()

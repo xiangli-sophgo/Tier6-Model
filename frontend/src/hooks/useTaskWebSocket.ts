@@ -53,28 +53,46 @@ export function useTaskWebSocket(options: UseTaskWebSocketOptions = {}) {
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const reconnectCountRef = useRef(0)
 
+  // 使用 ref 保存最新的回调，避免闭包问题
+  const onTaskUpdateRef = useRef(onTaskUpdate)
+  const onConnectRef = useRef(onConnect)
+  const onDisconnectRef = useRef(onDisconnect)
+
+  // 每次渲染时更新 ref
+  useEffect(() => {
+    onTaskUpdateRef.current = onTaskUpdate
+    onConnectRef.current = onConnect
+    onDisconnectRef.current = onDisconnect
+  })
+
   const connect = useCallback(() => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
       return // 已连接
     }
 
-    const apiPort = import.meta.env.VITE_API_PORT || '8001'
-    const wsUrl = `ws://localhost:${apiPort}/ws/tasks`
+    // 使用 Vite 代理路径，自动转发到后端
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+    const wsUrl = `${protocol}//${window.location.host}/ws/tasks`
 
     try {
       const ws = new WebSocket(wsUrl)
 
       ws.onopen = () => {
-        console.log('[WebSocket] Connected')
+        console.log('[WebSocket] Connected to', wsUrl)
         reconnectCountRef.current = 0
-        onConnect?.()
+        onConnectRef.current?.()
       }
 
       ws.onmessage = (event) => {
+        console.log('[DEBUG WS Frontend] Raw message received:', event.data)
         try {
           const data = JSON.parse(event.data) as TaskUpdate
+          console.log('[DEBUG WS Frontend] Parsed message:', data)
           if (data.type === 'task_update') {
-            onTaskUpdate?.(data)
+            console.log('[DEBUG WS Frontend] Calling onTaskUpdate callback')
+            onTaskUpdateRef.current?.(data)
+          } else if (data.type === 'heartbeat') {
+            console.log('[DEBUG WS Frontend] Heartbeat received')
           }
         } catch (error) {
           console.error('[WebSocket] Failed to parse message:', error)
@@ -87,7 +105,7 @@ export function useTaskWebSocket(options: UseTaskWebSocketOptions = {}) {
 
       ws.onclose = () => {
         console.log('[WebSocket] Disconnected')
-        onDisconnect?.()
+        onDisconnectRef.current?.()
 
         // 自动重连
         if (autoReconnect) {
@@ -104,7 +122,7 @@ export function useTaskWebSocket(options: UseTaskWebSocketOptions = {}) {
     } catch (error) {
       console.error('[WebSocket] Connection failed:', error)
     }
-  }, [onTaskUpdate, onConnect, onDisconnect, autoReconnect])
+  }, [autoReconnect]) // 只依赖 autoReconnect，回调通过 ref 获取
 
   const disconnect = useCallback(() => {
     if (reconnectTimerRef.current) {

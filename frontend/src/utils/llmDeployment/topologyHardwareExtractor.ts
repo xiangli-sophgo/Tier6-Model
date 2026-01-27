@@ -7,7 +7,7 @@
 import { HierarchicalTopology, ConnectionConfig } from '../../types'
 import { FlexBoardChipConfig } from '../../components/ConfigPanel/shared'
 import { ChipHardwareConfig, HardwareConfig, NodeConfig, ClusterConfig } from './types'
-import { getCustomChipPresets } from './presets'
+import { getChipConfig } from './presets'
 
 /**
  * 芯片组信息
@@ -203,12 +203,11 @@ export function extractChipGroupsFromConfig(
           memory_bandwidth_utilization: chip.memory_bandwidth_utilization || 0.85,
         }
       }
-      // 方案2: 从本地自定义预设获取（用户在前端保存的）
+      // 方案2: 从预设获取（后端预设 + 自定义预设）
       else if (chip.preset_id) {
-        const customPresets = getCustomChipPresets()
-        const localPreset = customPresets[chip.preset_id]
-        if (localPreset) {
-          chipConfig = localPreset
+        const preset = getChipConfig(chip.preset_id)
+        if (preset) {
+          chipConfig = preset
         } else {
           // 预设ID找不到，使用合理的默认值并警告
           console.warn(`芯片预设 '${chip.preset_id}' 未找到，使用默认参数`)

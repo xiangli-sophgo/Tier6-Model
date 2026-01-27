@@ -35,7 +35,7 @@ class MoELayer(BaseLayer):
         - hidden_dim: int, 隐藏维度
         - inter_dim: int, 专家中间层维度
         - num_experts: int, 总专家数
-        - num_activated_experts: int, 激活的专家数 (top-k)
+        - num_experts_per_tok: int, 激活的专家数 (top-k)
         - num_shared_experts: int, 共享专家数 (0 表示无)
         - batch_size: int, 全局批次大小 (对齐 DS_TPU)
         - seq_len: int, 序列长度
@@ -63,7 +63,7 @@ class MoELayer(BaseLayer):
         hidden_dim = cfg.get('hidden_dim', 7168)
         inter_dim = cfg.get('inter_dim', 2048)  # 每个专家的 inter_dim
         num_experts = cfg.get('num_experts', 256)
-        num_activated = cfg.get('num_activated_experts', 8)
+        num_activated = cfg.get('num_experts_per_tok', 8)
         num_shared = cfg.get('num_shared_experts', 1)
         batch_size = cfg.get('batch_size', 1)  # 全局 batch (对齐 DS_TPU)
         seq_len = cfg.get('seq_len', 1)

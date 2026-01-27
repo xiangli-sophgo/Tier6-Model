@@ -1,0 +1,28 @@
+{
+  "name": "T1",
+  "description": null,
+  "pod_count": 1,
+  "racks_per_pod": 4,
+  "board_configs": null,
+  "rack_config": null,
+  "switch_config": null,
+  "manual_connections": null,
+  "generated_topology": null,
+  "chip_configs": null,
+  "network_config": null,
+  "comm_latency_config": {
+    "rtt_tp_us": 0.35,
+    "rtt_ep_us": 0.85,
+    "bandwidth_utilization": 0.95,
+    "sync_latency_us": 0,
+    "switch_delay_us": 1,
+    "cable_delay_us": 0.025,
+    "chip_to_chip_us": 0.2,
+    "memory_read_latency_us": 0.15,
+    "memory_write_latency_us": 0.01,
+    "noc_latency_us": 0.05,
+    "die_to_die_latency_us": 0.04
+  },
+  "created_at": "2026-01-27T15:54:46.843447",
+  "updated_at": "2026-01-27T15:55:33.785931"
+}

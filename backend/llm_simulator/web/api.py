@@ -4,6 +4,7 @@ FastAPI 接口模块
 提供 LLM 推理模拟的 REST API 接口。
 """
 
+import asyncio
 import json
 import logging
 import os
@@ -16,6 +17,7 @@ from sqlalchemy.orm import Session
 
 from ..core.simulator import run_simulation
 from ..core.database import get_db, get_db_session, init_db, Experiment, EvaluationTask, TaskStatus
+from ..core.model_utils import calculate_params_from_dict, format_params
 from ..evaluators import ARCH_PRESETS
 from ..config import (
     ProtocolConfig,
@@ -28,7 +30,6 @@ from ..config import (
     get_max_global_workers,
     set_max_global_workers,
 )
-from .websocket import ws_manager
 from ..tasks import manager as task_manager
 
 # 配置日志
@@ -164,6 +165,13 @@ class EvaluationRequest(BaseModel):
     # 任务并发配置
     max_workers: int = Field(4, ge=1, le=32, description="本任务的最大并发数")
 
+    # GEMM评估配置
+    enable_tile_search: bool = Field(True, description="是否启用Tile搜索（关闭可提升评估速度）")
+    enable_partition_search: bool = Field(False, description="是否启用分区搜索（关闭可极大提升速度，推荐关闭）")
+
+    # 模拟配置
+    max_simulated_tokens: int = Field(4, ge=1, le=16, description="最大模拟token数（Decode阶段）")
+
 
 class TaskSubmitResponse(BaseModel):
     """任务提交响应"""
@@ -221,18 +229,22 @@ app.add_middleware(
 )
 
 
-# 启动事件：初始化数据库和 WebSocket 回调
+# 启动事件：初始化数据库和 WebSocket
 @app.on_event("startup")
 async def startup_event():
     """应用启动时的初始化"""
+    import asyncio
+
     logger.info("初始化数据库...")
     init_db()
 
     logger.info("恢复孤儿任务状态...")
     _recover_orphaned_tasks()
 
-    logger.info("设置 WebSocket 广播回调...")
-    task_manager.set_ws_broadcast_callback(ws_manager.broadcast_task_update)
+    logger.info("注册事件循环到任务管理器...")
+    task_manager.set_main_loop(asyncio.get_running_loop())
+    print("[DEBUG STARTUP] Main event loop registered to task manager!")
+    print("[DEBUG STARTUP] Application startup complete!")
     logger.info("应用启动完成")
 
 
@@ -303,6 +315,8 @@ async def get_chip_presets():
             "dram_bandwidth_gbps": round(arch.dram_bandwidth_bytes / 1e9, 2),
             "intra_bw_gbps": round(arch.intra_bw / 1e9, 2),
             "inter_bw_gbps": round(arch.inter_bw / 1e9, 2),
+            # C2C 带宽
+            "c2c_bw_unidirectional_gbps": round(arch.c2c_bw_unidirectional_gbps, 1),
             # 粗粒度延迟（向后兼容）
             "intra_latency_us": round(arch.intra_latency_us, 2),
             "inter_latency_us": round(arch.inter_latency_us, 2),
@@ -341,6 +355,28 @@ async def get_runtime_presets():
             "link_delay_us": network.link_delay_us,
         },
     }
+
+
+@app.post("/api/model/calculate-params")
+async def calculate_model_params_api(model: dict[str, Any]):
+    """
+    计算模型参数量
+
+    Args:
+        model: 模型配置字典
+
+    Returns:
+        参数量信息，包括原始数值和格式化字符串
+    """
+    try:
+        params = calculate_params_from_dict(model)
+        return {
+            "params": params,
+            "formatted": format_params(params),
+        }
+    except Exception as e:
+        logger.error(f"计算模型参数量失败: {e}")
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 @app.post("/api/simulate", response_model=SimulationResponse)
@@ -624,6 +660,23 @@ async def delete_topology_config(name: str):
 # Benchmark 管理 API
 # ============================================
 
+@app.get("/api/debug/paths")
+async def debug_paths():
+    """调试端点：显示配置文件路径信息"""
+    import os
+    json_files = list(BENCHMARKS_DIR.glob("*.json"))
+    return {
+        "api_file": str(Path(__file__).resolve()),
+        "working_directory": os.getcwd(),
+        "CONFIGS_DIR": str(CONFIGS_DIR.resolve()),
+        "BENCHMARKS_DIR": str(BENCHMARKS_DIR.resolve()),
+        "TOPOLOGIES_DIR": str(TOPOLOGIES_DIR.resolve()),
+        "benchmarks_dir_exists": BENCHMARKS_DIR.exists(),
+        "benchmarks_dir_is_dir": BENCHMARKS_DIR.is_dir(),
+        "json_file_count": len(json_files),
+        "json_files": [f.name for f in json_files[:5]],
+    }
+
 @app.get("/api/benchmarks")
 async def list_benchmarks():
     """
@@ -632,13 +685,17 @@ async def list_benchmarks():
     从 benchmarks 目录读取所有 JSON 文件
     """
     benchmarks = []
-    for file_path in BENCHMARKS_DIR.glob("*.json"):
+    json_files = list(BENCHMARKS_DIR.glob("*.json"))
+
+    for file_path in json_files:
         try:
             with open(file_path, "r", encoding="utf-8") as f:
                 data = json.load(f)
                 benchmarks.append(data)
         except Exception as e:
             logger.warning(f"读取 benchmark 文件失败 {file_path}: {e}")
+
+    logger.info(f"返回 {len(benchmarks)} 个 benchmarks")
     return {"benchmarks": benchmarks}
 
 
@@ -744,6 +801,9 @@ async def submit_evaluation(request: EvaluationRequest):
             topology_config_name=request.topology_config_name,
             manual_parallelism=request.manual_parallelism,
             search_constraints=request.search_constraints,
+            enable_tile_search=request.enable_tile_search,
+            enable_partition_search=request.enable_partition_search,
+            max_simulated_tokens=request.max_simulated_tokens,
         )
         logger.info(f"评估任务已提交: {task_id}, max_workers={request.max_workers}")
         return TaskSubmitResponse(
@@ -978,7 +1038,7 @@ async def delete_experiment(experiment_id: int, db: Session = Depends(get_db)):
 @app.websocket("/ws/tasks")
 async def websocket_endpoint(websocket: WebSocket):
     """
-    WebSocket 端点：实时推送任务状态更新
+    WebSocket 端点：实时推送任务状态更新（队列订阅模式）
 
     客户端连接后会收到所有任务的状态变化推送
     消息格式:
@@ -991,13 +1051,36 @@ async def websocket_endpoint(websocket: WebSocket):
         ...
     }
     """
-    await ws_manager.connect(websocket)
+    await websocket.accept()
+    print("[DEBUG WS API] WebSocket client connected")
+    logger.info("WebSocket client connected")
+
+    # 订阅全局任务更新队列（使用 task_manager 的订阅功能）
+    queue = task_manager.subscribe_global()
+    print(f"[DEBUG WS API] Subscribed to global queue")
+
     try:
+        # 持续从队列获取更新并推送给客户端
         while True:
-            # 保持连接，等待客户端消息（目前不处理客户端消息）
-            await websocket.receive_text()
+            try:
+                # 等待队列中的更新，超时后发送心跳
+                message = await asyncio.wait_for(queue.get(), timeout=30.0)
+                print(f"[DEBUG WS API] Got message from queue: task_id={message.get('task_id')}, progress={message.get('progress')}")
+                await websocket.send_json(message)
+                print(f"[DEBUG WS API] Sent message to client")
+                logger.info(f"[WS] Sent message to client: task_id={message.get('task_id')}, progress={message.get('progress')}")
+            except asyncio.TimeoutError:
+                # 发送心跳保持连接
+                print("[DEBUG WS API] Sending heartbeat")
+                await websocket.send_json({"type": "heartbeat"})
     except WebSocketDisconnect:
-        ws_manager.disconnect(websocket)
+        print("[DEBUG WS API] WebSocket client disconnected")
+        logger.info("WebSocket client disconnected")
+    except Exception as e:
+        print(f"[DEBUG WS API] WebSocket error: {e}")
+        logger.error(f"WebSocket error: {e}")
+    finally:
+        task_manager.unsubscribe_global(queue)
 
 
 if __name__ == "__main__":
@@ -1006,11 +1089,12 @@ if __name__ == "__main__":
     from pathlib import Path
     from dotenv import load_dotenv
 
-    # 加载 Tier6+model/.env 共享配置
-    env_path = Path(__file__).parent.parent.parent / ".env"
+    # 加载项目根目录 .env 配置
+    # web/api.py -> web -> llm_simulator -> backend -> Tier6-Model
+    env_path = Path(__file__).parent.parent.parent.parent / ".env"
     if env_path.exists():
         load_dotenv(env_path)
 
     port = int(os.environ.get("VITE_API_PORT", "8001"))
     print(f"Tier6+互联建模平台启动在端口: {port}")
-    uvicorn.run("llm_simulator.api:app", host="0.0.0.0", port=port, reload=True)
+    uvicorn.run("llm_simulator.web.api:app", host="0.0.0.0", port=port, reload=True)

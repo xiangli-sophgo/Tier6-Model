@@ -74,14 +74,16 @@ class GEMMResult:
 class GEMMEvaluator:
     """GEMM 精确评估器"""
 
-    def __init__(self, arch: AcceleratorMicroArch):
+    def __init__(self, arch: AcceleratorMicroArch, enable_partition_search: bool = True):
         """
         初始化评估器
 
         Args:
             arch: 硬件微架构配置
+            enable_partition_search: 是否启用分区搜索（False时使用固定分区，速度提升100倍）
         """
         self.arch = arch
+        self.enable_partition_search = enable_partition_search
         self._valid_partitions = self._compute_valid_partitions()
         self._cache: Dict[Tuple, GEMMResult] = {}
 
@@ -95,10 +97,26 @@ class GEMMEvaluator:
         枚举所有合法的多核分块方案
 
         约束: P_G × P_M × P_N × P_K = num_cores
+
+        当 enable_partition_search=False 时，只返回固定优化分区（速度提升100倍）
         """
-        partitions = []
         cores = self.arch.num_cores
 
+        # 快速模式：使用固定的优化分区
+        if not self.enable_partition_search:
+            # 对于64核芯片：(1, 8, 8, 1) 是常用的优化分区
+            # 对于其他核数：尝试平衡 M 和 N 维度
+            import math
+            sqrt_cores = int(math.sqrt(cores))
+            # 优先分解为 (1, sqrt, sqrt, 1) 形式
+            if sqrt_cores * sqrt_cores == cores:
+                return [(1, sqrt_cores, sqrt_cores, 1)]
+            else:
+                # 否则使用 (1, cores, 1, 1) 保守方案
+                return [(1, cores, 1, 1)]
+
+        # 完整搜索模式：枚举所有可能的分区
+        partitions = []
         for p_g in range(1, cores + 1):
             if cores % p_g != 0:
                 continue
@@ -468,9 +486,9 @@ class GEMMEvaluator:
         if cache_key in self._cache:
             # 📊 缓存命中
             self._cache_hits += 1
-            import logging
-            logger = logging.getLogger(__name__)
-            logger.debug(f"✅ GEMM 缓存命中: ({G}, {M}, {K}, {N})")
+            # import logging
+            # logger = logging.getLogger(__name__)
+            # logger.info(f"✅ GEMM 缓存命中: ({G}, {M}, {K}, {N})")
             return self._cache[cache_key]
 
         # 📊 缓存未命中，记录搜索时间
@@ -577,7 +595,7 @@ class GEMMEvaluator:
 
         import logging
         logger = logging.getLogger(__name__)
-        logger.debug(f"🔍 GEMM 缓存未命中，搜索耗时: {search_time_ms:.2f}ms, 形状: ({G}, {M}, {K}, {N})")
+        logger.info(f"🔍 GEMM 搜索耗时: {search_time_ms:.2f}ms, 形状: ({G}, {M}, {K}, {N})")
 
         return best_result
 

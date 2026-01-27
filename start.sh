@@ -85,11 +85,40 @@ if [ ! -d "$SCRIPT_DIR/frontend/node_modules" ]; then
     exit 1
 fi
 
+# 清理旧进程
+echo ""
+echo "[0/2] 清理旧进程..."
+
+# 读取 .env 中的端口配置
+API_PORT=8001
+if [ -f "$SCRIPT_DIR/.env" ]; then
+    API_PORT=$(grep "^VITE_API_PORT=" "$SCRIPT_DIR/.env" | cut -d'=' -f2 | tr -d ' ')
+    API_PORT=${API_PORT:-8001}
+fi
+
+# 杀死占用后端端口的进程
+BACKEND_PIDS=$(lsof -ti:$API_PORT 2>/dev/null)
+if [ -n "$BACKEND_PIDS" ]; then
+    echo "发现旧后端进程 PID: $BACKEND_PIDS，正在终止..."
+    kill -9 $BACKEND_PIDS 2>/dev/null
+fi
+
+# 杀死占用前端端口 3100 的进程
+FRONTEND_PIDS=$(lsof -ti:3100 2>/dev/null)
+if [ -n "$FRONTEND_PIDS" ]; then
+    echo "发现旧前端进程 PID: $FRONTEND_PIDS，正在终止..."
+    kill -9 $FRONTEND_PIDS 2>/dev/null
+fi
+
+# 等待进程释放端口
+sleep 1
+echo "旧进程清理完成 ✓"
+
 # 启动后端
 echo ""
-echo "[1/2] 启动后端服务 (端口 8001)..."
+echo "[1/2] 启动后端服务 (端口 $API_PORT)..."
 cd "$SCRIPT_DIR/backend"
-python3 -m uvicorn llm_simulator.api:app --port 8001 --reload &
+python3 -m uvicorn llm_simulator.web.api:app --port $API_PORT --reload &
 BACKEND_PID=$!
 echo "后端 PID: $BACKEND_PID"
 
@@ -108,7 +137,7 @@ echo ""
 echo "=========================================="
 echo "  服务已启动"
 echo "  前端: http://localhost:3100"
-echo "  后端: http://localhost:8001"
+echo "  后端: http://localhost:$API_PORT"
 echo "=========================================="
 echo ""
 echo "按 Ctrl+C 停止所有服务"

@@ -184,7 +184,7 @@ export const Results: React.FC = () => {
         memory_bandwidth_utilization: plan.mbu,
       },
       memory: {
-        total_per_chip_gb: 0,
+        total_per_chip_gb: plan.dram_occupy ? plan.dram_occupy / (1024 * 1024 * 1024) : 0,  // 字节转 GB
         is_memory_sufficient: true,
       },
       communication: {},

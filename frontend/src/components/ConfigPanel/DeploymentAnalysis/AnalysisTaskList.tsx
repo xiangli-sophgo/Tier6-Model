@@ -1,16 +1,15 @@
 /**
  * 分析任务列表组件
  *
- * 显示正在进行和已完成的分析任务，支持：
- * - 实时进度显示
- * - 查看结果
- * - 取消任务
- * - 删除任务
- * - 清空列表
+ * - 运行中的任务显示为独立卡片（带实时进度）
+ * - 已完成的任务显示在历史列表中
  */
 
-import React from 'react'
-import { List, Button, Tag, Space, Tooltip, Progress, Empty, Popconfirm } from 'antd'
+import React, { useState, useEffect } from 'react'
+import {
+  List, Button, Tag, Space, Tooltip, Progress, Empty, Popconfirm,
+  Card, Row, Col, Statistic, Divider,
+} from 'antd'
 import {
   SyncOutlined,
   CheckCircleOutlined,
@@ -20,6 +19,7 @@ import {
   ClearOutlined,
   EyeOutlined,
   ReloadOutlined,
+  ThunderboltOutlined,
 } from '@ant-design/icons'
 import { AnalysisTask } from '../shared'
 
@@ -37,34 +37,14 @@ const formatDuration = (startTime: number, endTime?: number): string => {
   const end = endTime || Date.now()
   const duration = end - startTime
   if (duration < 1000) return `${duration}ms`
-  if (duration < 60000) return `${(duration / 1000).toFixed(1)}s`
+  if (duration < 60000) return `${Math.round(duration / 1000)}s`
   return `${Math.floor(duration / 60000)}m ${Math.floor((duration % 60000) / 1000)}s`
 }
 
-// 估算剩余时间
-const estimateRemainingTime = (
-  startTime: number,
-  current: number,
-  total: number
-): { elapsed: string; remaining: string; total: string } | null => {
-  if (current <= 0 || total <= 0) return null
-  const elapsed = Date.now() - startTime
-  const avgTimePerItem = elapsed / current
-  const remainingItems = total - current
-  const remainingMs = avgTimePerItem * remainingItems
-  const totalMs = elapsed + remainingMs
-
-  const formatMs = (ms: number): string => {
-    if (ms < 1000) return `${Math.round(ms)}ms`
-    if (ms < 60000) return `${(ms / 1000).toFixed(0)}s`
-    return `${Math.floor(ms / 60000)}m ${Math.floor((ms % 60000) / 1000)}s`
-  }
-
-  return {
-    elapsed: formatMs(elapsed),
-    remaining: formatMs(remainingMs),
-    total: formatMs(totalMs),
-  }
+// 获取运行时间（动态更新）
+const getElapsedTime = (startTime: number | null): string => {
+  if (!startTime) return '0s'
+  return formatDuration(startTime)
 }
 
 // 格式化并行策略
@@ -94,6 +74,168 @@ const StatusTag: React.FC<{ status: AnalysisTask['status'] }> = ({ status }) => 
   }
 }
 
+// 运行中任务卡片组件
+interface RunningTaskCardProps {
+  task: AnalysisTask
+  onCancel: () => void
+}
+
+const RunningTaskCard: React.FC<RunningTaskCardProps> = ({ task, onCancel }) => {
+  const [elapsedTime, setElapsedTime] = useState(getElapsedTime(task.startTime))
+
+  // 每秒更新运行时间
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setElapsedTime(getElapsedTime(task.startTime))
+    }, 1000)
+    return () => clearInterval(timer)
+  }, [task.startTime])
+
+  const progress = task.progress
+    ? Math.round((task.progress.current / task.progress.total) * 100)
+    : 0
+
+  const taskName = task.experimentName || task.benchmarkName || task.modelName
+
+  return (
+    <Card
+      size="small"
+      title={
+        <Space>
+          <ThunderboltOutlined style={{ color: '#faad14' }} />
+          <span>{taskName}</span>
+          <StatusTag status={task.status} />
+        </Space>
+      }
+      extra={
+        <Button
+          icon={<StopOutlined />}
+          danger
+          size="small"
+          onClick={onCancel}
+        >
+          取消
+        </Button>
+      }
+      style={{ marginBottom: 12, border: '1px solid #91d5ff', background: '#e6f7ff' }}
+    >
+      <Row gutter={[16, 8]}>
+        <Col span={8}>
+          <Statistic
+            title="进度"
+            value={progress}
+            suffix="%"
+            valueStyle={{ color: '#1890ff', fontSize: 20 }}
+          />
+        </Col>
+        <Col span={8}>
+          <Statistic
+            title="运行时间"
+            value={elapsedTime}
+            valueStyle={{ color: '#1890ff', fontSize: 20 }}
+          />
+        </Col>
+        <Col span={8}>
+          <Statistic
+            title="芯片数"
+            value={task.chips || '-'}
+            valueStyle={{ fontSize: 20 }}
+          />
+        </Col>
+      </Row>
+
+      <Divider style={{ margin: '12px 0' }} />
+
+      <Progress
+        percent={progress}
+        status="active"
+        strokeColor={{ from: '#1890ff', to: '#4096ff' }}
+      />
+
+      <div style={{ marginTop: 8, fontSize: 12, color: '#666' }}>
+        <Space split={<Divider type="vertical" />}>
+          <span>模式: {task.mode === 'auto' ? '自动搜索' : '手动'}</span>
+          <span>策略: {formatParallelism(task.parallelism)}</span>
+        </Space>
+      </div>
+    </Card>
+  )
+}
+
+// 历史任务列表项
+interface HistoryTaskItemProps {
+  task: AnalysisTask
+  onView: () => void
+  onDelete: () => void
+}
+
+const HistoryTaskItem: React.FC<HistoryTaskItemProps> = ({ task, onView, onDelete }) => {
+  return (
+    <List.Item
+      style={{
+        padding: '8px 12px',
+        background: '#fafafa',
+        marginBottom: 4,
+        borderRadius: 4,
+        border: '1px solid #f0f0f0',
+      }}
+      actions={[
+        <Space key="actions" size={0}>
+          {task.status === 'completed' && (
+            <Tooltip title="查看结果">
+              <Button
+                size="small"
+                type="text"
+                icon={<EyeOutlined />}
+                onClick={onView}
+              />
+            </Tooltip>
+          )}
+          <Tooltip title="删除">
+            <Button
+              size="small"
+              type="text"
+              icon={<DeleteOutlined />}
+              onClick={onDelete}
+              danger
+            />
+          </Tooltip>
+        </Space>,
+      ]}
+    >
+      <List.Item.Meta
+        title={
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            <StatusTag status={task.status} />
+            <span style={{ fontSize: 13, fontWeight: 500 }}>
+              {task.experimentName || task.benchmarkName || task.modelName}
+            </span>
+            <span style={{ fontSize: 12, color: '#8c8c8c' }}>|</span>
+            <span style={{ fontSize: 12, color: '#666' }}>{formatParallelism(task.parallelism)}</span>
+          </div>
+        }
+        description={
+          <div style={{ fontSize: 12, marginTop: 4 }}>
+            {task.status === 'completed' ? (
+              <span style={{ color: '#52c41a' }}>
+                TTFT: {task.ttft?.toFixed(1)}ms · TPOT: {task.tpot?.toFixed(2)}ms · {formatDuration(task.startTime, task.endTime)}
+              </span>
+            ) : task.status === 'failed' ? (
+              <Tooltip title={task.error}>
+                <span style={{ color: '#ff4d4f' }}>
+                  {task.error?.slice(0, 50)}{task.error && task.error.length > 50 ? '...' : ''}
+                </span>
+              </Tooltip>
+            ) : (
+              <span style={{ color: '#999' }}>已取消 · {formatDuration(task.startTime, task.endTime)}</span>
+            )}
+          </div>
+        }
+      />
+    </List.Item>
+  )
+}
+
 export const AnalysisTaskList: React.FC<AnalysisTaskListProps> = ({
   tasks,
   onViewTask,
@@ -102,8 +244,9 @@ export const AnalysisTaskList: React.FC<AnalysisTaskListProps> = ({
   onClearCompleted,
   onRefresh,
 }) => {
-  const runningCount = tasks.filter(t => t.status === 'running').length
-  const completedCount = tasks.filter(t => t.status !== 'running').length
+  // 分离运行中的任务和历史任务
+  const runningTasks = tasks.filter(t => t.status === 'running')
+  const historyTasks = tasks.filter(t => t.status !== 'running')
 
   if (tasks.length === 0) {
     return (
@@ -117,180 +260,62 @@ export const AnalysisTaskList: React.FC<AnalysisTaskListProps> = ({
 
   return (
     <div>
-      {/* 工具栏 */}
-      <div style={{
-        display: 'flex',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        marginBottom: 8,
-        padding: '0 4px',
-      }}>
-        <span style={{ fontSize: 12, color: '#666' }}>
-          {runningCount > 0 && <span style={{ color: '#1890ff' }}>{runningCount} 个运行中 · </span>}
-          共 {tasks.length} 个任务
-        </span>
-        <Space size={4}>
-          <Tooltip title="刷新列表">
-            <Button size="small" type="text" icon={<ReloadOutlined />} onClick={onRefresh} />
-          </Tooltip>
-          {completedCount > 0 && (
-            <Popconfirm
-              title="确定清空已完成的任务？"
-              onConfirm={onClearCompleted}
-              okText="确定"
-              cancelText="取消"
-            >
-              <Tooltip title="清空已完成">
-                <Button size="small" type="text" icon={<ClearOutlined />} danger />
-              </Tooltip>
-            </Popconfirm>
-          )}
-        </Space>
-      </div>
+      {/* 运行中的任务卡片 */}
+      {runningTasks.map(task => (
+        <RunningTaskCard
+          key={task.id}
+          task={task}
+          onCancel={() => onCancelTask(task.id)}
+        />
+      ))}
 
-      {/* 任务列表 */}
-      <List
-        size="small"
-        dataSource={tasks}
-        style={{ maxHeight: 300, overflowY: 'auto' }}
-        renderItem={(task) => (
-          <List.Item
-            style={{
-              padding: '8px 12px',
-              background: task.status === 'running' ? '#e6f7ff' : '#fafafa',
-              marginBottom: 4,
-              borderRadius: 4,
-              border: task.status === 'running' ? '1px solid #91d5ff' : '1px solid #f0f0f0',
-            }}
-            actions={[
-              task.status === 'running' ? (
-                <Tooltip title="取消" key="cancel">
-                  <Button
-                    size="small"
-                    type="text"
-                    icon={<StopOutlined />}
-                    onClick={() => onCancelTask(task.id)}
-                    danger
-                  />
-                </Tooltip>
-              ) : (
-                <Space key="actions" size={0}>
-                  {task.status === 'completed' && (
-                    <Tooltip title="查看结果">
-                      <Button
-                        size="small"
-                        type="text"
-                        icon={<EyeOutlined />}
-                        onClick={() => onViewTask(task)}
-                      />
-                    </Tooltip>
-                  )}
-                  <Tooltip title="删除">
-                    <Button
-                      size="small"
-                      type="text"
-                      icon={<DeleteOutlined />}
-                      onClick={() => onDeleteTask(task.id)}
-                      danger
-                    />
-                  </Tooltip>
-                </Space>
-              ),
-            ]}
-          >
-            <List.Item.Meta
-              title={
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                  <StatusTag status={task.status} />
-                  {task.experimentName && (
-                    <>
-                      <span style={{ fontSize: 13, fontWeight: 500 }}>{task.experimentName}</span>
-                      <span style={{ fontSize: 12, color: '#8c8c8c' }}>|</span>
-                    </>
-                  )}
-                  <span style={{ fontSize: 12, color: task.experimentName ? '#666' : '#1a1a1a', fontWeight: task.experimentName ? 400 : 500 }}>
-                    {task.benchmarkName || task.modelName}
-                  </span>
-                  <span style={{ fontSize: 12, color: '#8c8c8c' }}>|</span>
-                  <span style={{ fontSize: 12, color: '#666' }}>{formatParallelism(task.parallelism)}</span>
-                </div>
-              }
-              description={
-                <div style={{ fontSize: 12, marginTop: 4 }}>
-                  {task.status === 'running' && task.progress ? (
-                    (() => {
-                      const timeEstimate = estimateRemainingTime(
-                        task.startTime,
-                        task.progress.current,
-                        task.progress.total
-                      )
-                      return (
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                          <Progress
-                            percent={Math.round((task.progress.current / task.progress.total) * 100)}
-                            size="small"
-                            style={{ width: 100, margin: 0 }}
-                            showInfo={false}
-                          />
-                          <span style={{ color: '#1890ff' }}>
-                            {task.progress.current}/{task.progress.total}
-                          </span>
-                          {timeEstimate ? (
-                            <>
-                              <span style={{ color: '#999' }}>
-                                已用: {timeEstimate.elapsed}
-                              </span>
-                              <span style={{ color: '#faad14', fontWeight: 500 }}>
-                                剩余: {timeEstimate.remaining}
-                              </span>
-                              <span style={{ color: '#999', fontSize: 11 }}>
-                                (预计总时长: {timeEstimate.total})
-                              </span>
-                            </>
-                          ) : (
-                            <span style={{ color: '#999' }}>{formatDuration(task.startTime)}</span>
-                          )}
-                        </div>
-                      )
-                    })()
-                  ) : task.status === 'running' ? (
-                    <span style={{ color: '#1890ff' }}>
-                      {task.mode === 'auto' ? '生成候选方案中...' : '模拟中...'} · {formatDuration(task.startTime)}
-                    </span>
-                  ) : task.status === 'completed' ? (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                      <span style={{ color: '#52c41a' }}>
-                        TTFT: {task.ttft?.toFixed(1)}ms · TPOT: {task.tpot?.toFixed(2)}ms · {formatDuration(task.startTime, task.endTime)}
-                      </span>
-                      {(task.throughput !== undefined || task.mfu !== undefined || task.mbu !== undefined) && (
-                        <div style={{ fontSize: 11, color: '#666', display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                          {task.throughput !== undefined && (
-                            <span>Throughput: {task.throughput.toFixed(2)} tokens/s</span>
-                          )}
-                          {task.mfu !== undefined && (
-                            <span>MFU: {(task.mfu * 100).toFixed(1)}%</span>
-                          )}
-                          {task.mbu !== undefined && (
-                            <span>MBU: {(task.mbu * 100).toFixed(1)}%</span>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  ) : task.status === 'failed' ? (
-                    <Tooltip title={task.error}>
-                      <span style={{ color: '#ff4d4f' }}>
-                        {task.error?.slice(0, 50)}{task.error && task.error.length > 50 ? '...' : ''}
-                      </span>
-                    </Tooltip>
-                  ) : (
-                    <span style={{ color: '#999' }}>已取消</span>
-                  )}
-                </div>
-              }
-            />
-          </List.Item>
-        )}
-      />
+      {/* 历史任务列表 */}
+      {historyTasks.length > 0 && (
+        <>
+          <div style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            marginBottom: 8,
+            marginTop: runningTasks.length > 0 ? 16 : 0,
+            padding: '0 4px',
+          }}>
+            <span style={{ fontSize: 12, color: '#666' }}>
+              历史任务 ({historyTasks.length})
+            </span>
+            <Space size={4}>
+              <Button size="small" type="text" icon={<ReloadOutlined />} onClick={onRefresh}>
+                刷新
+              </Button>
+              <Popconfirm
+                title="确定清空历史任务？"
+                onConfirm={onClearCompleted}
+                okText="确定"
+                cancelText="取消"
+                placement="topRight"
+              >
+                <Button size="small" type="text" icon={<ClearOutlined />} danger>
+                  清空
+                </Button>
+              </Popconfirm>
+            </Space>
+          </div>
+
+          <List
+            size="small"
+            dataSource={historyTasks}
+            style={{ maxHeight: 200, overflowY: 'auto' }}
+            renderItem={(task) => (
+              <HistoryTaskItem
+                key={task.id}
+                task={task}
+                onView={() => onViewTask(task)}
+                onDelete={() => onDeleteTask(task.id)}
+              />
+            )}
+          />
+        </>
+      )}
     </div>
   )
 }

@@ -12,20 +12,63 @@ import relations from './relations.json'
 
 import type { KnowledgeNode, KnowledgeRelation } from '../../components/KnowledgeGraph/types'
 
+// ============================================
+// 数据验证和合并
+// ============================================
+
+// 验证节点数组
+const validateNodes = (nodes: unknown[]): KnowledgeNode[] => {
+  if (!Array.isArray(nodes)) {
+    console.warn('Invalid nodes type:', typeof nodes)
+    return []
+  }
+  return nodes.filter(node => {
+    if (!node || typeof node !== 'object') return false
+    const n = node as Record<string, unknown>
+    return Boolean(n.id && n.name && n.definition && n.category)
+  }) as KnowledgeNode[]
+}
+
+// 验证关系数组
+const validateRelations = (rels: unknown[]): KnowledgeRelation[] => {
+  if (!Array.isArray(rels)) {
+    console.warn('Invalid relations type:', typeof rels)
+    return []
+  }
+  return rels.filter(rel => {
+    if (!rel || typeof rel !== 'object') return false
+    const r = rel as Record<string, unknown>
+    return Boolean(r.source && r.target && r.type)
+  }) as KnowledgeRelation[]
+}
+
 // 合并所有节点
-export const nodes: KnowledgeNode[] = [
-  ...parallelNodes,
-  ...modelNodes,
-  ...inferenceNodes,
-  ...hardwareNodes,
-  ...interconnectNodes,
-  ...communicationNodes,
-  ...protocolNodes,
-  ...systemNodes,
-] as KnowledgeNode[]
+const allNodeArrays = [
+  parallelNodes,
+  modelNodes,
+  inferenceNodes,
+  hardwareNodes,
+  interconnectNodes,
+  communicationNodes,
+  protocolNodes,
+  systemNodes,
+]
+
+export const nodes: KnowledgeNode[] = allNodeArrays
+  .map(arr => validateNodes(arr))
+  .flat()
 
 // 导出关系
-export const knowledgeRelations: KnowledgeRelation[] = relations as KnowledgeRelation[]
+export const knowledgeRelations: KnowledgeRelation[] = validateRelations(relations as unknown[])
+
+// 数据完整性检查
+if (typeof window !== 'undefined') {
+  // 仅在浏览器环境中执行
+  const nodeCount = nodes.length
+  const relationCount = knowledgeRelations.length
+
+
+}
 
 // 导出完整数据结构（兼容原有接口）
 export const knowledgeGraphData = {

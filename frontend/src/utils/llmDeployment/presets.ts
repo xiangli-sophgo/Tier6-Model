@@ -272,19 +272,18 @@ export async function loadBackendChipPresets(): Promise<void> {
         memory_bandwidth_gbps: chip.dram_bandwidth_gbps,
         memory_bandwidth_utilization: 0.85,
         lmem_mb: 2,  // 默认 2MB LMEM
-        c2c_bandwidth_gbps: chip.intra_bw_gbps,  // C2C 单向带宽
-        c2c_bandwidth_bidirectional_gbps: chip.intra_bw_gbps * 2.2,  // C2C 双向带宽 (约 2.2 倍)
+        c2c_bandwidth_gbps: chip.c2c_bw_unidirectional_gbps,  // C2C 单向带宽
+        c2c_bandwidth_bidirectional_gbps: chip.c2c_bw_unidirectional_gbps * 2,  // C2C 双向带宽 = 单向 × 2
       };
       // 保存互联配置
       backendChipInterconnectCache[chip.id] = {
         interconnect_type: chip.name,  // 使用芯片名作为互联类型标识
-        intra_node_bandwidth_gbps: chip.intra_bw_gbps,
+        intra_node_bandwidth_gbps: chip.c2c_bw_unidirectional_gbps,
         intra_node_latency_us: chip.intra_latency_us,
         recommended_chips_per_node: 8,  // 默认值
       };
     }
     backendPresetsLoaded = true;
-    console.log(`已从后端加载 ${chips.length} 个芯片预设:`, Object.keys(backendChipPresetsCache));
   } catch (error) {
     console.warn('后端芯片预设加载失败:', error);
   }

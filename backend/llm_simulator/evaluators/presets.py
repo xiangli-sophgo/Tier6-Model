@@ -25,6 +25,7 @@ def _create_sg2260e() -> AcceleratorMicroArch:
         # 通信带宽
         intra_bw=448e9,  # 组内带宽 448 GB/s (与 DS_TPU 对齐)
         inter_bw=448e9,  # 组间带宽 448 GB/s (与 DS_TPU 对齐)
+        c2c_bw_unidirectional_gbps=448.0,  # 单向带宽，双向 = 单向 × 2
         intra_latency_us=1.0,  # 组内延迟 1 us (粗粒度)
         inter_latency_us=2.0,  # 组间延迟 2 us (粗粒度)
         # 细粒度通信延迟 (单位: us) - 对齐 DS_TPU dispatch_eval.py/combine_eval.py
@@ -64,6 +65,7 @@ def _create_h100() -> AcceleratorMicroArch:
         # 通信带宽
         intra_bw=900e9,  # NVSwitch 900 GB/s
         inter_bw=400e9,  # InfiniBand NDR 400 Gb/s = 50 GB/s per port, 8x = 400 GB/s
+        c2c_bw_unidirectional_gbps=900.0,  # NVLink 4.0 单向带宽，双向 = 单向 × 2
         intra_latency_us=1.0,  # NVLink 4.0 延迟 1 us (粗粒度)
         inter_latency_us=2.0,  # InfiniBand NDR 延迟 2 us (粗粒度)
         # 细粒度通信延迟 (单位: us) - H100 单 Die 芯片
@@ -101,6 +103,7 @@ def _create_a100() -> AcceleratorMicroArch:
         # 通信带宽
         intra_bw=600e9,  # NVLink 600 GB/s
         inter_bw=200e9,  # InfiniBand HDR 200 Gb/s = 25 GB/s per port, 8x = 200 GB/s
+        c2c_bw_unidirectional_gbps=600.0,  # NVLink 3.0 单向带宽，双向 = 单向 × 2
         intra_latency_us=2.0,  # NVLink 3.0 延迟 2 us (粗粒度)
         inter_latency_us=2.0,  # InfiniBand HDR 延迟 2 us (粗粒度)
         # 细粒度通信延迟 (单位: us) - A100 单 Die 芯片
@@ -143,6 +146,7 @@ def _create_sg2261() -> AcceleratorMicroArch:
         # 通信带宽 (单芯片默认)
         intra_bw=448e9,  # 448 GB/s
         inter_bw=100e9,  # 100 GB/s
+        c2c_bw_unidirectional_gbps=448.0,  # 单向带宽，双向 = 单向 × 2
         intra_latency_us=1.0,  # SophgoLink 延迟 1 us (粗粒度)
         inter_latency_us=2.0,  # 跨节点延迟 2 us (粗粒度)
         # 细粒度通信延迟 (单位: us) - 对齐 DS_TPU
@@ -189,6 +193,7 @@ def _create_sg2262() -> AcceleratorMicroArch:
         # C2C 通信带宽
         intra_bw=448e9,  # 448 GB/s 单向带宽
         inter_bw=448e9,  # 448 GB/s
+        c2c_bw_unidirectional_gbps=498.0,  # 单向带宽 498 GB/s，双向 = 单向 × 2 = 996 GB/s
         intra_latency_us=1.0,  # SophgoLink 延迟 1 us (粗粒度)
         inter_latency_us=1.0,  # SG2262 芯片间也是高速互联 1 us (粗粒度)
         # 细粒度通信延迟 (单位: us) - 对齐 DS_TPU
@@ -227,6 +232,7 @@ def _create_a800() -> AcceleratorMicroArch:
         compute_dma_overlap_rate=0.85,
         intra_bw=400e9,  # NVLink 受限 400 GB/s
         inter_bw=200e9,
+        c2c_bw_unidirectional_gbps=400.0,  # NVLink 受限单向带宽，双向 = 单向 × 2
         intra_latency_us=2.0,  # NVLink 延迟 2 us (粗粒度)
         inter_latency_us=2.0,  # InfiniBand HDR 延迟 2 us (粗粒度)
         # 细粒度通信延迟 (单位: us) - 与 A100 相同 (带宽受限不影响延迟)
@@ -264,6 +270,7 @@ def _create_ascend_910b() -> AcceleratorMicroArch:
         compute_dma_overlap_rate=0.85,
         intra_bw=392e9,  # HCCS 7×56 GB/s
         inter_bw=200e9,
+        c2c_bw_unidirectional_gbps=392.0,  # HCCS 单向带宽，双向 = 单向 × 2
         intra_latency_us=2.0,  # HCCS 延迟 2 us (粗粒度)
         inter_latency_us=2.0,  # 跨节点延迟 2 us (粗粒度)
         # 细粒度通信延迟 (单位: us) - 推算值

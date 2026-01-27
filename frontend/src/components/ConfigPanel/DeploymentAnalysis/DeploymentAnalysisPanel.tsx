@@ -20,6 +20,7 @@ import {
   Space,
   Collapse,
   Divider,
+  Switch,
 } from 'antd'
 import {
   PlayCircleOutlined,
@@ -49,7 +50,6 @@ import { InfeasibleResult } from '../../../utils/llmDeployment'
 import { analyzeTopologyTraffic } from '../../../utils/llmDeployment/trafficMapper'
 import {
   submitEvaluation,
-  getTaskStatus,
   getTaskResults,
   cancelTask as cancelBackendTask,
 } from '../../../api/tasks'
@@ -79,6 +79,7 @@ import { BaseCard } from '../../common/BaseCard'
 import { ParallelismConfigPanel } from './ParallelismConfigPanel'
 import { AnalysisResultDisplay } from './AnalysisResultDisplay'
 import { ExecutorConfigPanel } from './ExecutorConfigPanel'
+import { useTaskWebSocket, TaskUpdate } from '../../../hooks/useTaskWebSocket'
 
 const { Text } = Typography
 
@@ -152,6 +153,15 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
 
   // 任务并发数（本次评估使用的 worker 数量）
   const [taskMaxWorkers, setTaskMaxWorkers] = useState<number>(4)
+
+  // Tile 搜索开关（默认开启）
+  const [enableTileSearch, setEnableTileSearch] = useState<boolean>(true)
+
+  // 分区搜索开关（默认关闭，提升速度）
+  const [enablePartitionSearch, setEnablePartitionSearch] = useState<boolean>(false)
+
+  // 最大模拟 token 数（默认 4）
+  const [maxSimulatedTokens, setMaxSimulatedTokens] = useState<number>(4)
 
   // 加载拓扑配置列表
   React.useEffect(() => {
@@ -474,15 +484,16 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
   // 取消控制器 Map（支持多个并行任务）
   const abortControllersMap = useRef<Map<string, AbortController>>(new Map())
 
-  // 轮询间隔引用（用于清理后端任务轮询）
-  const pollingIntervalsRef = useRef<Map<string, ReturnType<typeof setInterval>>>(new Map())
-
   // 分析任务列表（本地持久化）
   const [analysisTasks, setAnalysisTasks] = useState<AnalysisTask[]>(() => loadAnalysisTasks())
 
-  // 任务变化时保存到 localStorage
+  // 使用 ref 保存最新的任务列表，以便在 WebSocket 回调中访问（避免闭包问题）
+  const analysisTasksRef = useRef<AnalysisTask[]>(analysisTasks)
+
+  // 任务变化时保存到 localStorage 并更新 ref
   React.useEffect(() => {
     saveAnalysisTasks(analysisTasks)
+    analysisTasksRef.current = analysisTasks
   }, [analysisTasks])
 
   // 更新任务状态
@@ -508,13 +519,6 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
 
   // 取消任务
   const cancelTask = useCallback(async (taskId: string) => {
-    // 清理本地轮询
-    const interval = pollingIntervalsRef.current.get(taskId)
-    if (interval) {
-      clearInterval(interval)
-      pollingIntervalsRef.current.delete(taskId)
-    }
-
     // 取消后端任务
     try {
       await cancelBackendTask(taskId)
@@ -534,6 +538,86 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
   const refreshTasks = useCallback(() => {
     setAnalysisTasks(loadAnalysisTasks())
   }, [])
+
+  // WebSocket 任务更新处理（实时接收后端进度）
+  const handleTaskUpdate = useCallback(async (update: TaskUpdate) => {
+    console.log('[DEBUG Panel] handleTaskUpdate called:', update)
+    console.log('[DEBUG Panel] Current tasks:', analysisTasksRef.current.map(t => ({ id: t.id, status: t.status })))
+
+    // 直接检查任务是否存在于本地任务列表中（使用 ref 访问最新值）
+    const taskExists = analysisTasksRef.current.some(t => t.id === update.task_id)
+    console.log('[DEBUG Panel] Task exists:', taskExists, 'for task_id:', update.task_id)
+
+    if (!taskExists) {
+      // 可能是其他页面的任务或已删除的任务，忽略
+      console.log('[DEBUG Panel] Task not found, ignoring')
+      return
+    }
+
+    const localTaskId = update.task_id
+    console.log('[DEBUG Panel] Updating task:', localTaskId, 'with progress:', update.progress)
+
+    if (update.status === 'running') {
+      // 更新进度
+      updateTask(localTaskId, {
+        progress: { current: Math.round(update.progress), total: 100 },
+      })
+    } else if (update.status === 'completed') {
+      // 任务完成，获取结果
+      try {
+        const results = await getTaskResults(update.task_id)
+
+        if (results.top_k_plans && results.top_k_plans.length > 0) {
+          const topPlan = results.top_k_plans[0] as Record<string, unknown>
+          const parallelism = (topPlan.parallelism || {}) as ParallelismStrategy
+
+          // 更新任务状态
+          updateTask(localTaskId, {
+            status: 'completed',
+            endTime: Date.now(),
+            parallelism: parallelism,
+            score: topPlan.score as number,
+            ttft: topPlan.ttft as number,
+            tpot: topPlan.tpot as number,
+            throughput: topPlan.throughput as number,
+            mfu: topPlan.mfu as number,
+            mbu: topPlan.mbu as number,
+          })
+        } else {
+          updateTask(localTaskId, {
+            status: 'failed',
+            endTime: Date.now(),
+            error: '未找到可行方案',
+          })
+        }
+      } catch (error) {
+        console.error('获取任务结果失败:', error)
+        updateTask(localTaskId, {
+          status: 'failed',
+          endTime: Date.now(),
+          error: '获取结果失败',
+        })
+      }
+    } else if (update.status === 'failed') {
+      updateTask(localTaskId, {
+        status: 'failed',
+        endTime: Date.now(),
+        error: update.error || '任务执行失败',
+      })
+    } else if (update.status === 'cancelled') {
+      updateTask(localTaskId, {
+        status: 'cancelled',
+        endTime: Date.now(),
+      })
+    }
+  }, [updateTask])
+
+  // 使用 WebSocket 订阅任务更新
+  useTaskWebSocket({
+    onTaskUpdate: handleTaskUpdate,
+    onConnect: () => console.log('[DeploymentAnalysis] WebSocket connected'),
+    onDisconnect: () => console.log('[DeploymentAnalysis] WebSocket disconnected'),
+  })
 
   // 查看任务结果（跳转到结果管理页面）
   const viewTaskResult = useCallback((task: AnalysisTask) => {
@@ -641,15 +725,6 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
   // 计算最大可用芯片数
   const maxChips = hardwareConfig ? hardwareConfig.node.chips_per_node * hardwareConfig.cluster.num_nodes : 0
 
-  // 清理轮询
-  const clearPolling = useCallback((taskId: string) => {
-    const interval = pollingIntervalsRef.current.get(taskId)
-    if (interval) {
-      clearInterval(interval)
-      pollingIntervalsRef.current.delete(taskId)
-    }
-  }, [])
-
   // 运行分析（提交到后端执行）
   const handleRunAnalysis = useCallback(async () => {
     if (!hardwareConfig) return
@@ -664,6 +739,23 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
     const benchmarkName = generateBenchmarkName(modelConfig, inferenceConfig)
     // 使用用户输入的实验名称，如果为空则使用 Benchmark 名称
     const finalExperimentName = experimentName.trim() || benchmarkName
+
+    // 生成临时任务 ID（提交后会更新为后端返回的 ID）
+    const tempTaskId = `temp-${Date.now()}`
+
+    // 先创建本地任务记录并显示卡片（立即响应用户操作）
+    const newTask: AnalysisTask = {
+      id: tempTaskId,
+      status: 'running',
+      startTime: Date.now(),
+      experimentName: finalExperimentName,
+      modelName: modelConfig.model_name,
+      benchmarkName,
+      parallelism: strategy,
+      mode: parallelismMode,
+      chips: maxChips,
+    }
+    addTask(newTask)
 
     // 捕获当前配置
     const currentModelConfig = { ...modelConfig }
@@ -691,159 +783,31 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
         manual_parallelism: currentParallelismMode === 'manual' ? currentManualStrategy as unknown as Record<string, unknown> : undefined,
         search_constraints: currentParallelismMode === 'auto' ? { max_chips: maxChips } : undefined,
         max_workers: taskMaxWorkers,
+        enable_tile_search: enableTileSearch,
+        enable_partition_search: enablePartitionSearch,
+        max_simulated_tokens: maxSimulatedTokens,
       })
 
       const backendTaskId = response.task_id
-      const localTaskId = backendTaskId // 使用后端返回的 task_id 作为本地 ID
 
-      // 创建本地任务记录
-      const newTask: AnalysisTask = {
-        id: localTaskId,
-        status: 'running',
-        startTime: Date.now(),
-        experimentName: finalExperimentName,
-        modelName: modelConfig.model_name,
-        benchmarkName,
-        parallelism: strategy,
-        mode: parallelismMode,
-        chips: maxChips,
-      }
-      addTask(newTask)
+      // 更新任务 ID 为后端返回的真实 ID
+      setAnalysisTasks(prev => prev.map(t =>
+        t.id === tempTaskId ? { ...t, id: backendTaskId } : t
+      ))
 
-      message.success('任务已提交到后端执行')
-
-      // 开始轮询任务状态
-      const pollInterval = setInterval(async () => {
-        try {
-          const status = await getTaskStatus(backendTaskId)
-
-          // 更新进度
-          if (status.status === 'running') {
-            updateTask(localTaskId, {
-              progress: { current: Math.round(status.progress), total: 100 },
-            })
-          } else if (status.status === 'completed') {
-            // 任务完成，获取结果
-            clearPolling(localTaskId)
-
-            const results = await getTaskResults(backendTaskId)
-
-            if (results.top_k_plans && results.top_k_plans.length > 0) {
-              const topPlan = results.top_k_plans[0] as Record<string, unknown>
-              const parallelism = (topPlan.parallelism || {}) as ParallelismStrategy
-
-              // 生成历史记录ID
-              const historyId = `history_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`
-
-              // 转换结果格式以适配前端显示
-              const adaptedResult: PlanAnalysisResult = {
-                is_feasible: true,
-                plan: {
-                  total_chips: (topPlan.chips as number) || maxChips,
-                  parallelism: parallelism,
-                },
-                latency: {
-                  prefill_total_latency_ms: (topPlan.ttft as number) || 0,
-                  decode_per_token_latency_ms: (topPlan.tpot as number) || 0,
-                },
-                throughput: {
-                  tokens_per_second: (topPlan.throughput as number) || 0,
-                  model_flops_utilization: (topPlan.mfu as number) || 0,
-                  memory_bandwidth_utilization: (topPlan.mbu as number) || 0,
-                },
-                score: {
-                  overall_score: (topPlan.score as number) || 0,
-                },
-              } as PlanAnalysisResult
-
-              // 保存到历史记录
-              onAddToHistory?.({
-                modelName: currentModelConfig.model_name,
-                parallelism: parallelism,
-                score: adaptedResult.score.overall_score,
-                ttft: adaptedResult.latency.prefill_total_latency_ms,
-                tpot: adaptedResult.latency.decode_per_token_latency_ms,
-                throughput: adaptedResult.throughput.tokens_per_second,
-                mfu: adaptedResult.throughput.model_flops_utilization,
-                mbu: adaptedResult.throughput.memory_bandwidth_utilization,
-                cost: null,
-                chips: adaptedResult.plan.total_chips,
-                result: adaptedResult,
-                topKPlans: (results.top_k_plans as Record<string, unknown>[]).slice(0, 5).map((p) => ({
-                  is_feasible: true,
-                  plan: { total_chips: (p.chips as number) || maxChips, parallelism: (p.parallelism || {}) as ParallelismStrategy },
-                  latency: { prefill_total_latency_ms: (p.ttft as number) || 0, decode_per_token_latency_ms: (p.tpot as number) || 0 },
-                  throughput: { tokens_per_second: (p.throughput as number) || 0, model_flops_utilization: (p.mfu as number) || 0, memory_bandwidth_utilization: (p.mbu as number) || 0 },
-                  score: { overall_score: (p.score as number) || 0 },
-                } as PlanAnalysisResult)),
-                searchMode: currentParallelismMode,
-                modelConfig: currentModelConfig,
-                inferenceConfig: currentInferenceConfig,
-                hardwareConfig: currentHardwareConfig,
-              })
-
-              // 更新任务状态
-              updateTask(localTaskId, {
-                status: 'completed',
-                endTime: Date.now(),
-                parallelism: parallelism,
-                score: adaptedResult.score.overall_score,
-                ttft: adaptedResult.latency.prefill_total_latency_ms,
-                tpot: adaptedResult.latency.decode_per_token_latency_ms,
-                throughput: adaptedResult.throughput.tokens_per_second,
-                mfu: adaptedResult.throughput.model_flops_utilization,
-                mbu: adaptedResult.throughput.memory_bandwidth_utilization,
-                historyId,
-              })
-
-              // 更新当前显示的结果
-              setAnalysisResult(adaptedResult)
-              setTopKPlans((results.top_k_plans as Record<string, unknown>[]).map((p) => ({
-                is_feasible: true,
-                plan: { total_chips: (p.chips as number) || maxChips, parallelism: (p.parallelism || {}) as ParallelismStrategy },
-                latency: { prefill_total_latency_ms: (p.ttft as number) || 0, decode_per_token_latency_ms: (p.tpot as number) || 0 },
-                throughput: { tokens_per_second: (p.throughput as number) || 0, model_flops_utilization: (p.mfu as number) || 0, memory_bandwidth_utilization: (p.mbu as number) || 0 },
-                score: { overall_score: (p.score as number) || 0 },
-              } as PlanAnalysisResult)))
-              setDisplayModelConfig(currentModelConfig)
-              setDisplayInferenceConfig(currentInferenceConfig)
-
-              message.success('分析完成')
-            } else {
-              updateTask(localTaskId, {
-                status: 'failed',
-                endTime: Date.now(),
-                error: '未找到可行方案',
-              })
-            }
-          } else if (status.status === 'failed') {
-            clearPolling(localTaskId)
-            updateTask(localTaskId, {
-              status: 'failed',
-              endTime: Date.now(),
-              error: status.error || '任务执行失败',
-            })
-            message.error(`任务失败: ${status.error || '未知错误'}`)
-          } else if (status.status === 'cancelled') {
-            clearPolling(localTaskId)
-            updateTask(localTaskId, {
-              status: 'cancelled',
-              endTime: Date.now(),
-            })
-          }
-        } catch (pollError) {
-          console.error('轮询任务状态失败:', pollError)
-        }
-      }, 1000) // 每秒轮询一次
-
-      pollingIntervalsRef.current.set(localTaskId, pollInterval)
-
+      message.success('任务已提交')
     } catch (error) {
       console.error('提交任务失败:', error)
       const msg = error instanceof Error ? error.message : '未知错误'
+      // 提交失败，更新任务状态为失败
+      updateTask(tempTaskId, {
+        status: 'failed',
+        endTime: Date.now(),
+        error: msg,
+      })
       message.error(`提交任务失败: ${msg}`)
     }
-  }, [experimentName, taskMaxWorkers, modelConfig, inferenceConfig, hardwareConfig, parallelismMode, manualStrategy, maxChips, onAddToHistory, topology, addTask, updateTask, clearPolling])
+  }, [experimentName, taskMaxWorkers, modelConfig, inferenceConfig, hardwareConfig, parallelismMode, manualStrategy, maxChips, topology, addTask, updateTask, commLatencyConfig, setAnalysisTasks])
 
   // 如果硬件配置未加载，显示提示（不再是加载中）
   if (!hardwareConfig) {
@@ -885,6 +849,55 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
               modelConfig={modelConfig}
               hardwareConfig={hardwareConfig}
             />
+
+            {/* Tile 搜索开关 */}
+            <div style={{ marginTop: 16, marginBottom: 8, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div style={{ display: 'flex', alignItems: 'center' }}>
+                <span style={{ fontSize: 13, color: '#666', marginRight: 8 }}>启用 Tile 搜索</span>
+                <Tooltip title="开启时使用最优tile搜索以获得最高精度，关闭时使用固定tile大小以显著提升评估速度">
+                  <span style={{ color: '#8c8c8c', cursor: 'help' }}>ⓘ</span>
+                </Tooltip>
+              </div>
+              <Switch
+                checked={enableTileSearch}
+                onChange={setEnableTileSearch}
+                checkedChildren="开"
+                unCheckedChildren="关"
+              />
+            </div>
+
+            {/* 分区搜索开关 */}
+            <div style={{ marginTop: 12, marginBottom: 8, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div style={{ display: 'flex', alignItems: 'center' }}>
+                <span style={{ fontSize: 13, color: '#666', marginRight: 8 }}>启用分区搜索</span>
+                <Tooltip title="开启时搜索最优分区策略（极慢，单个GEMM需100+秒），关闭时使用固定分区（推荐，速度提升100倍）">
+                  <span style={{ color: '#8c8c8c', cursor: 'help' }}>ⓘ</span>
+                </Tooltip>
+              </div>
+              <Switch
+                checked={enablePartitionSearch}
+                onChange={setEnablePartitionSearch}
+                checkedChildren="开"
+                unCheckedChildren="关"
+              />
+            </div>
+
+            {/* 最大模拟 token 数 */}
+            <div style={{ marginTop: 12, marginBottom: 8, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div style={{ display: 'flex', alignItems: 'center' }}>
+                <span style={{ fontSize: 13, color: '#666', marginRight: 8 }}>最大模拟 Token 数</span>
+                <Tooltip title="Decode 阶段模拟的 token 数量，值越小评估越快但精度略降。推荐：快速评估用 1-2，精确评估用 4-8">
+                  <span style={{ color: '#8c8c8c', cursor: 'help' }}>ⓘ</span>
+                </Tooltip>
+              </div>
+              <InputNumber
+                min={1}
+                max={16}
+                value={maxSimulatedTokens}
+                onChange={(value) => setMaxSimulatedTokens(value || 4)}
+                style={{ width: 80 }}
+              />
+            </div>
 
             {/* 实验名称和任务并发数 */}
             <Row gutter={16} style={{ marginTop: 16 }}>
@@ -1000,7 +1013,7 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
                 <Collapse
                   size="small"
                   style={{ marginBottom: 12, background: 'transparent' }}
-                  defaultActiveKey={['chip']}
+                  defaultActiveKey={[]}
                   expandIconPosition="start"
                   className="delay-settings-collapse"
                   items={[
@@ -1104,6 +1117,7 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
                               <InputNumber
                                 size="small"
                                 min={0}
+                                precision={1}
                                 value={hardwareConfig.chip.c2c_bandwidth_gbps ?? hardwareConfig.node.intra_node_bandwidth_gbps}
                                 onChange={(v) => setHardwareConfig(prev => prev ? {
                                   ...prev,
@@ -1119,6 +1133,7 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
                               <InputNumber
                                 size="small"
                                 min={0}
+                                precision={1}
                                 value={hardwareConfig.chip.c2c_bandwidth_bidirectional_gbps ?? 996}
                                 onChange={(v) => setHardwareConfig(prev => prev ? {
                                   ...prev,
@@ -1142,7 +1157,7 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
             <Collapse
               size="small"
               style={{ marginBottom: 12, background: 'transparent' }}
-              defaultActiveKey={['delay']}
+              defaultActiveKey={[]}
               expandIconPosition="start"
               className="delay-settings-collapse"
               items={[

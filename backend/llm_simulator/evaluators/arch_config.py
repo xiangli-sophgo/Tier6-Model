@@ -188,6 +188,9 @@ class AcceleratorMicroArch:
     inter_bw: float = 100e9
     """组间通信带宽 (字节/秒)，默认 100 GB/s (跨节点)"""
 
+    c2c_bw_unidirectional_gbps: float = 448.0
+    """芯片间单向带宽 (GB/s)"""
+
     intra_latency_us: float = 1.0
     """组内通信延迟 (微秒)，默认 1.0 us (高速互联)
 

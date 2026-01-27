@@ -17,6 +17,8 @@ export default defineConfig(({ mode }) => {
 
   return {
     plugins: [react()],
+    // 从父目录加载 .env 文件，让客户端代码也能访问 VITE_* 环境变量
+    envDir: path.resolve(__dirname, '..'),
     resolve: {
       alias: {
         '@': path.resolve(__dirname, './src'),
@@ -33,6 +35,11 @@ export default defineConfig(({ mode }) => {
         '/api': {
           target: apiTarget,
           changeOrigin: true,
+        },
+        '/ws': {
+          target: apiTarget,  // 保持 HTTP 协议，Vite 会自动处理 WebSocket 升级
+          changeOrigin: true,
+          ws: true,  // 启用 WebSocket 代理
         },
       },
       watch: {

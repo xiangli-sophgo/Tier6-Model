@@ -122,12 +122,20 @@ export const KnowledgeGraphProvider: React.FC<KnowledgeGraphProviderProps> = ({ 
     const initKnowledgeGraphWithWorker = () => {
       const data = knowledgeData as KnowledgeGraphData
 
+      // 数据验证
+      if (!data || !Array.isArray(data.nodes) || data.nodes.length === 0) {
+        console.error('❌ 知识图谱初始化失败：nodes 为空或未定义', { data })
+        setKnowledgeInitialized(true)  // 标记为已初始化，避免重复尝试
+        return
+      }
+
+
       // ⚡ 立即加载原始节点数据，设置随机初始位置
       // 这样节点不会从同一点开始，布局范围更合理
 
       // 设置随机初始位置（在一个圆形区域内）
       const radius = 300  // 初始分布半径
-      setKnowledgeNodes(data.nodes.map((n): ForceKnowledgeNode => {
+      const initializedNodes = data.nodes.map((n): ForceKnowledgeNode => {
         const angle = Math.random() * 2 * Math.PI
         const r = Math.sqrt(Math.random()) * radius  // 平方根让分布更均匀
         return {
@@ -135,7 +143,9 @@ export const KnowledgeGraphProvider: React.FC<KnowledgeGraphProviderProps> = ({ 
           x: Math.cos(angle) * r,
           y: Math.sin(angle) * r
         }
-      }))
+      })
+
+      setKnowledgeNodes(initializedNodes)
       setKnowledgeInitialized(true)
 
       // 不再使用 Worker，让 ForceGraph2D 自己进行力导向布局

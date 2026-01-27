@@ -74,7 +74,7 @@ class DeepSeekModel(BaseModel):
 
         # MoE 配置
         - num_experts: int, 专家数 (256)
-        - num_activated_experts: int, 激活专家数 (8)
+        - num_experts_per_tok: int, 激活专家数 (8)
         - num_shared_experts: int, 共享专家数 (1)
         - expert_inter_dim: int, 专家 FFN 维度 (2048)
 
@@ -136,7 +136,7 @@ class DeepSeekModel(BaseModel):
 
         # MoE 参数
         num_experts = cfg.get('num_experts', 256)
-        num_activated = cfg.get('num_activated_experts', 8)
+        num_activated = cfg.get('num_experts_per_tok', 8)
         num_shared = cfg.get('num_shared_experts', 1)
         expert_inter_dim = cfg.get('expert_inter_dim', 2048)
 
@@ -250,7 +250,7 @@ class DeepSeekModel(BaseModel):
                     'hidden_dim': hidden_dim,
                     'inter_dim': expert_inter_dim,
                     'num_experts': num_experts,
-                    'num_activated_experts': num_activated,
+                    'num_experts_per_tok': num_activated,
                     'num_shared_experts': num_shared,
                     'batch_size': batch_size,  # 全局 batch
                     'seq_len': seq_len,
@@ -352,7 +352,7 @@ def create_deepseek_v3(
             'enable_tp_sp': enable_tp_sp,
             # MoE
             'num_experts': 256,
-            'num_activated_experts': 8,
+            'num_experts_per_tok': 8,
             'num_shared_experts': 1,
             'expert_inter_dim': 2048,
             # 部署
@@ -458,7 +458,7 @@ def create_deepseek_v32(
             'index_head_dim': 128,
             # MoE
             'num_experts': 256,
-            'num_activated_experts': 8,
+            'num_experts_per_tok': 8,
             'num_shared_experts': 1,
             'expert_inter_dim': 2048,
             # 部署

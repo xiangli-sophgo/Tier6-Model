@@ -3,10 +3,10 @@
  * 左右布局：左边架构图，右边详情面板
  */
 
-import React, { useState, useMemo } from 'react'
+import React, { useState, useMemo, useEffect } from 'react'
 import { Tag } from 'antd'
 import { LLMModelConfig, InferenceConfig } from '../../../../utils/llmDeployment/types'
-import { calculateModelParams } from '../../../../utils/llmDeployment/modelCalculator'
+import { calculateModelParams } from '../../../../api/model'
 
 interface ModelInfoCardProps {
   model: LLMModelConfig
@@ -87,8 +87,8 @@ const calculateFLOPs = (model: LLMModelConfig, inference?: InferenceConfig) => {
   }
 }
 
-// 参数量计算 - 使用统一的 calculateModelParams 计算总量
-const calculateParams = (model: LLMModelConfig) => {
+// 参数量计算 - 本地计算分解参数量
+const calculateLocalParams = (model: LLMModelConfig) => {
   const H = model.hidden_size
   const I = model.intermediate_size
   const L = model.num_layers
@@ -123,7 +123,6 @@ const calculateParams = (model: LLMModelConfig) => {
     attention: attnParams * L,
     ffn: ffnParams * L,
     output: outParams,
-    total: calculateModelParams(model),
   }
 }
 
@@ -176,11 +175,35 @@ const DetailSection: React.FC<{ title: string; color: typeof COLORS.embedding; c
 
 export const ModelInfoCard: React.FC<ModelInfoCardProps> = ({ model, inference }) => {
   const [selectedBlock, setSelectedBlock] = useState<string>('overview')
+  const [totalParams, setTotalParams] = useState<number>(0)
 
   const isMoE = model.model_type === 'moe' && model.moe_config
   const isMLA = model.attention_type === 'mla' && model.mla_config
-  const params = useMemo(() => calculateParams(model), [model])
+  const localParams = useMemo(() => calculateLocalParams(model), [model])
   const flops = useMemo(() => calculateFLOPs(model, inference), [model, inference])
+
+  // 从后端获取总参数量
+  useEffect(() => {
+    let cancelled = false
+    calculateModelParams(model)
+      .then((res) => {
+        if (!cancelled) setTotalParams(res.params)
+      })
+      .catch(() => {
+        // 后端失败时使用本地计算的近似值
+        if (!cancelled) {
+          const { embedding, attention, ffn, output } = localParams
+          setTotalParams(embedding + attention + ffn + output)
+        }
+      })
+    return () => { cancelled = true }
+  }, [model, localParams])
+
+  // 合并参数量（本地分解 + 后端总量）
+  const params = useMemo(() => ({
+    ...localParams,
+    total: totalParams || (localParams.embedding + localParams.attention + localParams.ffn + localParams.output),
+  }), [localParams, totalParams])
 
   const H = model.hidden_size
   const I = model.intermediate_size

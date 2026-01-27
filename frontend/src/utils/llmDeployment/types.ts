@@ -913,3 +913,15 @@ export interface FormulaVsSimComparison {
     score_pct: number;
   };
 }
+
+// ============================================
+// 方案搜索结果（用于前端展示）
+// ============================================
+
+/** 不可行方案结果 */
+export interface InfeasibleResult {
+  /** 并行策略配置 */
+  parallelism: ParallelismStrategy;
+  /** 不可行原因 */
+  reason: string;
+}
