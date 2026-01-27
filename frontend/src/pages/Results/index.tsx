@@ -3,88 +3,125 @@
  * 显示所有实验和评估任务的列表
  */
 
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useState, useCallback } from 'react'
+import { toast } from 'sonner'
 import {
-  Card,
-  Table,
-  Button,
-  Space,
-  Tag,
-  message,
-  Typography,
-  Tooltip,
-  Popconfirm,
-  Empty,
-  Spin,
-  Alert,
-  Row,
-  Col,
-  Statistic,
-  Input,
-  Modal,
+  RefreshCw,
+  Trash2,
+  BarChart3,
+  Loader2,
+  ArrowLeft,
+  Pencil,
+  Save,
+  X,
+  Download,
   Upload,
-  Divider,
-  Checkbox,
-} from 'antd'
+  Inbox,
+} from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Textarea } from '@/components/ui/textarea'
+import { Checkbox } from '@/components/ui/checkbox'
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import {
-  ReloadOutlined,
-  DeleteOutlined,
-  BarChartOutlined,
-  CheckCircleOutlined,
-  ClockCircleOutlined,
-  SyncOutlined,
-  CloseCircleOutlined,
-  ArrowLeftOutlined,
-  EditOutlined,
-  SaveOutlined,
-  CloseOutlined,
-  FileTextOutlined,
-  DownloadOutlined,
-  UploadOutlined,
-  InboxOutlined,
-} from '@ant-design/icons'
-import type { ColumnsType } from 'antd/es/table'
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip'
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog'
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { listExperiments, deleteExperiment, deleteExperimentsBatch, getExperimentDetail, getTaskResults, updateExperiment, downloadExperimentJSON, checkImportFile, executeImport, Experiment, EvaluationTask, TaskResultsResponse } from '@/api/results'
 import { AnalysisResultDisplay } from '@/components/ConfigPanel/DeploymentAnalysis/AnalysisResultDisplay'
 import { ChartsPanel } from '@/components/ConfigPanel/DeploymentAnalysis/charts'
 import { PlanAnalysisResult, HardwareConfig, LLMModelConfig, InferenceConfig } from '@/utils/llmDeployment/types'
 import TaskTable from './components/TaskTable'
 
-const { Text } = Typography
-
-// 实验状态配置
-const statusConfig: Record<string, { color: string; text: string; icon: React.ReactNode }> = {
-  completed: {
-    color: 'success',
-    text: '已完成',
-    icon: <CheckCircleOutlined />,
-  },
-  running: {
-    color: 'processing',
-    text: '运行中',
-    icon: <SyncOutlined spin />,
-  },
-  failed: {
-    color: 'error',
-    text: '失败',
-    icon: <CloseCircleOutlined />,
-  },
-  pending: {
-    color: 'warning',
-    text: '待运行',
-    icon: <ClockCircleOutlined />,
-  },
+// 分页组件
+const Pagination: React.FC<{
+  currentPage: number
+  totalPages: number
+  pageSize: number
+  total: number
+  onPageChange: (page: number) => void
+  onPageSizeChange: (size: number) => void
+}> = ({ currentPage, totalPages, pageSize, total, onPageChange, onPageSizeChange }) => {
+  return (
+    <div className="flex items-center justify-between px-2 py-4">
+      <span className="text-sm text-gray-500">共 {total} 个实验</span>
+      <div className="flex items-center gap-2">
+        <select
+          value={pageSize}
+          onChange={(e) => onPageSizeChange(Number(e.target.value))}
+          className="h-8 rounded-md border border-gray-300 px-2 text-sm"
+        >
+          <option value={10}>10条/页</option>
+          <option value={20}>20条/页</option>
+          <option value={50}>50条/页</option>
+        </select>
+        <Button
+          variant="outline"
+          size="sm"
+          disabled={currentPage <= 1}
+          onClick={() => onPageChange(currentPage - 1)}
+        >
+          上一页
+        </Button>
+        <span className="text-sm">
+          {currentPage} / {totalPages || 1}
+        </span>
+        <Button
+          variant="outline"
+          size="sm"
+          disabled={currentPage >= totalPages}
+          onClick={() => onPageChange(currentPage + 1)}
+        >
+          下一页
+        </Button>
+        <Input
+          type="number"
+          min={1}
+          max={totalPages || 1}
+          className="h-8 w-16"
+          placeholder="页码"
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              const value = parseInt((e.target as HTMLInputElement).value)
+              if (value >= 1 && value <= totalPages) {
+                onPageChange(value)
+              }
+            }
+          }}
+        />
+      </div>
+    </div>
+  )
 }
-
-// 颜色配置 (保留以供其他地方使用)
-// const colors = {
-//   primary: '#1890ff',
-//   success: '#52c41a',
-//   warning: '#faad14',
-//   error: '#ff4d4f',
-//   border: '#e8e8e8',
-//   textSecondary: '#8c8c8c',
-// }
 
 export const Results: React.FC = () => {
   const [experiments, setExperiments] = useState<Experiment[]>([])
@@ -106,11 +143,15 @@ export const Results: React.FC = () => {
   // 批量选择状态
   const [selectedExperimentIds, setSelectedExperimentIds] = useState<number[]>([])
 
+  // 分页状态
+  const [currentPage, setCurrentPage] = useState(1)
+  const [pageSize, setPageSize] = useState(20)
+
   // 导入导出状态
   const [exportModalVisible, setExportModalVisible] = useState(false)
   const [importModalVisible, setImportModalVisible] = useState(false)
   const [importStep, setImportStep] = useState<'upload' | 'config' | 'importing' | 'result'>('upload')
-  const [importFile, setImportFile] = useState<File | null>(null)
+  const [, setImportFile] = useState<File | null>(null)
   const [importCheckResult, setImportCheckResult] = useState<any>(null)
   const [importConfig, setImportConfig] = useState<Map<string, any>>(new Map())
   const [importLoading, setImportLoading] = useState(false)
@@ -123,7 +164,7 @@ export const Results: React.FC = () => {
       const data = await listExperiments()
       setExperiments(data || [])
     } catch (error) {
-      message.error('加载实验列表失败')
+      toast.error('加载实验列表失败')
       console.error(error)
     } finally {
       setLoading(false)
@@ -135,14 +176,6 @@ export const Results: React.FC = () => {
     loadExperiments()
   }, [])
 
-  // 计算实验状态
-  const getExperimentStatus = (exp: Experiment): string => {
-    if (exp.total_tasks === 0) return 'pending'
-    if (exp.completed_tasks === 0) return 'running'
-    if (exp.completed_tasks === exp.total_tasks) return 'completed'
-    return 'running'
-  }
-
   // 加载实验详情
   const loadExperimentDetail = async (id: number) => {
     try {
@@ -150,7 +183,7 @@ export const Results: React.FC = () => {
       setSelectedExperiment(data)
       setSelectedExperimentId(id)
     } catch (error) {
-      message.error('加载实验详情失败')
+      toast.error('加载实验详情失败')
       console.error(error)
     }
   }
@@ -159,7 +192,7 @@ export const Results: React.FC = () => {
   const handleDelete = async (id: number) => {
     try {
       await deleteExperiment(id)
-      message.success('实验已删除')
+      toast.success('实验已删除')
       loadExperiments()
       // 如果删除的是当前查看的实验，返回列表
       if (selectedExperimentId === id) {
@@ -167,7 +200,7 @@ export const Results: React.FC = () => {
         setSelectedExperiment(null)
       }
     } catch (error) {
-      message.error('删除失败')
+      toast.error('删除失败')
       console.error(error)
     }
   }
@@ -182,7 +215,7 @@ export const Results: React.FC = () => {
   // 保存编辑
   const handleSaveEdit = async (id: number) => {
     if (!editingName.trim()) {
-      message.error('实验名称不能为空')
+      toast.error('实验名称不能为空')
       return
     }
     setEditingLoading(true)
@@ -191,11 +224,11 @@ export const Results: React.FC = () => {
         name: editingName.trim(),
         description: editingDescription.trim() || undefined,
       })
-      message.success('实验已更新')
+      toast.success('实验已更新')
       loadExperiments()
       setEditingId(null)
     } catch (error) {
-      message.error('更新失败')
+      toast.error('更新失败')
       console.error(error)
     } finally {
       setEditingLoading(false)
@@ -212,16 +245,16 @@ export const Results: React.FC = () => {
   // 批量删除
   const handleBatchDelete = async () => {
     if (selectedExperimentIds.length === 0) {
-      message.warning('请先选择要删除的实验')
+      toast.warning('请先选择要删除的实验')
       return
     }
     try {
       await deleteExperimentsBatch(selectedExperimentIds)
-      message.success(`成功删除 ${selectedExperimentIds.length} 个实验`)
+      toast.success(`成功删除 ${selectedExperimentIds.length} 个实验`)
       setSelectedExperimentIds([])
       loadExperiments()
     } catch (error) {
-      message.error('批量删除失败')
+      toast.error('批量删除失败')
       console.error(error)
     }
   }
@@ -231,11 +264,11 @@ export const Results: React.FC = () => {
     try {
       const exportIds = selectedExperimentIds.length > 0 ? selectedExperimentIds : undefined
       await downloadExperimentJSON(exportIds)
-      message.success('导出成功')
+      toast.success('导出成功')
       setExportModalVisible(false)
       setSelectedExperimentIds([])
     } catch (error) {
-      message.error('导出失败')
+      toast.error('导出失败')
       console.error(error)
     }
   }
@@ -260,10 +293,10 @@ export const Results: React.FC = () => {
         setImportConfig(config)
         setImportStep('config')
       } else {
-        message.error(result.error || '导入文件无效')
+        toast.error(result.error || '导入文件无效')
       }
     } catch (error) {
-      message.error('检查导入文件失败')
+      toast.error('检查导入文件失败')
       console.error(error)
     } finally {
       setImportLoading(false)
@@ -273,7 +306,7 @@ export const Results: React.FC = () => {
   // 执行导入
   const handleExecuteImport = async () => {
     if (!importCheckResult?.temp_file_id) {
-      message.error('导入会话已过期，请重新上传')
+      toast.error('导入会话已过期，请重新上传')
       return
     }
 
@@ -285,11 +318,11 @@ export const Results: React.FC = () => {
       setImportResult(result)
       setImportStep('result')
       if (result.success) {
-        message.success(result.message)
+        toast.success(result.message)
         loadExperiments()
       }
     } catch (error) {
-      message.error('导入失败')
+      toast.error('导入失败')
       console.error(error)
     } finally {
       setImportLoading(false)
@@ -314,7 +347,7 @@ export const Results: React.FC = () => {
       const results = await getTaskResults(task.task_id)
       setTaskResults(results)
     } catch (error) {
-      message.error('加载任务结果失败')
+      toast.error('加载任务结果失败')
       console.error(error)
       setTaskResults(null)
     } finally {
@@ -368,148 +401,30 @@ export const Results: React.FC = () => {
     } as unknown as PlanAnalysisResult))
   }
 
-  // 表格列配置
-  const columns: ColumnsType<Experiment> = [
-    {
-      title: '实验名称',
-      dataIndex: 'name',
-      key: 'name',
-      width: 280,
-      render: (text, record) => {
-        if (editingId === record.id) {
-          return (
-            <Input
-              value={editingName}
-              onChange={(e) => setEditingName(e.target.value)}
-              placeholder="实验名称"
-              autoFocus
-              onPressEnter={() => handleSaveEdit(record.id)}
-              onBlur={() => {
-                // 按 Escape 取消编辑
-              }}
-            />
-          )
-        }
-        return (
-          <Tooltip title="点击查看详情，右键编辑">
-            <span
-              style={{ color: '#1890ff', cursor: 'pointer' }}
-              onClick={() => loadExperimentDetail(record.id)}
-              onContextMenu={(e) => {
-                e.preventDefault()
-                handleStartEdit(record)
-              }}
-            >
-              {text}
-            </span>
-          </Tooltip>
-        )
-      },
-    },
-    {
-      title: '任务数',
-      key: 'tasks',
-      width: 80,
-      align: 'center',
-      render: (_, record) => {
-        const taskCount = record.tasks?.length || 0
-        const completedCount = record.tasks?.filter((t: EvaluationTask) => t.status === 'completed').length || 0
-        return (
-          <span>
-            {completedCount}/{taskCount}
-          </span>
-        )
-      },
-    },
-    {
-      title: '创建时间',
-      dataIndex: 'created_at',
-      key: 'created_at',
-      width: 160,
-      align: 'center',
-      render: (text) =>
-        text ? new Date(text).toLocaleString('zh-CN') : '-',
-    },
-    {
-      title: '描述',
-      dataIndex: 'description',
-      key: 'description',
-      width: 200,
-      ellipsis: true,
-      render: (text, record) => {
-        if (editingId === record.id) {
-          return (
-            <Input.TextArea
-              value={editingDescription}
-              onChange={(e) => setEditingDescription(e.target.value)}
-              placeholder="实验描述"
-              rows={2}
-              autoFocus={editingName !== ''}
-            />
-          )
-        }
-        return (
-          <Tooltip title={text || '无描述'}>
-            <span>{text || '-'}</span>
-          </Tooltip>
-        )
-      },
-    },
-    {
-      title: '操作',
-      key: 'action',
-      width: 160,
-      align: 'center',
-      render: (_, record) => {
-        if (editingId === record.id) {
-          return (
-            <Space size="small">
-              <Button
-                type="primary"
-                size="small"
-                icon={<SaveOutlined />}
-                loading={editingLoading}
-                onClick={() => handleSaveEdit(record.id)}
-              />
-              <Button
-                size="small"
-                icon={<CloseOutlined />}
-                onClick={handleCancelEdit}
-              />
-            </Space>
-          )
-        }
-        return (
-          <Space size="small">
-            <Tooltip title="查看详情">
-              <Button
-                type="link"
-                size="small"
-                icon={<BarChartOutlined />}
-                onClick={() => loadExperimentDetail(record.id)}
-              />
-            </Tooltip>
-            <Tooltip title="编辑">
-              <Button
-                type="link"
-                size="small"
-                icon={<EditOutlined />}
-                onClick={() => handleStartEdit(record)}
-              />
-            </Tooltip>
-            <Popconfirm
-              title="确定删除此实验吗？"
-              description="删除后将无法恢复"
-              onConfirm={() => handleDelete(record.id)}
-            >
-              <Button type="link" size="small" danger icon={<DeleteOutlined />} />
-            </Popconfirm>
-          </Space>
-        )
-      },
-    },
-  ]
+  // 处理全选
+  const handleSelectAll = useCallback((checked: boolean) => {
+    if (checked) {
+      setSelectedExperimentIds(experiments.map(e => e.id))
+    } else {
+      setSelectedExperimentIds([])
+    }
+  }, [experiments])
 
+  // 处理单选
+  const handleSelectOne = useCallback((id: number, checked: boolean) => {
+    if (checked) {
+      setSelectedExperimentIds(prev => [...prev, id])
+    } else {
+      setSelectedExperimentIds(prev => prev.filter(i => i !== id))
+    }
+  }, [])
+
+  // 分页数据
+  const paginatedExperiments = experiments.slice(
+    (currentPage - 1) * pageSize,
+    currentPage * pageSize
+  )
+  const totalPages = Math.ceil(experiments.length / pageSize)
 
   // 如果选中了实验，显示详情视图
   if (selectedExperiment) {
@@ -554,364 +469,543 @@ export const Results: React.FC = () => {
       const bestResult = analysisResults.length > 0 ? analysisResults[0] : null
 
       return (
-        <div style={{ height: '100%', width: '100%', display: 'flex', flexDirection: 'column', background: '#fafafa' }}>
-          {/* 标题栏 */}
-          <div
-            style={{
-              padding: '16px 24px',
-              borderBottom: '1px solid #f0f0f0',
-              background: '#fff',
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-            }}
-          >
-            <Space>
-              <Button
-                type="text"
-                icon={<ArrowLeftOutlined />}
-                onClick={handleBackToTasks}
-              >
-                返回任务列表
-              </Button>
-              <div>
-                <div style={{ fontSize: 18, fontWeight: 600, color: '#1a1a1a' }}>
-                  任务分析结果
+        <TooltipProvider>
+          <div className="h-full w-full flex flex-col bg-gray-50">
+            {/* 标题栏 */}
+            <div className="px-6 py-4 border-b border-gray-200 bg-white flex justify-between items-center">
+              <div className="flex items-center gap-3">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={handleBackToTasks}
+                >
+                  <ArrowLeft className="h-4 w-4 mr-1" />
+                  返回任务列表
+                </Button>
+                <div>
+                  <div className="text-lg font-semibold text-gray-900">
+                    任务分析结果
+                  </div>
+                  <span className="text-sm text-gray-500">
+                    任务 ID: {selectedTask.task_id.slice(0, 8)}... ·
+                    共 {taskResults?.top_k_plans?.length || 0} 个评估结果
+                  </span>
                 </div>
-                <Text type="secondary">
-                  任务 ID: {selectedTask.task_id.slice(0, 8)}... ·
-                  共 {taskResults?.top_k_plans?.length || 0} 个评估结果
-                </Text>
               </div>
-            </Space>
-          </div>
+            </div>
 
-          {/* 内容区 - 使用 AnalysisResultDisplay + ChartsPanel */}
-          <div style={{ flex: 1, overflow: 'auto', padding: 24 }}>
-            <div style={{ width: '100%' }}>
-              <AnalysisResultDisplay
-                result={bestResult}
-                topKPlans={analysisResults}
-                loading={taskResultsLoading}
-                viewMode="detail"
-                hardware={hardwareConfig}
-                model={modelConfig as unknown as LLMModelConfig}
-                inference={inferenceConfig as unknown as InferenceConfig}
-                configSnapshot={selectedTask.config_snapshot}
-                benchmarkName={selectedTask.benchmark_name}
-                topologyConfigName={selectedTask.topology_config_name}
-                onSelectPlan={(plan) => {
-                  // 切换选中的方案
-                  const idx = analysisResults.findIndex(p => p.plan?.plan_id === plan.plan?.plan_id)
-                  if (idx >= 0) {
-                    // 可以在这里添加选中效果
-                    console.log('Selected plan:', idx)
-                  }
-                }}
-              />
-              {/* 图表可视化面板 - 包含雷达图、柱状图、饼图、Roofline、甘特图 */}
-              {bestResult && (
-                <div style={{ marginTop: 16 }}>
-                  <ChartsPanel
-                    result={bestResult}
-                    topKPlans={analysisResults}
-                    hardware={hardwareConfig!}
-                    model={modelConfig as unknown as LLMModelConfig}
-                    inference={inferenceConfig as unknown as InferenceConfig}
-                  />
-                </div>
-              )}
+            {/* 内容区 - 使用 AnalysisResultDisplay + ChartsPanel */}
+            <div className="flex-1 overflow-auto p-6">
+              <div className="w-full">
+                <AnalysisResultDisplay
+                  result={bestResult}
+                  topKPlans={analysisResults}
+                  loading={taskResultsLoading}
+                  viewMode="detail"
+                  hardware={hardwareConfig}
+                  model={modelConfig as unknown as LLMModelConfig}
+                  inference={inferenceConfig as unknown as InferenceConfig}
+                  configSnapshot={selectedTask.config_snapshot}
+                  benchmarkName={selectedTask.benchmark_name}
+                  topologyConfigName={selectedTask.topology_config_name}
+                  onSelectPlan={(plan) => {
+                    // 切换选中的方案
+                    const idx = analysisResults.findIndex(p => p.plan?.plan_id === plan.plan?.plan_id)
+                    if (idx >= 0) {
+                      // 可以在这里添加选中效果
+                      console.log('Selected plan:', idx)
+                    }
+                  }}
+                />
+                {/* 图表可视化面板 - 包含雷达图、柱状图、饼图、Roofline、甘特图 */}
+                {bestResult && (
+                  <div className="mt-4">
+                    <ChartsPanel
+                      result={bestResult}
+                      topKPlans={analysisResults}
+                      hardware={hardwareConfig!}
+                      model={modelConfig as unknown as LLMModelConfig}
+                      inference={inferenceConfig as unknown as InferenceConfig}
+                    />
+                  </div>
+                )}
+              </div>
             </div>
           </div>
-        </div>
+        </TooltipProvider>
       )
     }
 
     return (
-      <div style={{ height: '100%', width: '100%', display: 'flex', flexDirection: 'column', background: '#fafafa' }}>
-        {/* 标题栏 */}
-        <div
-          style={{
-            padding: '16px 24px',
-            borderBottom: '1px solid #f0f0f0',
-            background: '#fff',
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-          }}
-        >
-          <Space>
-            <Button
-              type="text"
-              icon={<ArrowLeftOutlined />}
-              onClick={() => {
-                setSelectedExperimentId(null)
-                setSelectedExperiment(null)
-              }}
-            >
-              返回
-            </Button>
-            <div>
-              <div style={{ fontSize: 18, fontWeight: 600, color: '#1a1a1a' }}>
-                {selectedExperiment.name}
-              </div>
-              <Text type="secondary">{selectedExperiment.description || '无描述'}</Text>
-            </div>
-          </Space>
-          <Space>
-            <Tooltip title="刷新">
+      <TooltipProvider>
+        <div className="h-full w-full flex flex-col bg-gray-50">
+          {/* 标题栏 */}
+          <div className="px-6 py-4 border-b border-gray-200 bg-white flex justify-between items-center">
+            <div className="flex items-center gap-3">
               <Button
-                icon={<ReloadOutlined />}
+                variant="ghost"
+                size="sm"
                 onClick={() => {
-                  if (selectedExperimentId) {
-                    loadExperimentDetail(selectedExperimentId)
-                  }
+                  setSelectedExperimentId(null)
+                  setSelectedExperiment(null)
                 }}
-              />
-            </Tooltip>
-          </Space>
-        </div>
+              >
+                <ArrowLeft className="h-4 w-4 mr-1" />
+                返回
+              </Button>
+              <div>
+                <div className="text-lg font-semibold text-gray-900">
+                  {selectedExperiment.name}
+                </div>
+                <span className="text-sm text-gray-500">{selectedExperiment.description || '无描述'}</span>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      if (selectedExperimentId) {
+                        loadExperimentDetail(selectedExperimentId)
+                      }
+                    }}
+                  >
+                    <RefreshCw className="h-4 w-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>刷新</TooltipContent>
+              </Tooltip>
+            </div>
+          </div>
 
-        {/* 内容区 */}
-        <div style={{ flex: 1, overflow: 'auto', padding: 24 }}>
-          <div style={{ width: '100%' }}>
-          {/* 进度提示 */}
-          {progress < 100 && (
-            <Alert
-              message={`实验进度: ${progress}% (${selectedExperiment.completed_tasks}/${selectedExperiment.total_tasks} 任务完成)`}
-              type="info"
-              showIcon
-              style={{ marginBottom: 16 }}
-            />
-          )}
+          {/* 内容区 */}
+          <div className="flex-1 overflow-auto p-6">
+            <div className="w-full">
+              {/* 进度提示 */}
+              {progress < 100 && (
+                <Alert className="mb-4">
+                  <AlertDescription>
+                    实验进度: {progress}% ({selectedExperiment.completed_tasks}/{selectedExperiment.total_tasks} 任务完成)
+                  </AlertDescription>
+                </Alert>
+              )}
 
-          {/* 任务列表表格 */}
-          <Card
-            title={
-              <Space>
-                <span>任务列表 ({selectedExperiment.tasks?.length || 0})</span>
-                <Text type="secondary" style={{ fontSize: 12, fontWeight: 400 }}>
-                  双击任务查看详细分析结果
-                </Text>
-              </Space>
-            }
-            extra={
-              <Space>
-                <Button size="small" onClick={() => loadExperimentDetail(selectedExperimentId!)}>
-                  <ReloadOutlined /> 刷新
-                </Button>
-              </Space>
-            }
-            style={{ marginBottom: 16 }}
-          >
-            <TaskTable
-              tasks={selectedExperiment.tasks || []}
-              loading={false}
-              experimentId={selectedExperiment.id}
-              onTaskSelect={(task) => {
-                if (task.status === 'completed') {
-                  loadTaskResults(task)
-                } else {
-                  message.info('仅已完成的任务可查看详细结果')
-                }
-              }}
-              onTasksDelete={async (taskIds) => {
-                // TODO: 实现批量删除任务的API调用
-                console.log('删除任务:', taskIds)
-                message.info('批量删除功能待实现')
-              }}
-            />
-          </Card>
+              {/* 任务列表表格 */}
+              <Card className="mb-4">
+                <CardHeader className="pb-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <CardTitle className="text-base">任务列表 ({selectedExperiment.tasks?.length || 0})</CardTitle>
+                      <span className="text-xs text-gray-500 font-normal">
+                        双击任务查看详细分析结果
+                      </span>
+                    </div>
+                    <Button size="sm" variant="outline" onClick={() => loadExperimentDetail(selectedExperimentId!)}>
+                      <RefreshCw className="h-3 w-3 mr-1" /> 刷新
+                    </Button>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  <TaskTable
+                    tasks={selectedExperiment.tasks || []}
+                    loading={false}
+                    experimentId={selectedExperiment.id}
+                    onTaskSelect={(task) => {
+                      if (task.status === 'completed') {
+                        loadTaskResults(task)
+                      } else {
+                        toast.info('仅已完成的任务可查看详细结果')
+                      }
+                    }}
+                    onTasksDelete={async (taskIds) => {
+                      // TODO: 实现批量删除任务的API调用
+                      console.log('删除任务:', taskIds)
+                      toast.info('批量删除功能待实现')
+                    }}
+                  />
+                </CardContent>
+              </Card>
+            </div>
           </div>
         </div>
-      </div>
+      </TooltipProvider>
     )
   }
 
   return (
-    <div style={{ height: '100%', width: '100%', display: 'flex', flexDirection: 'column', background: '#fafafa' }}>
-      {/* 内容区 */}
-      <div style={{ flex: 1, overflow: 'auto', padding: 24 }}>
-        {/* 实验列表 */}
-        <Card
-          title={
-            <Space>
-              <span>实验列表</span>
-            </Space>
-          }
-          extra={
-            <Space>
-              <Tooltip title="导出">
-                <Button icon={<DownloadOutlined />} onClick={() => setExportModalVisible(true)} size="small" />
-              </Tooltip>
-              <Tooltip title="导入">
-                <Button icon={<UploadOutlined />} onClick={() => setImportModalVisible(true)} size="small" />
-              </Tooltip>
-              <Tooltip title="刷新">
-                <Button icon={<ReloadOutlined />} onClick={loadExperiments} size="small" />
-              </Tooltip>
-            </Space>
-          }
-        >
-          <Spin spinning={loading}>
-            {selectedExperimentIds.length > 0 && (
-              <div style={{ marginBottom: 16, padding: '8px 12px', background: '#e6f7ff', borderRadius: 4 }}>
-                <Space>
-                  <span>已选择 {selectedExperimentIds.length} 个实验</span>
+    <TooltipProvider>
+      <div className="h-full w-full flex flex-col bg-gray-50">
+        {/* 内容区 */}
+        <div className="flex-1 overflow-auto p-6">
+          {/* 实验列表 */}
+          <Card>
+            <CardHeader className="pb-3">
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-base">实验列表</CardTitle>
+                <div className="flex items-center gap-2">
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button size="sm" variant="outline" onClick={() => setExportModalVisible(true)}>
+                        <Download className="h-4 w-4" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>导出</TooltipContent>
+                  </Tooltip>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button size="sm" variant="outline" onClick={() => setImportModalVisible(true)}>
+                        <Upload className="h-4 w-4" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>导入</TooltipContent>
+                  </Tooltip>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button size="sm" variant="outline" onClick={loadExperiments}>
+                        <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>刷新</TooltipContent>
+                  </Tooltip>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent>
+              {loading ? (
+                <div className="flex justify-center py-8">
+                  <Loader2 className="h-8 w-8 animate-spin text-gray-400" />
+                </div>
+              ) : (
+                <>
+                  {selectedExperimentIds.length > 0 && (
+                    <div className="mb-4 p-3 bg-blue-50 rounded-lg flex items-center gap-3">
+                      <span className="text-sm">已选择 {selectedExperimentIds.length} 个实验</span>
+                      <Button
+                        variant="link"
+                        size="sm"
+                        onClick={() => setSelectedExperimentIds([])}
+                      >
+                        取消选择
+                      </Button>
+                      <AlertDialog>
+                        <AlertDialogTrigger asChild>
+                          <Button variant="destructive" size="sm">
+                            删除选中
+                          </Button>
+                        </AlertDialogTrigger>
+                        <AlertDialogContent>
+                          <AlertDialogHeader>
+                            <AlertDialogTitle>确定删除选中的实验吗？</AlertDialogTitle>
+                            <AlertDialogDescription>
+                              将删除 {selectedExperimentIds.length} 个实验，此操作无法恢复
+                            </AlertDialogDescription>
+                          </AlertDialogHeader>
+                          <AlertDialogFooter>
+                            <AlertDialogCancel>取消</AlertDialogCancel>
+                            <AlertDialogAction onClick={handleBatchDelete}>删除</AlertDialogAction>
+                          </AlertDialogFooter>
+                        </AlertDialogContent>
+                      </AlertDialog>
+                    </div>
+                  )}
+                  {experiments.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center py-12 text-gray-400">
+                      <Inbox className="h-12 w-12 mb-3" />
+                      <span>暂无实验数据</span>
+                    </div>
+                  ) : (
+                    <>
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead className="w-10">
+                              <Checkbox
+                                checked={selectedExperimentIds.length === experiments.length && experiments.length > 0}
+                                onCheckedChange={(checked) => handleSelectAll(checked as boolean)}
+                              />
+                            </TableHead>
+                            <TableHead className="w-[280px]">实验名称</TableHead>
+                            <TableHead className="w-20 text-center">任务数</TableHead>
+                            <TableHead className="w-40 text-center">创建时间</TableHead>
+                            <TableHead className="w-[200px]">描述</TableHead>
+                            <TableHead className="w-40 text-center">操作</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {paginatedExperiments.map((record) => (
+                            <TableRow key={record.id}>
+                              <TableCell>
+                                <Checkbox
+                                  checked={selectedExperimentIds.includes(record.id)}
+                                  onCheckedChange={(checked) => handleSelectOne(record.id, checked as boolean)}
+                                />
+                              </TableCell>
+                              <TableCell>
+                                {editingId === record.id ? (
+                                  <Input
+                                    value={editingName}
+                                    onChange={(e) => setEditingName(e.target.value)}
+                                    placeholder="实验名称"
+                                    autoFocus
+                                    onKeyDown={(e) => {
+                                      if (e.key === 'Enter') {
+                                        handleSaveEdit(record.id)
+                                      }
+                                    }}
+                                  />
+                                ) : (
+                                  <Tooltip>
+                                    <TooltipTrigger asChild>
+                                      <span
+                                        className="text-blue-500 cursor-pointer hover:underline"
+                                        onClick={() => loadExperimentDetail(record.id)}
+                                        onContextMenu={(e) => {
+                                          e.preventDefault()
+                                          handleStartEdit(record)
+                                        }}
+                                      >
+                                        {record.name}
+                                      </span>
+                                    </TooltipTrigger>
+                                    <TooltipContent>点击查看详情，右键编辑</TooltipContent>
+                                  </Tooltip>
+                                )}
+                              </TableCell>
+                              <TableCell className="text-center">
+                                {(() => {
+                                  const taskCount = record.tasks?.length || 0
+                                  const completedCount = record.tasks?.filter((t: EvaluationTask) => t.status === 'completed').length || 0
+                                  return `${completedCount}/${taskCount}`
+                                })()}
+                              </TableCell>
+                              <TableCell className="text-center">
+                                {record.created_at ? new Date(record.created_at).toLocaleString('zh-CN') : '-'}
+                              </TableCell>
+                              <TableCell>
+                                {editingId === record.id ? (
+                                  <Textarea
+                                    value={editingDescription}
+                                    onChange={(e) => setEditingDescription(e.target.value)}
+                                    placeholder="实验描述"
+                                    rows={2}
+                                  />
+                                ) : (
+                                  <Tooltip>
+                                    <TooltipTrigger asChild>
+                                      <span className="truncate block max-w-[180px]">{record.description || '-'}</span>
+                                    </TooltipTrigger>
+                                    <TooltipContent>{record.description || '无描述'}</TooltipContent>
+                                  </Tooltip>
+                                )}
+                              </TableCell>
+                              <TableCell className="text-center">
+                                {editingId === record.id ? (
+                                  <div className="flex items-center justify-center gap-1">
+                                    <Button
+                                      size="sm"
+                                      disabled={editingLoading}
+                                      onClick={() => handleSaveEdit(record.id)}
+                                    >
+                                      {editingLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : <Save className="h-3 w-3" />}
+                                    </Button>
+                                    <Button
+                                      size="sm"
+                                      variant="outline"
+                                      onClick={handleCancelEdit}
+                                    >
+                                      <X className="h-3 w-3" />
+                                    </Button>
+                                  </div>
+                                ) : (
+                                  <div className="flex items-center justify-center gap-1">
+                                    <Tooltip>
+                                      <TooltipTrigger asChild>
+                                        <Button
+                                          variant="ghost"
+                                          size="sm"
+                                          onClick={() => loadExperimentDetail(record.id)}
+                                        >
+                                          <BarChart3 className="h-4 w-4" />
+                                        </Button>
+                                      </TooltipTrigger>
+                                      <TooltipContent>查看详情</TooltipContent>
+                                    </Tooltip>
+                                    <Tooltip>
+                                      <TooltipTrigger asChild>
+                                        <Button
+                                          variant="ghost"
+                                          size="sm"
+                                          onClick={() => handleStartEdit(record)}
+                                        >
+                                          <Pencil className="h-4 w-4" />
+                                        </Button>
+                                      </TooltipTrigger>
+                                      <TooltipContent>编辑</TooltipContent>
+                                    </Tooltip>
+                                    <AlertDialog>
+                                      <AlertDialogTrigger asChild>
+                                        <Button variant="ghost" size="sm" className="text-red-500 hover:text-red-600">
+                                          <Trash2 className="h-4 w-4" />
+                                        </Button>
+                                      </AlertDialogTrigger>
+                                      <AlertDialogContent>
+                                        <AlertDialogHeader>
+                                          <AlertDialogTitle>确定删除此实验吗？</AlertDialogTitle>
+                                          <AlertDialogDescription>删除后将无法恢复</AlertDialogDescription>
+                                        </AlertDialogHeader>
+                                        <AlertDialogFooter>
+                                          <AlertDialogCancel>取消</AlertDialogCancel>
+                                          <AlertDialogAction onClick={() => handleDelete(record.id)}>删除</AlertDialogAction>
+                                        </AlertDialogFooter>
+                                      </AlertDialogContent>
+                                    </AlertDialog>
+                                  </div>
+                                )}
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                      <Pagination
+                        currentPage={currentPage}
+                        totalPages={totalPages}
+                        pageSize={pageSize}
+                        total={experiments.length}
+                        onPageChange={setCurrentPage}
+                        onPageSizeChange={(size) => {
+                          setPageSize(size)
+                          setCurrentPage(1)
+                        }}
+                      />
+                    </>
+                  )}
+                </>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* 导出模态框 */}
+        <Dialog open={exportModalVisible} onOpenChange={setExportModalVisible}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>导出实验</DialogTitle>
+            </DialogHeader>
+            <div className="mb-4">
+              {selectedExperimentIds.length > 0 ? (
+                <div>
+                  <div>已选择 {selectedExperimentIds.length} 个实验</div>
                   <Button
-                    type="link"
+                    variant="link"
+                    size="sm"
                     onClick={() => setSelectedExperimentIds([])}
                   >
-                    取消选择
+                    导出全部实验
                   </Button>
-                  <Popconfirm
-                    title="确定删除选中的实验吗？"
-                    description={`将删除 ${selectedExperimentIds.length} 个实验，此操作无法恢复`}
-                    onConfirm={handleBatchDelete}
-                  >
-                    <Button danger type="primary" size="small">
-                      删除选中
-                    </Button>
-                  </Popconfirm>
-                </Space>
+                </div>
+              ) : (
+                <div>将导出所有 {experiments.length} 个实验的配置信息</div>
+              )}
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setExportModalVisible(false)}>取消</Button>
+              <Button onClick={handleExport}>导出</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* 导入模态框 */}
+        <Dialog open={importModalVisible} onOpenChange={(open) => !open && resetImportModal()}>
+          <DialogContent className="max-w-3xl">
+            <DialogHeader>
+              <DialogTitle>导入实验</DialogTitle>
+            </DialogHeader>
+
+            {importStep === 'upload' && (
+              <div
+                className={`border-2 border-dashed rounded-lg p-8 text-center transition-colors ${importLoading ? 'opacity-50 cursor-not-allowed' : 'hover:border-blue-400 cursor-pointer'}`}
+                onDragOver={(e) => {
+                  e.preventDefault()
+                  e.stopPropagation()
+                }}
+                onDrop={(e) => {
+                  e.preventDefault()
+                  e.stopPropagation()
+                  if (importLoading) return
+                  const file = e.dataTransfer.files[0]
+                  if (file && file.name.endsWith('.json')) {
+                    handleImportFile(file)
+                  } else {
+                    toast.error('请上传 JSON 文件')
+                  }
+                }}
+                onClick={() => {
+                  if (importLoading) return
+                  const input = document.createElement('input')
+                  input.type = 'file'
+                  input.accept = '.json'
+                  input.onchange = (e) => {
+                    const file = (e.target as HTMLInputElement).files?.[0]
+                    if (file) {
+                      handleImportFile(file)
+                    }
+                  }
+                  input.click()
+                }}
+              >
+                <Inbox className="h-12 w-12 mx-auto mb-4 text-gray-400" />
+                <p className="text-gray-600 mb-2">点击或拖拽 JSON 文件到此区域上传</p>
+                <p className="text-gray-400 text-sm">支持导出的实验配置文件</p>
               </div>
             )}
-            <Table
-              columns={columns}
-              dataSource={experiments}
-              rowKey="id"
-              loading={loading}
-              rowSelection={{
-                selectedRowKeys: selectedExperimentIds,
-                onChange: (selectedKeys) => {
-                  setSelectedExperimentIds(selectedKeys as number[])
-                },
-              }}
-              pagination={{
-                defaultPageSize: 20,
-                pageSizeOptions: [10, 20, 50],
-                showSizeChanger: true,
-                showQuickJumper: true,
-                showTotal: (total) => (
-                  <Text type="secondary">共 {total} 个实验</Text>
-                ),
-              }}
-              locale={{
-                emptyText: (
-                  <Empty
-                    image={Empty.PRESENTED_IMAGE_SIMPLE}
-                    description="暂无实验数据"
-                  />
-                ),
-              }}
-            />
-          </Spin>
-        </Card>
-      </div>
 
-      {/* 导出模态框 */}
-      <Modal
-        title="导出实验"
-        open={exportModalVisible}
-        onOk={handleExport}
-        onCancel={() => setExportModalVisible(false)}
-        okText="导出"
-        cancelText="取消"
-      >
-        <div style={{ marginBottom: 16 }}>
-          {selectedExperimentIds.length > 0 ? (
-            <div>
-              <div>已选择 {selectedExperimentIds.length} 个实验</div>
-              <Button
-                type="link"
-                size="small"
-                onClick={() => setSelectedExperimentIds([])}
-              >
-                导出全部实验
-              </Button>
-            </div>
-          ) : (
-            <div>将导出所有 {experiments.length} 个实验的配置信息</div>
-          )}
-        </div>
-      </Modal>
-
-      {/* 导入模态框 */}
-      <Modal
-        title="导入实验"
-        open={importModalVisible}
-        onCancel={resetImportModal}
-        footer={null}
-        width={800}
-      >
-        {importStep === 'upload' && (
-          <div>
-            <Upload.Dragger
-              accept=".json"
-              maxCount={1}
-              beforeUpload={(file) => {
-                handleImportFile(file)
-                return false
-              }}
-              disabled={importLoading}
-            >
-              <p className="ant-upload-drag-icon">
-                <InboxOutlined />
-              </p>
-              <p className="ant-upload-text">点击或拖拽 JSON 文件到此区域上传</p>
-              <p className="ant-upload-hint">支持导出的实验配置文件</p>
-            </Upload.Dragger>
-          </div>
-        )}
-
-        {importStep === 'config' && importCheckResult && (
-          <div>
-            <div style={{ marginBottom: 16 }}>
-              <div>检测到 {importCheckResult.experiments?.length || 0} 个实验</div>
-            </div>
-            <div style={{ maxHeight: 400, overflowY: 'auto', marginBottom: 16 }}>
-              <Space direction="vertical" style={{ width: '100%' }}>
-                {importCheckResult.experiments?.map((exp: any, idx: number) => (
-                  <Card key={idx} size="small">
-                    <div style={{ marginBottom: 8 }}>
-                      <strong>实验名称：</strong> {exp.name}
-                    </div>
-                    {exp.description && (
-                      <div style={{ marginBottom: 8 }}>
-                        <strong>描述：</strong> {exp.description}
-                      </div>
-                    )}
-                    <div style={{ marginBottom: 8 }}>
-                      <strong>任务数：</strong> {exp.completed_tasks}/{exp.total_tasks}
-                    </div>
-                    {exp.conflict && (
-                      <Alert
-                        message="名称冲突"
-                        description={`与现有实验 "${exp.name}" 重名`}
-                        type="warning"
-                        style={{ marginBottom: 8 }}
-                      />
-                    )}
-                    <div>
-                      <Checkbox.Group value={[importConfig.get(exp.name)?.action || 'rename']}>
-                        <Space direction="vertical">
-                          <Checkbox
-                            value="rename"
-                            onChange={() => {
-                              const config = new Map(importConfig)
-                              config.set(exp.name, {
-                                original_name: exp.name,
-                                action: 'rename',
-                                new_name: exp.conflict ? `${exp.name}_imported` : exp.name,
-                              })
-                              setImportConfig(config)
-                            }}
-                          >
-                            重命名导入
+            {importStep === 'config' && importCheckResult && (
+              <div>
+                <div className="mb-4">
+                  <div>检测到 {importCheckResult.experiments?.length || 0} 个实验</div>
+                </div>
+                <div className="max-h-[400px] overflow-y-auto mb-4 space-y-3">
+                  {importCheckResult.experiments?.map((exp: any, idx: number) => (
+                    <Card key={idx}>
+                      <CardContent className="pt-4">
+                        <div className="mb-2">
+                          <strong>实验名称：</strong> {exp.name}
+                        </div>
+                        {exp.description && (
+                          <div className="mb-2">
+                            <strong>描述：</strong> {exp.description}
+                          </div>
+                        )}
+                        <div className="mb-2">
+                          <strong>任务数：</strong> {exp.completed_tasks}/{exp.total_tasks}
+                        </div>
+                        {exp.conflict && (
+                          <Alert variant="destructive" className="mb-3">
+                            <AlertTitle>名称冲突</AlertTitle>
+                            <AlertDescription>与现有实验 "{exp.name}" 重名</AlertDescription>
+                          </Alert>
+                        )}
+                        <div className="space-y-2">
+                          <div className="flex items-center gap-2">
+                            <Checkbox
+                              checked={importConfig.get(exp.name)?.action === 'rename'}
+                              onCheckedChange={() => {
+                                const config = new Map(importConfig)
+                                config.set(exp.name, {
+                                  original_name: exp.name,
+                                  action: 'rename',
+                                  new_name: exp.conflict ? `${exp.name}_imported` : exp.name,
+                                })
+                                setImportConfig(config)
+                              }}
+                            />
+                            <span>重命名导入</span>
                             {exp.conflict && (
                               <Input
                                 placeholder="新名称"
-                                style={{ width: 200, marginLeft: 8 }}
+                                className="w-48 ml-2"
                                 value={importConfig.get(exp.name)?.new_name || ''}
                                 onChange={(e) => {
                                   const config = new Map(importConfig)
@@ -922,12 +1016,12 @@ export const Results: React.FC = () => {
                                 }}
                               />
                             )}
-                          </Checkbox>
+                          </div>
                           {!exp.conflict && (
-                            <>
+                            <div className="flex items-center gap-2">
                               <Checkbox
-                                value="skip"
-                                onChange={() => {
+                                checked={importConfig.get(exp.name)?.action === 'skip'}
+                                onCheckedChange={() => {
                                   const config = new Map(importConfig)
                                   config.set(exp.name, {
                                     original_name: exp.name,
@@ -935,72 +1029,68 @@ export const Results: React.FC = () => {
                                   })
                                   setImportConfig(config)
                                 }}
-                              >
-                                跳过
-                              </Checkbox>
-                            </>
+                              />
+                              <span>跳过</span>
+                            </div>
                           )}
                           {exp.conflict && (
-                            <Checkbox
-                              value="overwrite"
-                              onChange={() => {
-                                const config = new Map(importConfig)
-                                config.set(exp.name, {
-                                  original_name: exp.name,
-                                  action: 'overwrite',
-                                })
-                                setImportConfig(config)
-                              }}
-                            >
-                              覆盖现有实验
-                            </Checkbox>
+                            <div className="flex items-center gap-2">
+                              <Checkbox
+                                checked={importConfig.get(exp.name)?.action === 'overwrite'}
+                                onCheckedChange={() => {
+                                  const config = new Map(importConfig)
+                                  config.set(exp.name, {
+                                    original_name: exp.name,
+                                    action: 'overwrite',
+                                  })
+                                  setImportConfig(config)
+                                }}
+                              />
+                              <span>覆盖现有实验</span>
+                            </div>
                           )}
-                        </Space>
-                      </Checkbox.Group>
-                    </div>
-                  </Card>
-                ))}
-              </Space>
-            </div>
-            <Space>
-              <Button onClick={() => setImportStep('upload')}>返回</Button>
-              <Button
-                type="primary"
-                onClick={handleExecuteImport}
-                loading={importLoading}
-              >
-                导入
-              </Button>
-            </Space>
-          </div>
-        )}
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+                <div className="flex gap-2">
+                  <Button variant="outline" onClick={() => setImportStep('upload')}>返回</Button>
+                  <Button onClick={handleExecuteImport} disabled={importLoading}>
+                    {importLoading && <Loader2 className="h-4 w-4 mr-1 animate-spin" />}
+                    导入
+                  </Button>
+                </div>
+              </div>
+            )}
 
-        {importStep === 'importing' && (
-          <div style={{ textAlign: 'center', padding: 24 }}>
-            <Spin tip="正在导入..." />
-          </div>
-        )}
+            {importStep === 'importing' && (
+              <div className="text-center py-8">
+                <Loader2 className="h-8 w-8 animate-spin mx-auto mb-4 text-gray-400" />
+                <p>正在导入...</p>
+              </div>
+            )}
 
-        {importStep === 'result' && importResult && (
-          <div>
-            <Alert
-              message={importResult.success ? '导入成功' : '导入失败'}
-              description={importResult.message}
-              type={importResult.success ? 'success' : 'error'}
-              style={{ marginBottom: 16 }}
-            />
-            <div style={{ marginBottom: 16 }}>
-              <div>导入成功：{importResult.imported_count} 个</div>
-              <div>跳过：{importResult.skipped_count} 个</div>
-              <div>覆盖：{importResult.overwritten_count} 个</div>
-            </div>
-            <Button type="primary" onClick={resetImportModal} block>
-              完成
-            </Button>
-          </div>
-        )}
-      </Modal>
-    </div>
+            {importStep === 'result' && importResult && (
+              <div>
+                <Alert variant={importResult.success ? 'default' : 'destructive'} className="mb-4">
+                  <AlertTitle>{importResult.success ? '导入成功' : '导入失败'}</AlertTitle>
+                  <AlertDescription>{importResult.message}</AlertDescription>
+                </Alert>
+                <div className="mb-4 space-y-1">
+                  <div>导入成功：{importResult.imported_count} 个</div>
+                  <div>跳过：{importResult.skipped_count} 个</div>
+                  <div>覆盖：{importResult.overwritten_count} 个</div>
+                </div>
+                <Button onClick={resetImportModal} className="w-full">
+                  完成
+                </Button>
+              </div>
+            )}
+          </DialogContent>
+        </Dialog>
+      </div>
+    </TooltipProvider>
   )
 }
 

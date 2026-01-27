@@ -1,4 +1,4 @@
-import Icon from '@ant-design/icons'
+import React from 'react'
 import {
   GlobalSwitchConfig,
   ManualConnectionConfig,
@@ -108,8 +108,8 @@ export interface DeploymentAnalysisData {
 // ============================================
 
 // 自定义芯片图标 - 带引脚的芯片，中心白色
-const ChipSvg = () => (
-  <svg viewBox="0 0 100 100" width="1em" height="1em" fill="currentColor">
+export const ChipIcon: React.FC<{ className?: string }> = ({ className }) => (
+  <svg viewBox="0 0 100 100" width="1em" height="1em" fill="currentColor" className={className}>
     {/* 芯片主体 */}
     <rect x="20" y="20" width="60" height="60" rx="4" fill="currentColor"/>
     {/* 中心白色区域 */}
@@ -132,11 +132,10 @@ const ChipSvg = () => (
     <rect x="80" y="64" width="12" height="8" fill="currentColor"/>
   </svg>
 )
-export const ChipIcon = () => <Icon component={ChipSvg} />
 
 // 自定义PCB板卡图标 - 带芯片和电路线（线框风格）
-const BoardSvg = () => (
-  <svg viewBox="0 0 100 80" width="1em" height="1em" fill="currentColor">
+export const BoardIcon: React.FC<{ className?: string }> = ({ className }) => (
+  <svg viewBox="0 0 100 80" width="1em" height="1em" fill="currentColor" className={className}>
     {/* PCB主体边框 */}
     <rect x="5" y="5" width="90" height="70" rx="3" fill="none" stroke="currentColor" strokeWidth="3"/>
     {/* 芯片1 - 左上 */}
@@ -158,7 +157,6 @@ const BoardSvg = () => (
     <circle cx="50" cy="70" r="3" fill="currentColor"/>
   </svg>
 )
-export const BoardIcon = () => <Icon component={BoardSvg} />
 
 // ============================================
 // 类型定义

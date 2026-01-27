@@ -3,10 +3,8 @@
  */
 
 import React from 'react'
-import { Typography, Tooltip } from 'antd'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { FormulaVsSimComparison } from '../../../../utils/llmDeployment/types'
-
-const { Text } = Typography
 
 // 格式化偏差显示
 const formatDeviation = (pct: number): string => {
@@ -126,9 +124,14 @@ export const ComparisonTable: React.FC<ComparisonTableProps> = ({ comparison }) 
                 style={row.isHighlight ? { background: '#fffbe6' } : undefined}
               >
                 <td style={tdStyle}>
-                  <Tooltip title={row.tooltip}>
-                    <Text strong={row.isHighlight}>{row.label}</Text>
-                  </Tooltip>
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <span className={row.isHighlight ? 'font-semibold' : ''}>{row.label}</span>
+                      </TooltipTrigger>
+                      <TooltipContent>{row.tooltip}</TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
                 </td>
                 <td style={{ ...tdStyle, textAlign: 'right', color: '#1890ff' }}>
                   {row.formatValue(formulaValue)}

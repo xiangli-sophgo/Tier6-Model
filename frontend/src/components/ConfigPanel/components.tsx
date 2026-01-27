@@ -1,30 +1,49 @@
 import React from 'react'
+import { Trash2, Plus, MinusCircle, Undo } from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Switch } from '@/components/ui/switch'
+import { Checkbox } from '@/components/ui/checkbox'
 import {
-  Typography,
-  Button,
-  Space,
-  InputNumber,
-  Collapse,
-  Input,
-  Switch,
   Select,
-  Checkbox,
-  Divider,
-  Radio,
-} from 'antd'
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import {
-  DeleteOutlined,
-  PlusOutlined,
-  MinusCircleOutlined,
-  UndoOutlined,
-} from '@ant-design/icons'
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from '@/components/ui/collapsible'
 import {
   HierarchyLevelSwitchConfig, SwitchTypeConfig, SwitchLayerConfig,
   ManualConnectionConfig, ConnectionMode, SwitchConnectionMode, HierarchyLevel,
   LevelConnectionDefaults,
 } from '../../types'
 
-const { Text } = Typography
+// 数字输入组件
+const NumberInput: React.FC<{
+  value: number | undefined
+  onChange: (value: number | undefined) => void
+  min?: number
+  max?: number
+  placeholder?: string
+  className?: string
+}> = ({ value, onChange, min = 0, max = 9999, placeholder, className }) => (
+  <Input
+    type="number"
+    value={value ?? ''}
+    onChange={(e) => {
+      const v = e.target.value === '' ? undefined : parseInt(e.target.value, 10)
+      if (v === undefined || (!isNaN(v) && v >= min && v <= max)) onChange(v)
+    }}
+    min={min}
+    max={max}
+    placeholder={placeholder}
+    className={`h-7 ${className || ''}`}
+  />
+)
 
 // ============================================
 // Switch层级配置子组件
@@ -82,11 +101,10 @@ export const SwitchLevelConfig: React.FC<SwitchLevelConfigProps> = ({
     <div>
       {/* 启用开关 */}
       <div style={configRowStyle}>
-        <Text>启用Switch</Text>
+        <span className="text-sm">启用Switch</span>
         <Switch
-          size="small"
           checked={config.enabled}
-          onChange={(checked) => {
+          onCheckedChange={(checked) => {
             if (checked && config.layers.length === 0) {
               // 启用时如果没有层，自动添加一个默认Switch层
               const defaultLayer: SwitchLayerConfig = {
@@ -106,14 +124,20 @@ export const SwitchLevelConfig: React.FC<SwitchLevelConfigProps> = ({
       {/* 不启用Switch时显示直连拓扑选项 */}
       {!config.enabled && (
         <div style={configRowStyle}>
-          <Text>直连拓扑</Text>
+          <span className="text-sm">直连拓扑</span>
           <Select
-            size="small"
             value={config.direct_topology || 'none'}
-            onChange={(v) => onChange({ ...config, direct_topology: v })}
-            style={{ width: 150 }}
-            options={directTopologyOptions}
-          />
+            onValueChange={(v) => onChange({ ...config, direct_topology: v as any })}
+          >
+            <SelectTrigger className="w-[150px] h-7">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {directTopologyOptions.map((opt) => (
+                <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
       )}
 
@@ -121,54 +145,60 @@ export const SwitchLevelConfig: React.FC<SwitchLevelConfigProps> = ({
         <>
           {/* 保留节点直连 */}
           <div style={configRowStyle}>
-            <Text>保留节点直连</Text>
+            <span className="text-sm">保留节点直连</span>
             <Switch
-              size="small"
               checked={config.keep_direct_topology || false}
-              onChange={(checked) => onChange({ ...config, keep_direct_topology: checked })}
+              onCheckedChange={(checked) => onChange({ ...config, keep_direct_topology: checked })}
             />
           </div>
 
           {/* 保留直连时选择拓扑类型 */}
           {config.keep_direct_topology && (
             <div style={configRowStyle}>
-              <Text>直连拓扑</Text>
+              <span className="text-sm">直连拓扑</span>
               <Select
-                size="small"
                 value={config.direct_topology || 'full_mesh'}
-                onChange={(v) => onChange({ ...config, direct_topology: v })}
-                style={{ width: 150 }}
-                options={directTopologyOptions}
-              />
+                onValueChange={(v) => onChange({ ...config, direct_topology: v as any })}
+              >
+                <SelectTrigger className="w-[150px] h-7">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {directTopologyOptions.map((opt) => (
+                    <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
           )}
 
           {/* 连接模式 */}
           <div style={configRowStyle}>
-            <Text>Switch连接模式</Text>
+            <span className="text-sm">Switch连接模式</span>
             <Select
-              size="small"
               value={config.connection_mode || 'full_mesh'}
-              onChange={(v: SwitchConnectionMode) => onChange({ ...config, connection_mode: v })}
-              style={{ width: 120 }}
-              options={[
-                { value: 'full_mesh', label: '全连接' },
-                { value: 'custom', label: '自定义' },
-              ]}
-            />
+              onValueChange={(v: SwitchConnectionMode) => onChange({ ...config, connection_mode: v })}
+            >
+              <SelectTrigger className="w-[120px] h-7">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="full_mesh">全连接</SelectItem>
+                <SelectItem value="custom">自定义</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
 
           {/* 自定义模式：节点连接Switch数 */}
           {config.connection_mode === 'custom' && (
             <div style={configRowStyle}>
-              <Text>节点连接Switch数</Text>
-              <InputNumber
+              <span className="text-sm">节点连接Switch数</span>
+              <NumberInput
                 min={1}
                 max={config.layers[0]?.count || 1}
-                size="small"
                 value={Math.min(config.downlink_redundancy || 1, config.layers[0]?.count || 1)}
                 onChange={(v) => onChange({ ...config, downlink_redundancy: v || 1 })}
-                style={{ width: 60 }}
+                className="w-[60px]"
               />
             </div>
           )}
@@ -177,95 +207,114 @@ export const SwitchLevelConfig: React.FC<SwitchLevelConfigProps> = ({
           {levelKey === 'inter_board' && viewMode === '3d' && (
             <>
               <div style={configRowStyle}>
-                <Text>Switch位置</Text>
-                <Radio.Group
-                  size="small"
-                  value={config.switch_position || 'top'}
-                  onChange={(e) => onChange({ ...config, switch_position: e.target.value })}
-                >
-                  <Radio.Button value="top">顶部</Radio.Button>
-                  <Radio.Button value="middle">中间</Radio.Button>
-                  <Radio.Button value="bottom">底部</Radio.Button>
-                </Radio.Group>
+                <span className="text-sm">Switch位置</span>
+                <div className="flex rounded-md border border-gray-200 overflow-hidden">
+                  {['top', 'middle', 'bottom'].map((pos) => (
+                    <button
+                      key={pos}
+                      onClick={() => onChange({ ...config, switch_position: pos as 'top' | 'middle' | 'bottom' })}
+                      className={`px-2 py-1 text-xs transition-colors ${
+                        (config.switch_position || 'top') === pos
+                          ? 'bg-blue-500 text-white'
+                          : 'bg-white text-gray-600 hover:bg-gray-50'
+                      } ${pos !== 'top' ? 'border-l border-gray-200' : ''}`}
+                    >
+                      {pos === 'top' ? '顶部' : pos === 'middle' ? '中间' : '底部'}
+                    </button>
+                  ))}
+                </div>
               </div>
               <div style={configRowStyle}>
-                <Text>Switch高度</Text>
-                <Radio.Group
-                  size="small"
-                  value={config.switch_u_height || 1}
-                  onChange={(e) => onChange({ ...config, switch_u_height: e.target.value })}
-                >
-                  <Radio.Button value={1}>1U</Radio.Button>
-                  <Radio.Button value={2}>2U</Radio.Button>
-                  <Radio.Button value={4}>4U</Radio.Button>
-                </Radio.Group>
+                <span className="text-sm">Switch高度</span>
+                <div className="flex rounded-md border border-gray-200 overflow-hidden">
+                  {[1, 2, 4].map((h) => (
+                    <button
+                      key={h}
+                      onClick={() => onChange({ ...config, switch_u_height: h })}
+                      className={`px-2 py-1 text-xs transition-colors ${
+                        (config.switch_u_height || 1) === h
+                          ? 'bg-blue-500 text-white'
+                          : 'bg-white text-gray-600 hover:bg-gray-50'
+                      } ${h !== 1 ? 'border-l border-gray-200' : ''}`}
+                    >
+                      {h}U
+                    </button>
+                  ))}
+                </div>
               </div>
             </>
           )}
 
-          <Divider style={{ margin: '8px 0' }} />
+          <div className="border-t border-gray-200 my-2" />
 
           {/* Switch层列表 */}
-          <Text type="secondary" style={{ fontSize: 11 }}>Switch层配置 (从下到上)</Text>
+          <span className="text-xs text-gray-500">Switch层配置 (从下到上)</span>
           {config.layers.map((layer, index) => (
-            <div key={index} style={{ marginTop: 8, padding: 8, background: '#f5f5f5', borderRadius: 8 }}>
+            <div key={index} className="mt-2 p-2 bg-gray-100 rounded-lg">
               {/* 第一行：层名称和删除按钮 */}
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <Text style={{ fontSize: 11, color: '#666' }}>层名称</Text>
+              <div className="flex justify-between items-center mb-1.5">
+                <div className="flex items-center gap-2">
+                  <span className="text-[11px] text-gray-500">层名称</span>
                   <Input
-                    size="small"
                     placeholder="如 leaf, spine"
                     value={layer.layer_name}
                     onChange={(e) => updateLayer(index, 'layer_name', e.target.value)}
-                    style={{ width: 80 }}
+                    className="w-20 h-7"
                   />
                 </div>
                 <Button
-                  type="text"
-                  danger
-                  size="small"
-                  icon={<MinusCircleOutlined />}
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 w-7 p-0 text-red-500 hover:text-red-600"
                   onClick={() => removeLayer(index)}
-                />
+                >
+                  <MinusCircle className="h-4 w-4" />
+                </Button>
               </div>
               {/* 第二行：Switch类型和数量 */}
-              <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 6 }}>
+              <div className="flex gap-2 items-center mb-1.5">
                 <Select
-                  size="small"
                   value={layer.switch_type_id}
-                  onChange={(v) => updateLayer(index, 'switch_type_id', v)}
-                  style={{ flex: 1 }}
-                  options={switchTypes.map(t => ({ value: t.id, label: `${t.name} (${t.port_count}口)` }))}
-                />
-                <Text style={{ fontSize: 11, color: '#666' }}>×</Text>
-                <InputNumber
-                  size="small"
+                  onValueChange={(v) => updateLayer(index, 'switch_type_id', v)}
+                >
+                  <SelectTrigger className="flex-1 h-7">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {switchTypes.map((t) => (
+                      <SelectItem key={t.id} value={t.id}>{t.name} ({t.port_count}口)</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <span className="text-[11px] text-gray-500">×</span>
+                <NumberInput
                   min={1}
                   max={16}
                   value={layer.count}
                   onChange={(v) => updateLayer(index, 'count', v || 1)}
-                  style={{ width: 60 }}
+                  className="w-[60px]"
                 />
-                <Text style={{ fontSize: 11, color: '#666' }}>台</Text>
+                <span className="text-[11px] text-gray-500">台</span>
               </div>
               {/* 第三行：同层互联选项 */}
-              <Checkbox
-                checked={layer.inter_connect}
-                onChange={(e) => updateLayer(index, 'inter_connect', e.target.checked)}
-              >
-                <Text style={{ fontSize: 11 }}>同层互联</Text>
-              </Checkbox>
+              <div className="flex items-center gap-2">
+                <Checkbox
+                  id={`inter-connect-${index}`}
+                  checked={layer.inter_connect}
+                  onCheckedChange={(checked) => updateLayer(index, 'inter_connect', checked)}
+                />
+                <label htmlFor={`inter-connect-${index}`} className="text-[11px]">同层互联</label>
+              </div>
             </div>
           ))}
 
           <Button
-            type="dashed"
-            size="small"
-            icon={<PlusOutlined />}
+            variant="outline"
+            size="sm"
             onClick={addLayer}
-            style={{ marginTop: 8, width: '100%' }}
+            className="mt-2 w-full"
           >
+            <Plus className="h-4 w-4 mr-1" />
             添加Switch层
           </Button>
         </>
@@ -315,6 +364,9 @@ export const ConnectionEditPanel: React.FC<ConnectionEditPanelProps> = ({
   currentLevel = 'datacenter',
 }) => {
   void _configRowStyle
+  const [manualExpanded, setManualExpanded] = React.useState(true)
+  const [currentExpanded, setCurrentExpanded] = React.useState(false)
+
   // 获取当前层级
   const getCurrentHierarchyLevel = (): HierarchyLevel => {
     switch (currentLevel) {
@@ -357,142 +409,122 @@ export const ConnectionEditPanel: React.FC<ConnectionEditPanelProps> = ({
     })
   }
 
+  // 过滤当前层级的手动连接
+  const currentLevelConnections = manualConnectionConfig?.connections?.filter(
+    conn => conn.hierarchy_level === currentLevel
+  ) || []
+
   return (
-    <div style={{
-      padding: 14,
-      background: '#f5f5f5',
-      borderRadius: 10,
-      border: '1px solid rgba(0, 0, 0, 0.06)',
-    }}>
-      <Text strong style={{ display: 'block', marginBottom: 10, color: '#171717' }}>连接编辑</Text>
+    <div className="p-3.5 bg-gray-100 rounded-lg border border-gray-200/50">
+      <span className="block mb-2.5 font-semibold text-gray-800">连接编辑</span>
 
       {/* 层级默认带宽/延迟配置 */}
-      <div style={{
-        marginBottom: 12,
-        padding: 10,
-        background: '#fff',
-        borderRadius: 8,
-        border: '1px solid rgba(0,0,0,0.06)',
-      }}>
-        <div style={{ marginBottom: 8 }}>
-          <Text style={{ fontSize: 12, color: '#333', fontWeight: 500 }}>层级默认参数</Text>
-          <Text style={{ fontSize: 11, color: '#999', marginLeft: 8 }}>新建连接时自动应用</Text>
+      <div className="mb-3 p-2.5 bg-white rounded-lg border border-gray-200/50">
+        <div className="mb-2">
+          <span className="text-xs font-medium text-gray-700">层级默认参数</span>
+          <span className="text-[11px] text-gray-400 ml-2">新建连接时自动应用</span>
         </div>
-        <div style={{ display: 'flex', gap: 16, alignItems: 'center' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-            <Text style={{ fontSize: 12 }}>带宽:</Text>
-            <InputNumber
-              size="small"
+        <div className="flex gap-4 items-center">
+          <div className="flex items-center gap-1">
+            <span className="text-xs">带宽:</span>
+            <NumberInput
               min={0}
               value={currentDefaults.bandwidth}
-              onChange={(v) => updateLevelDefaults({ ...currentDefaults, bandwidth: v || undefined })}
-              style={{ width: 80 }}
+              onChange={(v) => updateLevelDefaults({ ...currentDefaults, bandwidth: v })}
+              className="w-20"
               placeholder="未设置"
             />
-            <Text style={{ fontSize: 11, color: '#999' }}>GB/s</Text>
+            <span className="text-[11px] text-gray-400">GB/s</span>
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-            <Text style={{ fontSize: 12 }}>延迟:</Text>
-            <InputNumber
-              size="small"
+          <div className="flex items-center gap-1">
+            <span className="text-xs">延迟:</span>
+            <NumberInput
               min={0}
               value={currentDefaults.latency}
-              onChange={(v) => updateLevelDefaults({ ...currentDefaults, latency: v || undefined })}
-              style={{ width: 80 }}
+              onChange={(v) => updateLevelDefaults({ ...currentDefaults, latency: v })}
+              className="w-20"
               placeholder="未设置"
             />
-            <Text style={{ fontSize: 11, color: '#999' }}>us</Text>
+            <span className="text-[11px] text-gray-400">us</span>
           </div>
         </div>
       </div>
 
       {/* 编辑模式按钮 */}
-      <div style={{ marginBottom: 12 }}>
+      <div className="mb-3">
         {connectionMode === 'view' ? (
           <Button
-            type="default"
+            variant="outline"
             onClick={() => onConnectionModeChange?.('select_source')}
           >
             编辑连接
           </Button>
         ) : (
-          <Space>
+          <div className="flex gap-2">
             <Button
-              type={connectionMode === 'select_source' ? 'primary' : 'default'}
+              variant={connectionMode === 'select_source' ? 'default' : 'outline'}
               onClick={() => onConnectionModeChange?.('select_source')}
             >
               选源节点
             </Button>
             <Button
-              type={connectionMode === 'select_target' ? 'primary' : 'default'}
+              variant={connectionMode === 'select_target' ? 'default' : 'outline'}
               onClick={() => onConnectionModeChange?.('select_target')}
               disabled={selectedNodes.size === 0}
             >
               选目标节点
             </Button>
-            <Button onClick={() => onConnectionModeChange?.('view')}>
+            <Button variant="outline" onClick={() => onConnectionModeChange?.('view')}>
               退出
             </Button>
-          </Space>
+          </div>
         )}
       </div>
 
       {connectionMode !== 'view' && (
-        <div style={{
-          padding: 12,
-          background: 'rgba(37, 99, 235, 0.04)',
-          borderRadius: 8,
-          marginBottom: 12,
-          border: '1px solid rgba(37, 99, 235, 0.1)',
-        }}>
-          <Text style={{ fontSize: 12, display: 'block', marginBottom: 6, color: '#525252' }}>
+        <div className="p-3 bg-blue-50 rounded-lg mb-3 border border-blue-100">
+          <span className="text-xs block mb-1.5 text-gray-600">
             <strong>操作说明：</strong>
-          </Text>
-          <Text style={{ fontSize: 12, display: 'block', color: connectionMode === 'select_source' ? '#2563eb' : '#525252' }}>
+          </span>
+          <span className={`text-xs block ${connectionMode === 'select_source' ? 'text-blue-600' : 'text-gray-600'}`}>
             1. 点击图中节点选为源节点（绿色框）
-          </Text>
-          <Text style={{ fontSize: 12, display: 'block', color: connectionMode === 'select_target' ? '#2563eb' : '#525252' }}>
+          </span>
+          <span className={`text-xs block ${connectionMode === 'select_target' ? 'text-blue-600' : 'text-gray-600'}`}>
             2. 切换到"选目标节点"，点击选择目标（蓝色框）
-          </Text>
-          <Text style={{ fontSize: 12, display: 'block', color: '#525252' }}>
+          </span>
+          <span className="text-xs block text-gray-600">
             3. 点击下方"确认连接"按钮完成
-          </Text>
+          </span>
         </div>
       )}
 
       {/* 选中状态显示 */}
       {(selectedNodes.size > 0 || targetNodes.size > 0) && (
-        <div style={{
-          marginBottom: 12,
-          padding: 12,
-          background: 'rgba(5, 150, 105, 0.04)',
-          borderRadius: 8,
-          border: '1px solid rgba(5, 150, 105, 0.1)',
-        }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-            <Text style={{ fontSize: 14 }}>
+        <div className="mb-3 p-3 bg-green-50 rounded-lg border border-green-100">
+          <div className="flex justify-between items-center mb-2">
+            <span className="text-sm">
               <strong>源节点: {selectedNodes.size} 个</strong>
               {selectedNodes.size > 0 && (
-                <span style={{ fontSize: 12, color: '#666', marginLeft: 8 }}>
+                <span className="text-xs text-gray-500 ml-2">
                   ({Array.from(selectedNodes).slice(0, 3).join(', ')}{selectedNodes.size > 3 ? '...' : ''})
                 </span>
               )}
-            </Text>
+            </span>
             {selectedNodes.size > 0 && (
-              <Button size="small" type="link" onClick={() => onSelectedNodesChange?.(new Set())}>清空</Button>
+              <Button variant="link" size="sm" className="h-auto p-0" onClick={() => onSelectedNodesChange?.(new Set())}>清空</Button>
             )}
           </div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <Text style={{ fontSize: 14 }}>
+          <div className="flex justify-between items-center">
+            <span className="text-sm">
               <strong>目标节点: {targetNodes.size} 个</strong>
               {targetNodes.size > 0 && (
-                <span style={{ fontSize: 12, color: '#666', marginLeft: 8 }}>
+                <span className="text-xs text-gray-500 ml-2">
                   ({Array.from(targetNodes).slice(0, 3).join(', ')}{targetNodes.size > 3 ? '...' : ''})
                 </span>
               )}
-            </Text>
+            </span>
             {targetNodes.size > 0 && (
-              <Button size="small" type="link" onClick={() => onTargetNodesChange?.(new Set())}>清空</Button>
+              <Button variant="link" size="sm" className="h-auto p-0" onClick={() => onTargetNodesChange?.(new Set())}>清空</Button>
             )}
           </div>
           {selectedNodes.size > 0 && targetNodes.size > 0 && (() => {
@@ -521,8 +553,7 @@ export const ConnectionEditPanel: React.FC<ConnectionEditPanelProps> = ({
             })
             return (
               <Button
-                type="primary"
-                style={{ marginTop: 12, width: '100%' }}
+                className="mt-3 w-full"
                 onClick={() => onBatchConnect?.(getCurrentHierarchyLevel())}
                 disabled={newCount === 0}
               >
@@ -534,114 +565,103 @@ export const ConnectionEditPanel: React.FC<ConnectionEditPanelProps> = ({
       )}
 
       {/* 手动添加的连接列表 */}
-      {(() => {
-        // 过滤当前层级的手动连接
-        const currentLevelConnections = manualConnectionConfig?.connections?.filter(
-          conn => conn.hierarchy_level === currentLevel
-        ) || []
-        return (
-          <Collapse
-            size="small"
-            bordered={false}
-            style={{
-              marginTop: 8,
-              background: 'transparent',
-            }}
-            className="connection-collapse"
-            items={[{
-              key: 'manual',
-              label: <span style={{ fontSize: 14 }}>手动连接 ({currentLevelConnections.length})</span>,
-              style: { background: '#fff', borderRadius: 8, marginBottom: 8, border: '1px solid rgba(0,0,0,0.06)', overflow: 'hidden' },
-              children: (
-                <div style={{ maxHeight: 240, overflow: 'auto' }}>
-                  {currentLevelConnections.map((conn) => {
-                    // 判断是否使用默认值（值为空）
-                    const useDefaultBandwidth = conn.bandwidth === undefined || conn.bandwidth === null
-                    const useDefaultLatency = conn.latency === undefined || conn.latency === null
-                    const hasCustom = !useDefaultBandwidth || !useDefaultLatency
-                    // 显示值：空值时显示默认值
-                    const displayBandwidth = useDefaultBandwidth ? currentDefaults.bandwidth : conn.bandwidth
-                    const displayLatency = useDefaultLatency ? currentDefaults.latency : conn.latency
-                    return (
+      <div className="mt-2 space-y-2">
+        <Collapsible open={manualExpanded} onOpenChange={setManualExpanded}>
+          <CollapsibleTrigger asChild>
+            <div className="flex items-center justify-between p-2 bg-white rounded-lg border border-gray-200/50 cursor-pointer hover:bg-gray-50">
+              <span className="text-sm">手动连接 ({currentLevelConnections.length})</span>
+              <span className="text-xs text-gray-400">{manualExpanded ? '▲' : '▼'}</span>
+            </div>
+          </CollapsibleTrigger>
+          <CollapsibleContent>
+            <div className="mt-2 max-h-60 overflow-auto">
+              {currentLevelConnections.map((conn) => {
+                // 判断是否使用默认值（值为空）
+                const useDefaultBandwidth = conn.bandwidth === undefined || conn.bandwidth === null
+                const useDefaultLatency = conn.latency === undefined || conn.latency === null
+                const hasCustom = !useDefaultBandwidth || !useDefaultLatency
+                // 显示值：空值时显示默认值
+                const displayBandwidth = useDefaultBandwidth ? currentDefaults.bandwidth : conn.bandwidth
+                const displayLatency = useDefaultLatency ? currentDefaults.latency : conn.latency
+                return (
                   <div
                     key={conn.id}
-                    style={{
-                      padding: 10,
-                      background: 'rgba(5, 150, 105, 0.04)',
-                      marginBottom: 8,
-                      borderRadius: 8,
-                      border: '1px solid rgba(5, 150, 105, 0.1)',
-                    }}
+                    className="p-2.5 bg-green-50 mb-2 rounded-lg border border-green-100"
                   >
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ display: 'flex', alignItems: 'center', marginBottom: 2 }}>
-                          <Text style={{ fontSize: 11, color: '#999', width: 20, flexShrink: 0 }}>源:</Text>
-                          <Text code style={{ fontSize: 12, wordBreak: 'break-all' }}>{conn.source}</Text>
+                    <div className="flex justify-between items-start">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center mb-0.5">
+                          <span className="text-[11px] text-gray-400 w-5 shrink-0">源:</span>
+                          <code className="text-xs break-all">{conn.source}</code>
                         </div>
-                        <div style={{ display: 'flex', alignItems: 'center' }}>
-                          <Text style={{ fontSize: 11, color: '#999', width: 20, flexShrink: 0 }}>→</Text>
-                          <Text code style={{ fontSize: 12, wordBreak: 'break-all' }}>{conn.target}</Text>
+                        <div className="flex items-center">
+                          <span className="text-[11px] text-gray-400 w-5 shrink-0">→</span>
+                          <code className="text-xs break-all">{conn.target}</code>
                         </div>
                       </div>
-                      <Space size={4} style={{ flexShrink: 0, marginLeft: 8 }}>
+                      <div className="flex items-center gap-1 shrink-0 ml-2">
                         {hasCustom && (
                           <Button
-                            type="text"
-                            size="small"
-                            icon={<UndoOutlined />}
+                            variant="ghost"
+                            size="sm"
+                            className="h-7 w-7 p-0 text-gray-400"
                             title="重置为默认"
                             onClick={() => updateManualConnectionParams(conn.id, undefined, undefined)}
-                            style={{ color: '#999' }}
-                          />
+                          >
+                            <Undo className="h-3.5 w-3.5" />
+                          </Button>
                         )}
                         <Button
-                          type="text"
-                          danger
-                          size="small"
-                          icon={<DeleteOutlined />}
+                          variant="ghost"
+                          size="sm"
+                          className="h-7 w-7 p-0 text-red-500 hover:text-red-600"
                           onClick={() => onDeleteManualConnection?.(conn.id)}
-                        />
-                      </Space>
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
                     </div>
-                    <div style={{ marginTop: 8, display: 'flex', gap: 12, alignItems: 'center' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                        <Text style={{ fontSize: 11, color: useDefaultBandwidth ? '#999' : '#333' }}>带宽:</Text>
-                        <InputNumber
-                          size="small"
+                    <div className="mt-2 flex gap-3 items-center">
+                      <div className="flex items-center gap-1">
+                        <span className={`text-[11px] ${useDefaultBandwidth ? 'text-gray-400' : 'text-gray-700'}`}>带宽:</span>
+                        <NumberInput
                           min={0}
                           value={displayBandwidth}
-                          onChange={(v) => updateManualConnectionParams(conn.id, v ?? undefined, conn.latency)}
-                          style={{ width: 80, color: useDefaultBandwidth ? '#999' : undefined }}
+                          onChange={(v) => updateManualConnectionParams(conn.id, v, conn.latency)}
+                          className={`w-20 ${useDefaultBandwidth ? 'text-gray-400' : ''}`}
                           placeholder="GB/s"
                         />
                       </div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                        <Text style={{ fontSize: 11, color: useDefaultLatency ? '#999' : '#333' }}>延迟:</Text>
-                        <InputNumber
-                          size="small"
+                      <div className="flex items-center gap-1">
+                        <span className={`text-[11px] ${useDefaultLatency ? 'text-gray-400' : 'text-gray-700'}`}>延迟:</span>
+                        <NumberInput
                           min={0}
                           value={displayLatency}
-                          onChange={(v) => updateManualConnectionParams(conn.id, conn.bandwidth, v ?? undefined)}
-                          style={{ width: 80, color: useDefaultLatency ? '#999' : undefined }}
+                          onChange={(v) => updateManualConnectionParams(conn.id, conn.bandwidth, v)}
+                          className={`w-20 ${useDefaultLatency ? 'text-gray-400' : ''}`}
                           placeholder="us"
                         />
                       </div>
                     </div>
                   </div>
                 )
-                  })}
-                  {currentLevelConnections.length === 0 && (
-                    <Text type="secondary" style={{ fontSize: 13 }}>暂无手动连接</Text>
-                  )}
-                </div>
-              ),
-            }, {
-          key: 'current',
-          label: <span style={{ fontSize: 14 }}>当前连接 ({currentViewConnections.length})</span>,
-          style: { background: '#fff', borderRadius: 8, border: '1px solid rgba(0,0,0,0.06)' },
-          children: (
-            <div style={{ maxHeight: 240, overflow: 'auto' }}>
+              })}
+              {currentLevelConnections.length === 0 && (
+                <span className="text-gray-400 text-[13px]">暂无手动连接</span>
+              )}
+            </div>
+          </CollapsibleContent>
+        </Collapsible>
+
+        <Collapsible open={currentExpanded} onOpenChange={setCurrentExpanded}>
+          <CollapsibleTrigger asChild>
+            <div className="flex items-center justify-between p-2 bg-white rounded-lg border border-gray-200/50 cursor-pointer hover:bg-gray-50">
+              <span className="text-sm">当前连接 ({currentViewConnections.length})</span>
+              <span className="text-xs text-gray-400">{currentExpanded ? '▲' : '▼'}</span>
+            </div>
+          </CollapsibleTrigger>
+          <CollapsibleContent>
+            <div className="mt-2 max-h-60 overflow-auto">
               {currentViewConnections.map((conn, idx) => {
                 // 判断是否使用默认值（值为空）
                 const useDefaultBandwidth = conn.bandwidth === undefined || conn.bandwidth === null
@@ -653,65 +673,59 @@ export const ConnectionEditPanel: React.FC<ConnectionEditPanelProps> = ({
                 return (
                   <div
                     key={`auto-${idx}`}
-                    style={{
-                      padding: 10,
-                      background: '#fff',
-                      marginBottom: 8,
-                      borderRadius: 8,
-                      border: '1px solid rgba(0, 0, 0, 0.06)',
-                    }}
+                    className="p-2.5 bg-white mb-2 rounded-lg border border-gray-200/50"
                   >
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ display: 'flex', alignItems: 'center', marginBottom: 2 }}>
-                          <Text style={{ fontSize: 11, color: '#999', width: 20, flexShrink: 0 }}>源:</Text>
-                          <Text code style={{ fontSize: 12, wordBreak: 'break-all' }}>{conn.source}</Text>
+                    <div className="flex justify-between items-start">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center mb-0.5">
+                          <span className="text-[11px] text-gray-400 w-5 shrink-0">源:</span>
+                          <code className="text-xs break-all">{conn.source}</code>
                         </div>
-                        <div style={{ display: 'flex', alignItems: 'center' }}>
-                          <Text style={{ fontSize: 11, color: '#999', width: 20, flexShrink: 0 }}>→</Text>
-                          <Text code style={{ fontSize: 12, wordBreak: 'break-all' }}>{conn.target}</Text>
+                        <div className="flex items-center">
+                          <span className="text-[11px] text-gray-400 w-5 shrink-0">→</span>
+                          <code className="text-xs break-all">{conn.target}</code>
                         </div>
                       </div>
-                      <Space size={4} style={{ flexShrink: 0, marginLeft: 8 }}>
+                      <div className="flex items-center gap-1 shrink-0 ml-2">
                         {hasCustom && (
                           <Button
-                            type="text"
-                            size="small"
-                            icon={<UndoOutlined />}
+                            variant="ghost"
+                            size="sm"
+                            className="h-7 w-7 p-0 text-gray-400"
                             title="重置为默认"
                             onClick={() => onUpdateConnectionParams?.(conn.source, conn.target, undefined, undefined)}
-                            style={{ color: '#999' }}
-                          />
+                          >
+                            <Undo className="h-3.5 w-3.5" />
+                          </Button>
                         )}
                         <Button
-                          type="text"
-                          danger
-                          size="small"
-                          icon={<DeleteOutlined />}
+                          variant="ghost"
+                          size="sm"
+                          className="h-7 w-7 p-0 text-red-500 hover:text-red-600"
                           onClick={() => onDeleteConnection?.(conn.source, conn.target)}
-                        />
-                      </Space>
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
                     </div>
-                    <div style={{ marginTop: 8, display: 'flex', gap: 12, alignItems: 'center' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                        <Text style={{ fontSize: 11, color: useDefaultBandwidth ? '#999' : '#333' }}>带宽:</Text>
-                        <InputNumber
-                          size="small"
+                    <div className="mt-2 flex gap-3 items-center">
+                      <div className="flex items-center gap-1">
+                        <span className={`text-[11px] ${useDefaultBandwidth ? 'text-gray-400' : 'text-gray-700'}`}>带宽:</span>
+                        <NumberInput
                           min={0}
                           value={displayBandwidth}
-                          onChange={(v) => onUpdateConnectionParams?.(conn.source, conn.target, v ?? undefined, conn.latency)}
-                          style={{ width: 80, color: useDefaultBandwidth ? '#999' : undefined }}
+                          onChange={(v) => onUpdateConnectionParams?.(conn.source, conn.target, v, conn.latency)}
+                          className={`w-20 ${useDefaultBandwidth ? 'text-gray-400' : ''}`}
                           placeholder="GB/s"
                         />
                       </div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                        <Text style={{ fontSize: 11, color: useDefaultLatency ? '#999' : '#333' }}>延迟:</Text>
-                        <InputNumber
-                          size="small"
+                      <div className="flex items-center gap-1">
+                        <span className={`text-[11px] ${useDefaultLatency ? 'text-gray-400' : 'text-gray-700'}`}>延迟:</span>
+                        <NumberInput
                           min={0}
                           value={displayLatency}
-                          onChange={(v) => onUpdateConnectionParams?.(conn.source, conn.target, conn.bandwidth, v ?? undefined)}
-                          style={{ width: 80, color: useDefaultLatency ? '#999' : undefined }}
+                          onChange={(v) => onUpdateConnectionParams?.(conn.source, conn.target, conn.bandwidth, v)}
+                          className={`w-20 ${useDefaultLatency ? 'text-gray-400' : ''}`}
                           placeholder="us"
                         />
                       </div>
@@ -720,15 +734,12 @@ export const ConnectionEditPanel: React.FC<ConnectionEditPanelProps> = ({
                 )
               })}
               {currentViewConnections.length === 0 && (
-                <Text type="secondary" style={{ fontSize: 13 }}>暂无连接</Text>
+                <span className="text-gray-400 text-[13px]">暂无连接</span>
               )}
             </div>
-          ),
-        }]}
-      />
-        )
-      })()}
+          </CollapsibleContent>
+        </Collapsible>
+      </div>
     </div>
   )
 }
-

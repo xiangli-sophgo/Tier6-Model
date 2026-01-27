@@ -167,6 +167,109 @@ class GanttChartBuilder:
                 type="network",
             ))
 
+    def _generate_descriptive_name(
+        self,
+        task_type: GanttTaskType,
+        layer_index: int | None,
+        token_index: int | None,
+        is_comm: bool = False
+    ) -> str:
+        """
+        生成描述性的任务名称
+
+        格式示例：
+        - "Layer_0_Attention_Q_Proj"
+        - "Layer_5_FFN_Gate"
+        - "Layer_12_MLA_Q_A_Proj"
+        - "Layer_3_Attention_TP_AllReduce"
+        - "Embedding_Input"
+        - "LM_Head_Output"
+
+        Args:
+            task_type: 任务类型
+            layer_index: 层索引
+            token_index: Token索引
+            is_comm: 是否为通信任务
+
+        Returns:
+            描述性名称字符串
+        """
+        # 映射任务类型到描述性名称组件
+        type_name_map = {
+            # 计算任务
+            GanttTaskType.COMPUTE: "Compute",
+            GanttTaskType.EMBEDDING: "Embedding",
+            GanttTaskType.LAYERNORM: "LayerNorm",
+            GanttTaskType.ATTENTION_QKV: "Attention_QKV",
+            GanttTaskType.ATTENTION_SCORE: "Attention_Score",
+            GanttTaskType.ATTENTION_SOFTMAX: "Attention_Softmax",
+            GanttTaskType.ATTENTION_OUTPUT: "Attention_Output",
+            GanttTaskType.FFN_GATE: "FFN_Gate",
+            GanttTaskType.FFN_UP: "FFN_Up",
+            GanttTaskType.FFN_DOWN: "FFN_Down",
+            GanttTaskType.LM_HEAD: "LM_Head",
+
+            # MLA 细粒度
+            GanttTaskType.RMSNORM_Q_LORA: "MLA_RMSNorm_Q",
+            GanttTaskType.RMSNORM_KV_LORA: "MLA_RMSNorm_KV",
+            GanttTaskType.MM_Q_LORA_A: "MLA_Q_LoRA_A",
+            GanttTaskType.MM_Q_LORA_B: "MLA_Q_LoRA_B",
+            GanttTaskType.MM_KV_LORA_A: "MLA_KV_Compress",
+            GanttTaskType.ATTN_FC: "MLA_Attn_FC",
+            GanttTaskType.BMM_QK: "MLA_BMM_QK",
+            GanttTaskType.BMM_SV: "MLA_BMM_SV",
+
+            # MoE
+            GanttTaskType.MOE_GATE: "MoE_Gate",
+            GanttTaskType.MOE_EXPERT: "MoE_Expert",
+            GanttTaskType.MOE_SHARED_EXPERT: "MoE_Shared_Expert",
+
+            # 通信任务
+            GanttTaskType.TP_COMM: "TP_AllReduce",
+            GanttTaskType.PP_COMM: "PP_P2P",
+            GanttTaskType.EP_COMM: "EP_AllToAll",
+            GanttTaskType.SP_ALLGATHER: "SP_AllGather",
+            GanttTaskType.SP_REDUCE_SCATTER: "SP_ReduceScatter",
+            GanttTaskType.DP_GRADIENT_SYNC: "DP_GradientSync",
+            GanttTaskType.EP_DISPATCH: "EP_Dispatch",
+            GanttTaskType.EP_COMBINE: "EP_Combine",
+
+            # 数据搬运
+            GanttTaskType.PCIE_H2D: "PCIe_H2D",
+            GanttTaskType.PCIE_D2H: "PCIe_D2H",
+            GanttTaskType.HBM_WRITE: "HBM_Write",
+            GanttTaskType.HBM_READ: "HBM_Read",
+            GanttTaskType.WEIGHT_LOAD: "Weight_Load",
+            GanttTaskType.KV_CACHE_READ: "KV_Cache_Read",
+            GanttTaskType.KV_CACHE_WRITE: "KV_Cache_Write",
+
+            # 其他
+            GanttTaskType.BUBBLE: "Bubble",
+            GanttTaskType.IDLE: "Idle",
+        }
+
+        type_name = type_name_map.get(task_type, str(task_type.value))
+
+        # 构建完整名称
+        if layer_index is not None:
+            # 带层索引的任务
+            name = f"Layer_{layer_index}_{type_name}"
+        elif task_type == GanttTaskType.EMBEDDING:
+            # Embedding 任务
+            name = "Embedding_Input"
+        elif task_type == GanttTaskType.LM_HEAD:
+            # LM Head 任务
+            name = "LM_Head_Output"
+        else:
+            # 其他任务（不带层索引）
+            name = type_name
+
+        # 添加 token 索引（如果有）
+        if token_index is not None:
+            name = f"Token_{token_index}_{name}"
+
+        return name
+
     def add_task(
         self,
         name: str,
@@ -178,20 +281,22 @@ class GanttChartBuilder:
         pp_stage: int,
         layer_index: int | None = None,
         token_index: int | None = None,
+        **extra_fields,  # 新增：接收额外的详细信息字段
     ) -> GanttTask:
         """
         添加任务
 
         Args:
             name: 任务名称
-            start: 开始时间 (ms)
-            end: 结束时间 (ms)
+            start: 开始时间 (us, 微秒)
+            end: 结束时间 (us, 微秒)
             task_type: 任务类型
             phase: 推理阶段
             chip_id: 芯片ID
             pp_stage: PP阶段
             layer_index: 层索引
             token_index: Token索引
+            **extra_fields: 额外的详细信息字段（如 flops, best_tile, arch_utilization 等）
 
         Returns:
             创建的任务
@@ -220,6 +325,7 @@ class GanttChartBuilder:
             layer_index=layer_index,
             token_index=token_index,
             color=TASK_COLORS.get(task_type),
+            **extra_fields,  # 传入额外字段
         )
 
         self.tasks.append(task)
@@ -235,13 +341,23 @@ class GanttChartBuilder:
         pp_stage: int,
         layer_index: int | None = None,
         token_index: int | None = None,
+        **extra_fields,  # 新增：接收额外的详细信息字段
     ) -> GanttTask:
-        """添加计算任务的便捷方法"""
-        name = TASK_LABELS.get(task_type, str(task_type.value))
-        if layer_index is not None:
-            name = f"L{layer_index} {name}"
-        if token_index is not None:
-            name = f"T{token_index} {name}"
+        """添加计算任务的便捷方法
+
+        Args:
+            task_type: 任务类型
+            start: 开始时间 (us)
+            duration: 持续时间 (us)
+            phase: 推理阶段
+            chip_id: 芯片ID
+            pp_stage: PP阶段
+            layer_index: 层索引
+            token_index: Token索引
+            **extra_fields: 额外的详细信息字段（如 flops, best_tile 等）
+        """
+        # 生成描述性名称
+        name = self._generate_descriptive_name(task_type, layer_index, token_index, is_comm=False)
 
         return self.add_task(
             name=name,
@@ -253,6 +369,7 @@ class GanttChartBuilder:
             pp_stage=pp_stage,
             layer_index=layer_index,
             token_index=token_index,
+            **extra_fields,  # 传递额外字段
         )
 
     def add_comm_task(
@@ -265,11 +382,23 @@ class GanttChartBuilder:
         pp_stage: int,
         layer_index: int | None = None,
         token_index: int | None = None,
+        **extra_fields,  # 新增：接收额外的详细信息字段
     ) -> GanttTask:
-        """添加通信任务的便捷方法"""
-        name = TASK_LABELS.get(task_type, str(task_type.value))
-        if layer_index is not None:
-            name = f"L{layer_index} {name}"
+        """添加通信任务的便捷方法
+
+        Args:
+            task_type: 任务类型
+            start: 开始时间 (us)
+            duration: 持续时间 (us)
+            phase: 推理阶段
+            chip_id: 芯片ID
+            pp_stage: PP阶段
+            layer_index: 层索引
+            token_index: Token索引
+            **extra_fields: 额外的详细信息字段（如 comm_size_bytes, comm_algorithm 等）
+        """
+        # 生成描述性名称
+        name = self._generate_descriptive_name(task_type, layer_index, token_index, is_comm=True)
 
         return self.add_task(
             name=name,
@@ -281,6 +410,7 @@ class GanttChartBuilder:
             pp_stage=pp_stage,
             layer_index=layer_index,
             token_index=token_index,
+            **extra_fields,  # 传递额外字段
         )
 
     def add_bubble(

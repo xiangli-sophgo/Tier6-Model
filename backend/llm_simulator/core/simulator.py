@@ -1145,7 +1145,42 @@ class LLMInferenceSimulator:
                 for op in layer.comp_ops:
                     task_type = self._map_compute_op_to_task_type(op.op_type, op.name)
                     latency_ms = op.elapse / 1000
-                    self.gantt_builder.add_compute_task(task_type, current_time, latency_ms, phase, chip_id, pp_stage, layer_index, token_index)
+
+                    # 构造详细信息字典
+                    extra_fields = {
+                        'flops': op.flops,
+                        'params_bytes': op.param,
+                        'dram_occupy_bytes': op.dram_occupy,
+                        'dram_traffic_bytes': op.dram_traffic,
+                        'compute_time_us': op.comp_elapse,
+                        'memory_time_us': op.dma_elapse,
+                        'arch_utilization': op.urate,
+                        'parallel_config': {
+                            'tp': self.parallelism.tp,
+                            'dp': self.parallelism.dp,
+                            'pp': self.parallelism.pp,
+                            'ep': self.parallelism.ep,
+                            'sp': self.parallelism.sp,
+                        }
+                    }
+
+                    # 添加 GEMM 优化结果
+                    if op.best_tile is not None:
+                        extra_fields['best_tile'] = op.best_tile
+                    if op.best_partition is not None:
+                        extra_fields['best_partition'] = op.best_partition
+                    if hasattr(op, 'parallel_params') and op.parallel_params:
+                        extra_fields['gemm_shape'] = {
+                            'G': op.parallel_params.get('G'),
+                            'M': op.parallel_params.get('M'),
+                            'K': op.parallel_params.get('K'),
+                            'N': op.parallel_params.get('N'),
+                        }
+
+                    self.gantt_builder.add_compute_task(
+                        task_type, current_time, latency_ms, phase, chip_id, pp_stage, layer_index, token_index,
+                        **extra_fields
+                    )
                     current_time += latency_ms
 
                 # 遍历通信算子 (应用 TBO 重叠)
@@ -1162,21 +1197,115 @@ class LLMInferenceSimulator:
                         effective_latency_ms = latency_ms
 
                     if effective_latency_ms > 0:
-                        self.gantt_builder.add_comm_task(task_type, current_time, effective_latency_ms, phase, chip_id, pp_stage, layer_index, token_index)
+                        # 推断通信组大小
+                        comm_group_size = 1
+                        if 'tp' in op.comm_kind or 'allreduce' in op.comm_kind.lower():
+                            comm_group_size = self.parallelism.tp
+                        elif 'dp' in op.comm_kind:
+                            comm_group_size = self.parallelism.dp
+                        elif 'ep' in op.comm_kind or 'dispatch' in op.comm_kind or 'combine' in op.comm_kind:
+                            comm_group_size = self.parallelism.ep
+                        elif 'sp' in op.comm_kind:
+                            comm_group_size = self.parallelism.sp
+
+                        # 构造通信详细信息
+                        comm_extra = {
+                            'comm_size_bytes': op.comm_size,
+                            'comm_time_us': op.comm_elapse,
+                            'comm_algorithm': op.parallel_params.get('algorithm', 'unknown'),
+                            'comm_group_size': comm_group_size,
+                            'parallel_config': {
+                                'tp': self.parallelism.tp,
+                                'dp': self.parallelism.dp,
+                                'pp': self.parallelism.pp,
+                                'ep': self.parallelism.ep,
+                                'sp': self.parallelism.sp,
+                            }
+                        }
+
+                        self.gantt_builder.add_comm_task(
+                            task_type, current_time, effective_latency_ms, phase, chip_id, pp_stage, layer_index, token_index,
+                            **comm_extra
+                        )
                         current_time += effective_latency_ms
             else:
                 # 标准模式: 细粒度遍历所有算子
                 for op in layer.comp_ops:
                     task_type = self._map_compute_op_to_task_type(op.op_type, op.name)
                     latency_ms = op.elapse / 1000
-                    self.gantt_builder.add_compute_task(task_type, current_time, latency_ms, phase, chip_id, pp_stage, layer_index, token_index)
+
+                    # 构造详细信息字典
+                    extra_fields = {
+                        'flops': op.flops,
+                        'params_bytes': op.param,
+                        'dram_occupy_bytes': op.dram_occupy,
+                        'dram_traffic_bytes': op.dram_traffic,
+                        'compute_time_us': op.comp_elapse,
+                        'memory_time_us': op.dma_elapse,
+                        'arch_utilization': op.urate,
+                        'parallel_config': {
+                            'tp': self.parallelism.tp,
+                            'dp': self.parallelism.dp,
+                            'pp': self.parallelism.pp,
+                            'ep': self.parallelism.ep,
+                            'sp': self.parallelism.sp,
+                        }
+                    }
+
+                    # 添加 GEMM 优化结果
+                    if op.best_tile is not None:
+                        extra_fields['best_tile'] = op.best_tile
+                    if op.best_partition is not None:
+                        extra_fields['best_partition'] = op.best_partition
+                    if hasattr(op, 'parallel_params') and op.parallel_params:
+                        extra_fields['gemm_shape'] = {
+                            'G': op.parallel_params.get('G'),
+                            'M': op.parallel_params.get('M'),
+                            'K': op.parallel_params.get('K'),
+                            'N': op.parallel_params.get('N'),
+                        }
+
+                    self.gantt_builder.add_compute_task(
+                        task_type, current_time, latency_ms, phase, chip_id, pp_stage, layer_index, token_index,
+                        **extra_fields
+                    )
                     current_time += latency_ms
 
                 # 遍历所有通信算子
                 for op in layer.comm_ops:
                     task_type = self._map_comm_op_to_task_type(op.comm_kind)
                     latency_ms = op.comm_elapse / 1000
-                    self.gantt_builder.add_comm_task(task_type, current_time, latency_ms, phase, chip_id, pp_stage, layer_index, token_index)
+
+                    # 推断通信组大小
+                    comm_group_size = 1
+                    if 'tp' in op.comm_kind or 'allreduce' in op.comm_kind.lower():
+                        comm_group_size = self.parallelism.tp
+                    elif 'dp' in op.comm_kind:
+                        comm_group_size = self.parallelism.dp
+                    elif 'ep' in op.comm_kind or 'dispatch' in op.comm_kind or 'combine' in op.comm_kind:
+                        comm_group_size = self.parallelism.ep
+                    elif 'sp' in op.comm_kind:
+                        comm_group_size = self.parallelism.sp
+
+                    # 构造通信详细信息
+                    comm_extra = {
+                        'comm_size_bytes': op.comm_size,
+                        'comm_time_us': op.comm_elapse,
+                        'comm_algorithm': op.parallel_params.get('algorithm', 'unknown'),
+                        'comm_group_size': comm_group_size,
+                        'parallel_config': {
+                            'tp': self.parallelism.tp,
+                            'dp': self.parallelism.dp,
+                            'pp': self.parallelism.pp,
+                            'ep': self.parallelism.ep,
+                            'sp': self.parallelism.sp,
+                        }
+                    }
+
+                    self.gantt_builder.add_comm_task(
+                        task_type, current_time, latency_ms, phase, chip_id, pp_stage, layer_index, token_index,
+                        **comm_extra
+                    )
                     current_time += latency_ms
         else:
             # 粗粒度：聚合整层
@@ -1697,6 +1826,11 @@ def run_simulation(
     # 转换为前端格式
     from .gantt import convert_to_frontend_format
 
+    # 计算吞吐量指标
+    total_chips = parallelism.dp * parallelism.tp * parallelism.pp * parallelism.ep
+    tps = 1_000_000.0 / result.stats.avg_tpot if result.stats.avg_tpot > 0 else 0.0  # tokens/秒
+    tps_per_chip = tps / total_chips if total_chips > 0 else 0.0
+
     return {
         "ganttChart": convert_to_frontend_format(result.gantt_chart),
         "stats": {
@@ -1720,6 +1854,9 @@ def run_simulation(
             "simulatedTokens": result.stats.simulated_tokens,
             "ttft": result.stats.ttft,
             "avgTpot": result.stats.avg_tpot,
+            "tps": tps,  # 新增：吞吐量（tokens/秒）
+            "tpsPerChip": tps_per_chip,  # 新增：每芯片吞吐量（tokens/秒）
+            "totalChips": total_chips,  # 新增：总芯片数
             "dynamicMfu": result.stats.dynamic_mfu,
             "dynamicMbu": result.stats.dynamic_mbu,
             "maxPPBubbleRatio": result.stats.max_pp_bubble_ratio,

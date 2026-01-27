@@ -5,16 +5,11 @@
  */
 
 import React, { useEffect, useState } from 'react'
-import { Card, Progress, Button, Tag, Space, Typography, Tooltip } from 'antd'
-import {
-  LoadingOutlined,
-  CheckCircleOutlined,
-  CloseCircleOutlined,
-  StopOutlined,
-  CloseOutlined,
-} from '@ant-design/icons'
-
-const { Text } = Typography
+import { Loader2, CheckCircle, XCircle, StopCircle, X } from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
+import { Progress } from '@/components/ui/progress'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 
 export interface TaskStatus {
   task_id: string
@@ -68,13 +63,13 @@ const getStatusColor = (status: string) => {
 
 const getStatusIcon = (status: string) => {
   const iconMap: Record<string, React.ReactNode> = {
-    pending: <LoadingOutlined spin />,
-    running: <LoadingOutlined spin />,
-    completed: <CheckCircleOutlined />,
-    failed: <CloseCircleOutlined />,
-    cancelled: <StopOutlined />,
+    pending: <Loader2 className="h-3 w-3 animate-spin" />,
+    running: <Loader2 className="h-3 w-3 animate-spin" />,
+    completed: <CheckCircle className="h-3 w-3" />,
+    failed: <XCircle className="h-3 w-3" />,
+    cancelled: <StopCircle className="h-3 w-3" />,
   }
-  return iconMap[status] || <LoadingOutlined spin />
+  return iconMap[status] || <Loader2 className="h-3 w-3 animate-spin" />
 }
 
 const getStatusText = (status: string) => {
@@ -129,157 +124,140 @@ export const TaskStatusCard: React.FC<TaskStatusCardProps> = ({
   const timeEstimate = estimateTotalTime()
 
   return (
-    <Card
-      size="small"
-      style={{
-        marginBottom: 12,
-        borderLeft: `4px solid ${getStatusColor(task.status)}`,
-        background: task.status === 'failed' ? '#fff1f0' : '#ffffff',
-      }}
-      styles={{ body: { padding: 12 } }}
-      extra={
-        <Space size={4}>
-          {onCancel && task.status === 'running' && (
-            <Tooltip title="取消任务">
-              <Button
-                type="text"
-                size="small"
-                icon={<StopOutlined />}
-                onClick={onCancel}
-                danger
-              />
-            </Tooltip>
-          )}
-          {onClose && task.status === 'failed' && (
-            <Tooltip title="关闭">
-              <Button
-                type="text"
-                size="small"
-                icon={<CloseOutlined />}
-                onClick={onClose}
-              />
-            </Tooltip>
-          )}
-        </Space>
-      }
-    >
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-        {/* 标题行 */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <Tag
-              color={getStatusColor(task.status)}
-              icon={getStatusIcon(task.status)}
-              style={{ margin: 0, fontSize: 12 }}
+    <TooltipProvider>
+      <div
+        className={`mb-3 rounded-lg border p-3 ${task.status === 'failed' ? 'bg-red-50' : 'bg-white'}`}
+        style={{ borderLeft: `4px solid ${getStatusColor(task.status)}` }}
+      >
+        {/* 头部：标题 + 操作按钮 */}
+        <div className="flex items-center justify-between mb-2">
+          <div className="flex items-center gap-2">
+            <Badge
+              variant="outline"
+              className="flex items-center gap-1 text-xs"
+              style={{ borderColor: getStatusColor(task.status), color: getStatusColor(task.status) }}
             >
+              {getStatusIcon(task.status)}
               {getStatusText(task.status)}
-            </Tag>
-            <Text strong style={{ fontSize: 14 }}>
+            </Badge>
+            <span className="font-semibold text-sm">
               {task.experiment_name || task.task_id.slice(0, 8)}
-            </Text>
+            </span>
           </div>
-          {startTime && (task.status === 'running' || task.status === 'pending') && (
-            <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
-              <Tooltip title="已用时间">
-                <Text type="secondary" style={{ fontSize: 11, fontWeight: 500 }}>
-                  ⏱️ {formatTime(elapsedTime)}
-                </Text>
+          <div className="flex items-center gap-1">
+            {onCancel && task.status === 'running' && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button variant="ghost" size="icon" className="h-6 w-6 text-red-500" onClick={onCancel}>
+                    <StopCircle className="h-4 w-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>取消任务</TooltipContent>
               </Tooltip>
-              {timeEstimate && (
-                <>
-                  <Tooltip title="预计总时间">
-                    <Text type="secondary" style={{ fontSize: 11 }}>
-                      / {formatTime(timeEstimate.totalTime)}
-                    </Text>
-                  </Tooltip>
-                  <Tooltip title="剩余时间">
-                    <Text style={{ fontSize: 11, color: '#faad14', fontWeight: 500 }}>
-                      剩余: {formatTime(timeEstimate.remainingTime)}
-                    </Text>
-                  </Tooltip>
-                </>
-              )}
-            </div>
-          )}
+            )}
+            {onClose && task.status === 'failed' && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button variant="ghost" size="icon" className="h-6 w-6" onClick={onClose}>
+                    <X className="h-4 w-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>关闭</TooltipContent>
+              </Tooltip>
+            )}
+          </div>
         </div>
+
+        {/* 时间信息 */}
+        {startTime && (task.status === 'running' || task.status === 'pending') && (
+          <div className="flex items-center gap-3 mb-2 text-[11px]">
+            <Tooltip>
+              <TooltipTrigger>
+                <span className="text-gray-500 font-medium">⏱️ {formatTime(elapsedTime)}</span>
+              </TooltipTrigger>
+              <TooltipContent>已用时间</TooltipContent>
+            </Tooltip>
+            {timeEstimate && (
+              <>
+                <Tooltip>
+                  <TooltipTrigger>
+                    <span className="text-gray-400">/ {formatTime(timeEstimate.totalTime)}</span>
+                  </TooltipTrigger>
+                  <TooltipContent>预计总时间</TooltipContent>
+                </Tooltip>
+                <Tooltip>
+                  <TooltipTrigger>
+                    <span className="text-yellow-600 font-medium">剩余: {formatTime(timeEstimate.remainingTime)}</span>
+                  </TooltipTrigger>
+                  <TooltipContent>剩余时间</TooltipContent>
+                </Tooltip>
+              </>
+            )}
+          </div>
+        )}
 
         {/* 进度条（仅运行中任务） */}
         {task.status === 'running' && (
-          <Progress
-            percent={Math.round(task.progress)}
-            size="small"
-            strokeColor={getStatusColor(task.status)}
-            showInfo={true}
-            format={(percent) => `${percent}%`}
-          />
+          <div className="flex items-center gap-2 mb-2">
+            <Progress value={Math.round(task.progress)} className="flex-1 h-2" />
+            <span className="text-xs text-gray-500">{Math.round(task.progress)}%</span>
+          </div>
         )}
 
         {/* 消息 */}
         {task.message && (
-          <Text type="secondary" style={{ fontSize: 12 }}>
-            {task.message}
-          </Text>
+          <p className="text-xs text-gray-500 mb-2">{task.message}</p>
         )}
 
         {/* 搜索统计（运行中或完成时） */}
         {task.search_stats && (task.status === 'running' || task.status === 'completed') && (
-          <div style={{ display: 'flex', gap: 8, fontSize: 11 }}>
-            <Text type="secondary">
-              总方案: <Text strong>{task.search_stats.total_plans}</Text>
-            </Text>
-            <Text type="success">
-              可行: <Text strong>{task.search_stats.feasible_plans}</Text>
-            </Text>
-            <Text type="secondary">
-              不可行: <Text>{task.search_stats.infeasible_plans}</Text>
-            </Text>
+          <div className="flex gap-2 text-[11px] mb-2">
+            <span className="text-gray-500">
+              总方案: <span className="font-semibold">{task.search_stats.total_plans}</span>
+            </span>
+            <span className="text-green-600">
+              可行: <span className="font-semibold">{task.search_stats.feasible_plans}</span>
+            </span>
+            <span className="text-gray-500">
+              不可行: {task.search_stats.infeasible_plans}
+            </span>
           </div>
         )}
 
         {/* Benchmark 信息（完成时显示最优方案） */}
         {task.status === 'completed' && task.top_plan && (
-          <div
-            style={{
-              background: '#f6ffed',
-              border: '1px solid #b7eb8f',
-              borderRadius: 4,
-              padding: 8,
-              marginTop: 4,
-            }}
-          >
-            <div style={{ marginBottom: 6 }}>
-              <Text strong style={{ fontSize: 12, color: '#52c41a' }}>
+          <div className="bg-green-50 border border-green-200 rounded p-2 mt-1">
+            <div className="mb-1.5">
+              <span className="font-semibold text-xs text-green-600">
                 🏆 最优方案 (得分: {task.top_plan.score.toFixed(2)})
-              </Text>
+              </span>
             </div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, fontSize: 11 }}>
+            <div className="grid grid-cols-2 gap-1.5 text-[11px]">
               <div>
-                <Text type="secondary">并行策略:</Text>
+                <span className="text-gray-500">并行策略:</span>
                 <div>
                   DP={task.top_plan.parallelism.dp}, TP={task.top_plan.parallelism.tp},
                   PP={task.top_plan.parallelism.pp}, EP={task.top_plan.parallelism.ep}
                 </div>
               </div>
               <div>
-                <Text type="secondary">性能指标:</Text>
-                <div>
-                  吞吐量: {task.top_plan.throughput.toFixed(2)} tokens/s
-                </div>
+                <span className="text-gray-500">性能指标:</span>
+                <div>吞吐量: {task.top_plan.throughput.toFixed(2)} tokens/s</div>
               </div>
               <div>
-                <Text type="secondary">TTFT:</Text>
+                <span className="text-gray-500">TTFT:</span>
                 <div>{task.top_plan.ttft.toFixed(2)} ms</div>
               </div>
               <div>
-                <Text type="secondary">TPOT:</Text>
+                <span className="text-gray-500">TPOT:</span>
                 <div>{task.top_plan.tpot.toFixed(3)} ms/token</div>
               </div>
               <div>
-                <Text type="secondary">MFU:</Text>
+                <span className="text-gray-500">MFU:</span>
                 <div>{(task.top_plan.mfu * 100).toFixed(1)}%</div>
               </div>
               <div>
-                <Text type="secondary">MBU:</Text>
+                <span className="text-gray-500">MBU:</span>
                 <div>{(task.top_plan.mbu * 100).toFixed(1)}%</div>
               </div>
             </div>
@@ -288,21 +266,13 @@ export const TaskStatusCard: React.FC<TaskStatusCardProps> = ({
 
         {/* 错误信息 */}
         {task.error && task.status === 'failed' && (
-          <div
-            style={{
-              background: '#fff2f0',
-              border: '1px solid #ffccc7',
-              borderRadius: 4,
-              padding: 8,
-              marginTop: 4,
-            }}
-          >
-            <Text type="danger" style={{ fontSize: 11, fontFamily: 'monospace', whiteSpace: 'pre-wrap' }}>
+          <div className="bg-red-50 border border-red-200 rounded p-2 mt-1">
+            <span className="text-[11px] text-red-500 font-mono whitespace-pre-wrap">
               {task.error.length > 200 ? `${task.error.slice(0, 200)}...` : task.error}
-            </Text>
+            </span>
           </div>
         )}
       </div>
-    </Card>
+    </TooltipProvider>
   )
 }

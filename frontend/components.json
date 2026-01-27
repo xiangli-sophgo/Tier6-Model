@@ -1,0 +1,12 @@
+{
+  "$schema": "https://ui.shadcn.com/schema.json",
+  "style": "default",
+  "rsc": false,
+  "tsx": true,
+  "aliasOn": true,
+  "alias": {
+    "@/*": "./src/*"
+  },
+  "baseColor": "slate",
+  "css": "src/index.css"
+}

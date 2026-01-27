@@ -3,7 +3,7 @@
  * 负责管理拓扑连接的手动编辑、批量连接等功能
  */
 import React, { createContext, useContext, useState, useCallback, useRef, useEffect, ReactNode } from 'react'
-import { message } from 'antd'
+import { toast } from 'sonner'
 import {
   ManualConnectionConfig,
   ManualConnection,
@@ -189,11 +189,11 @@ export const ConnectionProvider: React.FC<ConnectionProviderProps> = ({ children
   // 手动连接
   const handleManualConnect = useCallback((sourceId: string, targetId: string, level: HierarchyLevel) => {
     if (connectionExists(sourceId, targetId, manualConnectionConfig.connections)) {
-      message.warning(`手动连接已存在: ${sourceId} ↔ ${targetId}`)
+      toast.warning(`手动连接已存在: ${sourceId} ↔ ${targetId}`)
       return
     }
     if (topology?.connections && connectionExists(sourceId, targetId, topology.connections)) {
-      message.warning(`自动连接已存在: ${sourceId} ↔ ${targetId}`)
+      toast.warning(`自动连接已存在: ${sourceId} ↔ ${targetId}`)
       return
     }
     const newConnection: ManualConnection = {
@@ -207,13 +207,13 @@ export const ConnectionProvider: React.FC<ConnectionProviderProps> = ({ children
       ...prev,
       connections: [...prev.connections, newConnection],
     }))
-    message.success(`已添加连接: ${sourceId} ↔ ${targetId}`)
+    toast.success(`已添加连接: ${sourceId} ↔ ${targetId}`)
   }, [manualConnectionConfig.connections, topology?.connections])
 
   // 批量连接
   const handleBatchConnect = useCallback((level: HierarchyLevel) => {
     if (selectedNodes.size === 0 || targetNodes.size === 0) {
-      message.warning('请先选择源节点和目标节点')
+      toast.warning('请先选择源节点和目标节点')
       return
     }
     let addedCount = 0
@@ -241,9 +241,9 @@ export const ConnectionProvider: React.FC<ConnectionProviderProps> = ({ children
         ...prev,
         connections: [...prev.connections, ...newConnections],
       }))
-      message.success(`已添加 ${newConnections.length} 条连接`)
+      toast.success(`已添加 ${newConnections.length} 条连接`)
     } else {
-      message.warning('所有连接已存在')
+      toast.warning('所有连接已存在')
     }
     setSelectedNodes(new Set())
     setTargetNodes(new Set())
@@ -256,7 +256,7 @@ export const ConnectionProvider: React.FC<ConnectionProviderProps> = ({ children
       ...prev,
       connections: prev.connections.filter(c => c.id !== connectionId),
     }))
-    message.success('已删除连接')
+    toast.success('已删除连接')
   }, [])
 
   // 删除连接
@@ -267,7 +267,7 @@ export const ConnectionProvider: React.FC<ConnectionProviderProps> = ({ children
         ...prev,
         connections: prev.connections.filter(c => c.id !== manualConn.id),
       }))
-      message.success('已删除手动连接')
+      toast.success('已删除手动连接')
     } else {
       setTopology(prev => {
         if (!prev) return prev
@@ -279,7 +279,7 @@ export const ConnectionProvider: React.FC<ConnectionProviderProps> = ({ children
           ),
         }
       })
-      message.success('已删除连接')
+      toast.success('已删除连接')
     }
   }, [manualConnectionConfig.connections, setTopology])
 

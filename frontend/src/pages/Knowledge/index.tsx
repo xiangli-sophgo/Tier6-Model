@@ -4,7 +4,6 @@
  */
 
 import React, { useState, useRef } from 'react'
-import { Layout } from 'antd'
 import { KnowledgeGraph, KnowledgeNodeCards } from '@/components/KnowledgeGraph'
 import { useWorkbench } from '@/contexts/WorkbenchContext'
 
@@ -48,7 +47,7 @@ export const Knowledge: React.FC = () => {
   }, [isDragging])
 
   return (
-    <Layout style={{ height: '100%', width: '100%', background: '#fff', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+    <div className="h-full w-full bg-white flex flex-col overflow-hidden">
       {/* 标题栏 */}
       <div
         style={{
@@ -136,6 +135,6 @@ export const Knowledge: React.FC = () => {
           </>
         )}
       </div>
-    </Layout>
+    </div>
   )
 }

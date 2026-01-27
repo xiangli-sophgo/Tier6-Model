@@ -2,8 +2,16 @@ import React, { useMemo, useRef, useState, useCallback, useEffect } from 'react'
 import { Canvas } from '@react-three/fiber'
 import { PerspectiveCamera } from '@react-three/drei'
 import { EffectComposer, Bloom } from '@react-three/postprocessing'
-import { Breadcrumb, Button, Tooltip, Segmented } from 'antd'
-import { ReloadOutlined, QuestionCircleOutlined, AppstoreOutlined, ApartmentOutlined } from '@ant-design/icons'
+import { RotateCcw, HelpCircle, LayoutGrid, Network } from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
+import {
+  Breadcrumb,
+  BreadcrumbItem as ShadcnBreadcrumbItem,
+  BreadcrumbLink,
+  BreadcrumbList,
+  BreadcrumbSeparator,
+} from '@/components/ui/breadcrumb'
 import * as THREE from 'three'
 import {
   HierarchicalTopology,
@@ -359,59 +367,56 @@ const NavigationOverlay: React.FC<{
   onViewModeChange?: (mode: '3d' | 'topology') => void
 }> = ({ breadcrumbs, onBreadcrumbClick, viewMode, onViewModeChange }) => {
   return (
-    <div style={{
-      position: 'absolute',
-      top: 16,
-      left: 16,
-      zIndex: 100,
-      background: 'rgba(255, 255, 255, 0.95)',
-      padding: '8px 16px',
-      borderRadius: 8,
-      boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
-      display: 'flex',
-      alignItems: 'center',
-      gap: 12,
-    }}>
-      {/* 视图切换器 */}
+    <div className="absolute top-4 left-4 z-[100] bg-white/95 px-4 py-2 rounded-lg shadow-md flex items-center gap-3">
+      {/* 视图切换器 - 自定义 Segmented */}
       {viewMode && onViewModeChange && (
-        <Segmented
-          size="small"
-          value={viewMode}
-          onChange={(value) => onViewModeChange(value as '3d' | 'topology')}
-          options={[
-            {
-              label: '3D视图',
-              value: '3d',
-              icon: <AppstoreOutlined />,
-            },
-            {
-              label: '2D视图',
-              value: 'topology',
-              icon: <ApartmentOutlined />,
-            },
-          ]}
-        />
+        <div className="flex rounded-md border border-gray-200 overflow-hidden">
+          <button
+            onClick={() => onViewModeChange('3d')}
+            className={`flex items-center gap-1.5 px-3 py-1.5 text-sm transition-colors ${
+              viewMode === '3d'
+                ? 'bg-blue-500 text-white'
+                : 'bg-white text-gray-600 hover:bg-gray-50'
+            }`}
+          >
+            <LayoutGrid className="h-3.5 w-3.5" />
+            3D视图
+          </button>
+          <button
+            onClick={() => onViewModeChange('topology')}
+            className={`flex items-center gap-1.5 px-3 py-1.5 text-sm transition-colors border-l border-gray-200 ${
+              viewMode === 'topology'
+                ? 'bg-blue-500 text-white'
+                : 'bg-white text-gray-600 hover:bg-gray-50'
+            }`}
+          >
+            <Network className="h-3.5 w-3.5" />
+            2D视图
+          </button>
+        </div>
       )}
       {/* 面包屑导航 */}
-      <Breadcrumb
-        items={breadcrumbs.map((item, index) => ({
-          title: (
-            <a
-              onClick={(e) => {
-                e.preventDefault()
-                onBreadcrumbClick(index)
-              }}
-              style={{
-                cursor: index < breadcrumbs.length - 1 ? 'pointer' : 'default',
-                color: index < breadcrumbs.length - 1 ? '#1890ff' : 'rgba(0, 0, 0, 0.88)',
-                fontWeight: index === breadcrumbs.length - 1 ? 500 : 400,
-              }}
-            >
-              {item.label}
-            </a>
-          ),
-        }))}
-      />
+      <Breadcrumb>
+        <BreadcrumbList>
+          {breadcrumbs.map((item, index) => (
+            <React.Fragment key={index}>
+              <ShadcnBreadcrumbItem>
+                <BreadcrumbLink
+                  href="#"
+                  onClick={(e) => {
+                    e.preventDefault()
+                    onBreadcrumbClick(index)
+                  }}
+                  className={index < breadcrumbs.length - 1 ? 'text-blue-500 hover:underline' : 'text-gray-900 font-medium cursor-default'}
+                >
+                  {item.label}
+                </BreadcrumbLink>
+              </ShadcnBreadcrumbItem>
+              {index < breadcrumbs.length - 1 && <BreadcrumbSeparator />}
+            </React.Fragment>
+          ))}
+        </BreadcrumbList>
+      </Breadcrumb>
     </div>
   )
 }
@@ -649,26 +654,34 @@ export const Scene3D: React.FC<Scene3DProps> = ({
       />
 
       {/* 右上角按钮组 */}
-      <div style={{
-        position: 'absolute',
-        top: 16,
-        right: 16,
-        display: 'flex',
-        gap: 8,
-      }}>
-        <Tooltip title="快捷键帮助 (?)">
-          <Button
-            icon={<QuestionCircleOutlined />}
-            onClick={() => setShowKeyboardHelp(prev => !prev)}
-          />
-        </Tooltip>
-        <Tooltip title="重置视图 (R)">
-          <Button
-            icon={<ReloadOutlined />}
-            onClick={handleResetView}
-          />
-        </Tooltip>
-      </div>
+      <TooltipProvider>
+        <div className="absolute top-4 right-4 flex gap-2">
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="outline"
+                size="icon"
+                onClick={() => setShowKeyboardHelp(prev => !prev)}
+              >
+                <HelpCircle className="h-4 w-4" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>快捷键帮助 (?)</TooltipContent>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="outline"
+                size="icon"
+                onClick={handleResetView}
+              >
+                <RotateCcw className="h-4 w-4" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>重置视图 (R)</TooltipContent>
+          </Tooltip>
+        </div>
+      </TooltipProvider>
 
       {/* 快捷键帮助面板 - 点击空白处关闭 */}
       {showKeyboardHelp && (

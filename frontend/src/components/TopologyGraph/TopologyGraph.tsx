@@ -1,6 +1,15 @@
 import React, { useMemo, useRef, useState, useEffect, useCallback } from 'react'
-import { Modal, Button, Space, Typography, Breadcrumb, Segmented } from 'antd'
-import { ZoomInOutlined, ZoomOutOutlined, AppstoreOutlined, ApartmentOutlined } from '@ant-design/icons'
+import { ZoomIn, ZoomOut, Layers, Network } from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import { Dialog, DialogContent } from '@/components/ui/dialog'
+import {
+  Breadcrumb,
+  BreadcrumbItem,
+  BreadcrumbLink,
+  BreadcrumbList,
+  BreadcrumbSeparator,
+} from '@/components/ui/breadcrumb'
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
   HierarchyLevel,
 } from '../../types'
@@ -15,8 +24,6 @@ import { ForceLayoutManager, ForceNode } from './layouts'
 import { computeTopologyData } from './computeTopologyData'
 import { MultiLevelView } from './MultiLevelView'
 import { SingleLevelView } from './SingleLevelView'
-
-const { Text } = Typography
 
 // ManualConnectionLine 已提取到独立文件，renderNode 统一渲染所有节点类型
 
@@ -859,40 +866,36 @@ export const TopologyGraph: React.FC<TopologyGraphProps> = ({
 
   // 工具栏组件
   const toolbar = (
-    <div style={{
-      display: 'flex',
-      justifyContent: 'space-between',
-      alignItems: 'center',
-      padding: embedded ? '12px 16px' : 0,
-      background: embedded ? '#fff' : 'transparent',
-      borderBottom: embedded ? '1px solid #f0f0f0' : 'none',
-    }}>
+    <div className={`flex justify-between items-center ${embedded ? 'px-4 py-3 bg-white border-b border-gray-200' : ''}`}>
       {embedded && breadcrumbs.length > 0 ? (
-        <Breadcrumb
-          items={breadcrumbs.map((item, index) => ({
-            key: item.id,
-            title: (
-              <a
-                onClick={(e) => {
-                  e.preventDefault()
-                  onBreadcrumbClick?.(index)
-                }}
-                style={{
-                  cursor: index < breadcrumbs.length - 1 ? 'pointer' : 'default',
-                  color: index < breadcrumbs.length - 1 ? '#1890ff' : 'rgba(0, 0, 0, 0.88)',
-                  fontWeight: index === breadcrumbs.length - 1 ? 500 : 400,
-                }}
-              >
-                {item.label}
-              </a>
-            ),
-          }))}
-        />
+        <Breadcrumb>
+          <BreadcrumbList>
+            {breadcrumbs.map((item, index) => (
+              <React.Fragment key={item.id}>
+                <BreadcrumbItem>
+                  <BreadcrumbLink
+                    onClick={(e) => {
+                      e.preventDefault()
+                      if (index < breadcrumbs.length - 1) {
+                        onBreadcrumbClick?.(index)
+                      }
+                    }}
+                    className={index < breadcrumbs.length - 1 ? 'cursor-pointer text-primary' : 'cursor-default text-gray-900'}
+                    style={{ fontWeight: index === breadcrumbs.length - 1 ? 500 : 400 }}
+                  >
+                    {item.label}
+                  </BreadcrumbLink>
+                </BreadcrumbItem>
+                {index < breadcrumbs.length - 1 && <BreadcrumbSeparator />}
+              </React.Fragment>
+            ))}
+          </BreadcrumbList>
+        </Breadcrumb>
       ) : (
-        <span style={{ fontWeight: 500 }}>{title || '抽象拓扑图'}</span>
+        <span className="font-medium">{title || '抽象拓扑图'}</span>
       )}
-      <Space>
-        <Text type="secondary" style={{ fontSize: 12 }}>
+      <div className="flex items-center gap-2">
+        <span className="text-xs text-gray-500">
           {directTopology !== 'none' ? `拓扑: ${
             directTopology === 'full_mesh' ? '全连接' :
             directTopology === 'ring' ? '环形' :
@@ -901,10 +904,14 @@ export const TopologyGraph: React.FC<TopologyGraphProps> = ({
             directTopology === 'hypercube' ? '超立方体' :
             directTopology === 'star' ? '星形' : directTopology
           }` : ''}
-        </Text>
-        <Button size="small" icon={<ZoomOutOutlined />} onClick={handleZoomOut} />
-        <Button size="small" icon={<ZoomInOutlined />} onClick={handleZoomIn} />
-      </Space>
+        </span>
+        <Button size="sm" variant="outline" onClick={handleZoomOut}>
+          <ZoomOut className="h-4 w-4" />
+        </Button>
+        <Button size="sm" variant="outline" onClick={handleZoomIn}>
+          <ZoomIn className="h-4 w-4" />
+        </Button>
+      </div>
     </div>
   )
 
@@ -919,61 +926,46 @@ export const TopologyGraph: React.FC<TopologyGraphProps> = ({
     }}>
       {/* 悬浮面包屑导航 */}
       {embedded && breadcrumbs.length > 0 && (
-        <div style={{
-          position: 'absolute',
-          top: 16,
-          left: 16,
-          zIndex: 100,
-          background: '#fff',
-          padding: '10px 16px',
-          borderRadius: 10,
-          border: '1px solid rgba(0, 0, 0, 0.08)',
-          boxShadow: '0 4px 12px rgba(0, 0, 0, 0.06)',
-          display: 'flex',
-          alignItems: 'center',
-          gap: 12,
-        }}>
+        <div className="absolute top-4 left-4 z-[100] bg-white px-4 py-2.5 rounded-[10px] border border-gray-200/50 shadow-md flex items-center gap-3">
           {/* 视图切换器 */}
           {viewMode && onViewModeChange && (
-            <Segmented
-              size="small"
-              value={viewMode}
-              onChange={(value) => onViewModeChange(value as '3d' | 'topology')}
-              options={[
-                {
-                  label: '3D视图',
-                  value: '3d',
-                  icon: <AppstoreOutlined />,
-                },
-                {
-                  label: '2D视图',
-                  value: 'topology',
-                  icon: <ApartmentOutlined />,
-                },
-              ]}
-            />
+            <Tabs value={viewMode} onValueChange={(value) => onViewModeChange(value as '3d' | 'topology')}>
+              <TabsList className="h-8">
+                <TabsTrigger value="3d" className="text-xs h-7 px-3">
+                  <Layers className="h-3.5 w-3.5 mr-1.5" />
+                  3D视图
+                </TabsTrigger>
+                <TabsTrigger value="topology" className="text-xs h-7 px-3">
+                  <Network className="h-3.5 w-3.5 mr-1.5" />
+                  2D视图
+                </TabsTrigger>
+              </TabsList>
+            </Tabs>
           )}
           {/* 面包屑导航 */}
-          <Breadcrumb
-            items={breadcrumbs.map((item, index) => ({
-              key: item.id,
-              title: (
-                <a
-                  onClick={(e) => {
-                    e.preventDefault()
-                    onBreadcrumbClick?.(index)
-                  }}
-                  style={{
-                    cursor: index < breadcrumbs.length - 1 ? 'pointer' : 'default',
-                    color: index < breadcrumbs.length - 1 ? '#2563eb' : '#171717',
-                    fontWeight: index === breadcrumbs.length - 1 ? 500 : 400,
-                  }}
-                >
-                  {item.label}
-                </a>
-              ),
-            }))}
-          />
+          <Breadcrumb>
+            <BreadcrumbList>
+              {breadcrumbs.map((item, index) => (
+                <React.Fragment key={item.id}>
+                  <BreadcrumbItem>
+                    <BreadcrumbLink
+                      onClick={(e: React.MouseEvent) => {
+                        e.preventDefault()
+                        if (index < breadcrumbs.length - 1) {
+                          onBreadcrumbClick?.(index)
+                        }
+                      }}
+                      className={index < breadcrumbs.length - 1 ? 'cursor-pointer text-primary' : 'cursor-default text-gray-900'}
+                      style={{ fontWeight: index === breadcrumbs.length - 1 ? 500 : 400 }}
+                    >
+                      {item.label}
+                    </BreadcrumbLink>
+                  </BreadcrumbItem>
+                  {index < breadcrumbs.length - 1 && <BreadcrumbSeparator />}
+                </React.Fragment>
+              ))}
+            </BreadcrumbList>
+          </Breadcrumb>
         </div>
       )}
 
@@ -1216,21 +1208,10 @@ export const TopologyGraph: React.FC<TopologyGraphProps> = ({
         </svg>
 
         {/* 图例 */}
-        <div style={{
-          position: 'absolute',
-          bottom: 16,
-          left: 16,
-          background: '#fff',
-          padding: '8px 14px',
-          borderRadius: 8,
-          border: '1px solid rgba(0, 0, 0, 0.08)',
-          boxShadow: '0 2px 8px rgba(0, 0, 0, 0.04)',
-          fontSize: 12,
-          fontFamily: "'JetBrains Mono', monospace",
-        }}>
-          <Text type="secondary">
+        <div className="absolute bottom-4 left-4 bg-white px-3.5 py-2 rounded-lg border border-gray-200/50 shadow-sm text-xs font-mono">
+          <span className="text-gray-500">
             节点: {nodes.length} | 连接: {edges.length}
-          </Text>
+          </span>
         </div>
 
         {/* 悬停提示 */}
@@ -1260,7 +1241,7 @@ export const TopologyGraph: React.FC<TopologyGraphProps> = ({
   // 嵌入模式：直接渲染内容
   if (embedded) {
     return (
-      <div style={{ width: '100%', height: '100%' }}>
+      <div className="w-full h-full">
         {graphContent}
       </div>
     )
@@ -1268,15 +1249,11 @@ export const TopologyGraph: React.FC<TopologyGraphProps> = ({
 
   // 弹窗模式
   return (
-    <Modal
-      title={toolbar}
-      open={visible}
-      onCancel={onClose}
-      footer={null}
-      width={900}
-      styles={{ body: { padding: 0 } }}
-    >
-      {graphContent}
-    </Modal>
+    <Dialog open={visible} onOpenChange={(open) => !open && onClose?.()}>
+      <DialogContent className="max-w-[900px] p-0 max-h-[90vh]">
+        <div className="border-b">{toolbar}</div>
+        {graphContent}
+      </DialogContent>
+    </Dialog>
   )
 }

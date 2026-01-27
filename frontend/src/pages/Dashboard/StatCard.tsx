@@ -3,9 +3,8 @@
  */
 
 import React from 'react'
-import { Card, Typography } from 'antd'
-
-const { Text } = Typography
+import { Card } from '@/components/ui/card'
+import { cn } from '@/lib/utils'
 
 interface StatCardProps {
   title: string
@@ -28,37 +27,30 @@ export const StatCard: React.FC<StatCardProps> = ({
 }) => {
   return (
     <Card
-      hoverable={!!onClick}
+      className={cn(
+        'cursor-default',
+        onClick && 'cursor-pointer hover:shadow-md'
+      )}
       onClick={onClick}
-      style={{ cursor: onClick ? 'pointer' : 'default' }}
-      styles={{ body: { padding: 20 } }}
     >
-      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16 }}>
+      <div className="flex items-start gap-4 p-5">
         <div
+          className="flex h-14 w-14 items-center justify-center rounded-lg text-2xl"
           style={{
-            width: 56,
-            height: 56,
-            borderRadius: 12,
             backgroundColor: bgColor,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
             color: color,
-            fontSize: 24,
           }}
         >
           {icon}
         </div>
-        <div style={{ flex: 1 }}>
-          <Text type="secondary" style={{ fontSize: 14 }}>
-            {title}
-          </Text>
-          <div style={{ marginTop: 4 }}>
-            <span style={{ fontSize: 28, fontWeight: 600, color }}>{value}</span>
+        <div className="flex-1">
+          <p className="text-sm text-text-secondary">{title}</p>
+          <div className="mt-1">
+            <span className="text-[28px] font-semibold" style={{ color }}>
+              {value}
+            </span>
             {suffix && (
-              <span style={{ fontSize: 14, color: 'rgba(0,0,0,0.45)', marginLeft: 4 }}>
-                {suffix}
-              </span>
+              <span className="ml-1 text-sm text-text-muted">{suffix}</span>
             )}
           </div>
         </div>

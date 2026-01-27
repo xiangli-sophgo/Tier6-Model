@@ -3,13 +3,14 @@
  * 包含: ManualConnectionLine, ControlPanel, EdgeRenderer, LevelPairSelector
  */
 import React from 'react'
-import { Segmented, Tooltip, Checkbox, Button, Typography } from 'antd'
-import { UndoOutlined, RedoOutlined, ReloadOutlined } from '@ant-design/icons'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
+import { Checkbox } from '@/components/ui/checkbox'
+import { Button } from '@/components/ui/button'
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { Undo, Redo, RotateCw } from 'lucide-react'
 import { LayoutType, AdjacentLevelPair, LEVEL_PAIR_NAMES } from '../../types'
 import { Node, Edge, LinkDetail, MultiLevelViewOptions, getNodeEdgePoint } from './shared'
 import { getTorusGridSize, getTorus3DSize } from './layouts'
-
-const { Text } = Typography
 
 // ==========================================
 // ManualConnectionLine - 手动连接线组件
@@ -177,23 +178,11 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
   onLayoutChange,
 }) => {
   return (
-    <div style={{
-      position: 'absolute',
-      top: 16,
-      right: 16,
-      zIndex: 100,
-      background: '#fff',
-      padding: '10px 14px',
-      borderRadius: 10,
-      border: '1px solid rgba(0, 0, 0, 0.08)',
-      boxShadow: '0 4px 12px rgba(0, 0, 0, 0.06)',
-    }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-        <Segmented
-          size="small"
-          className="topology-layout-segmented"
+    <div className="absolute right-4 top-4 z-[100] rounded-lg border border-border bg-white p-3.5 shadow-md">
+      <div className="flex items-center gap-3">
+        <Tabs
           value={multiLevelOptions?.enabled ? 'multi' : 'single'}
-          onChange={(value) => {
+          onValueChange={(value) => {
             if (onMultiLevelOptionsChange) {
               if (value === 'multi') {
                 // 多层级视图显示"上一层 + 这一层"
@@ -220,99 +209,120 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
               }
             }
           }}
-          options={[
-            { label: '单层级', value: 'single' },
-            { label: '多层级', value: 'multi' },
-          ]}
-        />
-        <div style={{ borderLeft: '1px solid rgba(0, 0, 0, 0.08)', height: 20 }} />
-        <Segmented
-          size="small"
-          className="topology-layout-segmented"
+        >
+          <TabsList>
+            <TabsTrigger value="single">单层级</TabsTrigger>
+            <TabsTrigger value="multi">多层级</TabsTrigger>
+          </TabsList>
+        </Tabs>
+
+        <div className="h-5 w-px bg-border" />
+
+        <Tabs
           value={layoutType}
-          onChange={(value) => {
+          onValueChange={(value) => {
             onLayoutTypeChange?.(value as LayoutType)
             onLayoutChange?.()
           }}
-          options={[
-            { label: '自动', value: 'auto' },
-            { label: '环形', value: 'circle' },
-            { label: '网格', value: 'grid' },
-            { label: '力导向', value: 'force' },
-          ]}
-        />
-        {isForceMode && (
-          <Tooltip title={isForceSimulating ? '物理模拟进行中，可直接拖拽节点' : '物理模拟已稳定'}>
-            <span style={{
-              fontSize: 11,
-              color: isForceSimulating ? '#52c41a' : '#8c8c8c',
-              display: 'flex',
-              alignItems: 'center',
-              gap: 4,
-            }}>
-              <span style={{
-                width: 6,
-                height: 6,
-                borderRadius: '50%',
-                backgroundColor: isForceSimulating ? '#52c41a' : '#d9d9d9',
-                animation: isForceSimulating ? 'pulse 1s infinite' : 'none',
-              }} />
-              {isForceSimulating ? '模拟中' : '已稳定'}
-            </span>
-          </Tooltip>
-        )}
-        <div style={{ borderLeft: '1px solid rgba(0, 0, 0, 0.08)', height: 20 }} />
-        <Checkbox
-          checked={isManualMode}
-          onChange={(e) => setIsManualMode(e.target.checked)}
-          disabled={multiLevelOptions?.enabled || isForceMode}
         >
-          <span style={{ fontSize: 12 }}>手动调整</span>
-        </Checkbox>
+          <TabsList>
+            <TabsTrigger value="auto">自动</TabsTrigger>
+            <TabsTrigger value="circle">环形</TabsTrigger>
+            <TabsTrigger value="grid">网格</TabsTrigger>
+            <TabsTrigger value="force">力导向</TabsTrigger>
+          </TabsList>
+        </Tabs>
+
+        {isForceMode && (
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span className="flex items-center gap-1 text-[11px]" style={{
+                  color: isForceSimulating ? '#52c41a' : '#8c8c8c',
+                }}>
+                  <span className="h-1.5 w-1.5 rounded-full" style={{
+                    backgroundColor: isForceSimulating ? '#52c41a' : '#d9d9d9',
+                    animation: isForceSimulating ? 'pulse 1s infinite' : 'none',
+                  }} />
+                  {isForceSimulating ? '模拟中' : '已稳定'}
+                </span>
+              </TooltipTrigger>
+              <TooltipContent>
+                {isForceSimulating ? '物理模拟进行中，可直接拖拽节点' : '物理模拟已稳定'}
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+        )}
+
+        <div className="h-5 w-px bg-border" />
+
+        <div className="flex items-center gap-2">
+          <Checkbox
+            checked={isManualMode}
+            onCheckedChange={setIsManualMode}
+            disabled={multiLevelOptions?.enabled || isForceMode}
+            id="manual-mode"
+          />
+          <label htmlFor="manual-mode" className="text-xs cursor-pointer">
+            手动调整
+          </label>
+        </div>
+
         {isManualMode && (
-          <>
-            <Tooltip title="撤销 (Ctrl+Z)">
-              <Button
-                type="text"
-                size="small"
-                icon={<UndoOutlined />}
-                onClick={onUndo}
-                disabled={historyIndex < 0}
-              />
-            </Tooltip>
-            <Tooltip title="重做 (Ctrl+Y)">
-              <Button
-                type="text"
-                size="small"
-                icon={<RedoOutlined />}
-                onClick={onRedo}
-                disabled={historyIndex >= historyLength - 1}
-              />
-            </Tooltip>
-            {Object.keys(manualPositions).length > 0 && (
-              <Tooltip title="重置布局">
-                <Button
-                  type="text"
-                  size="small"
-                  icon={<ReloadOutlined />}
-                  onClick={onReset}
-                />
+          <TooltipProvider>
+            <>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={onUndo}
+                    disabled={historyIndex < 0}
+                    className="h-8 w-8 p-0"
+                  >
+                    <Undo className="h-4 w-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>撤销 (Ctrl+Z)</TooltipContent>
               </Tooltip>
-            )}
-          </>
+
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={onRedo}
+                    disabled={historyIndex >= historyLength - 1}
+                    className="h-8 w-8 p-0"
+                  >
+                    <Redo className="h-4 w-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>重做 (Ctrl+Y)</TooltipContent>
+              </Tooltip>
+
+              {Object.keys(manualPositions).length > 0 && (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={onReset}
+                      className="h-8 w-8 p-0"
+                    >
+                      <RotateCw className="h-4 w-4" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>重置布局</TooltipContent>
+                </Tooltip>
+              )}
+            </>
+          </TooltipProvider>
         )}
       </div>
+
       {isManualMode && (
-        <div style={{
-          marginTop: 10,
-          padding: '8px 12px',
-          background: 'rgba(37, 99, 235, 0.06)',
-          borderRadius: 8,
-          border: '1px solid rgba(37, 99, 235, 0.12)',
-          fontSize: 12,
-          color: '#2563eb',
-          fontWeight: 500,
-        }}>
+        <div className="mt-2.5 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-xs font-medium text-blue-600">
           Shift+拖动 · 自动吸附对齐 · 自动保存
         </div>
       )}
@@ -609,7 +619,7 @@ export const LevelPairSelector: React.FC<LevelPairSelectorProps> = ({
 }) => {
   const options = getAvailableOptions(currentLevel, hasCurrentPod, hasCurrentRack, hasCurrentBoard)
 
-  const handleChange = (val: string | number) => {
+  const handleChange = (val: string) => {
     if (val === 'single') {
       onChange(null)
     } else {
@@ -618,15 +628,21 @@ export const LevelPairSelector: React.FC<LevelPairSelectorProps> = ({
   }
 
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-      <Text style={{ fontSize: 12, color: '#666', whiteSpace: 'nowrap' }}>视图模式:</Text>
-      <Segmented
-        size="small"
-        options={options}
-        value={value || 'single'}
-        onChange={handleChange}
-        disabled={disabled}
-      />
+    <div className="flex items-center gap-2">
+      <span className="whitespace-nowrap text-xs text-text-secondary">视图模式:</span>
+      <Tabs value={value || 'single'} onValueChange={handleChange}>
+        <TabsList>
+          {options.map(opt => (
+            <TabsTrigger
+              key={opt.value}
+              value={opt.value}
+              disabled={disabled || opt.disabled}
+            >
+              {opt.label}
+            </TabsTrigger>
+          ))}
+        </TabsList>
+      </Tabs>
     </div>
   )
 }

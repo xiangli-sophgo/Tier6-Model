@@ -3,16 +3,9 @@
  */
 
 import React from 'react'
-import { Typography, Tooltip } from 'antd'
-import {
-  ClockCircleOutlined,
-  ThunderboltOutlined,
-  DashboardOutlined,
-  RocketOutlined,
-} from '@ant-design/icons'
+import { Clock, Zap, Gauge, Rocket } from 'lucide-react'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { PlanAnalysisResult } from '../../../../utils/llmDeployment/types'
-
-const { Text } = Typography
 
 interface HeroKPIPanelProps {
   result: PlanAnalysisResult
@@ -82,9 +75,9 @@ const KPICard: React.FC<KPICardProps> = ({
         <span style={{ color: isSelected ? colors.primary : colors.textSecondary, fontSize: 14 }}>
           {icon}
         </span>
-        <Text style={{ fontSize: 13, color: colors.textSecondary, fontWeight: 500 }}>
+        <span style={{ fontSize: 13, color: colors.textSecondary, fontWeight: 500 }}>
           {label}
-        </Text>
+        </span>
       </div>
 
       {/* 数值 */}
@@ -122,7 +115,14 @@ const KPICard: React.FC<KPICardProps> = ({
     </div>
   )
 
-  return tooltip ? <Tooltip title={tooltip}>{card}</Tooltip> : card
+  return tooltip ? (
+    <TooltipProvider>
+      <Tooltip>
+        <TooltipTrigger asChild>{card}</TooltipTrigger>
+        <TooltipContent>{tooltip}</TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  ) : card
 }
 
 export const HeroKPIPanel: React.FC<HeroKPIPanelProps> = ({
@@ -168,7 +168,7 @@ export const HeroKPIPanel: React.FC<HeroKPIPanelProps> = ({
   const kpiItems = [
     {
       id: 'ttft',
-      icon: <ClockCircleOutlined />,
+      icon: <Clock className="h-4 w-4" />,
       label: 'FTL',
       value: formatValue(latency.prefill_total_latency_ms),
       unit: 'ms',
@@ -178,7 +178,7 @@ export const HeroKPIPanel: React.FC<HeroKPIPanelProps> = ({
     },
     {
       id: 'tpot',
-      icon: <RocketOutlined />,
+      icon: <Rocket className="h-4 w-4" />,
       label: 'TPOT',
       value: formatValue(latency.decode_per_token_latency_ms, 2),
       unit: 'ms',
@@ -188,7 +188,7 @@ export const HeroKPIPanel: React.FC<HeroKPIPanelProps> = ({
     },
     {
       id: 'throughput',
-      icon: <ThunderboltOutlined />,
+      icon: <Zap className="h-4 w-4" />,
       label: 'Throughput',
       value: formatValue(throughput.tokens_per_second),
       unit: 'tok/s',
@@ -198,7 +198,7 @@ export const HeroKPIPanel: React.FC<HeroKPIPanelProps> = ({
     },
     {
       id: 'mfu',
-      icon: <DashboardOutlined />,
+      icon: <Gauge className="h-4 w-4" />,
       label: 'MFU',
       value: (throughput.model_flops_utilization * 100).toFixed(1),
       unit: '%',

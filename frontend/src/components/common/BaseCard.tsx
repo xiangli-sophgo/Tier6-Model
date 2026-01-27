@@ -4,7 +4,8 @@
  */
 
 import React, { useState } from 'react'
-import { DownOutlined, RightOutlined } from '@ant-design/icons'
+import { ChevronDown, ChevronRight } from 'lucide-react'
+import { cn } from '@/lib/utils'
 
 export interface BaseCardProps {
   /** 标题 */
@@ -19,9 +20,13 @@ export interface BaseCardProps {
   accentColor?: string
   /** 内容区域 */
   children: React.ReactNode
-  /** 自定义容器样式 */
+  /** 自定义容器类名 */
+  className?: string
+  /** 自定义容器样式（兼容旧API） */
   style?: React.CSSProperties
-  /** 内容区域样式 */
+  /** 内容区域类名 */
+  bodyClassName?: string
+  /** 内容区域样式（兼容旧API） */
   styles?: {
     body?: React.CSSProperties
   }
@@ -35,69 +40,6 @@ export interface BaseCardProps {
   onExpandChange?: (expanded: boolean) => void
 }
 
-// 样式常量
-const STYLES = {
-  card: {
-    background: '#fff',
-    borderRadius: 12,
-    border: '1px solid #e5e7eb',
-    overflow: 'hidden',
-  } as React.CSSProperties,
-  header: {
-    background: '#FAFAFA',
-    padding: '14px 20px',
-    borderBottom: '1px solid #E5E5E5',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 12,
-  } as React.CSSProperties,
-  headerCollapsible: {
-    cursor: 'pointer',
-    userSelect: 'none',
-  } as React.CSSProperties,
-  headerLeft: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 10,
-    flex: 1,
-    minWidth: 0,
-  } as React.CSSProperties,
-  titleWrapper: {
-    flex: 1,
-    minWidth: 0,
-  } as React.CSSProperties,
-  title: {
-    fontSize: 16,
-    fontWeight: 600,
-    color: '#1f2937',
-    margin: 0,
-    lineHeight: 1.4,
-  } as React.CSSProperties,
-  subtitle: {
-    fontSize: 13,
-    color: '#6b7280',
-    marginTop: 2,
-    lineHeight: 1.4,
-  } as React.CSSProperties,
-  body: {
-    padding: 20,
-    background: '#fff',
-  } as React.CSSProperties,
-  collapseIcon: {
-    fontSize: 12,
-    color: '#9ca3af',
-    transition: 'transform 0.2s',
-    flexShrink: 0,
-  } as React.CSSProperties,
-  accentBar: {
-    width: 3,
-    borderRadius: 2,
-    alignSelf: 'stretch',
-    flexShrink: 0,
-  } as React.CSSProperties,
-}
-
 export const BaseCard: React.FC<BaseCardProps> = ({
   title,
   subtitle,
@@ -105,7 +47,9 @@ export const BaseCard: React.FC<BaseCardProps> = ({
   extra,
   accentColor,
   children,
+  className,
   style,
+  bodyClassName,
   styles,
   collapsible = false,
   defaultExpanded = true,
@@ -124,39 +68,40 @@ export const BaseCard: React.FC<BaseCardProps> = ({
     onExpandChange?.(newExpanded)
   }
 
-  const headerStyle: React.CSSProperties = {
-    ...STYLES.header,
-    ...(collapsible ? STYLES.headerCollapsible : {}),
-    ...(collapsible && !isExpanded ? { borderBottom: 'none' } : {}),
-  }
-
   return (
-    <div style={{ ...STYLES.card, ...style }}>
+    <div className={cn('overflow-hidden rounded-lg border border-border bg-bg-elevated', className)} style={style}>
       {/* 标题区域 */}
       <div
-        style={headerStyle}
+        className={cn(
+          'flex items-center justify-between gap-3 border-b border-border bg-[#FAFAFA] px-5 py-3.5',
+          collapsible && 'cursor-pointer select-none',
+          collapsible && !isExpanded && 'border-b-0'
+        )}
         onClick={handleToggle}
       >
-        <div style={STYLES.headerLeft}>
+        <div className="flex flex-1 items-center gap-2.5 min-w-0">
           {/* 可折叠图标 */}
           {collapsible && (
-            <span style={STYLES.collapseIcon}>
-              {isExpanded ? <DownOutlined /> : <RightOutlined />}
+            <span className="flex-shrink-0 text-xs text-[#9ca3af] transition-transform">
+              {isExpanded ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
             </span>
           )}
 
           {/* 左侧彩色边条 */}
           {accentColor && (
-            <div style={{ ...STYLES.accentBar, background: accentColor }} />
+            <div
+              className="h-full w-[3px] flex-shrink-0 self-stretch rounded-sm"
+              style={{ background: accentColor }}
+            />
           )}
 
           {/* 图标 */}
-          {icon && <span style={{ flexShrink: 0 }}>{icon}</span>}
+          {icon && <span className="flex-shrink-0">{icon}</span>}
 
           {/* 标题和副标题 */}
-          <div style={STYLES.titleWrapper}>
-            <div style={STYLES.title}>{title}</div>
-            {subtitle && <div style={STYLES.subtitle}>{subtitle}</div>}
+          <div className="flex-1 min-w-0">
+            <div className="text-base font-semibold leading-tight text-[#1f2937]">{title}</div>
+            {subtitle && <div className="mt-0.5 text-[13px] leading-tight text-[#6b7280]">{subtitle}</div>}
           </div>
         </div>
 
@@ -170,7 +115,7 @@ export const BaseCard: React.FC<BaseCardProps> = ({
 
       {/* 内容区域 */}
       {(!collapsible || isExpanded) && (
-        <div style={{ ...STYLES.body, ...styles?.body }}>
+        <div className={cn('bg-white p-5', bodyClassName)} style={styles?.body}>
           {children}
         </div>
       )}

@@ -7,20 +7,31 @@
 
 import React, { useState, useEffect } from 'react'
 import {
-  List, Button, Tag, Space, Tooltip, Progress, Empty, Popconfirm,
-  Card, Row, Col, Statistic, Divider,
-} from 'antd'
+  Loader2,
+  CheckCircle,
+  XCircle,
+  StopCircle,
+  Trash2,
+  Trash,
+  Eye,
+  RefreshCw,
+  Zap,
+} from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
+import { Progress } from '@/components/ui/progress'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import {
-  SyncOutlined,
-  CheckCircleOutlined,
-  CloseCircleOutlined,
-  StopOutlined,
-  DeleteOutlined,
-  ClearOutlined,
-  EyeOutlined,
-  ReloadOutlined,
-  ThunderboltOutlined,
-} from '@ant-design/icons'
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog'
 import { AnalysisTask } from '../shared'
 
 interface AnalysisTaskListProps {
@@ -59,20 +70,54 @@ const formatParallelism = (p: AnalysisTask['parallelism']): string => {
 }
 
 // 状态标签
-const StatusTag: React.FC<{ status: AnalysisTask['status'] }> = ({ status }) => {
-  switch (status) {
-    case 'running':
-      return <Tag icon={<SyncOutlined spin />} color="processing">运行中</Tag>
-    case 'completed':
-      return <Tag icon={<CheckCircleOutlined />} color="success">已完成</Tag>
-    case 'failed':
-      return <Tag icon={<CloseCircleOutlined />} color="error">失败</Tag>
-    case 'cancelled':
-      return <Tag icon={<StopOutlined />} color="default">已取消</Tag>
-    default:
-      return null
+const StatusBadge: React.FC<{ status: AnalysisTask['status'] }> = ({ status }) => {
+  const configs: Record<string, { className: string; text: string; icon: React.ReactNode }> = {
+    running: {
+      className: 'bg-blue-100 text-blue-700 border-blue-200',
+      text: '运行中',
+      icon: <Loader2 className="h-3 w-3 animate-spin" />,
+    },
+    completed: {
+      className: 'bg-green-100 text-green-700 border-green-200',
+      text: '已完成',
+      icon: <CheckCircle className="h-3 w-3" />,
+    },
+    failed: {
+      className: 'bg-red-100 text-red-700 border-red-200',
+      text: '失败',
+      icon: <XCircle className="h-3 w-3" />,
+    },
+    cancelled: {
+      className: 'bg-gray-100 text-gray-600 border-gray-200',
+      text: '已取消',
+      icon: <StopCircle className="h-3 w-3" />,
+    },
   }
+
+  const config = configs[status]
+  if (!config) return null
+
+  return (
+    <Badge variant="outline" className={`gap-1 ${config.className}`}>
+      {config.icon}
+      {config.text}
+    </Badge>
+  )
 }
+
+// 统计项组件
+const StatItem: React.FC<{ title: string; value: string | number; valueColor?: string }> = ({
+  title,
+  value,
+  valueColor,
+}) => (
+  <div className="text-center">
+    <div className="text-xs text-gray-500 mb-1">{title}</div>
+    <div className="text-xl font-semibold" style={valueColor ? { color: valueColor } : undefined}>
+      {value}
+    </div>
+  </div>
+)
 
 // 运行中任务卡片组件
 interface RunningTaskCardProps {
@@ -98,67 +143,40 @@ const RunningTaskCard: React.FC<RunningTaskCardProps> = ({ task, onCancel }) => 
   const taskName = task.experimentName || task.benchmarkName || task.modelName
 
   return (
-    <Card
-      size="small"
-      title={
-        <Space>
-          <ThunderboltOutlined style={{ color: '#faad14' }} />
-          <span>{taskName}</span>
-          <StatusTag status={task.status} />
-        </Space>
-      }
-      extra={
-        <Button
-          icon={<StopOutlined />}
-          danger
-          size="small"
-          onClick={onCancel}
-        >
+    <div className="mb-3 p-3 border border-blue-200 bg-blue-50 rounded-lg">
+      {/* 标题栏 */}
+      <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center gap-2">
+          <Zap className="h-4 w-4 text-yellow-500" />
+          <span className="font-medium text-sm">{taskName}</span>
+          <StatusBadge status={task.status} />
+        </div>
+        <Button variant="destructive" size="sm" onClick={onCancel}>
+          <StopCircle className="h-3.5 w-3.5 mr-1" />
           取消
         </Button>
-      }
-      style={{ marginBottom: 12, border: '1px solid #91d5ff', background: '#e6f7ff' }}
-    >
-      <Row gutter={[16, 8]}>
-        <Col span={8}>
-          <Statistic
-            title="进度"
-            value={progress}
-            suffix="%"
-            valueStyle={{ color: '#1890ff', fontSize: 20 }}
-          />
-        </Col>
-        <Col span={8}>
-          <Statistic
-            title="运行时间"
-            value={elapsedTime}
-            valueStyle={{ color: '#1890ff', fontSize: 20 }}
-          />
-        </Col>
-        <Col span={8}>
-          <Statistic
-            title="芯片数"
-            value={task.chips || '-'}
-            valueStyle={{ fontSize: 20 }}
-          />
-        </Col>
-      </Row>
-
-      <Divider style={{ margin: '12px 0' }} />
-
-      <Progress
-        percent={progress}
-        status="active"
-        strokeColor={{ from: '#1890ff', to: '#4096ff' }}
-      />
-
-      <div style={{ marginTop: 8, fontSize: 12, color: '#666' }}>
-        <Space split={<Divider type="vertical" />}>
-          <span>模式: {task.mode === 'auto' ? '自动搜索' : '手动'}</span>
-          <span>策略: {formatParallelism(task.parallelism)}</span>
-        </Space>
       </div>
-    </Card>
+
+      {/* 统计数据 */}
+      <div className="grid grid-cols-3 gap-4 mb-3">
+        <StatItem title="进度" value={`${progress}%`} valueColor="#1890ff" />
+        <StatItem title="运行时间" value={elapsedTime} valueColor="#1890ff" />
+        <StatItem title="芯片数" value={task.chips || '-'} />
+      </div>
+
+      {/* 分隔线 */}
+      <div className="border-t border-blue-200 my-3" />
+
+      {/* 进度条 */}
+      <Progress value={progress} className="h-2" />
+
+      {/* 详情 */}
+      <div className="mt-2 text-xs text-gray-600 flex items-center gap-2">
+        <span>模式: {task.mode === 'auto' ? '自动搜索' : '手动'}</span>
+        <span className="text-gray-300">|</span>
+        <span>策略: {formatParallelism(task.parallelism)}</span>
+      </div>
+    </div>
   )
 }
 
@@ -171,68 +189,68 @@ interface HistoryTaskItemProps {
 
 const HistoryTaskItem: React.FC<HistoryTaskItemProps> = ({ task, onView, onDelete }) => {
   return (
-    <List.Item
-      style={{
-        padding: '8px 12px',
-        background: '#fafafa',
-        marginBottom: 4,
-        borderRadius: 4,
-        border: '1px solid #f0f0f0',
-      }}
-      actions={[
-        <Space key="actions" size={0}>
-          {task.status === 'completed' && (
-            <Tooltip title="查看结果">
-              <Button
-                size="small"
-                type="text"
-                icon={<EyeOutlined />}
-                onClick={onView}
-              />
-            </Tooltip>
-          )}
-          <Tooltip title="删除">
-            <Button
-              size="small"
-              type="text"
-              icon={<DeleteOutlined />}
-              onClick={onDelete}
-              danger
-            />
-          </Tooltip>
-        </Space>,
-      ]}
-    >
-      <List.Item.Meta
-        title={
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-            <StatusTag status={task.status} />
-            <span style={{ fontSize: 13, fontWeight: 500 }}>
+    <TooltipProvider>
+      <div className="flex items-center justify-between p-2 bg-gray-50 mb-1 rounded border border-gray-100">
+        <div className="flex-1 min-w-0">
+          {/* 标题行 */}
+          <div className="flex items-center gap-2 flex-wrap">
+            <StatusBadge status={task.status} />
+            <span className="text-[13px] font-medium">
               {task.experimentName || task.benchmarkName || task.modelName}
             </span>
-            <span style={{ fontSize: 12, color: '#8c8c8c' }}>|</span>
-            <span style={{ fontSize: 12, color: '#666' }}>{formatParallelism(task.parallelism)}</span>
+            <span className="text-xs text-gray-400">|</span>
+            <span className="text-xs text-gray-600">{formatParallelism(task.parallelism)}</span>
           </div>
-        }
-        description={
-          <div style={{ fontSize: 12, marginTop: 4 }}>
+
+          {/* 描述行 */}
+          <div className="text-xs mt-1">
             {task.status === 'completed' ? (
-              <span style={{ color: '#52c41a' }}>
+              <span className="text-green-600">
                 TTFT: {task.ttft?.toFixed(1)}ms · TPOT: {task.tpot?.toFixed(2)}ms · {formatDuration(task.startTime, task.endTime)}
               </span>
             ) : task.status === 'failed' ? (
-              <Tooltip title={task.error}>
-                <span style={{ color: '#ff4d4f' }}>
-                  {task.error?.slice(0, 50)}{task.error && task.error.length > 50 ? '...' : ''}
-                </span>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span className="text-red-500 cursor-help">
+                    {task.error?.slice(0, 50)}{task.error && task.error.length > 50 ? '...' : ''}
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent>{task.error}</TooltipContent>
               </Tooltip>
             ) : (
-              <span style={{ color: '#999' }}>已取消 · {formatDuration(task.startTime, task.endTime)}</span>
+              <span className="text-gray-500">已取消 · {formatDuration(task.startTime, task.endTime)}</span>
             )}
           </div>
-        }
-      />
-    </List.Item>
+        </div>
+
+        {/* 操作按钮 */}
+        <div className="flex items-center gap-1 ml-2">
+          {task.status === 'completed' && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={onView}>
+                  <Eye className="h-3.5 w-3.5" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>查看结果</TooltipContent>
+            </Tooltip>
+          )}
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 w-7 p-0 text-red-500 hover:text-red-600"
+                onClick={onDelete}
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>删除</TooltipContent>
+          </Tooltip>
+        </div>
+      </div>
+    </TooltipProvider>
   )
 }
 
@@ -250,11 +268,9 @@ export const AnalysisTaskList: React.FC<AnalysisTaskListProps> = ({
 
   if (tasks.length === 0) {
     return (
-      <Empty
-        image={Empty.PRESENTED_IMAGE_SIMPLE}
-        description="暂无分析任务"
-        style={{ padding: '20px 0' }}
-      />
+      <div className="py-8 text-center">
+        <div className="text-gray-400 text-sm">暂无分析任务</div>
+      </div>
     )
   }
 
@@ -272,48 +288,57 @@ export const AnalysisTaskList: React.FC<AnalysisTaskListProps> = ({
       {/* 历史任务列表 */}
       {historyTasks.length > 0 && (
         <>
-          <div style={{
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-            marginBottom: 8,
-            marginTop: runningTasks.length > 0 ? 16 : 0,
-            padding: '0 4px',
-          }}>
-            <span style={{ fontSize: 12, color: '#666' }}>
+          <div
+            className={`flex justify-between items-center mb-2 px-1 ${
+              runningTasks.length > 0 ? 'mt-4' : ''
+            }`}
+          >
+            <span className="text-xs text-gray-600">
               历史任务 ({historyTasks.length})
             </span>
-            <Space size={4}>
-              <Button size="small" type="text" icon={<ReloadOutlined />} onClick={onRefresh}>
+            <div className="flex items-center gap-1">
+              <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={onRefresh}>
+                <RefreshCw className="h-3 w-3 mr-1" />
                 刷新
               </Button>
-              <Popconfirm
-                title="确定清空历史任务？"
-                onConfirm={onClearCompleted}
-                okText="确定"
-                cancelText="取消"
-                placement="topRight"
-              >
-                <Button size="small" type="text" icon={<ClearOutlined />} danger>
-                  清空
-                </Button>
-              </Popconfirm>
-            </Space>
+              <AlertDialog>
+                <AlertDialogTrigger asChild>
+                  <Button variant="ghost" size="sm" className="h-7 text-xs text-red-500 hover:text-red-600">
+                    <Trash className="h-3 w-3 mr-1" />
+                    清空
+                  </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>确认清空</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      确定清空所有历史任务？此操作不可撤销。
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>取消</AlertDialogCancel>
+                    <AlertDialogAction
+                      className="bg-red-600 hover:bg-red-700"
+                      onClick={onClearCompleted}
+                    >
+                      确定
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
+            </div>
           </div>
 
-          <List
-            size="small"
-            dataSource={historyTasks}
-            style={{ maxHeight: 200, overflowY: 'auto' }}
-            renderItem={(task) => (
+          <div className="max-h-[200px] overflow-y-auto">
+            {historyTasks.map((task) => (
               <HistoryTaskItem
                 key={task.id}
                 task={task}
                 onView={() => onViewTask(task)}
                 onDelete={() => onDeleteTask(task.id)}
               />
-            )}
-          />
+            ))}
+          </div>
         </>
       )}
     </div>

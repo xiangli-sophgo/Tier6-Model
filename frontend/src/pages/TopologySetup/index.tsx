@@ -5,15 +5,15 @@
  */
 
 import React, { useCallback, useState, useRef, useEffect, lazy, Suspense } from 'react'
-import { Layout, Spin, Card, Descriptions, Tag, Collapse } from 'antd'
+import { Loader2 } from 'lucide-react'
+import { Badge } from '@/components/ui/badge'
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import { TopologyGraph, NodeDetail } from '@/components/TopologyGraph'
 import { ConfigPanel } from '@/components/ConfigPanel'
 import { useWorkbench } from '@/contexts/WorkbenchContext'
 
 // 懒加载 Scene3D 组件（只在需要时加载 Three.js 相关代码）
 const Scene3D = lazy(() => import('@/components/Scene3D').then(module => ({ default: module.Scene3D })))
-
-const { Sider, Content } = Layout
 
 // 侧边栏宽度常量
 const SIDER_WIDTH_KEY = 'tier6_topology_sider_width'
@@ -212,40 +212,22 @@ export const TopologySetup: React.FC = () => {
   )
 
   return (
-    <Layout style={{ height: '100%', background: '#fff' }}>
+    <div className="h-full w-full bg-white flex flex-col">
       {/* 标题栏 */}
-      <div
-        style={{
-          padding: '16px 24px',
-          borderBottom: '1px solid #f0f0f0',
-          background: '#fff',
-        }}
-      >
-        <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
-          <span style={{ fontSize: 20, fontWeight: 600, color: '#1a1a1a' }}>
-            互联拓扑
-          </span>
-          <span style={{ fontSize: 13, color: '#8c8c8c' }}>
-            配置Tier6+互联拓扑
-          </span>
+      <div className="px-6 py-4 border-b border-gray-100 bg-white">
+        <div className="flex items-baseline gap-2">
+          <span className="text-xl font-semibold text-gray-900">互联拓扑</span>
+          <span className="text-[13px] text-gray-400">配置Tier6+互联拓扑</span>
         </div>
       </div>
 
       {/* 主内容区 */}
-      <Layout style={{ height: 'calc(100% - 73px)' }}>
+      <div className="flex-1 flex" style={{ height: 'calc(100% - 73px)' }}>
         {/* 左侧配置面板 */}
-      <Sider
-        width={siderWidth}
-        style={{
-          background: '#EFEFEF',
-          padding: 16,
-          overflow: 'auto',
-          position: 'relative',
-          borderRight: '1px solid #E5E5E5',
-          display: 'flex',
-          flexDirection: 'column',
-        }}
-      >
+        <div
+          style={{ width: siderWidth }}
+          className="bg-[#EFEFEF] p-4 overflow-auto relative border-r border-gray-200 flex flex-col"
+        >
         <div style={{ flex: 1, minHeight: 0, overflow: 'auto' }}>
           <ConfigPanel
             topology={topology.topology}
@@ -280,117 +262,100 @@ export const TopologySetup: React.FC = () => {
 
         {/* 节点详情卡片 */}
         {ui.selectedNode && (
-          <Card
-            title={`节点详情: ${ui.selectedNode.label}`}
-            size="small"
-            style={{ marginTop: 16 }}
-            extra={<a onClick={() => ui.setSelectedNode(null)}>关闭</a>}
-          >
-            <Descriptions column={1} size="small">
-              <Descriptions.Item label="ID">{ui.selectedNode.id}</Descriptions.Item>
-              <Descriptions.Item label="类型">
-                <Tag color={ui.selectedNode.type === 'switch' ? 'blue' : 'green'}>
+          <div className="mt-4 bg-white rounded-lg border p-3">
+            <div className="flex justify-between items-center mb-3">
+              <span className="font-semibold text-sm">节点详情: {ui.selectedNode.label}</span>
+              <button className="text-blue-500 text-sm hover:underline" onClick={() => ui.setSelectedNode(null)}>关闭</button>
+            </div>
+            <div className="space-y-2 text-sm">
+              <div className="flex">
+                <span className="text-gray-500 w-16">ID</span>
+                <span>{ui.selectedNode.id}</span>
+              </div>
+              <div className="flex items-center">
+                <span className="text-gray-500 w-16">类型</span>
+                <Badge variant="outline" className={ui.selectedNode.type === 'switch' ? 'bg-blue-50 text-blue-700 border-blue-200' : 'bg-green-50 text-green-700 border-green-200'}>
                   {ui.selectedNode.subType?.toUpperCase() || ui.selectedNode.type.toUpperCase()}
-                </Tag>
-              </Descriptions.Item>
+                </Badge>
+              </div>
               {ui.selectedNode.portInfo && (
-                <Descriptions.Item label="端口">
-                  上行: {ui.selectedNode.portInfo.uplink} | 下行:{' '}
-                  {ui.selectedNode.portInfo.downlink} | 互联: {ui.selectedNode.portInfo.inter}
-                </Descriptions.Item>
+                <div className="flex">
+                  <span className="text-gray-500 w-16">端口</span>
+                  <span>上行: {ui.selectedNode.portInfo.uplink} | 下行: {ui.selectedNode.portInfo.downlink} | 互联: {ui.selectedNode.portInfo.inter}</span>
+                </div>
               )}
-              <Descriptions.Item label="连接数">
-                {ui.selectedNode.connections.length}
-              </Descriptions.Item>
-            </Descriptions>
+              <div className="flex">
+                <span className="text-gray-500 w-16">连接数</span>
+                <span>{ui.selectedNode.connections.length}</span>
+              </div>
+            </div>
             {ui.selectedNode.connections.length > 0 && (
-              <Collapse
-                size="small"
-                style={{ marginTop: 8 }}
-                items={[
-                  {
-                    key: 'connections',
-                    label: `连接列表 (${ui.selectedNode.connections.length})`,
-                    children: (
-                      <div style={{ maxHeight: 150, overflow: 'auto' }}>
-                        {ui.selectedNode.connections.map((conn, idx) => (
-                          <div
-                            key={idx}
-                            style={{
-                              fontSize: 12,
-                              padding: '2px 0',
-                              borderBottom: '1px solid #f0f0f0',
-                            }}
-                          >
-                            {conn.label}
-                            {conn.bandwidth && (
-                              <span style={{ color: '#999', marginLeft: 8 }}>
-                                {conn.bandwidth} GB/s
-                              </span>
-                            )}
-                          </div>
-                        ))}
+              <Collapsible className="mt-2">
+                <CollapsibleTrigger className="text-sm text-gray-600 hover:text-gray-900">
+                  连接列表 ({ui.selectedNode.connections.length})
+                </CollapsibleTrigger>
+                <CollapsibleContent>
+                  <div className="max-h-[150px] overflow-auto mt-2">
+                    {ui.selectedNode.connections.map((conn, idx) => (
+                      <div key={idx} className="text-xs py-0.5 border-b border-gray-100">
+                        {conn.label}
+                        {conn.bandwidth && (
+                          <span className="text-gray-400 ml-2">{conn.bandwidth} GB/s</span>
+                        )}
                       </div>
-                    ),
-                  },
-                ]}
-              />
+                    ))}
+                  </div>
+                </CollapsibleContent>
+              </Collapsible>
             )}
-          </Card>
+          </div>
         )}
 
         {/* 连接详情卡片 */}
         {ui.selectedLink && (
-          <Card
-            title="连接详情"
-            size="small"
-            style={{ marginTop: 16 }}
-            extra={<a onClick={() => ui.setSelectedLink(null)}>关闭</a>}
-          >
-            <Descriptions column={1} size="small">
-              <Descriptions.Item label="源节点">
-                <Tag color="green">{ui.selectedLink.sourceLabel}</Tag>
-                <span style={{ color: '#999', marginLeft: 4, fontSize: 12 }}>
-                  ({ui.selectedLink.sourceType.toUpperCase()})
-                </span>
-              </Descriptions.Item>
-              <Descriptions.Item label="目标节点">
-                <Tag color="blue">{ui.selectedLink.targetLabel}</Tag>
-                <span style={{ color: '#999', marginLeft: 4, fontSize: 12 }}>
-                  ({ui.selectedLink.targetType.toUpperCase()})
-                </span>
-              </Descriptions.Item>
+          <div className="mt-4 bg-white rounded-lg border p-3">
+            <div className="flex justify-between items-center mb-3">
+              <span className="font-semibold text-sm">连接详情</span>
+              <button className="text-blue-500 text-sm hover:underline" onClick={() => ui.setSelectedLink(null)}>关闭</button>
+            </div>
+            <div className="space-y-2 text-sm">
+              <div className="flex items-center">
+                <span className="text-gray-500 w-20">源节点</span>
+                <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">{ui.selectedLink.sourceLabel}</Badge>
+                <span className="text-gray-400 ml-1 text-xs">({ui.selectedLink.sourceType.toUpperCase()})</span>
+              </div>
+              <div className="flex items-center">
+                <span className="text-gray-500 w-20">目标节点</span>
+                <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200">{ui.selectedLink.targetLabel}</Badge>
+                <span className="text-gray-400 ml-1 text-xs">({ui.selectedLink.targetType.toUpperCase()})</span>
+              </div>
               {ui.selectedLink.bandwidth && (
-                <Descriptions.Item label="带宽">
-                  {ui.selectedLink.bandwidth} GB/s
-                </Descriptions.Item>
+                <div className="flex">
+                  <span className="text-gray-500 w-20">带宽</span>
+                  <span>{ui.selectedLink.bandwidth} GB/s</span>
+                </div>
               )}
               {ui.selectedLink.latency && (
-                <Descriptions.Item label="延迟">{ui.selectedLink.latency} us</Descriptions.Item>
+                <div className="flex">
+                  <span className="text-gray-500 w-20">延迟</span>
+                  <span>{ui.selectedLink.latency} us</span>
+                </div>
               )}
-              <Descriptions.Item label="类型">
-                <Tag color={ui.selectedLink.isManual ? 'orange' : 'default'}>
+              <div className="flex items-center">
+                <span className="text-gray-500 w-20">类型</span>
+                <Badge variant="outline" className={ui.selectedLink.isManual ? 'bg-orange-50 text-orange-700 border-orange-200' : ''}>
                   {ui.selectedLink.isManual ? '手动连接' : '自动连接'}
-                </Tag>
-              </Descriptions.Item>
-            </Descriptions>
-          </Card>
+                </Badge>
+              </div>
+            </div>
+          </div>
         )}
 
         {/* 拖拽手柄 */}
         <div
           onMouseDown={handleMouseDown}
-          style={{
-            position: 'absolute',
-            top: 0,
-            right: 0,
-            width: 4,
-            height: '100%',
-            cursor: 'col-resize',
-            background: isDragging ? '#4f46e5' : 'transparent',
-            transition: 'background 0.15s',
-            zIndex: 10,
-          }}
+          className="absolute top-0 right-0 w-1 h-full cursor-col-resize z-10 transition-colors"
+          style={{ background: isDragging ? '#4f46e5' : 'transparent' }}
           onMouseEnter={(e) => {
             if (!isDragging) (e.target as HTMLElement).style.background = '#e2e8f0'
           }}
@@ -398,43 +363,23 @@ export const TopologySetup: React.FC = () => {
             if (!isDragging) (e.target as HTMLElement).style.background = 'transparent'
           }}
         />
-      </Sider>
+      </div>
 
       {/* 右侧内容区域 */}
-      <Layout>
+      <div className="flex-1 flex flex-col">
         {/* 内容区域 */}
-        <Content
-          style={{ position: 'relative', background: '#ffffff', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}
-        >
+        <div className="relative flex-1 bg-white flex flex-col overflow-hidden">
           {topology.loading && !topology.topology ? (
-            <div
-              style={{
-                display: 'flex',
-                justifyContent: 'center',
-                alignItems: 'center',
-                height: '100%',
-                flexDirection: 'column',
-                gap: 12,
-              }}
-            >
-              <Spin size="large" />
-              <div style={{ color: '#666', fontSize: 14 }}>加载中...</div>
+            <div className="flex justify-center items-center h-full flex-col gap-3">
+              <Loader2 className="h-8 w-8 animate-spin text-blue-500" />
+              <div className="text-gray-500 text-sm">加载中...</div>
             </div>
           ) : viewMode === '3d' ? (
             <Suspense
               fallback={
-                <div
-                  style={{
-                    display: 'flex',
-                    justifyContent: 'center',
-                    alignItems: 'center',
-                    height: '100%',
-                    flexDirection: 'column',
-                    gap: 12,
-                  }}
-                >
-                  <Spin size="large" />
-                  <div style={{ color: '#666', fontSize: 14 }}>正在加载 3D 视图...</div>
+                <div className="flex justify-center items-center h-full flex-col gap-3">
+                  <Loader2 className="h-8 w-8 animate-spin text-blue-500" />
+                  <div className="text-gray-500 text-sm">正在加载 3D 视图...</div>
                 </div>
               }
             >
@@ -498,9 +443,9 @@ export const TopologySetup: React.FC = () => {
               onViewModeChange={setViewMode}
             />
           )}
-        </Content>
-      </Layout>
-      </Layout>
-    </Layout>
+        </div>
+      </div>
+      </div>
+    </div>
   )
 }

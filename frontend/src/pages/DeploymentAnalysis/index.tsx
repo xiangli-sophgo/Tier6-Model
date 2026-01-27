@@ -4,17 +4,13 @@
  */
 
 import React from 'react'
-import { Layout, Card, Spin, Typography, Alert, Progress, Button } from 'antd'
-import {
-  LoadingOutlined,
-  CheckCircleOutlined,
-  CloseCircleOutlined,
-  StopOutlined
-} from '@ant-design/icons'
+import { Loader2, CheckCircle, XCircle, StopCircle } from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
+import { Progress } from '@/components/ui/progress'
+import { BaseCard } from '@/components/common/BaseCard'
 import { DeploymentAnalysisPanel } from '@/components/ConfigPanel/DeploymentAnalysis'
 import { useWorkbench } from '@/contexts/WorkbenchContext'
-
-const { Text } = Typography
 
 export const DeploymentAnalysis: React.FC = () => {
   const { analysis, topology } = useWorkbench()
@@ -26,27 +22,21 @@ export const DeploymentAnalysis: React.FC = () => {
   const onCancelEvaluation = analysis.deploymentAnalysisData?.onCancelEvaluation
 
   return (
-    <Layout style={{ height: '100%', background: '#fff' }}>
+    <div className="h-full w-full bg-white flex flex-col">
       {/* 标题栏 */}
-      <div
-        style={{
-          padding: '16px 24px',
-          borderBottom: '1px solid #f0f0f0',
-          background: '#fff',
-        }}
-      >
-        <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
-          <span style={{ fontSize: 20, fontWeight: 600, color: '#1a1a1a' }}>
+      <div className="px-6 py-4 border-b border-gray-100 bg-white">
+        <div className="flex items-baseline gap-2">
+          <span className="text-xl font-semibold text-gray-900">
             部署分析
           </span>
-          <span style={{ fontSize: 13, color: '#8c8c8c' }}>
+          <span className="text-[13px] text-gray-400">
             配置并运行 LLM 部署评估任务
           </span>
         </div>
       </div>
 
       {/* 主内容区 */}
-      <div style={{ flex: 1, overflow: 'auto', padding: 24, background: '#fff' }}>
+      <div className="flex-1 overflow-auto p-6 bg-white">
         <div>
           {/* 配置面板 */}
           <div>
@@ -66,72 +56,64 @@ export const DeploymentAnalysis: React.FC = () => {
 
           {/* 下方：运行状态卡片 */}
           {(loading || errorMsg || (searchProgress && searchProgress.stage !== 'idle' && searchProgress.stage !== 'completed')) && (
-            <Card
-              title="运行状态"
-              bordered={false}
-              style={{ marginTop: 16 }}
-            >
+            <BaseCard title="运行状态" className="mt-4">
               {/* 错误提示 */}
               {errorMsg && (
-                <Alert
-                  message="分析失败"
-                  description={errorMsg}
-                  type="error"
-                  showIcon
-                  icon={<CloseCircleOutlined />}
-                  style={{ marginBottom: 16 }}
-                />
+                <Alert variant="destructive" className="mb-4">
+                  <XCircle className="h-4 w-4" />
+                  <AlertTitle>分析失败</AlertTitle>
+                  <AlertDescription>{errorMsg}</AlertDescription>
+                </Alert>
               )}
 
               {/* 搜索进度 */}
               {loading && searchProgress && searchProgress.stage !== 'idle' && (
                 <div>
                   {/* 阶段 1: 生成候选方案 */}
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 }}>
+                  <div className="flex items-center gap-3 mb-3">
                     {searchProgress.stage === 'generating' ? (
-                      <Spin size="small" indicator={<LoadingOutlined />} />
+                      <Loader2 className="h-4 w-4 animate-spin text-blue-500" />
                     ) : (
-                      <CheckCircleOutlined style={{ color: '#52c41a', fontSize: 16 }} />
+                      <CheckCircle className="h-4 w-4 text-green-500" />
                     )}
-                    <Text style={{ fontSize: 14 }}>
-                      生成候选方案: <Text strong>{searchProgress.totalCandidates}</Text> 个
-                    </Text>
+                    <span className="text-sm">
+                      生成候选方案: <span className="font-semibold">{searchProgress.totalCandidates}</span> 个
+                    </span>
                   </div>
 
                   {/* 阶段 2: 后端评估 */}
                   {searchProgress.stage !== 'generating' && (
                     <div>
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="flex items-center gap-3">
                           {searchProgress.stage === 'evaluating' ? (
-                            <Spin size="small" indicator={<LoadingOutlined />} />
+                            <Loader2 className="h-4 w-4 animate-spin text-blue-500" />
                           ) : (
-                            <CheckCircleOutlined style={{ color: '#52c41a', fontSize: 16 }} />
+                            <CheckCircle className="h-4 w-4 text-green-500" />
                           )}
-                          <Text style={{ fontSize: 14 }}>
-                            后端评估: <Text strong>{searchProgress.evaluated}</Text> / <Text strong>{searchProgress.totalCandidates}</Text>
+                          <span className="text-sm">
+                            后端评估: <span className="font-semibold">{searchProgress.evaluated}</span> / <span className="font-semibold">{searchProgress.totalCandidates}</span>
                             {searchProgress.stage === 'evaluating' && (
-                              <Text type="secondary" style={{ marginLeft: 8, fontSize: 12 }}>（5 并发）</Text>
+                              <span className="ml-2 text-xs text-gray-500">（5 并发）</span>
                             )}
-                          </Text>
+                          </span>
                         </div>
                         {/* 取消按钮 */}
                         {searchProgress.stage === 'evaluating' && onCancelEvaluation && (
                           <Button
-                            danger
-                            size="small"
-                            icon={<StopOutlined />}
+                            variant="destructive"
+                            size="sm"
                             onClick={onCancelEvaluation}
                           >
+                            <StopCircle className="h-4 w-4 mr-1" />
                             取消
                           </Button>
                         )}
                       </div>
                       {searchProgress.stage === 'evaluating' && (
                         <Progress
-                          percent={Math.round((searchProgress.evaluated / searchProgress.totalCandidates) * 100)}
-                          status="active"
-                          strokeColor="#1890ff"
+                          value={Math.round((searchProgress.evaluated / searchProgress.totalCandidates) * 100)}
+                          className="h-2"
                         />
                       )}
                     </div>
@@ -139,28 +121,27 @@ export const DeploymentAnalysis: React.FC = () => {
 
                   {/* 已取消 */}
                   {searchProgress.stage === 'cancelled' && (
-                    <Alert
-                      message="评估已取消"
-                      description={`已完成 ${searchProgress.evaluated} / ${searchProgress.totalCandidates} 个方案的评估`}
-                      type="warning"
-                      showIcon
-                      style={{ marginTop: 12 }}
-                    />
+                    <Alert variant="warning" className="mt-3">
+                      <AlertTitle>评估已取消</AlertTitle>
+                      <AlertDescription>
+                        已完成 {searchProgress.evaluated} / {searchProgress.totalCandidates} 个方案的评估
+                      </AlertDescription>
+                    </Alert>
                   )}
                 </div>
               )}
 
               {/* 简单加载中状态（无进度信息） */}
               {loading && (!searchProgress || searchProgress.stage === 'idle') && (
-                <div style={{ textAlign: 'center', padding: 20 }}>
-                  <Spin size="large" />
-                  <div style={{ marginTop: 12, color: '#8c8c8c' }}>正在分析...</div>
+                <div className="text-center py-5">
+                  <Loader2 className="h-8 w-8 animate-spin text-blue-500 mx-auto" />
+                  <div className="mt-3 text-gray-400">正在分析...</div>
                 </div>
               )}
-            </Card>
+            </BaseCard>
           )}
         </div>
       </div>
-    </Layout>
+    </div>
   )
 }

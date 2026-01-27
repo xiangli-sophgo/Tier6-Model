@@ -4,9 +4,8 @@
  */
 
 import { useState, useEffect, useMemo, useRef } from 'react'
-import { Button, message, Space, Tree, Popover, Checkbox, Popconfirm, Input, Tooltip } from 'antd'
-import { DownloadOutlined, SettingOutlined, DeleteOutlined, SearchOutlined, HolderOutlined } from '@ant-design/icons'
-import type { DataNode } from 'antd/es/tree'
+import { Download, Settings, Trash2, Search, GripVertical, ChevronRight, ChevronDown } from 'lucide-react'
+import { toast } from 'sonner'
 import { HotTable, HotTableClass } from '@handsontable/react'
 import { registerAllModules } from 'handsontable/registry'
 import 'handsontable/dist/handsontable.full.min.css'
@@ -29,6 +28,22 @@ import {
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Checkbox } from '@/components/ui/checkbox'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog'
 
 // 注册所有Handsontable模块
 registerAllModules()
@@ -37,6 +52,13 @@ registerAllModules()
 const getStorageKey = (experimentId: number) => `task_table_visible_columns_${experimentId}`
 const getFixedColumnsKey = (experimentId: number) => `task_table_fixed_columns_${experimentId}`
 const getColumnOrderKey = (experimentId: number) => `task_table_column_order_${experimentId}`
+
+// 树节点类型
+interface TreeNode {
+  title: string
+  key: string
+  children?: TreeNode[]
+}
 
 // 可拖拽的列项组件
 interface SortableColumnItemProps {
@@ -58,30 +80,108 @@ function SortableColumnItem({ id, isFixed, onToggleFixed }: SortableColumnItemPr
   const style: React.CSSProperties = {
     transform: CSS.Transform.toString(transform),
     transition,
-    display: 'flex',
-    alignItems: 'center',
-    padding: '4px 8px',
-    marginBottom: 4,
-    background: isDragging ? '#e6f7ff' : '#fafafa',
-    border: '1px solid #d9d9d9',
-    borderRadius: 4,
-    cursor: 'grab',
-    opacity: isDragging ? 0.8 : 1,
   }
 
   return (
-    <div ref={setNodeRef} style={style} {...attributes}>
-      <HolderOutlined {...listeners} style={{ marginRight: 8, color: '#999', cursor: 'grab' }} />
+    <div
+      ref={setNodeRef}
+      style={style}
+      {...attributes}
+      className={`flex items-center p-2 mb-1 rounded border cursor-grab ${
+        isDragging ? 'bg-blue-50 border-blue-200' : 'bg-gray-50 border-gray-200'
+      } ${isDragging ? 'opacity-80' : ''}`}
+    >
+      <GripVertical {...listeners} className="h-4 w-4 mr-2 text-gray-400 cursor-grab" />
       <Checkbox
         checked={isFixed}
-        onChange={() => onToggleFixed(id)}
-        style={{ marginRight: 8 }}
+        onCheckedChange={() => onToggleFixed(id)}
+        className="mr-2"
       />
-      <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-        {id.replace(/_/g, ' ')}
-      </span>
+      <span className="flex-1 truncate text-sm">{id.replace(/_/g, ' ')}</span>
     </div>
   )
+}
+
+// 自定义树组件
+interface CustomTreeProps {
+  data: TreeNode[]
+  checkedKeys: string[]
+  expandedKeys: string[]
+  onCheck: (keys: string[]) => void
+  onExpand: (keys: string[]) => void
+}
+
+function CustomTree({ data, checkedKeys, expandedKeys, onCheck, onExpand }: CustomTreeProps) {
+  const toggleExpand = (key: string) => {
+    if (expandedKeys.includes(key)) {
+      onExpand(expandedKeys.filter((k) => k !== key))
+    } else {
+      onExpand([...expandedKeys, key])
+    }
+  }
+
+  const toggleCheck = (key: string, isCategory: boolean, childKeys?: string[]) => {
+    if (isCategory && childKeys) {
+      const allChecked = childKeys.every((k) => checkedKeys.includes(k))
+      if (allChecked) {
+        onCheck(checkedKeys.filter((k) => !childKeys.includes(k)))
+      } else {
+        onCheck([...new Set([...checkedKeys, ...childKeys])])
+      }
+    } else {
+      if (checkedKeys.includes(key)) {
+        onCheck(checkedKeys.filter((k) => k !== key))
+      } else {
+        onCheck([...checkedKeys, key])
+      }
+    }
+  }
+
+  const renderNode = (node: TreeNode, level: number = 0) => {
+    const isCategory = node.key.startsWith('category_')
+    const isExpanded = expandedKeys.includes(node.key)
+    const childKeys = node.children?.map((c) => c.key) || []
+    const isChecked = isCategory
+      ? childKeys.length > 0 && childKeys.every((k) => checkedKeys.includes(k))
+      : checkedKeys.includes(node.key)
+    const isIndeterminate = isCategory && childKeys.some((k) => checkedKeys.includes(k)) && !isChecked
+
+    return (
+      <div key={node.key}>
+        <div
+          className={`flex items-center py-1 px-1 hover:bg-gray-100 rounded cursor-pointer`}
+          style={{ paddingLeft: level * 16 }}
+        >
+          {node.children && node.children.length > 0 ? (
+            <button
+              className="p-0.5 hover:bg-gray-200 rounded mr-1"
+              onClick={() => toggleExpand(node.key)}
+            >
+              {isExpanded ? (
+                <ChevronDown className="h-3.5 w-3.5 text-gray-500" />
+              ) : (
+                <ChevronRight className="h-3.5 w-3.5 text-gray-500" />
+              )}
+            </button>
+          ) : (
+            <span className="w-5" />
+          )}
+          <Checkbox
+            checked={isChecked}
+            data-state={isIndeterminate ? 'indeterminate' : isChecked ? 'checked' : 'unchecked'}
+            className={isIndeterminate ? 'data-[state=indeterminate]:bg-primary/50' : ''}
+            onCheckedChange={() => toggleCheck(node.key, isCategory, childKeys)}
+          />
+          <span className="ml-2 text-sm">{node.title}</span>
+        </div>
+        {isExpanded && node.children && (
+          <div>{node.children.map((child) => renderNode(child, level + 1))}</div>
+        )}
+      </div>
+    )
+  }
+
+  return <div className="space-y-0.5">{data.map((node) => renderNode(node))}</div>
 }
 
 interface Props {
@@ -99,8 +199,13 @@ export default function TaskTable({
   onTaskSelect,
   onTasksDelete,
 }: Props) {
+  // 只显示已完成的任务
+  const completedTasks = useMemo(() => {
+    return tasks.filter(task => task.status === 'completed')
+  }, [tasks])
+
   // 提取所有可用字段
-  const allFieldKeys = useMemo(() => extractTaskFields(tasks), [tasks])
+  const allFieldKeys = useMemo(() => extractTaskFields(completedTasks), [completedTasks])
 
   // 可见列状态
   const [visibleColumns, setVisibleColumns] = useState<string[]>([])
@@ -124,8 +229,8 @@ export default function TaskTable({
   const classifiedFields = useMemo(() => classifyTaskFieldsWithHierarchy(allFieldKeys), [allFieldKeys])
 
   // 生成树形数据用于列选择器
-  const treeData = useMemo((): DataNode[] => {
-    const nodes: DataNode[] = []
+  const treeData = useMemo((): TreeNode[] => {
+    const nodes: TreeNode[] = []
     const classified = classifiedFields
 
     if (classified.important.length > 0) {
@@ -190,10 +295,15 @@ export default function TaskTable({
   useEffect(() => {
     if (allFieldKeys.length === 0) return
     const defaultColumns = [
-      'task_id', 'status', 'progress',
-      'benchmark_name', 'topology_config_name',
-      'search_stats_feasible',
-      'best_throughput', 'best_ttft', 'best_tpot', 'best_score',
+      'benchmark_name',
+      'topology_config_name',
+      'throughput',
+      'tps_per_chip',
+      'tpot',
+      'ttft',
+      'mfu',
+      'score',
+      'chips',
       'created_at'
     ].filter(col => allFieldKeys.includes(col))
 
@@ -308,9 +418,40 @@ export default function TaskTable({
     return allColumns.filter((col) => fixedColumns.includes(col)).length
   }, [allColumns, fixedColumns])
 
+  // 中文列标题映射
+  const columnNameMap: Record<string, string> = {
+    'benchmark_name': '基准名称',
+    'topology_config_name': '拓扑配置',
+    'throughput': '吞吐量 (tokens/s)',
+    'tps_per_chip': '单卡吞吐量',
+    'tpot': 'TPOT (ms)',
+    'ttft': 'TTFT (ms)',
+    'mfu': 'MFU (%)',
+    'score': '综合得分',
+    'chips': '芯片数',
+    'parallelism_dp': 'DP',
+    'parallelism_tp': 'TP',
+    'parallelism_pp': 'PP',
+    'parallelism_ep': 'EP',
+    'parallelism_sp': 'SP',
+    'created_at': '创建时间',
+  }
+
   // 列头
   const colHeaders = useMemo(() => {
-    return allColumns.map((col) => col.replace(/_/g, ' '))
+    return allColumns.map((col) => {
+      // 优先使用中文映射
+      if (columnNameMap[col]) {
+        return columnNameMap[col]
+      }
+      // 搜索统计字段
+      if (col.startsWith('search_stats_')) {
+        const key = col.replace('search_stats_', '')
+        return `搜索统计: ${key.replace(/_/g, ' ')}`
+      }
+      // 默认处理：替换下划线
+      return col.replace(/_/g, ' ')
+    })
   }, [allColumns])
 
   // 拖拽结束处理
@@ -325,7 +466,7 @@ export default function TaskTable({
   }
 
   // Tree 展开状态
-  const [expandedKeys, setExpandedKeys] = useState<React.Key[]>([])
+  const [expandedKeys, setExpandedKeys] = useState<string[]>([])
   const allCategoryKeys = useMemo(() => treeData.map((node) => node.key), [treeData])
   const expandAll = () => setExpandedKeys(allCategoryKeys)
   const collapseAll = () => setExpandedKeys([])
@@ -334,13 +475,13 @@ export default function TaskTable({
   const [searchValue, setSearchValue] = useState<string>('')
 
   // 过滤后的树数据
-  const filteredTreeData = useMemo((): DataNode[] => {
+  const filteredTreeData = useMemo((): TreeNode[] => {
     if (!searchValue.trim()) {
       return treeData
     }
     const searchLower = searchValue.toLowerCase()
 
-    const filterNode = (node: DataNode): DataNode | null => {
+    const filterNode = (node: TreeNode): TreeNode | null => {
       if (!node.children || node.children.length === 0) {
         const matches =
           String(node.title).toLowerCase().includes(searchLower) ||
@@ -348,7 +489,7 @@ export default function TaskTable({
         return matches ? node : null
       }
 
-      const filteredChildren: DataNode[] = []
+      const filteredChildren: TreeNode[] = []
       for (const child of node.children) {
         const filtered = filterNode(child)
         if (filtered) {
@@ -367,7 +508,7 @@ export default function TaskTable({
       return null
     }
 
-    const filtered: DataNode[] = []
+    const filtered: TreeNode[] = []
     for (const category of treeData) {
       const result = filterNode(category)
       if (result) {
@@ -378,8 +519,8 @@ export default function TaskTable({
   }, [treeData, searchValue])
 
   // 处理列选择
-  const handleColumnCheck = (checkedKeys: React.Key[]) => {
-    const newCheckedColumns = (checkedKeys as string[]).filter((key) => !key.startsWith('category_'))
+  const handleColumnCheck = (checkedKeys: string[]) => {
+    const newCheckedColumns = checkedKeys.filter((key) => !key.startsWith('category_'))
     setVisibleColumns(newCheckedColumns)
   }
 
@@ -387,7 +528,7 @@ export default function TaskTable({
 
   // 从任务对象中提取字段值
   const getTaskFieldValue = (task: EvaluationTask, field: string): string | number => {
-    // 基础字段
+    // 基础字段（benchmark_name, topology_config_name, created_at 等）
     if (field in task) {
       const value = (task as any)[field]
       if (value === undefined || value === null) return '-'
@@ -400,10 +541,20 @@ export default function TaskTable({
       return (task.search_stats as any)?.[statKey] ?? '-'
     }
 
-    // 最佳方案字段（从 results[0] 提取，completed 状态下应该有数据）
-    if (field.startsWith('best_')) {
-      // 这里简化处理，实际应该从 top_k_plans 或 results 中获取
-      return '-'
+    // 性能指标字段（从 result 中提取）
+    const performanceFields = ['throughput', 'tps_per_chip', 'tpot', 'ttft', 'mfu', 'score', 'chips']
+    if (performanceFields.includes(field)) {
+      const result = (task as any).result
+      if (!result) return '-'
+      return result[field] ?? '-'
+    }
+
+    // 并行策略字段
+    if (field.startsWith('parallelism_')) {
+      const result = (task as any).result
+      if (!result || !result.parallelism) return '-'
+      const strategyKey = field.replace('parallelism_', '')
+      return result.parallelism[strategyKey] ?? '-'
     }
 
     return '-'
@@ -411,14 +562,14 @@ export default function TaskTable({
 
   // 表格数据
   const tableData = useMemo(() => {
-    if (!tasks.length) return []
-    return tasks.map((task) => {
+    if (!completedTasks.length) return []
+    return completedTasks.map((task) => {
       return allColumns.map((col) => {
         const value = getTaskFieldValue(task, col)
         if (typeof value === 'number') {
-          // 百分比字段
-          if (col === 'progress') {
-            return `${value.toFixed(1)}%`
+          // MFU 百分比字段
+          if (col === 'mfu') {
+            return `${(value * 100).toFixed(2)}%`
           }
           // 浮点数保留两位
           return Number.isInteger(value) ? value : value.toFixed(2)
@@ -430,7 +581,7 @@ export default function TaskTable({
         return value
       })
     })
-  }, [tasks, allColumns])
+  }, [completedTasks, allColumns])
 
   // 数据变化时强制重新渲染
   useEffect(() => {
@@ -443,8 +594,8 @@ export default function TaskTable({
 
   // 双击行选择
   const handleRowDoubleClick = (row: number) => {
-    if (row >= 0 && tasks[row]) {
-      onTaskSelect(tasks[row])
+    if (row >= 0 && completedTasks[row]) {
+      onTaskSelect(completedTasks[row])
     }
   }
 
@@ -463,10 +614,10 @@ export default function TaskTable({
 
   // 全选/取消全选
   const toggleSelectAll = () => {
-    if (selectedRowIndices.size === tasks.length) {
+    if (selectedRowIndices.size === completedTasks.length) {
       setSelectedRowIndices(new Set())
     } else {
-      setSelectedRowIndices(new Set(tasks.map((_, idx) => idx)))
+      setSelectedRowIndices(new Set(completedTasks.map((_, idx) => idx)))
     }
   }
 
@@ -476,12 +627,12 @@ export default function TaskTable({
     if (selectedRowIndices.size === 0 || !onTasksDelete) return
     setBatchDeleting(true)
     try {
-      const taskIds = Array.from(selectedRowIndices).map((idx) => tasks[idx].task_id)
+      const taskIds = Array.from(selectedRowIndices).map((idx) => completedTasks[idx].task_id)
       await onTasksDelete(taskIds)
-      message.success('批量删除成功')
+      toast.success('批量删除成功')
       setSelectedRowIndices(new Set())
     } catch {
-      message.error('批量删除失败')
+      toast.error('批量删除失败')
     } finally {
       setBatchDeleting(false)
     }
@@ -489,12 +640,12 @@ export default function TaskTable({
 
   // 导出 CSV
   const handleExport = () => {
-    if (!tasks.length) {
-      message.warning('没有数据可导出')
+    if (!completedTasks.length) {
+      toast.warning('没有数据可导出')
       return
     }
     const headers = allColumns
-    const rows = tasks.map((task) =>
+    const rows = completedTasks.map((task) =>
       allColumns.map((col) => getTaskFieldValue(task, col)).join(',')
     )
     const csv = [headers.join(','), ...rows].join('\n')
@@ -503,7 +654,7 @@ export default function TaskTable({
     link.href = URL.createObjectURL(blob)
     link.download = `tasks_experiment_${experimentId}.csv`
     link.click()
-    message.success('导出成功')
+    toast.success('导出成功')
   }
 
   // 列设置标签页状态
@@ -511,18 +662,18 @@ export default function TaskTable({
 
   // 列选择器
   const columnSelector = (
-    <div style={{ maxHeight: 500, overflow: 'auto', minWidth: 360 }}>
-      <div style={{ marginBottom: 12, display: 'flex', gap: 8 }}>
+    <div className="max-h-[500px] overflow-auto min-w-[360px]">
+      <div className="mb-3 flex gap-2">
         <Button
-          type={columnSettingTab === 'select' ? 'primary' : 'default'}
-          size="small"
+          variant={columnSettingTab === 'select' ? 'default' : 'outline'}
+          size="sm"
           onClick={() => setColumnSettingTab('select')}
         >
           选择列
         </Button>
         <Button
-          type={columnSettingTab === 'order' ? 'primary' : 'default'}
-          size="small"
+          variant={columnSettingTab === 'order' ? 'default' : 'outline'}
+          size="sm"
           onClick={() => setColumnSettingTab('order')}
         >
           排序列 ({orderedVisibleColumns.length})
@@ -531,36 +682,33 @@ export default function TaskTable({
 
       {columnSettingTab === 'select' ? (
         <>
-          <div style={{ marginBottom: 8 }}>
+          <div className="mb-2 relative">
+            <Search className="absolute left-2 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
             <Input
               placeholder="搜索列名..."
-              prefix={<SearchOutlined />}
               value={searchValue}
               onChange={(e) => setSearchValue(e.target.value)}
-              allowClear
-              size="small"
+              className="pl-8 h-8"
             />
           </div>
-          <div style={{ marginBottom: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <strong>显示列</strong>
-            <Space size="small">
-              <Button size="small" onClick={expandAll}>全部展开</Button>
-              <Button size="small" onClick={collapseAll}>全部折叠</Button>
-            </Space>
+          <div className="mb-2 flex justify-between items-center">
+            <strong className="text-sm">显示列</strong>
+            <div className="flex gap-2">
+              <Button variant="ghost" size="sm" onClick={expandAll}>全部展开</Button>
+              <Button variant="ghost" size="sm" onClick={collapseAll}>全部折叠</Button>
+            </div>
           </div>
-          <Tree
-            checkable
-            selectable={false}
-            treeData={filteredTreeData}
+          <CustomTree
+            data={filteredTreeData}
             checkedKeys={checkedKeys}
             expandedKeys={searchValue ? filteredTreeData.map((n) => n.key) : expandedKeys}
-            onExpand={(keys) => setExpandedKeys(keys)}
-            onCheck={(checked) => handleColumnCheck(checked as React.Key[])}
+            onExpand={setExpandedKeys}
+            onCheck={handleColumnCheck}
           />
         </>
       ) : (
         <>
-          <div style={{ marginBottom: 8, color: '#666', fontSize: 12 }}>
+          <div className="mb-2 text-xs text-gray-500">
             拖拽调整列顺序，勾选复选框固定列到左侧
           </div>
           <DndContext
@@ -572,7 +720,7 @@ export default function TaskTable({
               items={orderedVisibleColumns}
               strategy={verticalListSortingStrategy}
             >
-              <div style={{ maxHeight: 400, overflow: 'auto' }}>
+              <div className="max-h-[400px] overflow-auto">
                 {orderedVisibleColumns.map((col) => (
                   <SortableColumnItem
                     key={col}
@@ -590,128 +738,151 @@ export default function TaskTable({
   )
 
   return (
-    <div>
-      <div
-        style={{
-          marginBottom: 16,
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-        }}
-      >
-        <Space>
-          <Popover content={columnSelector} title="列显示设置" trigger="click" placement="bottomLeft">
-            <Button icon={<SettingOutlined />}>
-              列显示设置 ({visibleColumns.length}/{allFieldKeys.length})
-            </Button>
-          </Popover>
-          <span style={{ color: '#888', fontSize: 12 }}>
-            {selectMode ? '选择模式：单击行选中，再次点击取消' : '双击行查看详情'}
-          </span>
-        </Space>
-        <Space>
-          <Tooltip title="进入选择模式后单击行可选中，用于批量删除">
-            <Button
-              icon={<DeleteOutlined />}
-              type={selectMode ? 'primary' : 'default'}
-              danger={selectMode}
-              onClick={() => {
-                setSelectMode(!selectMode)
-                if (selectMode) {
-                  setSelectedRowIndices(new Set())
+    <TooltipProvider>
+      <div>
+        <div className="mb-4 flex justify-between items-center">
+          <div className="flex items-center gap-2">
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button variant="outline">
+                  <Settings className="h-4 w-4 mr-2" />
+                  列显示设置 ({visibleColumns.length}/{allFieldKeys.length})
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent align="start" className="w-auto p-4">
+                {columnSelector}
+              </PopoverContent>
+            </Popover>
+            <span className="text-gray-500 text-xs">
+              {selectMode ? '选择模式：单击行选中，再次点击取消' : '双击行查看详情'}
+            </span>
+          </div>
+          <div className="flex items-center gap-2">
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant={selectMode ? 'destructive' : 'outline'}
+                  onClick={() => {
+                    setSelectMode(!selectMode)
+                    if (selectMode) {
+                      setSelectedRowIndices(new Set())
+                    }
+                  }}
+                >
+                  <Trash2 className="h-4 w-4 mr-2" />
+                  {selectMode ? '退出选择' : '选择模式'}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>进入选择模式后单击行可选中，用于批量删除</TooltipContent>
+            </Tooltip>
+            {selectMode && onTasksDelete && (
+              <>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <div className="flex items-center gap-2">
+                      <Checkbox
+                        checked={selectedRowIndices.size === completedTasks.length && completedTasks.length > 0}
+                        onCheckedChange={toggleSelectAll}
+                      />
+                      <span className="text-sm">全选</span>
+                    </div>
+                  </TooltipTrigger>
+                  <TooltipContent>选中/取消选中所有行</TooltipContent>
+                </Tooltip>
+                <AlertDialog>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <AlertDialogTrigger asChild>
+                        <Button
+                          variant="destructive"
+                          disabled={selectedRowIndices.size === 0 || batchDeleting}
+                        >
+                          <Trash2 className="h-4 w-4 mr-2" />
+                          删除 ({selectedRowIndices.size})
+                        </Button>
+                      </AlertDialogTrigger>
+                    </TooltipTrigger>
+                    <TooltipContent>删除所有选中的任务</TooltipContent>
+                  </Tooltip>
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>批量删除</AlertDialogTitle>
+                      <AlertDialogDescription>
+                        确定要删除选中的 {selectedRowIndices.size} 个任务吗？此操作不可恢复。
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel>取消</AlertDialogCancel>
+                      <AlertDialogAction
+                        className="bg-red-600 hover:bg-red-700"
+                        onClick={handleBatchDelete}
+                      >
+                        删除
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
+              </>
+            )}
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button variant="outline" onClick={handleExport} disabled={!completedTasks.length}>
+                  <Download className="h-4 w-4 mr-2" />
+                  导出CSV
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>将任务数据导出为CSV文件</TooltipContent>
+            </Tooltip>
+          </div>
+        </div>
+
+        <div className="task-table-container">
+          {loading ? (
+            <div className="text-center py-12 bg-gray-50">加载中...</div>
+          ) : tableData.length === 0 ? (
+            <div className="text-center py-12 bg-gray-50 text-gray-500">暂无任务数据</div>
+          ) : (
+            <HotTable
+              ref={hotTableRef}
+              data={tableData}
+              colHeaders={colHeaders}
+              rowHeaders={true}
+              width="100%"
+              height="auto"
+              fixedColumnsStart={fixedColumnCount}
+              manualColumnResize={true}
+              licenseKey="non-commercial-and-evaluation"
+              stretchH="all"
+              selectionMode="multiple"
+              outsideClickDeselects={false}
+              afterOnCellMouseDown={(event, coords) => {
+                if (selectMode && coords.row >= 0) {
+                  toggleRowSelection(coords.row)
+                  return
+                }
+                if (event.detail === 2 && coords.row >= 0) {
+                  handleRowDoubleClick(coords.row)
                 }
               }}
-            >
-              {selectMode ? '退出选择' : '选择模式'}
-            </Button>
-          </Tooltip>
-          {selectMode && onTasksDelete && (
-            <>
-              <Tooltip title="选中/取消选中所有行">
-                <Checkbox
-                  checked={selectedRowIndices.size === tasks.length && tasks.length > 0}
-                  indeterminate={selectedRowIndices.size > 0 && selectedRowIndices.size < tasks.length}
-                  onChange={toggleSelectAll}
-                >
-                  全选
-                </Checkbox>
-              </Tooltip>
-              <Popconfirm
-                title="批量删除"
-                description={`确定要删除选中的 ${selectedRowIndices.size} 个任务吗？此操作不可恢复。`}
-                onConfirm={handleBatchDelete}
-                okText="删除"
-                cancelText="取消"
-                okButtonProps={{ danger: true }}
-                disabled={selectedRowIndices.size === 0}
-              >
-                <Tooltip title="删除所有选中的任务">
-                  <Button
-                    danger
-                    icon={<DeleteOutlined />}
-                    loading={batchDeleting}
-                    disabled={selectedRowIndices.size === 0}
-                  >
-                    删除 ({selectedRowIndices.size})
-                  </Button>
-                </Tooltip>
-              </Popconfirm>
-            </>
+              readOnly={true}
+              cells={(row) => ({
+                className: `htCenter htMiddle${selectedRowIndices.has(row) ? ' selected-row' : ''}`,
+              })}
+              className="task-hot-table"
+            />
           )}
-          <Tooltip title="将任务数据导出为CSV文件">
-            <Button icon={<DownloadOutlined />} onClick={handleExport} disabled={!tasks.length}>
-              导出CSV
-            </Button>
-          </Tooltip>
-        </Space>
-      </div>
+        </div>
 
-      <div className="task-table-container">
-        {loading ? (
-          <div style={{ textAlign: 'center', padding: 50, background: '#fafafa' }}>加载中...</div>
-        ) : tableData.length === 0 ? (
-          <div style={{ textAlign: 'center', padding: 50, background: '#fafafa', color: '#999' }}>暂无任务数据</div>
-        ) : (
-          <HotTable
-            ref={hotTableRef}
-            data={tableData}
-            colHeaders={colHeaders}
-            rowHeaders={true}
-            width="100%"
-            height="auto"
-            fixedColumnsStart={fixedColumnCount}
-            manualColumnResize={true}
-            licenseKey="non-commercial-and-evaluation"
-            stretchH="all"
-            selectionMode="multiple"
-            outsideClickDeselects={false}
-            afterOnCellMouseDown={(event, coords) => {
-              if (selectMode && coords.row >= 0) {
-                toggleRowSelection(coords.row)
-                return
-              }
-              if (event.detail === 2 && coords.row >= 0) {
-                handleRowDoubleClick(coords.row)
-              }
-            }}
-            readOnly={true}
-            cells={(row) => ({
-              className: `htCenter htMiddle${selectedRowIndices.has(row) ? ' selected-row' : ''}`,
-            })}
-            className="task-hot-table"
-          />
-        )}
+        <style>{`
+          .selected-row {
+            background-color: #e6f7ff !important;
+          }
+          .task-hot-table .htCore td {
+            text-align: center;
+            vertical-align: middle;
+          }
+        `}</style>
       </div>
-
-      <style>{`
-        .selected-row {
-          background-color: #e6f7ff !important;
-        }
-        .task-hot-table .htCore td {
-          text-align: center;
-          vertical-align: middle;
-        }
-      `}</style>
-    </div>
+    </TooltipProvider>
   )
 }

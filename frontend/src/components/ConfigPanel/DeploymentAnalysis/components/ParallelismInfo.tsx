@@ -4,7 +4,7 @@
  */
 
 import React from 'react'
-import { InfoCircleOutlined } from '@ant-design/icons'
+import { Info } from 'lucide-react'
 
 export type ParallelismType = 'dp' | 'tp' | 'pp' | 'ep' | 'sp' | 'moe_tp'
 
@@ -560,11 +560,12 @@ export const ParallelismCard: React.FC<ParallelismCardProps> = ({ type, value, s
       }}
     >
       {/* 右上角标记 */}
-      <InfoCircleOutlined style={{
+      <Info style={{
         position: 'absolute',
         top: 6,
         right: 6,
-        fontSize: 11,
+        width: 11,
+        height: 11,
         color: selected ? color.primary : '#d9d9d9',
         cursor: 'pointer',
       }} />

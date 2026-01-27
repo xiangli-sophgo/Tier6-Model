@@ -3,8 +3,9 @@
  * 显示选中节点的定义、相关概念和参考资料
  */
 import React from 'react'
-import { Card, Tag } from 'antd'
-import { BookOutlined, LinkOutlined, FileTextOutlined } from '@ant-design/icons'
+import { Card, CardHeader, CardContent } from '@/components/ui/card'
+import { Badge } from '@/components/ui/badge'
+import { Book, Link2, FileText } from 'lucide-react'
 import { ForceKnowledgeNode, CATEGORY_COLORS, CATEGORY_NAMES } from './types'
 import knowledgeData from '../../data/knowledge-graph'
 
@@ -47,7 +48,7 @@ export const KnowledgeNodeCards: React.FC<KnowledgeNodeCardsProps> = ({ nodes, o
           segments.push(line.slice(lastIndex, match.index))
         }
         segments.push(
-          <strong key={`${lineIndex}-${match.index}`} style={{ color: '#4f46e5' }}>
+          <strong key={`${lineIndex}-${match.index}`} className="text-primary">
             {match[1]}
           </strong>
         )
@@ -63,11 +64,7 @@ export const KnowledgeNodeCards: React.FC<KnowledgeNodeCardsProps> = ({ nodes, o
       return (
         <span
           key={lineIndex}
-          style={{
-            display: lineIndex > 0 || isListItem ? 'block' : undefined,
-            marginTop: lineIndex > 0 ? 4 : 0,
-            paddingLeft: isListItem ? 12 : 0,
-          }}
+          className={`${lineIndex > 0 || isListItem ? 'block' : ''} ${lineIndex > 0 ? 'mt-1' : ''} ${isListItem ? 'pl-3' : ''}`}
         >
           {segments.length > 0 ? segments : line}
         </span>
@@ -75,107 +72,94 @@ export const KnowledgeNodeCards: React.FC<KnowledgeNodeCardsProps> = ({ nodes, o
     })
   }
 
-  // 分区样式
-  const sectionStyle: React.CSSProperties = {
-    background: '#f9fafb',
-    border: '1px solid #f3f4f6',
-    borderRadius: 6,
-    padding: '10px 12px',
-    marginBottom: 10,
-  }
-  const sectionTitleStyle: React.CSSProperties = {
-    fontSize: 14,
-    fontWeight: 600,
-    color: '#374151',
-    marginBottom: 8,
-    display: 'flex',
-    alignItems: 'center',
-    gap: 6,
-  }
-
   const relatedNodes = getRelatedNodes(node.id)
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
-      <Card
-        title={
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <Tag color={CATEGORY_COLORS[node.category]} style={{ margin: 0, fontSize: 12, flexShrink: 0 }}>
+    <div className="flex flex-1 flex-col min-h-0">
+      <Card className="flex flex-1 flex-col min-h-0">
+        <CardHeader className="pb-3">
+          <div className="flex items-center gap-2">
+            <Badge
+              variant="default"
+              className="m-0 text-xs flex-shrink-0"
+              style={{
+                backgroundColor: CATEGORY_COLORS[node.category],
+              }}
+            >
               {CATEGORY_NAMES[node.category]}
-            </Tag>
-            <span style={{ fontSize: 16, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
+            </Badge>
+            <span className="flex-1 overflow-hidden text-ellipsis whitespace-nowrap text-base">
               {node.fullName || node.name}
             </span>
+            <a
+              onClick={() => onClose(node.id)}
+              className="cursor-pointer text-sm text-primary hover:underline"
+            >
+              关闭
+            </a>
           </div>
-        }
-        size="small"
-        style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}
-        styles={{ body: { flex: 1, overflow: 'auto', minHeight: 0 } }}
-        extra={<a onClick={() => onClose(node.id)}>关闭</a>}
-      >
-        {/* 定义区域 */}
-        <div style={sectionStyle}>
-          <div style={sectionTitleStyle}>
-            <BookOutlined style={{ color: '#6366f1' }} />
-            <span>定义</span>
-          </div>
-          <div style={{
-            fontSize: 15,
-            lineHeight: 1.8,
-            color: '#1f2937',
-          }}>
-            {renderDefinition(node.definition)}
-          </div>
-        </div>
+        </CardHeader>
 
-        {/* 相关概念区域 */}
-        {relatedNodes.length > 0 && (
-          <div style={sectionStyle}>
-            <div style={sectionTitleStyle}>
-              <LinkOutlined style={{ color: '#10b981' }} />
-              <span>相关概念 ({relatedNodes.length})</span>
+        <CardContent className="flex-1 overflow-auto min-h-0">
+          {/* 定义区域 */}
+          <div className="mb-2.5 rounded-md border border-[#f3f4f6] bg-[#f9fafb] p-3">
+            <div className="mb-2 flex items-center gap-1.5 text-sm font-semibold text-[#374151]">
+              <Book className="h-4 w-4 text-[#6366f1]" />
+              <span>定义</span>
             </div>
-            <div style={{
-              display: 'flex',
-              flexWrap: 'wrap',
-              gap: 6,
-            }}>
-              {relatedNodes.map((n: any) => (
-                <Tag
-                  key={n.id}
-                  color={CATEGORY_COLORS[n.category as keyof typeof CATEGORY_COLORS]}
-                  style={{ cursor: 'pointer', margin: 0, fontSize: 13 }}
-                  onClick={() => onNodeClick(n as ForceKnowledgeNode)}
-                >
-                  {n.name}
-                </Tag>
-              ))}
+            <div className="text-[15px] leading-relaxed text-[#1f2937]">
+              {renderDefinition(node.definition)}
             </div>
           </div>
-        )}
 
-        {/* 参考资料区域（仅当有 source 时显示）*/}
-        {node.source && (
-          <div style={{ ...sectionStyle, marginBottom: 0 }}>
-            <div style={sectionTitleStyle}>
-              <FileTextOutlined style={{ color: '#8b5cf6' }} />
-              <span>参考资料</span>
+          {/* 相关概念区域 */}
+          {relatedNodes.length > 0 && (
+            <div className="mb-2.5 rounded-md border border-[#f3f4f6] bg-[#f9fafb] p-3">
+              <div className="mb-2 flex items-center gap-1.5 text-sm font-semibold text-[#374151]">
+                <Link2 className="h-4 w-4 text-success" />
+                <span>相关概念 ({relatedNodes.length})</span>
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {relatedNodes.map((n: any) => (
+                  <Badge
+                    key={n.id}
+                    variant="default"
+                    className="m-0 cursor-pointer text-[13px]"
+                    style={{
+                      backgroundColor: CATEGORY_COLORS[n.category as keyof typeof CATEGORY_COLORS],
+                    }}
+                    onClick={() => onNodeClick(n as ForceKnowledgeNode)}
+                  >
+                    {n.name}
+                  </Badge>
+                ))}
+              </div>
             </div>
-            <div style={{ fontSize: 13, color: '#6b7280', lineHeight: 1.6 }}>
-              {node.source}
-              {(node as any).url && (
-                <a
-                  href={(node as any).url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  style={{ marginLeft: 8, color: '#6366f1' }}
-                >
-                  <LinkOutlined /> 链接
-                </a>
-              )}
+          )}
+
+          {/* 参考资料区域（仅当有 source 时显示）*/}
+          {node.source && (
+            <div className="rounded-md border border-[#f3f4f6] bg-[#f9fafb] p-3">
+              <div className="mb-2 flex items-center gap-1.5 text-sm font-semibold text-[#374151]">
+                <FileText className="h-4 w-4 text-[#8b5cf6]" />
+                <span>参考资料</span>
+              </div>
+              <div className="text-[13px] leading-relaxed text-[#6b7280]">
+                {node.source}
+                {(node as any).url && (
+                  <a
+                    href={(node as any).url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="ml-2 text-[#6366f1] hover:underline"
+                  >
+                    <Link2 className="inline h-3 w-3" /> 链接
+                  </a>
+                )}
+              </div>
             </div>
-          </div>
-        )}
+          )}
+        </CardContent>
       </Card>
     </div>
   )

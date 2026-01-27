@@ -4,28 +4,14 @@
  */
 
 import React, { useEffect, useState } from 'react'
-import {
-  Card,
-  Tabs,
-  Button,
-  Space,
-  message,
-  Typography,
-  Tooltip,
-  Spin,
-  Statistic,
-  Row,
-  Col,
-  Alert,
-} from 'antd'
-import {
-  ArrowLeftOutlined,
-  ReloadOutlined,
-  DownloadOutlined,
-} from '@ant-design/icons'
+import { ArrowLeft, RefreshCw, Download, Loader2 } from 'lucide-react'
+import { toast } from 'sonner'
+import { Button } from '@/components/ui/button'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
+import { BaseCard } from '@/components/common/BaseCard'
 import { getExperimentDetail, Experiment } from '@/api/results'
-
-const { Text } = Typography
 
 // 统计项组件
 interface StatItemProps {
@@ -35,9 +21,9 @@ interface StatItemProps {
 }
 
 const StatItem: React.FC<StatItemProps> = ({ label, value, precision = 2 }) => (
-  <div style={{ padding: 16, background: '#fafafa', borderRadius: 4 }}>
-    <div style={{ color: '#8c8c8c', fontSize: 12, marginBottom: 4 }}>{label}</div>
-    <div style={{ fontSize: 18, fontWeight: 600, color: '#1a1a1a' }}>
+  <div className="p-4 bg-gray-50 rounded">
+    <div className="text-gray-400 text-xs mb-1">{label}</div>
+    <div className="text-lg font-semibold text-gray-900">
       {typeof value === 'number' ? value.toFixed(precision) : value}
     </div>
   </div>
@@ -62,7 +48,7 @@ export const ResultAnalysis: React.FC<ResultAnalysisProps> = ({ experimentId, on
       const data = await getExperimentDetail(experimentId)
       setExperiment(data)
     } catch (error) {
-      message.error('加载实验详情失败')
+      toast.error('加载实验详情失败')
       console.error(error)
     } finally {
       setLoading(false)
@@ -76,31 +62,22 @@ export const ResultAnalysis: React.FC<ResultAnalysisProps> = ({ experimentId, on
 
   // 导出结果
   const handleExport = () => {
-    message.info('导出功能开发中...')
+    toast.info('导出功能开发中...')
   }
 
   if (!experiment) {
     return (
-      <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
-        <div
-          style={{
-            padding: '16px 24px',
-            borderBottom: '1px solid #f0f0f0',
-            background: '#fff',
-          }}
-        >
+      <div className="h-full flex flex-col">
+        <div className="px-6 py-4 border-b border-gray-100 bg-white">
           {onBack && (
-            <Button
-              type="text"
-              icon={<ArrowLeftOutlined />}
-              onClick={onBack}
-            >
+            <Button variant="ghost" onClick={onBack}>
+              <ArrowLeft className="h-4 w-4 mr-2" />
               返回
             </Button>
           )}
         </div>
-        <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <Spin spinning={loading} />
+        <div className="flex-1 flex items-center justify-center">
+          {loading && <Loader2 className="h-8 w-8 animate-spin text-blue-500" />}
         </div>
       </div>
     )
@@ -117,267 +94,161 @@ export const ResultAnalysis: React.FC<ResultAnalysisProps> = ({ experimentId, on
       : 0
 
   return (
-    <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
-      {/* 标题栏 */}
-      <div
-        style={{
-          padding: '16px 24px',
-          borderBottom: '1px solid #f0f0f0',
-          background: '#fff',
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-        }}
-      >
-        <Space>
-          {onBack && (
-            <Button
-              type="text"
-              icon={<ArrowLeftOutlined />}
-              onClick={onBack}
-            >
-              返回
-            </Button>
-          )}
-          <div>
-            <div style={{ fontSize: 18, fontWeight: 600, color: '#1a1a1a' }}>
-              {experiment.name}
+    <TooltipProvider>
+      <div className="h-full flex flex-col">
+        {/* 标题栏 */}
+        <div className="px-6 py-4 border-b border-gray-100 bg-white flex justify-between items-center">
+          <div className="flex items-center gap-3">
+            {onBack && (
+              <Button variant="ghost" onClick={onBack}>
+                <ArrowLeft className="h-4 w-4 mr-2" />
+                返回
+              </Button>
+            )}
+            <div>
+              <div className="text-lg font-semibold text-gray-900">
+                {experiment.name}
+              </div>
+              <span className="text-sm text-gray-500">{experiment.description || '无描述'}</span>
             </div>
-            <Text type="secondary">{experiment.description || '无描述'}</Text>
           </div>
-        </Space>
-        <Space>
-          <Tooltip title="刷新">
-            <Button icon={<ReloadOutlined />} onClick={loadExperiment} />
-          </Tooltip>
-          <Button icon={<DownloadOutlined />} onClick={handleExport}>
-            导出
-          </Button>
-        </Space>
-      </div>
+          <div className="flex items-center gap-2">
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button variant="outline" size="icon" onClick={loadExperiment}>
+                  <RefreshCw className="h-4 w-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>刷新</TooltipContent>
+            </Tooltip>
+            <Button variant="outline" onClick={handleExport}>
+              <Download className="h-4 w-4 mr-2" />
+              导出
+            </Button>
+          </div>
+        </div>
 
-      {/* 内容区 */}
-      <div style={{ flex: 1, overflow: 'auto', padding: 24 }}>
-        {/* 进度提示 */}
-        {progress < 100 && (
-          <Alert
-            message={`实验进度: ${progress}% (${experiment.completed_tasks}/${experiment.total_tasks} 任务完成)`}
-            type="info"
-            showIcon
-            style={{ marginBottom: 16 }}
-          />
-        )}
+        {/* 内容区 */}
+        <div className="flex-1 overflow-auto p-6">
+          {/* 进度提示 */}
+          {progress < 100 && (
+            <Alert className="mb-4">
+              <AlertDescription>
+                实验进度: {progress}% ({experiment.completed_tasks}/{experiment.total_tasks} 任务完成)
+              </AlertDescription>
+            </Alert>
+          )}
 
-        {/* 标签页 */}
-        <Tabs
-          activeKey={activeTab}
-          onChange={setActiveTab}
-          items={[
-            {
-              key: 'overview',
-              label: '概览',
-              children: (
-                <div style={{ paddingTop: 16 }}>
-                  {/* 任务进度 */}
-                  <Card title="任务进度" style={{ marginBottom: 16 }}>
-                    <Row gutter={16}>
-                      <Col span={12}>
-                        <Statistic
-                          title="已完成任务"
-                          value={experiment.completed_tasks}
-                          suffix={`/ ${experiment.total_tasks}`}
-                        />
-                      </Col>
-                      <Col span={12}>
-                        <div style={{ padding: '16px 0' }}>
-                          <div style={{ marginBottom: 8 }}>进度: {progress}%</div>
-                          <div
-                            style={{
-                              width: '100%',
-                              height: 8,
-                              backgroundColor: '#f0f0f0',
-                              borderRadius: 4,
-                            }}
-                          >
-                            <div
-                              style={{
-                                width: `${progress}%`,
-                                height: '100%',
-                                backgroundColor: progress === 100 ? '#52c41a' : '#1890ff',
-                                borderRadius: 4,
-                                transition: 'width 0.3s',
-                              }}
-                            />
-                          </div>
-                        </div>
-                      </Col>
-                    </Row>
-                  </Card>
+          {/* 标签页 */}
+          <Tabs value={activeTab} onValueChange={setActiveTab}>
+            <TabsList>
+              <TabsTrigger value="overview">概览</TabsTrigger>
+              <TabsTrigger value="tasks">任务列表 ({experiment.tasks?.length || 0})</TabsTrigger>
+              <TabsTrigger value="results">结果分析</TabsTrigger>
+            </TabsList>
 
-                  {/* 模型配置 */}
-                  <Card title="模型配置" style={{ marginBottom: 16 }}>
-                    <Row gutter={[16, 16]}>
-                      <Col span={8}>
-                        <StatItem
-                          label="模型名称"
-                          value={modelConfig.model_name as string || '-'}
-                        />
-                      </Col>
-                      <Col span={8}>
-                        <StatItem
-                          label="隐藏层尺寸"
-                          value={modelConfig.hidden_size as number || '-'}
-                        />
-                      </Col>
-                      <Col span={8}>
-                        <StatItem
-                          label="层数"
-                          value={modelConfig.num_layers as number || '-'}
-                        />
-                      </Col>
-                      <Col span={8}>
-                        <StatItem
-                          label="注意力头数"
-                          value={modelConfig.num_attention_heads as number || '-'}
-                        />
-                      </Col>
-                      <Col span={8}>
-                        <StatItem
-                          label="KV 头数"
-                          value={modelConfig.num_kv_heads as number || '-'}
-                        />
-                      </Col>
-                      <Col span={8}>
-                        <StatItem
-                          label="数据类型"
-                          value={modelConfig.dtype as string || '-'}
-                        />
-                      </Col>
-                    </Row>
-                  </Card>
-
-                  {/* 推理配置 */}
-                  <Card title="推理配置" style={{ marginBottom: 16 }}>
-                    <Row gutter={[16, 16]}>
-                      <Col span={8}>
-                        <StatItem
-                          label="批次大小"
-                          value={inferenceConfig.batch_size as number || '-'}
-                        />
-                      </Col>
-                      <Col span={8}>
-                        <StatItem
-                          label="输入序列长度"
-                          value={inferenceConfig.input_seq_length as number || '-'}
-                        />
-                      </Col>
-                      <Col span={8}>
-                        <StatItem
-                          label="输出序列长度"
-                          value={inferenceConfig.output_seq_length as number || '-'}
-                        />
-                      </Col>
-                    </Row>
-                  </Card>
-
-                  {/* 创建时间 */}
-                  <Card title="元数据" style={{ marginBottom: 16 }}>
-                    <Row gutter={[16, 16]}>
-                      <Col span={12}>
-                        <StatItem
-                          label="创建时间"
-                          value={new Date(experiment.created_at).toLocaleString('zh-CN')}
-                        />
-                      </Col>
-                      <Col span={12}>
-                        <StatItem
-                          label="最后更新"
-                          value={new Date(experiment.updated_at).toLocaleString('zh-CN')}
-                        />
-                      </Col>
-                    </Row>
-                  </Card>
-                </div>
-              ),
-            },
-            {
-              key: 'tasks',
-              label: `任务列表 (${experiment.tasks?.length || 0})`,
-              children: (
-                <div style={{ paddingTop: 16 }}>
-                  {experiment.tasks && experiment.tasks.length > 0 ? (
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))', gap: 16 }}>
-                      {experiment.tasks.map((task) => (
-                        <Card
-                          key={task.task_id}
-                          size="small"
-                          hoverable
-                          onClick={() => {
-                            // 点击任务卡片可以展示任务详情
-                            message.info(`任务 ID: ${task.task_id}`)
-                          }}
-                        >
-                          <div style={{ marginBottom: 8 }}>
-                            <Text strong>{task.task_id}</Text>
-                          </div>
-                          <div style={{ marginBottom: 4 }}>
-                            <Text type="secondary" style={{ fontSize: 12 }}>
-                              状态:
-                            </Text>
-                            <span style={{ marginLeft: 8, color: '#1890ff' }}>
-                              {task.status}
-                            </span>
-                          </div>
-                          <div style={{ marginBottom: 4 }}>
-                            <Text type="secondary" style={{ fontSize: 12 }}>
-                              进度:
-                            </Text>
-                            <span style={{ marginLeft: 8 }}>{task.progress.toFixed(1)}%</span>
-                          </div>
-                          <div style={{ marginBottom: 4 }}>
-                            <Text type="secondary" style={{ fontSize: 12 }}>
-                              创建时间:
-                            </Text>
-                            <span style={{ marginLeft: 8, fontSize: 12 }}>
-                              {new Date(task.created_at).toLocaleString('zh-CN')}
-                            </span>
-                          </div>
-                          {task.message && (
-                            <div>
-                              <Text type="secondary" style={{ fontSize: 12 }}>
-                                消息:
-                              </Text>
-                              <div style={{ marginTop: 4, fontSize: 12, color: '#666' }}>
-                                {task.message}
-                              </div>
-                            </div>
-                          )}
-                        </Card>
-                      ))}
+            <TabsContent value="overview" className="pt-4">
+              {/* 任务进度 */}
+              <BaseCard title="任务进度" className="mb-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <div className="text-gray-400 text-xs mb-1">已完成任务</div>
+                    <div className="text-2xl font-semibold">
+                      {experiment.completed_tasks}
+                      <span className="text-sm text-gray-400 ml-1">/ {experiment.total_tasks}</span>
                     </div>
-                  ) : (
-                    <Alert message="暂无任务" type="info" />
-                  )}
+                  </div>
+                  <div className="py-4">
+                    <div className="mb-2 text-sm">进度: {progress}%</div>
+                    <div className="w-full h-2 bg-gray-200 rounded">
+                      <div
+                        className={`h-full rounded transition-all ${progress === 100 ? 'bg-green-500' : 'bg-blue-500'}`}
+                        style={{ width: `${progress}%` }}
+                      />
+                    </div>
+                  </div>
                 </div>
-              ),
-            },
-            {
-              key: 'results',
-              label: '结果分析',
-              children: (
-                <div style={{ paddingTop: 16 }}>
-                  <Alert
-                    message="结果分析功能开发中"
-                    description="将展示详细的性能指标、甘特图、通信开销分析等内容"
-                    type="info"
-                    showIcon
-                  />
+              </BaseCard>
+
+              {/* 模型配置 */}
+              <BaseCard title="模型配置" className="mb-4">
+                <div className="grid grid-cols-3 gap-4">
+                  <StatItem label="模型名称" value={modelConfig.model_name as string || '-'} />
+                  <StatItem label="隐藏层尺寸" value={modelConfig.hidden_size as number || '-'} />
+                  <StatItem label="层数" value={modelConfig.num_layers as number || '-'} />
+                  <StatItem label="注意力头数" value={modelConfig.num_attention_heads as number || '-'} />
+                  <StatItem label="KV 头数" value={modelConfig.num_kv_heads as number || '-'} />
+                  <StatItem label="数据类型" value={modelConfig.dtype as string || '-'} />
                 </div>
-              ),
-            },
-          ]}
-        />
+              </BaseCard>
+
+              {/* 推理配置 */}
+              <BaseCard title="推理配置" className="mb-4">
+                <div className="grid grid-cols-3 gap-4">
+                  <StatItem label="批次大小" value={inferenceConfig.batch_size as number || '-'} />
+                  <StatItem label="输入序列长度" value={inferenceConfig.input_seq_length as number || '-'} />
+                  <StatItem label="输出序列长度" value={inferenceConfig.output_seq_length as number || '-'} />
+                </div>
+              </BaseCard>
+
+              {/* 创建时间 */}
+              <BaseCard title="元数据" className="mb-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <StatItem label="创建时间" value={new Date(experiment.created_at).toLocaleString('zh-CN')} />
+                  <StatItem label="最后更新" value={new Date(experiment.updated_at).toLocaleString('zh-CN')} />
+                </div>
+              </BaseCard>
+            </TabsContent>
+
+            <TabsContent value="tasks" className="pt-4">
+              {experiment.tasks && experiment.tasks.length > 0 ? (
+                <div className="grid grid-cols-[repeat(auto-fill,minmax(250px,1fr))] gap-4">
+                  {experiment.tasks.map((task) => (
+                    <div
+                      key={task.task_id}
+                      className="p-4 bg-white rounded-lg border hover:shadow-md transition-shadow cursor-pointer"
+                      onClick={() => toast.info(`任务 ID: ${task.task_id}`)}
+                    >
+                      <div className="mb-2 font-semibold">{task.task_id}</div>
+                      <div className="mb-1 text-xs">
+                        <span className="text-gray-500">状态:</span>
+                        <span className="ml-2 text-blue-500">{task.status}</span>
+                      </div>
+                      <div className="mb-1 text-xs">
+                        <span className="text-gray-500">进度:</span>
+                        <span className="ml-2">{task.progress.toFixed(1)}%</span>
+                      </div>
+                      <div className="mb-1 text-xs">
+                        <span className="text-gray-500">创建时间:</span>
+                        <span className="ml-2">{new Date(task.created_at).toLocaleString('zh-CN')}</span>
+                      </div>
+                      {task.message && (
+                        <div className="text-xs">
+                          <span className="text-gray-500">消息:</span>
+                          <div className="mt-1 text-gray-600">{task.message}</div>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <Alert>
+                  <AlertDescription>暂无任务</AlertDescription>
+                </Alert>
+              )}
+            </TabsContent>
+
+            <TabsContent value="results" className="pt-4">
+              <Alert>
+                <AlertTitle>结果分析功能开发中</AlertTitle>
+                <AlertDescription>
+                  将展示详细的性能指标、甘特图、通信开销分析等内容
+                </AlertDescription>
+              </Alert>
+            </TabsContent>
+          </Tabs>
+        </div>
       </div>
-    </div>
+    </TooltipProvider>
   )
 }

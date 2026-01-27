@@ -18,7 +18,7 @@ from typing import Any, Optional
 from sqlalchemy.orm import Session
 
 from ..core.simulator import run_simulation
-from ..core.database import get_db, get_db_session, init_db, Experiment, EvaluationTask, TaskStatus
+from ..core.database import get_db, get_db_session, init_db, Experiment, EvaluationTask, EvaluationResult, TaskStatus
 from ..core.model_utils import calculate_params_from_dict, format_params
 from ..evaluators import ARCH_PRESETS
 from ..config import (
@@ -1037,6 +1037,61 @@ async def get_experiment_details(experiment_id: int, db: Session = Depends(get_d
 
         tasks = db.query(EvaluationTask).filter(EvaluationTask.experiment_id == experiment_id).all()
 
+        # 为每个任务附加代表性结果（得分最高的结果）
+        tasks_with_results = []
+        for task in tasks:
+            task_dict = {
+                "id": task.id,
+                "task_id": task.task_id,
+                "experiment_id": task.experiment_id,
+                "status": task.status.value,
+                "progress": task.progress,
+                "message": task.message,
+                "error": task.error,
+                "created_at": task.created_at.isoformat() if task.created_at else None,
+                "started_at": task.started_at.isoformat() if task.started_at else None,
+                "completed_at": task.completed_at.isoformat() if task.completed_at else None,
+                "config_snapshot": task.config_snapshot,
+                "benchmark_name": task.benchmark_name,
+                "topology_config_name": task.topology_config_name,
+                "search_mode": task.search_mode,
+                "manual_parallelism": task.manual_parallelism,
+                "search_constraints": task.search_constraints,
+                "search_stats": task.search_stats,
+            }
+
+            # 查询该任务的所有结果，选择得分最高的
+            results = db.query(EvaluationResult).filter(
+                EvaluationResult.task_id == task.id
+            ).order_by(EvaluationResult.score.desc()).all()
+
+            if results:
+                best_result = results[0]
+                # 从 full_result 中提取 tpot 和 ttft
+                full_result = best_result.full_result or {}
+                stats = full_result.get('stats', {})
+
+                task_dict['result'] = {
+                    'throughput': best_result.tps,
+                    'tps_per_chip': best_result.tps_per_chip,
+                    'tpot': stats.get('avg_tpot', 0),
+                    'ttft': stats.get('ttft', 0),
+                    'mfu': best_result.mfu,
+                    'score': best_result.score,
+                    'chips': best_result.chips,
+                    'parallelism': {
+                        'dp': best_result.dp,
+                        'tp': best_result.tp,
+                        'pp': best_result.pp,
+                        'ep': best_result.ep,
+                        'sp': best_result.sp,
+                    }
+                }
+            else:
+                task_dict['result'] = None
+
+            tasks_with_results.append(task_dict)
+
         return {
             "id": experiment.id,
             "name": experiment.name,
@@ -1045,28 +1100,7 @@ async def get_experiment_details(experiment_id: int, db: Session = Depends(get_d
             "completed_tasks": experiment.completed_tasks,
             "created_at": experiment.created_at.isoformat() if experiment.created_at else None,
             "updated_at": experiment.updated_at.isoformat() if experiment.updated_at else None,
-            "tasks": [
-                {
-                    "id": task.id,
-                    "task_id": task.task_id,
-                    "experiment_id": task.experiment_id,
-                    "status": task.status.value,
-                    "progress": task.progress,
-                    "message": task.message,
-                    "error": task.error,
-                    "created_at": task.created_at.isoformat() if task.created_at else None,
-                    "started_at": task.started_at.isoformat() if task.started_at else None,
-                    "completed_at": task.completed_at.isoformat() if task.completed_at else None,
-                    "config_snapshot": task.config_snapshot,
-                    "benchmark_name": task.benchmark_name,
-                    "topology_config_name": task.topology_config_name,
-                    "search_mode": task.search_mode,
-                    "manual_parallelism": task.manual_parallelism,
-                    "search_constraints": task.search_constraints,
-                    "search_stats": task.search_stats,
-                }
-                for task in tasks
-            ]
+            "tasks": tasks_with_results
         }
     except HTTPException:
         raise

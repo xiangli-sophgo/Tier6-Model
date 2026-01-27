@@ -3,9 +3,7 @@
  */
 
 import React from 'react'
-import { Card, Typography } from 'antd'
-
-const { Title, Text } = Typography
+import { Card } from '@/components/ui/card'
 
 interface QuickActionProps {
   icon: React.ReactNode
@@ -24,33 +22,23 @@ export const QuickAction: React.FC<QuickActionProps> = ({
 }) => {
   return (
     <Card
-      hoverable
+      className="cursor-pointer text-center hover:shadow-md"
       onClick={onClick}
-      style={{ textAlign: 'center', borderRadius: 12 }}
-      styles={{ body: { padding: '24px 16px' } }}
     >
-      <div
-        style={{
-          width: 48,
-          height: 48,
-          borderRadius: 12,
-          background: `linear-gradient(135deg, ${color} 0%, ${color}cc 100%)`,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          margin: '0 auto 12px',
-          color: '#fff',
-          fontSize: 22,
-        }}
-      >
-        {icon}
+      <div className="px-4 py-6">
+        <div
+          className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-lg text-[22px] text-white"
+          style={{
+            background: `linear-gradient(135deg, ${color} 0%, ${color}cc 100%)`,
+          }}
+        >
+          {icon}
+        </div>
+        <h5 className="mb-1 font-display text-[15px] font-semibold">
+          {title}
+        </h5>
+        <p className="text-xs text-text-secondary">{description}</p>
       </div>
-      <Title level={5} style={{ marginBottom: 4, fontSize: 15 }}>
-        {title}
-      </Title>
-      <Text type="secondary" style={{ fontSize: 12 }}>
-        {description}
-      </Text>
     </Card>
   )
 }

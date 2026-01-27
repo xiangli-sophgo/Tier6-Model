@@ -52,7 +52,6 @@ export default defineConfig(({ mode }) => {
           manualChunks: {
             'vendor-react': ['react', 'react-dom'],
             'vendor-three': ['three', '@react-three/fiber', '@react-three/drei', '@react-spring/three'],
-            'vendor-ui': ['antd', '@ant-design/icons'],
             'vendor-chart': ['echarts', 'echarts-for-react'],
           },
         },
@@ -66,7 +65,6 @@ export default defineConfig(({ mode }) => {
         '@react-spring/three',
         'react',
         'react-dom',
-        'antd',
       ],
     },
   }

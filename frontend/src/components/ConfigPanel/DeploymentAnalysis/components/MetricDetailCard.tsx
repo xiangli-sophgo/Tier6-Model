@@ -5,15 +5,12 @@
  */
 
 import React from 'react'
-import { Typography } from 'antd'
 import {
   FormulaCard,
   VariableList,
   CalculationSteps,
 } from './FormulaDisplay'
 import { PlanAnalysisResult } from '../../../../utils/llmDeployment/types'
-
-const { Text } = Typography
 
 export type MetricType = 'ttft' | 'tpot' | 'throughput' | 'tps_batch' | 'tps_chip' | 'mfu' | 'mbu' | 'cost' | 'percentiles' | 'bottleneck' | 'e2e' | 'chips' | 'memory'
 
@@ -883,9 +880,9 @@ export const MetricDetailCard: React.FC<MetricDetailCardProps> = ({ metric, resu
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginTop: 16 }}>
             {/* TTFT 分位数 */}
             <div style={{ padding: 16, background: '#f0f5ff', borderRadius: 10 }}>
-              <Text strong style={{ fontSize: 14, color: '#2f54eb', display: 'block', marginBottom: 12 }}>
+              <span className="block mb-3 text-sm font-semibold text-[#2f54eb]">
                 TTFT 分位数
-              </Text>
+              </span>
               {ttftP && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 12px', background: '#fff', borderRadius: 6 }}>
@@ -915,9 +912,9 @@ export const MetricDetailCard: React.FC<MetricDetailCardProps> = ({ metric, resu
 
             {/* TPOT 分位数 */}
             <div style={{ padding: 16, background: '#e6fffb', borderRadius: 10 }}>
-              <Text strong style={{ fontSize: 14, color: '#13c2c2', display: 'block', marginBottom: 12 }}>
+              <span className="block mb-3 text-sm font-semibold text-[#13c2c2]">
                 TPOT 分位数
-              </Text>
+              </span>
               {tpotP && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 12px', background: '#fff', borderRadius: 6 }}>

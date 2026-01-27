@@ -5,7 +5,7 @@
  */
 
 import React from 'react'
-import { Tooltip } from 'antd'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import 'katex/dist/katex.min.css'
 import katex from 'katex'
 
@@ -245,14 +245,16 @@ export const VariableList: React.FC<VariableListProps> = ({
           </div>
         )
         return v.description ? (
-          <Tooltip
-            key={i}
-            title={renderTextWithMath(v.description)}
-            overlayStyle={{ maxWidth: 400 }}
-            overlayInnerStyle={{ whiteSpace: 'nowrap' }}
-          >
-            {card}
-          </Tooltip>
+          <TooltipProvider key={i}>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                {card}
+              </TooltipTrigger>
+              <TooltipContent className="max-w-[400px]">
+                {renderTextWithMath(v.description)}
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
         ) : (
           <React.Fragment key={i}>{card}</React.Fragment>
         )

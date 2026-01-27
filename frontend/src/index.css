@@ -1,9 +1,13 @@
 /* ============================================
-   Tier6+ 互联建模 - Linear Style Light Theme
-   注: 基础样式已通过 ConfigProvider 配置
+   Tier6+ 互联建模 - Tailwind CSS Theme
+   注: 已从 Ant Design 迁移至 shadcn/ui
    ============================================ */
 
 @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=Inter:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
 
 :root {
   /* 背景层次 */
@@ -81,65 +85,33 @@ body {
 }
 
 /* ============================================
-   Ant Design 精细调整（ConfigProvider 未覆盖的部分）
+   shadcn/ui 组件样式调整
    ============================================ */
 
-/* 折叠面板 - 额外样式 */
-.ant-collapse {
-  box-shadow: var(--shadow-xs);
-}
-
-.ant-collapse > .ant-collapse-item {
-  border-bottom-color: var(--border-subtle);
-}
-
-.ant-collapse-header:hover {
-  background: var(--bg-hover);
-}
-
-/* Tabs - Card 类型特殊处理 */
-.ant-tabs-card > .ant-tabs-nav .ant-tabs-nav-list {
-  width: 100%;
-  display: flex;
-}
-
-.ant-tabs-card > .ant-tabs-nav .ant-tabs-tab {
-  flex: 1;
-  justify-content: center;
-  background: var(--bg-surface);
-}
-
-.ant-tabs-card > .ant-tabs-nav .ant-tabs-tab-active {
-  background: var(--bg-elevated);
-}
-
 /* 按钮悬停效果 */
-.ant-btn-primary:hover {
+button:hover:not(:disabled) {
   transform: translateY(-1px);
 }
 
 /* 卡片悬停效果 */
-.ant-card {
+[role="article"],
+.card {
   transition: transform 0.2s ease, box-shadow 0.2s ease;
 }
 
-.ant-card:hover {
+[role="article"]:hover,
+.card:hover {
   transform: translateY(-2px);
-  box-shadow: var(--shadow-md);
 }
 
-/* 数字输入框 - 等宽字体 */
-.ant-input-number-input {
-  font-family: var(--font-mono);
-}
-
-/* 描述列表 - 等宽字体 */
-.ant-descriptions-item-content {
+/* 等宽字体应用 */
+input[type="number"],
+code {
   font-family: var(--font-mono);
 }
 
 /* 代码样式 */
-.ant-typography code {
+code {
   background: var(--bg-surface);
   border: 1px solid var(--border-subtle);
   font-family: var(--font-mono);
@@ -149,7 +121,6 @@ body {
 }
 
 /* 标题字体 */
-.ant-modal-title,
 h1, h2, h3 {
   font-family: var(--font-display);
 }

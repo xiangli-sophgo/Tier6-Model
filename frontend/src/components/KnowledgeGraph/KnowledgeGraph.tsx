@@ -3,8 +3,11 @@
  * 使用 react-force-graph 实现高性能力导向布局
  */
 import React, { useState, useRef, useCallback, useMemo, useEffect } from 'react'
-import { Input, Tag, Button, Typography, Switch } from 'antd'
-import { SearchOutlined, ReloadOutlined, ApartmentOutlined, DragOutlined } from '@ant-design/icons'
+import { Input } from '@/components/ui/input'
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import { Switch } from '@/components/ui/switch'
+import { Search, RotateCw, Network, Move } from 'lucide-react'
 import ForceGraph2D, { ForceGraphMethods, NodeObject, LinkObject } from 'react-force-graph-2d'
 import * as d3Force from 'd3-force'
 import {
@@ -15,8 +18,6 @@ import {
 } from './types'
 import { useWorkbench } from '../../contexts/WorkbenchContext'
 import knowledgeData from '../../data/knowledge-graph'
-
-const { Text } = Typography
 
 // 节点半径范围
 const NODE_RADIUS_MIN = 4
@@ -306,7 +307,7 @@ export const KnowledgeGraph: React.FC<KnowledgeGraphProps> = ({ renderMode }) =>
         allNodesLength: allNodes.length,
         hasKnowledgeData: !!knowledgeData,
       })
-    } 
+    }
   }, [allNodes.length, cachedNodes.length])
 
   // 搜索时自动启用匹配分类
@@ -546,36 +547,25 @@ export const KnowledgeGraph: React.FC<KnowledgeGraphProps> = ({ renderMode }) =>
   // 只渲染工具栏
   if (renderMode === 'toolbar-only') {
     return (
-      <div style={{
-        width: '100%',
-        padding: '12px 16px',
-        borderBottom: '1px solid #e5e5e5',
-        background: '#fff',
-        display: 'flex',
-        gap: 16,
-        alignItems: 'center',
-        justifyContent: 'space-between'
-      }}>
+      <div className="flex w-full items-center justify-between gap-4 border-b border-border bg-white px-4 py-3">
         {/* 左侧：搜索框 + 分类过滤 + 全部显示 */}
-        <div style={{ display: 'flex', gap: 16, alignItems: 'center', justifyContent: 'center', flex: 1, minWidth: 0 }}>
+        <div className="flex flex-1 items-center justify-center gap-4 min-w-0">
           {/* 搜索框 */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
-            <Input
-              placeholder="搜索名词..."
-              prefix={<SearchOutlined style={{ color: '#666' }} />}
-              value={searchQuery}
-              onChange={e => setSearchQuery(e.target.value)}
-              allowClear
-              style={{ width: 200 }}
-            />
+          <div className="flex flex-shrink-0 items-center gap-2">
+            <div className="relative w-[200px]">
+              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-text-secondary" />
+              <Input
+                placeholder="搜索名词..."
+                value={searchQuery}
+                onChange={e => setSearchQuery(e.target.value)}
+                className="pl-9"
+              />
+            </div>
             {/* 搜索结果反馈 */}
             {searchQuery.trim() && (
-              <span style={{
-                fontSize: 12,
-                color: searchResultCount > 0 ? '#52c41a' : '#ff4d4f',
-                fontWeight: 500,
-                whiteSpace: 'nowrap',
-              }}>
+              <span className={`text-xs font-medium whitespace-nowrap ${
+                searchResultCount > 0 ? 'text-success' : 'text-error'
+              }`}>
                 {searchResultCount > 0
                   ? `找到 ${searchResultCount}`
                   : '未找到'}
@@ -584,28 +574,27 @@ export const KnowledgeGraph: React.FC<KnowledgeGraphProps> = ({ renderMode }) =>
           </div>
 
           {/* 分类过滤 */}
-          <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', minWidth: 0 }}>
+          <div className="flex flex-wrap gap-1 min-w-0">
             {Object.entries(CATEGORY_NAMES).map(([key, name]) => {
               const category = key as KnowledgeCategory
               const isActive = visibleCategories.has(category)
               const count = allNodes.filter(n => n.category === category).length
               if (count === 0) return null
               return (
-                <Tag
+                <Badge
                   key={category}
-                  color={isActive ? CATEGORY_COLORS[category] : undefined}
+                  variant={isActive ? 'default' : 'outline'}
+                  className="cursor-pointer text-xs px-2 py-0 m-0"
                   style={{
-                    cursor: 'pointer',
                     opacity: isActive ? 1 : 0.5,
                     borderColor: CATEGORY_COLORS[category],
-                    fontSize: 12,
-                    padding: '0 8px',
-                    margin: 0
+                    backgroundColor: isActive ? CATEGORY_COLORS[category] : undefined,
+                    color: isActive ? '#fff' : undefined,
                   }}
                   onClick={(e) => handleCategoryClick(category, e.ctrlKey || e.metaKey)}
                 >
                   {name}
-                </Tag>
+                </Badge>
               )
             })}
           </div>
@@ -613,38 +602,39 @@ export const KnowledgeGraph: React.FC<KnowledgeGraphProps> = ({ renderMode }) =>
           {/* 全部显示按钮 */}
           {visibleCategories.size < 8 && (
             <Button
-              size="small"
-              icon={<ReloadOutlined />}
+              size="sm"
+              variant="outline"
               onClick={resetKnowledgeCategories}
-              style={{ flexShrink: 0 }}
+              className="flex-shrink-0"
             >
+              <RotateCw className="mr-1 h-3 w-3" />
               全部显示
             </Button>
           )}
         </div>
 
         {/* 右侧：重新布局 + 拖动开关 */}
-        <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexShrink: 0 }}>
+        <div className="flex flex-shrink-0 items-center gap-3">
           {/* 重新布局按钮 */}
           <Button
-            size="small"
-            icon={<ApartmentOutlined />}
+            size="sm"
+            variant="outline"
             onClick={handleRelayout}
           >
+            <Network className="mr-1 h-3 w-3" />
             重新布局
           </Button>
 
           {/* 拖动开关 */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <DragOutlined style={{ color: enableDrag ? '#1890ff' : '#999' }} />
+          <div className="flex items-center gap-2">
+            <Move className={`h-4 w-4 ${enableDrag ? 'text-blue-500' : 'text-text-muted'}`} />
             <Switch
-              size="small"
               checked={enableDrag}
-              onChange={setEnableDrag}
+              onCheckedChange={setEnableDrag}
             />
-            <Text type="secondary" style={{ fontSize: 12 }}>
+            <span className="text-xs text-text-secondary">
               {enableDrag ? '可拖动' : '不可拖动'}
-            </Text>
+            </span>
           </div>
         </div>
       </div>
@@ -654,7 +644,7 @@ export const KnowledgeGraph: React.FC<KnowledgeGraphProps> = ({ renderMode }) =>
   // 只渲染画布
   if (renderMode === 'canvas-only') {
     return (
-      <div ref={containerRef} style={{ width: '100%', height: '100%', overflow: 'hidden', position: 'relative', background: '#fafafa' }}>
+      <div ref={containerRef} className="relative h-full w-full overflow-hidden bg-[#fafafa]">
         <ForceGraph2D
           ref={graphRef}
           graphData={graphData}
@@ -684,38 +674,27 @@ export const KnowledgeGraph: React.FC<KnowledgeGraphProps> = ({ renderMode }) =>
 
   // 默认：渲染完整视图（工具栏 + 画布）
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', width: '100%', background: '#fafafa' }}>
+    <div className="flex h-full w-full flex-col bg-[#fafafa]">
       {/* 工具栏 */}
-      <div style={{
-        width: '100%',
-        padding: '12px 16px',
-        borderBottom: '1px solid #e5e5e5',
-        background: '#fff',
-        display: 'flex',
-        gap: 16,
-        alignItems: 'center',
-        justifyContent: 'space-between'
-      }}>
+      <div className="flex w-full items-center justify-between gap-4 border-b border-border bg-white px-4 py-3">
         {/* 左侧：搜索框 + 分类过滤 + 全部显示 */}
-        <div style={{ display: 'flex', gap: 16, alignItems: 'center', justifyContent: 'center', flex: 1, minWidth: 0 }}>
+        <div className="flex flex-1 items-center justify-center gap-4 min-w-0">
           {/* 搜索框 */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
-            <Input
-              placeholder="搜索名词..."
-              prefix={<SearchOutlined style={{ color: '#666' }} />}
-              value={searchQuery}
-              onChange={e => setSearchQuery(e.target.value)}
-              allowClear
-              style={{ width: 200 }}
-            />
+          <div className="flex flex-shrink-0 items-center gap-2">
+            <div className="relative w-[200px]">
+              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-text-secondary" />
+              <Input
+                placeholder="搜索名词..."
+                value={searchQuery}
+                onChange={e => setSearchQuery(e.target.value)}
+                className="pl-9"
+              />
+            </div>
             {/* 搜索结果反馈 */}
             {searchQuery.trim() && (
-              <span style={{
-                fontSize: 12,
-                color: searchResultCount > 0 ? '#52c41a' : '#ff4d4f',
-                fontWeight: 500,
-                whiteSpace: 'nowrap',
-              }}>
+              <span className={`text-xs font-medium whitespace-nowrap ${
+                searchResultCount > 0 ? 'text-success' : 'text-error'
+              }`}>
                 {searchResultCount > 0
                   ? `找到 ${searchResultCount}`
                   : '未找到'}
@@ -724,28 +703,27 @@ export const KnowledgeGraph: React.FC<KnowledgeGraphProps> = ({ renderMode }) =>
           </div>
 
           {/* 分类过滤 */}
-          <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', minWidth: 0 }}>
+          <div className="flex flex-wrap gap-1 min-w-0">
             {Object.entries(CATEGORY_NAMES).map(([key, name]) => {
               const category = key as KnowledgeCategory
               const isActive = visibleCategories.has(category)
               const count = allNodes.filter(n => n.category === category).length
               if (count === 0) return null
               return (
-                <Tag
+                <Badge
                   key={category}
-                  color={isActive ? CATEGORY_COLORS[category] : undefined}
+                  variant={isActive ? 'default' : 'outline'}
+                  className="cursor-pointer text-xs px-2 py-0 m-0"
                   style={{
-                    cursor: 'pointer',
                     opacity: isActive ? 1 : 0.5,
                     borderColor: CATEGORY_COLORS[category],
-                    fontSize: 12,
-                    padding: '0 8px',
-                    margin: 0
+                    backgroundColor: isActive ? CATEGORY_COLORS[category] : undefined,
+                    color: isActive ? '#fff' : undefined,
                   }}
                   onClick={(e) => handleCategoryClick(category, e.ctrlKey || e.metaKey)}
                 >
                   {name}
-                </Tag>
+                </Badge>
               )
             })}
           </div>
@@ -753,44 +731,45 @@ export const KnowledgeGraph: React.FC<KnowledgeGraphProps> = ({ renderMode }) =>
           {/* 全部显示按钮 */}
           {visibleCategories.size < 8 && (
             <Button
-              size="small"
-              icon={<ReloadOutlined />}
+              size="sm"
+              variant="outline"
               onClick={resetKnowledgeCategories}
-              style={{ flexShrink: 0 }}
+              className="flex-shrink-0"
             >
+              <RotateCw className="mr-1 h-3 w-3" />
               全部显示
             </Button>
           )}
         </div>
 
         {/* 右侧：重新布局 + 拖动开关 */}
-        <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexShrink: 0 }}>
+        <div className="flex flex-shrink-0 items-center gap-3">
           {/* 重新布局按钮 */}
           <Button
-            size="small"
-            icon={<ApartmentOutlined />}
+            size="sm"
+            variant="outline"
             onClick={handleRelayout}
           >
+            <Network className="mr-1 h-3 w-3" />
             重新布局
           </Button>
 
           {/* 拖动开关 */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <DragOutlined style={{ color: enableDrag ? '#1890ff' : '#999' }} />
+          <div className="flex items-center gap-2">
+            <Move className={`h-4 w-4 ${enableDrag ? 'text-blue-500' : 'text-text-muted'}`} />
             <Switch
-              size="small"
               checked={enableDrag}
-              onChange={setEnableDrag}
+              onCheckedChange={setEnableDrag}
             />
-            <Text type="secondary" style={{ fontSize: 12 }}>
+            <span className="text-xs text-text-secondary">
               {enableDrag ? '可拖动' : '不可拖动'}
-            </Text>
+            </span>
           </div>
         </div>
       </div>
 
       {/* 画布 */}
-      <div ref={containerRef} style={{ flex: 1, width: '100%', overflow: 'hidden', position: 'relative' }}>
+      <div ref={containerRef} className="relative flex-1 w-full overflow-hidden">
         <ForceGraph2D
           ref={graphRef}
           graphData={graphData}

@@ -3,18 +3,18 @@
  */
 
 import React from 'react'
-import { Card, List, Tag, Typography, Button, Space } from 'antd'
+import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
 import {
-  HistoryOutlined,
-  ArrowRightOutlined,
-  CheckCircleOutlined,
-  ClockCircleOutlined,
-  SyncOutlined,
-  CloseCircleOutlined,
-  ThunderboltOutlined,
-} from '@ant-design/icons'
-
-const { Text } = Typography
+  History,
+  ArrowRight,
+  CheckCircle,
+  Clock,
+  Loader2,
+  XCircle,
+  Zap,
+} from 'lucide-react'
 
 interface TaskSummary {
   task_id: string
@@ -34,90 +34,83 @@ interface RecentTasksProps {
 const getStatusConfig = (status: string) => {
   const statusMap: Record<
     string,
-    { color: string; text: string; icon: React.ReactNode }
+    { variant: 'default' | 'processing' | 'success' | 'destructive' | 'warning'; text: string; icon: React.ReactNode }
   > = {
-    pending: { color: 'default', text: '等待中', icon: <ClockCircleOutlined /> },
-    running: { color: 'processing', text: '运行中', icon: <SyncOutlined spin /> },
-    completed: { color: 'success', text: '已完成', icon: <CheckCircleOutlined /> },
-    failed: { color: 'error', text: '失败', icon: <CloseCircleOutlined /> },
-    cancelled: { color: 'warning', text: '已取消', icon: <CloseCircleOutlined /> },
+    pending: { variant: 'default', text: '等待中', icon: <Clock className="h-3 w-3" /> },
+    running: { variant: 'processing', text: '运行中', icon: <Loader2 className="h-3 w-3 animate-spin" /> },
+    completed: { variant: 'success', text: '已完成', icon: <CheckCircle className="h-3 w-3" /> },
+    failed: { variant: 'destructive', text: '失败', icon: <XCircle className="h-3 w-3" /> },
+    cancelled: { variant: 'warning', text: '已取消', icon: <XCircle className="h-3 w-3" /> },
   }
-  return statusMap[status] || { color: 'default', text: status, icon: null }
+  return statusMap[status] || { variant: 'default' as const, text: status, icon: null }
 }
 
 export const RecentTasks: React.FC<RecentTasksProps> = ({ tasks, loading, onNavigate }) => {
   return (
-    <Card
-      title={
-        <Space>
-          <HistoryOutlined style={{ color: '#1890ff' }} />
+    <Card>
+      <CardHeader className="flex-row items-center justify-between space-y-0 pb-4">
+        <CardTitle className="flex items-center gap-2 text-base">
+          <History className="h-4 w-4 text-blue-500" />
           <span>最近任务</span>
-        </Space>
-      }
-      extra={
+        </CardTitle>
         <Button
-          type="link"
+          variant="link"
           onClick={onNavigate}
-          style={{ padding: 0 }}
+          className="h-auto p-0 text-sm"
         >
-          查看全部 <ArrowRightOutlined />
+          查看全部 <ArrowRight className="ml-1 h-3 w-3" />
         </Button>
-      }
-    >
-      {tasks.length === 0 && !loading ? (
-        <div style={{ textAlign: 'center', padding: '40px 0' }}>
-          <ThunderboltOutlined style={{ fontSize: 48, color: '#d9d9d9', marginBottom: 16 }} />
-          <div>
-            <Text type="secondary">暂无任务记录</Text>
+      </CardHeader>
+
+      <CardContent>
+        {tasks.length === 0 && !loading ? (
+          <div className="py-10 text-center">
+            <Zap className="mx-auto mb-4 h-12 w-12 text-border" />
+            <div>
+              <p className="text-sm text-text-secondary">暂无任务记录</p>
+            </div>
+            <Button
+              className="mt-4"
+              onClick={onNavigate}
+            >
+              开始第一次评估
+            </Button>
           </div>
-          <Button
-            type="primary"
-            style={{ marginTop: 16 }}
-            onClick={onNavigate}
-          >
-            开始第一次评估
-          </Button>
-        </div>
-      ) : (
-        <List
-          loading={loading}
-          dataSource={tasks}
-          renderItem={(task) => {
-            const statusConfig = getStatusConfig(task.status)
-            return (
-              <List.Item style={{ padding: '16px 0' }}>
-                <div style={{ flex: 1 }}>
-                  <div
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 8,
-                      marginBottom: 4,
-                    }}
-                  >
-                    <Text strong style={{ fontSize: 14 }}>
+        ) : loading ? (
+          <div className="flex items-center justify-center py-10">
+            <Loader2 className="h-6 w-6 animate-spin text-text-secondary" />
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {tasks.map((task) => {
+              const statusConfig = getStatusConfig(task.status)
+              return (
+                <div key={task.task_id} className="border-b border-border pb-4 last:border-0 last:pb-0">
+                  <div className="mb-1 flex items-center gap-2">
+                    <span className="text-sm font-medium">
                       {task.experiment_name || task.task_id.slice(0, 8)}
-                    </Text>
-                    <Tag icon={statusConfig.icon} color={statusConfig.color}>
+                    </span>
+                    <Badge variant={statusConfig.variant} className="gap-1">
+                      {statusConfig.icon}
                       {statusConfig.text}
-                    </Tag>
+                    </Badge>
                   </div>
                   {task.message && (
-                    <Text type="secondary" style={{ fontSize: 12 }}>
+                    <p className="text-xs text-text-secondary">
                       {task.message}
-                    </Text>
+                    </p>
                   )}
-                  <div style={{ marginTop: 4 }}>
-                    <Text type="secondary" style={{ fontSize: 11 }}>
+                  <div className="mt-1">
+                    <p className="text-[11px] text-text-secondary">
                       {new Date(task.created_at).toLocaleString()}
-                    </Text>
+                    </p>
                   </div>
                 </div>
-              </List.Item>
-            )
-          }}
-        />
-      )}
+              )
+            })}
+          </div>
+        )}
+      </CardContent>
     </Card>
   )
 }

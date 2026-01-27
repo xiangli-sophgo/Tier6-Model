@@ -8,11 +8,10 @@
  */
 
 import React, { useMemo, useState, useCallback, useRef, useEffect } from 'react'
-import { Empty, Typography, Button, Space, Tooltip } from 'antd'
-import { ZoomInOutlined, ZoomOutOutlined, ReloadOutlined } from '@ant-design/icons'
+import { ZoomIn, ZoomOut, RotateCcw } from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import type { GanttChartData, GanttTask } from '../../../../utils/llmDeployment/types'
-
-const { Text } = Typography
 
 interface GanttChartProps {
   data: GanttChartData | null
@@ -522,11 +521,9 @@ export const GanttChart: React.FC<GanttChartProps> = ({
   if (!data || data.tasks.length === 0) {
     return (
       <div ref={containerRef} style={{ width: '100%' }}>
-        <Empty
-          description="运行模拟以生成甘特图"
-          style={{ marginTop: 20 }}
-          image={Empty.PRESENTED_IMAGE_SIMPLE}
-        />
+        <div className="flex flex-col items-center justify-center py-10 text-gray-400">
+          <div className="text-sm">运行模拟以生成甘特图</div>
+        </div>
       </div>
     )
   }
@@ -540,23 +537,44 @@ export const GanttChart: React.FC<GanttChartProps> = ({
     <div ref={containerRef} style={{ width: '100%' }}>
       {/* 工具栏 */}
       <div style={{ marginBottom: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <Text type="secondary" style={{ fontSize: 10 }}>
+        <span className="text-[10px] text-gray-500">
           Ctrl+滚轮: 缩放 | Shift+滚轮: 平移 | 拖拽: 平移
-        </Text>
-        <Space size="small">
-          <Text type="secondary" style={{ fontSize: 11 }}>
+        </span>
+        <div className="flex items-center gap-1">
+          <span className="text-[11px] text-gray-500 mr-1">
             {zoom.toFixed(1)}x
-          </Text>
-          <Tooltip title="放大 (Ctrl+滚轮↑)">
-            <Button size="small" icon={<ZoomInOutlined />} onClick={handleZoomIn} />
-          </Tooltip>
-          <Tooltip title="缩小 (Ctrl+滚轮↓)">
-            <Button size="small" icon={<ZoomOutOutlined />} onClick={handleZoomOut} disabled={zoom <= 1} />
-          </Tooltip>
-          <Tooltip title="重置视图">
-            <Button size="small" icon={<ReloadOutlined />} onClick={handleReset} disabled={zoom === 1} />
-          </Tooltip>
-        </Space>
+          </span>
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button variant="outline" size="icon" className="h-7 w-7" onClick={handleZoomIn}>
+                  <ZoomIn className="h-4 w-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>放大 (Ctrl+滚轮↑)</TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button variant="outline" size="icon" className="h-7 w-7" onClick={handleZoomOut} disabled={zoom <= 1}>
+                  <ZoomOut className="h-4 w-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>缩小 (Ctrl+滚轮↓)</TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button variant="outline" size="icon" className="h-7 w-7" onClick={handleReset} disabled={zoom === 1}>
+                  <RotateCcw className="h-4 w-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>重置视图</TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+        </div>
       </div>
 
       {/* SVG 图表 */}

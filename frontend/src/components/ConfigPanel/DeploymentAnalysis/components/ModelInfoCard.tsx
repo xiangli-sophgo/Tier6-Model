@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useMemo, useEffect } from 'react'
-import { Tag } from 'antd'
+import { Badge } from '@/components/ui/badge'
 import { LLMModelConfig, InferenceConfig } from '../../../../utils/llmDeployment/types'
 import { calculateModelParams } from '../../../../api/model'
 
@@ -451,8 +451,8 @@ export const ModelInfoCard: React.FC<ModelInfoCardProps> = ({ model, inference }
     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
         <span style={{ fontSize: 14, fontWeight: 600, color: COLORS.text }}>{model.model_name}</span>
-        <Tag color="blue" style={{ margin: 0 }}>{model.attention_type?.toUpperCase() || 'GQA'}</Tag>
-        {isMoE && <Tag color="magenta" style={{ margin: 0 }}>MoE</Tag>}
+        <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200">{model.attention_type?.toUpperCase() || 'GQA'}</Badge>
+        {isMoE && <Badge variant="outline" className="bg-pink-50 text-pink-700 border-pink-200">MoE</Badge>}
       </div>
       <div style={{ display: 'flex', gap: 16, fontSize: 12, color: COLORS.textSecondary }}>
         <span><b style={{ color: '#1677ff' }}>{formatNum(params.total)}</b> Params</span>

@@ -3,8 +3,16 @@
  */
 
 import React, { useState, useEffect, useRef, useCallback } from 'react'
-import { Typography, Select, Empty, Button, message } from 'antd'
-import { ReloadOutlined } from '@ant-design/icons'
+import { toast } from 'sonner'
+import { RefreshCw } from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { ScoreRadarChart } from './ScoreRadarChart'
 import { MetricsBarChart } from './MetricsBarChart'
 import { MemoryPieChart } from './MemoryPieChart'
@@ -21,8 +29,6 @@ import {
   SimulationResult,
 } from '../../../../utils/llmDeployment/types'
 import { HierarchicalTopology } from '../../../../types'
-
-const { Text } = Typography
 
 /** 后端模拟 API 地址 */
 const SIMULATION_API_URL = 'http://localhost:8001/api/simulate'
@@ -145,7 +151,7 @@ export const ChartsPanel: React.FC<ChartsPanelProps> = ({
       setSimulationResult(backendResult)
     } catch (error) {
       console.error('后端模拟失败:', error)
-      message.error('模拟失败，请检查后端服务是否启动')
+      toast.error('模拟失败，请检查后端服务是否启动')
     } finally {
       setIsSimulating(false)
     }
@@ -177,10 +183,9 @@ export const ChartsPanel: React.FC<ChartsPanelProps> = ({
 
   if (!result) {
     return (
-      <Empty
-        description="请先运行分析以查看图表"
-        style={{ marginTop: 40 }}
-      />
+      <div className="flex flex-col items-center justify-center py-10 text-gray-400">
+        <div className="text-sm">请先运行分析以查看图表</div>
+      </div>
     )
   }
 
@@ -221,11 +226,11 @@ export const ChartsPanel: React.FC<ChartsPanelProps> = ({
           {/* 雷达图 - 左上 */}
           <div style={chartCardStyle}>
             <div style={chartTitleStyle}>
-              <Text strong>多维评分分析</Text>
+              <span className="font-semibold">多维评分分析</span>
               {topKPlans.length > 1 && (
-                <Text type="secondary" style={{ fontSize: 11 }}>
+                <span className="text-[11px] text-gray-500">
                   对比 Top-{Math.min(5, topKPlans.length)} 方案
-                </Text>
+                </span>
               )}
             </div>
             <ScoreRadarChart
@@ -238,14 +243,22 @@ export const ChartsPanel: React.FC<ChartsPanelProps> = ({
           {/* 柱状图 - 右上 */}
           <div style={chartCardStyle}>
             <div style={chartTitleStyle}>
-              <Text strong>多方案对比</Text>
+              <span className="font-semibold">多方案对比</span>
               <Select
-                size="small"
                 value={selectedMetric}
-                onChange={setSelectedMetric}
-                options={metricOptions}
-                style={{ width: 130 }}
-              />
+                onValueChange={(value: string) => setSelectedMetric(value as MetricType)}
+              >
+                <SelectTrigger className="w-[130px] h-7 text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {metricOptions.map((opt) => (
+                    <SelectItem key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             <MetricsBarChart
               plans={topKPlans}
@@ -257,16 +270,13 @@ export const ChartsPanel: React.FC<ChartsPanelProps> = ({
           {/* 显存图 - 左下 */}
           <div style={chartCardStyle}>
             <div style={chartTitleStyle}>
-              <Text strong>显存占用分解</Text>
-              <Text
-                type="secondary"
-                style={{
-                  fontSize: 11,
-                  color: result.memory.is_memory_sufficient ? '#52c41a' : '#faad14',
-                }}
+              <span className="font-semibold">显存占用分解</span>
+              <span
+                className="text-[11px]"
+                style={{ color: result.memory.is_memory_sufficient ? '#52c41a' : '#faad14' }}
               >
                 {result.memory.is_memory_sufficient ? '✓ 显存充足' : '⚠ 显存不足'}
-              </Text>
+              </span>
             </div>
             <MemoryPieChart memory={result.memory} height={220} />
           </div>
@@ -274,11 +284,10 @@ export const ChartsPanel: React.FC<ChartsPanelProps> = ({
           {/* Roofline 图 - 右下 */}
           <div style={chartCardStyle}>
             <div style={chartTitleStyle}>
-              <Text strong>Roofline 性能分析</Text>
-              <Text
-                type="secondary"
+              <span className="font-semibold">Roofline 性能分析</span>
+              <span
+                className="text-[11px]"
                 style={{
-                  fontSize: 11,
                   color:
                     result.latency.bottleneck_type === 'memory'
                       ? '#1890ff'
@@ -292,7 +301,7 @@ export const ChartsPanel: React.FC<ChartsPanelProps> = ({
                   : result.latency.bottleneck_type === 'compute'
                   ? '算力受限'
                   : '通信受限'}
-              </Text>
+              </span>
             </div>
             <RooflineChart
               result={result}
@@ -320,25 +329,27 @@ export const ChartsPanel: React.FC<ChartsPanelProps> = ({
         >
           <div style={{ ...chartCardStyle, boxShadow: 'none', border: 'none' }}>
           <div style={chartTitleStyle}>
-            <Text strong>Prefill + Decode 时序甘特图</Text>
+            <span className="font-semibold">Prefill + Decode 时序甘特图</span>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               {isSimulating ? (
-                <Text type="secondary" style={{ fontSize: 11 }}>模拟中...</Text>
+                <span className="text-[11px] text-gray-500">模拟中...</span>
               ) : simulationResult ? (
-                <Text type="secondary" style={{ fontSize: 11 }}>
+                <span className="text-[11px] text-gray-500">
                   TTFT: {simulationResult.stats.ttft.toFixed(2)}ms |
                   Avg TPOT: {simulationResult.stats.avgTpot.toFixed(2)}ms |
                   动态MFU: {(simulationResult.stats.dynamicMfu * 100).toFixed(1)}%
-                </Text>
+                </span>
               ) : null}
               <Button
-                type="text"
-                size="small"
-                icon={<ReloadOutlined spin={isSimulating} />}
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7"
                 disabled={!inference || isSimulating}
                 onClick={runSimulation}
                 title="重新运行模拟"
-              />
+              >
+                <RefreshCw className={`h-4 w-4 ${isSimulating ? 'animate-spin' : ''}`} />
+              </Button>
             </div>
           </div>
           <GanttChart

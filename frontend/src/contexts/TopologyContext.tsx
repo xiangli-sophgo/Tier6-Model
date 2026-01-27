@@ -3,7 +3,7 @@
  * 负责管理拓扑数据的加载、生成和配置
  */
 import React, { createContext, useContext, useState, useCallback, useEffect, ReactNode } from 'react'
-import { message } from 'antd'
+import { toast } from 'sonner'
 import { HierarchicalTopology, ManualConnectionConfig } from '../types'
 import { getTopology, generateTopology } from '../api/topology'
 
@@ -128,7 +128,7 @@ export const TopologyProvider: React.FC<TopologyProviderProps> = ({ children }) 
       }
     } catch (error) {
       console.error('加载拓扑失败:', error)
-      message.error('加载拓扑数据失败')
+      toast.error('加载拓扑数据失败')
     } finally {
       setLoading(false)
     }
@@ -147,7 +147,7 @@ export const TopologyProvider: React.FC<TopologyProviderProps> = ({ children }) 
       }
     } catch (error) {
       console.error('生成拓扑失败:', error)
-      message.error('生成拓扑失败')
+      toast.error('生成拓扑失败')
     }
   }, [])
 

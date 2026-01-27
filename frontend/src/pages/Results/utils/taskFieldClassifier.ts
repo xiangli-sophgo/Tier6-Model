@@ -19,17 +19,9 @@ export interface ClassifiedTaskFields {
 export function extractTaskFields(tasks: EvaluationTask[]): string[] {
   const fields = new Set<string>()
 
-  // 基础字段
-  fields.add('task_id')
-  fields.add('status')
-  fields.add('progress')
-  fields.add('message')
-  fields.add('error')
-
   // 配置字段
   fields.add('benchmark_name')
   fields.add('topology_config_name')
-  fields.add('search_mode')
 
   // 搜索统计字段（从 search_stats 中提取）
   tasks.forEach(task => {
@@ -40,27 +32,24 @@ export function extractTaskFields(tasks: EvaluationTask[]): string[] {
     }
   })
 
-  // 性能指标字段（从最佳结果中提取）
-  fields.add('best_chips')
-  fields.add('best_tp')
-  fields.add('best_ep')
-  fields.add('best_pp')
-  fields.add('best_dp')
-  fields.add('best_sp')
-  fields.add('best_moe_tp')
-  fields.add('best_throughput')
-  fields.add('best_tps_per_chip')
-  fields.add('best_ttft')
-  fields.add('best_tpot')
-  fields.add('best_mfu')
-  fields.add('best_mbu')
-  fields.add('best_score')
-  fields.add('best_is_feasible')
+  // 性能指标字段（从 result 中提取）
+  fields.add('throughput')
+  fields.add('tps_per_chip')
+  fields.add('tpot')
+  fields.add('ttft')
+  fields.add('mfu')
+  fields.add('score')
+  fields.add('chips')
+
+  // 并行策略字段
+  fields.add('parallelism_dp')
+  fields.add('parallelism_tp')
+  fields.add('parallelism_pp')
+  fields.add('parallelism_ep')
+  fields.add('parallelism_sp')
 
   // 时间字段
   fields.add('created_at')
-  fields.add('started_at')
-  fields.add('completed_at')
 
   return Array.from(fields)
 }
@@ -77,16 +66,19 @@ export function classifyTaskFields(fieldKeys: string[]): ClassifiedTaskFields {
     time: [],
   }
 
+  const performanceFields = ['throughput', 'tps_per_chip', 'tpot', 'ttft', 'mfu', 'score', 'chips']
+  const parallelismFields = ['parallelism_dp', 'parallelism_tp', 'parallelism_pp', 'parallelism_ep', 'parallelism_sp']
+
   fieldKeys.forEach(key => {
-    if (key === 'task_id' || key === 'status' || key === 'progress') {
-      classified.important.push(key)
-    } else if (key.startsWith('search_stats_')) {
+    if (key.startsWith('search_stats_')) {
       classified.stats.push(key)
-    } else if (key.startsWith('best_')) {
+    } else if (performanceFields.includes(key)) {
       classified.performance.push(key)
+    } else if (parallelismFields.includes(key)) {
+      classified.config.push(key)
     } else if (key.endsWith('_at')) {
       classified.time.push(key)
-    } else if (['benchmark_name', 'topology_config_name', 'search_mode'].includes(key)) {
+    } else if (['benchmark_name', 'topology_config_name'].includes(key)) {
       classified.config.push(key)
     }
   })

@@ -5,7 +5,6 @@
  */
 
 import React from 'react'
-import { Layout } from 'antd'
 import { useWorkbench } from '@/contexts/WorkbenchContext'
 import { Sidebar } from './Sidebar'
 import { Dashboard } from '@/pages/Dashboard'
@@ -14,45 +13,43 @@ import { DeploymentAnalysis } from '@/pages/DeploymentAnalysis'
 import { Results } from '@/pages/Results'
 import { Knowledge } from '@/pages/Knowledge'
 
-const { Content } = Layout
-
 export const MainLayout: React.FC = () => {
   const { ui } = useWorkbench()
 
   return (
-    <Layout style={{ height: '100vh' }}>
+    <div className="flex h-screen">
       <Sidebar />
-      <Layout style={{ height: '100vh', overflow: 'hidden' }}>
-        <Content style={{ height: '100%', overflow: 'hidden', background: '#f0f2f5' }}>
+      <div className="flex-1 h-screen overflow-hidden">
+        <main className="h-full overflow-hidden bg-gray-100">
           {/* 全局视角模式：所有页面保持挂载，通过显示/隐藏来切换 */}
           {/* 这样可以保留所有组件的状态和位置（如知识图谱的节点坐标） */}
 
           {/* Dashboard */}
-          <div style={{ display: ui.viewMode === 'dashboard' ? 'block' : 'none', height: '100%', width: '100%' }}>
+          <div className={`${ui.viewMode === 'dashboard' ? 'block' : 'hidden'} h-full w-full`}>
             <Dashboard />
           </div>
 
           {/* Topology Setup */}
-          <div style={{ display: ui.viewMode === 'topology' ? 'flex' : 'none', height: '100%' }}>
+          <div className={`${ui.viewMode === 'topology' ? 'flex' : 'hidden'} h-full w-full`}>
             <TopologySetup />
           </div>
 
           {/* Deployment Analysis */}
-          <div style={{ display: ui.viewMode === 'deployment' ? 'flex' : 'none', height: '100%' }}>
+          <div className={`${ui.viewMode === 'deployment' ? 'flex' : 'hidden'} h-full w-full`}>
             <DeploymentAnalysis />
           </div>
 
           {/* Results */}
-          <div style={{ display: ui.viewMode === 'results' ? 'flex' : 'none', height: '100%' }}>
+          <div className={`${ui.viewMode === 'results' ? 'flex' : 'hidden'} h-full w-full`}>
             <Results />
           </div>
 
           {/* Knowledge Network */}
-          <div style={{ display: ui.viewMode === 'knowledge' ? 'flex' : 'none', height: '100%' }}>
+          <div className={`${ui.viewMode === 'knowledge' ? 'flex' : 'hidden'} h-full w-full`}>
             <Knowledge />
           </div>
-        </Content>
-      </Layout>
-    </Layout>
+        </main>
+      </div>
+    </div>
   )
 }

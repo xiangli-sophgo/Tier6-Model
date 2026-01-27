@@ -432,12 +432,12 @@ class ParallelismStrategy:
 
 @dataclass
 class GanttTask:
-    """甘特图任务"""
+    """甘特图任务（增强版，包含详细性能数据）"""
     id: str
     name: str
     resource: str
-    start: float  # ms
-    end: float  # ms
+    start: float  # us (微秒)
+    end: float  # us (微秒)
     type: GanttTaskType
     phase: InferencePhase
     chip_id: str
@@ -445,6 +445,34 @@ class GanttTask:
     layer_index: Optional[int] = None
     token_index: Optional[int] = None
     color: Optional[str] = None
+
+    # ========== 计算详细信息 ==========
+    flops: Optional[float] = None                       # 浮点运算数
+    params_bytes: Optional[float] = None                # 参数量（字节）
+    dram_occupy_bytes: Optional[float] = None           # 显存占用（字节）
+    dram_traffic_bytes: Optional[float] = None          # 显存流量（字节）
+
+    # ========== 时间分解 ==========
+    compute_time_us: Optional[float] = None             # 纯计算时间（微秒）
+    memory_time_us: Optional[float] = None              # 内存搬运时间（微秒）
+    comm_time_us: Optional[float] = None                # 通信时间（微秒）
+
+    # ========== GEMM 优化结果 ==========
+    best_tile: Optional[dict] = None                    # 最优 Tile 大小 {"M": 128, "N": 384, "K": 448, "order": "mnk"}
+    best_partition: Optional[dict] = None               # 最优分块策略 {"dims": {...}, "procs": {...}}
+    gemm_shape: Optional[dict] = None                   # GEMM 形状 {"G": 1, "M": 128, "K": 7168, "N": 1536}
+
+    # ========== 利用率 ==========
+    arch_utilization: Optional[float] = None            # 架构利用率（硬件峰值比）
+    effective_utilization: Optional[float] = None       # 有效利用率（考虑内存墙）
+
+    # ========== 通信详细信息 ==========
+    comm_size_bytes: Optional[float] = None             # 通信数据量（字节）
+    comm_algorithm: Optional[str] = None                # 通信算法 ("ring"/"tree"/"halving_doubling"/etc)
+    comm_group_size: Optional[int] = None               # 通信组大小（TP/DP/EP 度）
+
+    # ========== 并行配置（算子级别） ==========
+    parallel_config: Optional[dict] = None              # 并行参数 {"tp": 8, "dp": 16, "ep": 1, "sp": 1}
 
 
 @dataclass

@@ -4,20 +4,18 @@
  */
 
 import React, { useEffect, useState } from 'react'
-import { Card, Space, Typography } from 'antd'
+import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import {
-  ThunderboltOutlined,
-  DatabaseOutlined,
-  ApartmentOutlined,
-  PartitionOutlined,
-  RocketOutlined,
-} from '@ant-design/icons'
+  Zap,
+  Database,
+  Network,
+  GitFork,
+  Rocket,
+} from 'lucide-react'
 import { getTasks, getRunningTasks } from '@/api/tasks'
 import { QuickAction } from './QuickAction'
 import { RecentTasks } from './RecentTasks'
 import { useWorkbench, ViewMode } from '@/contexts/WorkbenchContext'
-
-const { Title } = Typography
 
 export const Dashboard: React.FC = () => {
   const { ui } = useWorkbench()
@@ -78,63 +76,54 @@ export const Dashboard: React.FC = () => {
   }
 
   return (
-    <div style={{ padding: 24, height: '100%', overflow: 'auto', background: '#fff' }}>
+    <div className="h-full overflow-auto bg-white p-6">
       {/* 欢迎区域 */}
-      <div style={{ marginBottom: 24 }}>
-        <Title level={3} style={{ marginBottom: 0 }}>
+      <div className="mb-6">
+        <h3 className="m-0 font-display text-2xl font-semibold">
           Tier6+ 互联建模平台
-        </Title>
+        </h3>
       </div>
 
       {/* 快速操作 */}
-      <Card
-        title={
-          <Space>
-            <RocketOutlined style={{ color: '#1890ff' }} />
+      <Card className="mb-6">
+        <CardHeader className="pb-4">
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Rocket className="h-4 w-4 text-blue-500" />
             <span>快速操作</span>
-          </Space>
-        }
-        style={{ marginBottom: 24 }}
-        styles={{ body: { padding: 16 } }}
-      >
-        <div style={{ display: 'flex', gap: 16 }}>
-          <div style={{ flex: 1 }}>
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="p-4">
+          <div className="grid grid-cols-4 gap-4">
             <QuickAction
-              icon={<ApartmentOutlined />}
+              icon={<Network />}
               title="互联拓扑"
               description="配置Tier6+互联拓扑"
               color="#1890ff"
               onClick={() => navigateTo('topology')}
             />
-          </div>
-          <div style={{ flex: 1 }}>
             <QuickAction
-              icon={<ThunderboltOutlined />}
+              icon={<Zap />}
               title="部署分析"
               description="评估 LLM 部署推理方案"
               color="#52c41a"
               onClick={() => navigateTo('deployment')}
             />
-          </div>
-          <div style={{ flex: 1 }}>
             <QuickAction
-              icon={<DatabaseOutlined />}
+              icon={<Database />}
               title="结果管理"
               description="实验结果查看与详细分析"
               color="#722ed1"
               onClick={() => navigateTo('results')}
             />
-          </div>
-          <div style={{ flex: 1 }}>
             <QuickAction
-              icon={<PartitionOutlined />}
+              icon={<GitFork />}
               title="知识网络"
               description="分布式计算知识图谱"
               color="#13c2c2"
               onClick={() => navigateTo('knowledge')}
             />
           </div>
-        </div>
+        </CardContent>
       </Card>
 
       {/* 最近任务 */}
