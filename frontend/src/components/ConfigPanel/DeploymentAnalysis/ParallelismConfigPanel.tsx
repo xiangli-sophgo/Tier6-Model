@@ -55,7 +55,7 @@ export const ParallelismConfigPanel: React.FC<ParallelismConfigPanelProps> = ({
 }) => {
   // 总芯片数 = dp * tp（不包括 PP）
   const totalParallelism = manualStrategy.dp * manualStrategy.tp
-  const [showConstraints, setShowConstraints] = React.useState(true)
+  const [showConstraints, setShowConstraints] = React.useState(false)
 
   // 计算搜索约束范围
   const isMoE = modelConfig.model_type === 'moe' && modelConfig.moe_config
@@ -175,7 +175,7 @@ export const ParallelismConfigPanel: React.FC<ParallelismConfigPanelProps> = ({
         ) : (
           <div>
             <div style={configRowStyle}>
-              <span className="text-xs">使用芯片数</span>
+              <span className="text-xs">最大使用芯片数</span>
               <Badge variant="outline" className="text-[11px] bg-green-50 text-green-700 border-green-200">
                 {maxChips} 个
               </Badge>

@@ -76,50 +76,57 @@ export const Dashboard: React.FC = () => {
   }
 
   return (
-    <div className="h-full overflow-auto bg-white p-6">
-      {/* 欢迎区域 */}
-      <div className="mb-6">
-        <h3 className="m-0 font-display text-2xl font-semibold">
+    <div className="h-full flex flex-col bg-gradient-to-b from-gray-50 to-white">
+      {/* 标题栏 */}
+      <div className="px-8 py-6 border-b border-blue-100 bg-gradient-to-r from-blue-50 to-white flex-shrink-0" style={{boxShadow: '0 2px 12px rgba(37, 99, 235, 0.08)'}}>
+        <h3 className="m-0 bg-gradient-to-r from-blue-600 to-blue-400 bg-clip-text text-2xl font-bold text-transparent">
           Tier6+ 互联建模平台
         </h3>
       </div>
 
+      {/* 内容区 */}
+      <div className="flex-1 overflow-auto p-8">
+      {/* 欢迎区域 */}
+      <div className="mb-8">
+
       {/* 快速操作 */}
-      <Card className="mb-6">
-        <CardHeader className="pb-4">
-          <CardTitle className="flex items-center gap-2 text-base">
-            <Rocket className="h-4 w-4 text-blue-500" />
+      <Card className="mb-8 border-0">
+        <CardHeader className="pb-6">
+          <CardTitle className="flex items-center gap-3 text-lg">
+            <div className="rounded-lg bg-blue-50 p-2">
+              <Rocket className="h-5 w-5 text-blue-600" />
+            </div>
             <span>快速操作</span>
           </CardTitle>
         </CardHeader>
-        <CardContent className="p-4">
-          <div className="grid grid-cols-4 gap-4">
+        <CardContent className="px-6 pb-6">
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-6">
             <QuickAction
-              icon={<Network />}
+              icon={<Network className="h-6 w-6" />}
               title="互联拓扑"
               description="配置Tier6+互联拓扑"
-              color="#1890ff"
+              color="#2563EB"
               onClick={() => navigateTo('topology')}
             />
             <QuickAction
-              icon={<Zap />}
+              icon={<Zap className="h-6 w-6" />}
               title="部署分析"
               description="评估 LLM 部署推理方案"
-              color="#52c41a"
+              color="#06B6D4"
               onClick={() => navigateTo('deployment')}
             />
             <QuickAction
-              icon={<Database />}
+              icon={<Database className="h-6 w-6" />}
               title="结果管理"
               description="实验结果查看与详细分析"
-              color="#722ed1"
+              color="#7C3AED"
               onClick={() => navigateTo('results')}
             />
             <QuickAction
-              icon={<GitFork />}
+              icon={<GitFork className="h-6 w-6" />}
               title="知识网络"
               description="分布式计算知识图谱"
-              color="#13c2c2"
+              color="#059669"
               onClick={() => navigateTo('knowledge')}
             />
           </div>
@@ -127,7 +134,14 @@ export const Dashboard: React.FC = () => {
       </Card>
 
       {/* 最近任务 */}
-      <RecentTasks tasks={recentTasks} loading={loading} onNavigate={() => navigateTo('results')} />
+      <RecentTasks
+        tasks={recentTasks}
+        loading={loading}
+        onNavigate={() => navigateTo('results')}
+        onTaskClick={() => navigateTo('results')}
+      />
+      </div>
+      </div>
     </div>
   )
 }

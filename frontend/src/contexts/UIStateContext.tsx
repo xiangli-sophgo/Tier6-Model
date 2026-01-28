@@ -17,11 +17,15 @@ export interface UIStateContextType {
   focusedLevel: 'datacenter' | 'pod' | 'rack' | 'board' | null
   // 拓扑页面视图模式（3D/2D切换）
   topologyPageViewMode: '3d' | 'topology'
+  // 侧边栏折叠状态
+  sidebarCollapsed: boolean
   setViewMode: (mode: ViewMode) => void
   setSelectedNode: (node: NodeDetail | null) => void
   setSelectedLink: (link: LinkDetail | null) => void
   setFocusedLevel: (level: 'datacenter' | 'pod' | 'rack' | 'board' | null) => void
   setTopologyPageViewMode: (mode: '3d' | 'topology') => void
+  setSidebarCollapsed: (collapsed: boolean) => void
+  toggleSidebar: () => void
 }
 
 // ============================================
@@ -52,6 +56,22 @@ export const UIStateProvider: React.FC<UIStateProviderProps> = ({ children, onVi
   const [focusedLevel, setFocusedLevel] = useState<'datacenter' | 'pod' | 'rack' | 'board' | null>(null)
   // 拓扑页面视图模式（默认2D）
   const [topologyPageViewMode, setTopologyPageViewMode] = useState<'3d' | 'topology'>('topology')
+  // 侧边栏折叠状态（从 localStorage 恢复）
+  const [sidebarCollapsed, setSidebarCollapsedInternal] = useState<boolean>(() => {
+    const saved = localStorage.getItem('tier6_sidebar_collapsed')
+    return saved === 'true'
+  })
+
+  // 设置侧边栏折叠状态并持久化
+  const setSidebarCollapsed = useCallback((collapsed: boolean) => {
+    setSidebarCollapsedInternal(collapsed)
+    localStorage.setItem('tier6_sidebar_collapsed', String(collapsed))
+  }, [])
+
+  // 切换侧边栏折叠状态
+  const toggleSidebar = useCallback(() => {
+    setSidebarCollapsed(!sidebarCollapsed)
+  }, [sidebarCollapsed, setSidebarCollapsed])
 
   // 切换视图模式
   const setViewMode = useCallback((mode: ViewMode) => {
@@ -68,11 +88,14 @@ export const UIStateProvider: React.FC<UIStateProviderProps> = ({ children, onVi
     selectedLink,
     focusedLevel,
     topologyPageViewMode,
+    sidebarCollapsed,
     setViewMode,
     setSelectedNode,
     setSelectedLink,
     setFocusedLevel,
     setTopologyPageViewMode,
+    setSidebarCollapsed,
+    toggleSidebar,
   }
 
   return (

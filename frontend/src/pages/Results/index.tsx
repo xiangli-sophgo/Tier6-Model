@@ -10,13 +10,14 @@ import {
   Trash2,
   BarChart3,
   Loader2,
-  ArrowLeft,
   Pencil,
   Save,
   X,
   Download,
   Upload,
   Inbox,
+  ChevronRight,
+  ChevronDown,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -56,11 +57,12 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { listExperiments, deleteExperiment, deleteExperimentsBatch, getExperimentDetail, getTaskResults, updateExperiment, downloadExperimentJSON, checkImportFile, executeImport, Experiment, EvaluationTask, TaskResultsResponse } from '@/api/results'
+import { listExperiments, deleteExperiment, deleteExperimentsBatch, deleteResultsBatch, getExperimentDetail, getTaskResults, updateExperiment, downloadExperimentJSON, checkImportFile, executeImport, Experiment, EvaluationTask, TaskResultsResponse } from '@/api/results'
 import { AnalysisResultDisplay } from '@/components/ConfigPanel/DeploymentAnalysis/AnalysisResultDisplay'
 import { ChartsPanel } from '@/components/ConfigPanel/DeploymentAnalysis/charts'
 import { PlanAnalysisResult, HardwareConfig, LLMModelConfig, InferenceConfig } from '@/utils/llmDeployment/types'
 import TaskTable from './components/TaskTable'
+import TaskDetailPanel from './components/TaskDetailPanel'
 
 // 分页组件
 const Pagination: React.FC<{
@@ -72,13 +74,13 @@ const Pagination: React.FC<{
   onPageSizeChange: (size: number) => void
 }> = ({ currentPage, totalPages, pageSize, total, onPageChange, onPageSizeChange }) => {
   return (
-    <div className="flex items-center justify-between px-2 py-4">
-      <span className="text-sm text-gray-500">共 {total} 个实验</span>
-      <div className="flex items-center gap-2">
+    <div className="flex items-center justify-between px-4 py-6 border-t border-blue-100 bg-gradient-to-r from-blue-50/30 to-white">
+      <span className="text-sm text-text-muted">共 {total} 个实验</span>
+      <div className="flex items-center gap-3">
         <select
           value={pageSize}
           onChange={(e) => onPageSizeChange(Number(e.target.value))}
-          className="h-8 rounded-md border border-gray-300 px-2 text-sm"
+          className="h-9 rounded-lg border border-blue-200 bg-white px-3 text-sm text-text-primary hover:border-blue-300"
         >
           <option value={10}>10条/页</option>
           <option value={20}>20条/页</option>
@@ -89,10 +91,11 @@ const Pagination: React.FC<{
           size="sm"
           disabled={currentPage <= 1}
           onClick={() => onPageChange(currentPage - 1)}
+          className="border-blue-200 hover:bg-blue-50"
         >
           上一页
         </Button>
-        <span className="text-sm">
+        <span className="text-sm text-text-secondary min-w-[60px] text-center">
           {currentPage} / {totalPages || 1}
         </span>
         <Button
@@ -100,6 +103,7 @@ const Pagination: React.FC<{
           size="sm"
           disabled={currentPage >= totalPages}
           onClick={() => onPageChange(currentPage + 1)}
+          className="border-blue-200 hover:bg-blue-50"
         >
           下一页
         </Button>
@@ -107,7 +111,7 @@ const Pagination: React.FC<{
           type="number"
           min={1}
           max={totalPages || 1}
-          className="h-8 w-16"
+          className="h-9 w-16 border-blue-200 rounded-lg"
           placeholder="页码"
           onKeyDown={(e) => {
             if (e.key === 'Enter') {
@@ -133,6 +137,10 @@ export const Results: React.FC = () => {
   const [selectedTask, setSelectedTask] = useState<EvaluationTask | null>(null)
   const [taskResults, setTaskResults] = useState<TaskResultsResponse | null>(null)
   const [taskResultsLoading, setTaskResultsLoading] = useState(false)
+
+  // 任务详情面板相关状态
+  const [detailTask, setDetailTask] = useState<EvaluationTask | null>(null)
+  const [detailExpanded, setDetailExpanded] = useState(true)
 
   // 编辑状态
   const [editingId, setEditingId] = useState<number | null>(null)
@@ -428,11 +436,6 @@ export const Results: React.FC = () => {
 
   // 如果选中了实验，显示详情视图
   if (selectedExperiment) {
-    const progress =
-      selectedExperiment.total_tasks > 0
-        ? Math.round((selectedExperiment.completed_tasks / selectedExperiment.total_tasks) * 100)
-        : 0
-
     // 如果选中了任务，显示任务分析视图
     if (selectedTask) {
       // 从任务的 config_snapshot 中提取配置
@@ -470,32 +473,42 @@ export const Results: React.FC = () => {
 
       return (
         <TooltipProvider>
-          <div className="h-full w-full flex flex-col bg-gray-50">
+          <div className="w-full min-h-full bg-gradient-to-b from-gray-50 to-white pb-16">
             {/* 标题栏 */}
-            <div className="px-6 py-4 border-b border-gray-200 bg-white flex justify-between items-center">
-              <div className="flex items-center gap-3">
-                <Button
-                  variant="ghost"
-                  size="sm"
+            <div className="px-8 py-6 border-b border-blue-100 bg-gradient-to-r from-blue-50 to-white flex justify-between items-center" style={{boxShadow: '0 2px 12px rgba(37, 99, 235, 0.08)'}}>
+              <h3 className="m-0 bg-gradient-to-r from-blue-600 to-blue-400 bg-clip-text text-2xl font-bold text-transparent">
+                任务分析
+              </h3>
+            </div>
+
+            {/* 面包屑导航 */}
+            <div className="px-8 py-3 border-b border-gray-100 bg-white flex-shrink-0">
+              <div className="flex items-center gap-1.5 text-sm">
+                <span
+                  className="text-blue-600 hover:underline cursor-pointer"
+                  onClick={() => {
+                    setSelectedExperimentId(null)
+                    setSelectedExperiment(null)
+                    setSelectedTask(null)
+                    setTaskResults(null)
+                  }}
+                >
+                  结果管理
+                </span>
+                <ChevronRight className="h-4 w-4 text-gray-400" />
+                <span
+                  className="text-blue-600 hover:underline cursor-pointer"
                   onClick={handleBackToTasks}
                 >
-                  <ArrowLeft className="h-4 w-4 mr-1" />
-                  返回任务列表
-                </Button>
-                <div>
-                  <div className="text-lg font-semibold text-gray-900">
-                    任务分析结果
-                  </div>
-                  <span className="text-sm text-gray-500">
-                    任务 ID: {selectedTask.task_id.slice(0, 8)}... ·
-                    共 {taskResults?.top_k_plans?.length || 0} 个评估结果
-                  </span>
-                </div>
+                  {selectedExperiment?.name}
+                </span>
+                <ChevronRight className="h-4 w-4 text-gray-400" />
+                <span className="text-gray-500">任务分析</span>
               </div>
             </div>
 
             {/* 内容区 - 使用 AnalysisResultDisplay + ChartsPanel */}
-            <div className="flex-1 overflow-auto p-6">
+            <div className="p-8 bg-gradient-to-b from-gray-50 to-white">
               <div className="w-full">
                 <AnalysisResultDisplay
                   result={bestResult}
@@ -538,28 +551,12 @@ export const Results: React.FC = () => {
 
     return (
       <TooltipProvider>
-        <div className="h-full w-full flex flex-col bg-gray-50">
+        <div className="w-full min-h-full bg-gradient-to-b from-gray-50 to-white pb-16">
           {/* 标题栏 */}
-          <div className="px-6 py-4 border-b border-gray-200 bg-white flex justify-between items-center">
-            <div className="flex items-center gap-3">
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => {
-                  setSelectedExperimentId(null)
-                  setSelectedExperiment(null)
-                }}
-              >
-                <ArrowLeft className="h-4 w-4 mr-1" />
-                返回
-              </Button>
-              <div>
-                <div className="text-lg font-semibold text-gray-900">
-                  {selectedExperiment.name}
-                </div>
-                <span className="text-sm text-gray-500">{selectedExperiment.description || '无描述'}</span>
-              </div>
-            </div>
+          <div className="px-8 py-6 border-b border-blue-100 bg-gradient-to-r from-blue-50 to-white flex justify-between items-center" style={{boxShadow: '0 2px 12px rgba(37, 99, 235, 0.08)'}}>
+            <h3 className="m-0 bg-gradient-to-r from-blue-600 to-blue-400 bg-clip-text text-2xl font-bold text-transparent">
+              实验详情
+            </h3>
             <div className="flex items-center gap-2">
               <Tooltip>
                 <TooltipTrigger asChild>
@@ -580,18 +577,26 @@ export const Results: React.FC = () => {
             </div>
           </div>
 
-          {/* 内容区 */}
-          <div className="flex-1 overflow-auto p-6">
-            <div className="w-full">
-              {/* 进度提示 */}
-              {progress < 100 && (
-                <Alert className="mb-4">
-                  <AlertDescription>
-                    实验进度: {progress}% ({selectedExperiment.completed_tasks}/{selectedExperiment.total_tasks} 任务完成)
-                  </AlertDescription>
-                </Alert>
-              )}
+          {/* 面包屑导航 */}
+          <div className="px-8 py-3 border-b border-gray-100 bg-white flex-shrink-0">
+            <div className="flex items-center gap-1.5 text-sm">
+              <span
+                className="text-blue-600 hover:underline cursor-pointer"
+                onClick={() => {
+                  setSelectedExperimentId(null)
+                  setSelectedExperiment(null)
+                }}
+              >
+                结果管理
+              </span>
+              <ChevronRight className="h-4 w-4 text-gray-400" />
+              <span className="text-gray-500">{selectedExperiment.name}</span>
+            </div>
+          </div>
 
+          {/* 内容区 */}
+          <div className="p-6">
+            <div className="w-full">
               {/* 任务列表表格 */}
               <Card className="mb-4">
                 <CardHeader className="pb-3">
@@ -613,20 +618,83 @@ export const Results: React.FC = () => {
                     loading={false}
                     experimentId={selectedExperiment.id}
                     onTaskSelect={(task) => {
-                      if (task.status === 'completed') {
+                      // 只要任务有结果就可以查看（包括取消前已保存的结果）
+                      if (task.result) {
                         loadTaskResults(task)
                       } else {
-                        toast.info('仅已完成的任务可查看详细结果')
+                        toast.info('该任务暂无可查看的结果')
                       }
                     }}
-                    onTasksDelete={async (taskIds) => {
-                      // TODO: 实现批量删除任务的API调用
-                      console.log('删除任务:', taskIds)
-                      toast.info('批量删除功能待实现')
+                    onTaskDoubleClick={(task) => {
+                      setDetailTask(task)
+                      setDetailExpanded(true)
+                    }}
+                    onResultsDelete={async (resultIds) => {
+                      try {
+                        await deleteResultsBatch(selectedExperiment.id, resultIds)
+                        toast.success(`成功删除 ${resultIds.length} 个结果`)
+                        // 刷新实验详情
+                        const detail = await getExperimentDetail(selectedExperiment.id)
+                        setSelectedExperiment(detail)
+                      } catch (error) {
+                        console.error('删除结果失败:', error)
+                        toast.error('删除失败')
+                      }
                     }}
                   />
                 </CardContent>
               </Card>
+
+              {/* 任务详情面板 - 在 Card 外面独立渲染 */}
+              {detailTask && (
+                <div className="mt-4 mb-8 border border-blue-100 rounded-lg bg-white">
+                  {/* 标题栏 */}
+                  <div className="flex items-center justify-between bg-gradient-to-r from-blue-50 to-white px-4 py-3 border-b border-blue-100 rounded-t-lg">
+                    <div className="flex items-center gap-2">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setDetailExpanded(!detailExpanded)}
+                        className="h-8 w-8 p-0"
+                      >
+                        {detailExpanded ? (
+                          <ChevronDown className="h-4 w-4" />
+                        ) : (
+                          <ChevronRight className="h-4 w-4" />
+                        )}
+                      </Button>
+                      <span className="font-semibold text-text-primary">
+                        任务详情 - {detailTask.benchmark_name}
+                      </span>
+                    </div>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setDetailTask(null)}
+                      className="h-8 w-8 p-0"
+                    >
+                      <X className="h-4 w-4" />
+                    </Button>
+                  </div>
+
+                  {/* 详情内容 */}
+                  {detailExpanded && (
+                    <div className="p-4 bg-gradient-to-b from-gray-50 to-white rounded-b-lg">
+                      <TaskDetailPanel
+                        task={detailTask}
+                        onAnalyze={() => {
+                          // 点击性能分析按钮，检查任务是否有结果
+                          if (detailTask.result) {
+                            loadTaskResults(detailTask)
+                          } else {
+                            toast.info('该任务暂无可查看的结果')
+                          }
+                        }}
+                      />
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -636,14 +704,24 @@ export const Results: React.FC = () => {
 
   return (
     <TooltipProvider>
-      <div className="h-full w-full flex flex-col bg-gray-50">
+      <div className="w-full min-h-full bg-gradient-to-b from-gray-50 to-white pb-16">
+        {/* 标题栏 */}
+        <div className="px-8 py-6 border-b border-blue-100 bg-gradient-to-r from-blue-50 to-white" style={{boxShadow: '0 2px 12px rgba(37, 99, 235, 0.08)'}}>
+          <h3 className="m-0 bg-gradient-to-r from-blue-600 to-blue-400 bg-clip-text text-2xl font-bold text-transparent">
+            结果管理
+          </h3>
+        </div>
+
         {/* 内容区 */}
-        <div className="flex-1 overflow-auto p-6">
+        <div className="p-8">
           {/* 实验列表 */}
           <Card>
-            <CardHeader className="pb-3">
+            <CardHeader className="pb-4">
               <div className="flex items-center justify-between">
-                <CardTitle className="text-base">实验列表</CardTitle>
+                <CardTitle className="flex items-center gap-2">
+                  <BarChart3 className="h-5 w-5 text-blue-600" />
+                  <span>实验列表</span>
+                </CardTitle>
                 <div className="flex items-center gap-2">
                   <Tooltip>
                     <TooltipTrigger asChild>
@@ -680,12 +758,13 @@ export const Results: React.FC = () => {
               ) : (
                 <>
                   {selectedExperimentIds.length > 0 && (
-                    <div className="mb-4 p-3 bg-blue-50 rounded-lg flex items-center gap-3">
-                      <span className="text-sm">已选择 {selectedExperimentIds.length} 个实验</span>
+                    <div className="mb-4 p-4 bg-gradient-to-r from-blue-50 to-blue-25 rounded-2xl border border-blue-100 flex items-center gap-3">
+                      <span className="text-sm font-medium text-blue-900">已选择 {selectedExperimentIds.length} 个实验</span>
                       <Button
-                        variant="link"
+                        variant="ghost"
                         size="sm"
                         onClick={() => setSelectedExperimentIds([])}
+                        className="text-blue-600 hover:text-blue-700"
                       >
                         取消选择
                       </Button>
@@ -711,9 +790,11 @@ export const Results: React.FC = () => {
                     </div>
                   )}
                   {experiments.length === 0 ? (
-                    <div className="flex flex-col items-center justify-center py-12 text-gray-400">
-                      <Inbox className="h-12 w-12 mb-3" />
-                      <span>暂无实验数据</span>
+                    <div className="flex flex-col items-center justify-center py-12">
+                      <div className="mb-4 p-4 rounded-full bg-blue-50">
+                        <Inbox className="h-8 w-8 text-blue-400" />
+                      </div>
+                      <span className="text-text-muted">暂无实验数据</span>
                     </div>
                   ) : (
                     <>
@@ -756,29 +837,16 @@ export const Results: React.FC = () => {
                                     }}
                                   />
                                 ) : (
-                                  <Tooltip>
-                                    <TooltipTrigger asChild>
-                                      <span
-                                        className="text-blue-500 cursor-pointer hover:underline"
-                                        onClick={() => loadExperimentDetail(record.id)}
-                                        onContextMenu={(e) => {
-                                          e.preventDefault()
-                                          handleStartEdit(record)
-                                        }}
-                                      >
-                                        {record.name}
-                                      </span>
-                                    </TooltipTrigger>
-                                    <TooltipContent>点击查看详情，右键编辑</TooltipContent>
-                                  </Tooltip>
+                                  <span
+                                    className="text-blue-600 cursor-pointer hover:underline font-medium"
+                                    onClick={() => loadExperimentDetail(record.id)}
+                                  >
+                                    {record.name}
+                                  </span>
                                 )}
                               </TableCell>
                               <TableCell className="text-center">
-                                {(() => {
-                                  const taskCount = record.tasks?.length || 0
-                                  const completedCount = record.tasks?.filter((t: EvaluationTask) => t.status === 'completed').length || 0
-                                  return `${completedCount}/${taskCount}`
-                                })()}
+                                {record.total_tasks}
                               </TableCell>
                               <TableCell className="text-center">
                                 {record.created_at ? new Date(record.created_at).toLocaleString('zh-CN') : '-'}

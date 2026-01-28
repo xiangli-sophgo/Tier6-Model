@@ -547,7 +547,7 @@ export const KnowledgeGraph: React.FC<KnowledgeGraphProps> = ({ renderMode }) =>
   // 只渲染工具栏
   if (renderMode === 'toolbar-only') {
     return (
-      <div className="flex w-full items-center justify-between gap-4 border-b border-border bg-white px-4 py-3">
+      <div className="flex w-full items-center justify-between gap-4 border-b border-blue-100 bg-gradient-to-r from-blue-50 to-white px-4 py-4" style={{boxShadow: '0 2px 8px rgba(37, 99, 235, 0.06)'}}>
         {/* 左侧：搜索框 + 分类过滤 + 全部显示 */}
         <div className="flex flex-1 items-center justify-center gap-4 min-w-0">
           {/* 搜索框 */}
@@ -644,7 +644,7 @@ export const KnowledgeGraph: React.FC<KnowledgeGraphProps> = ({ renderMode }) =>
   // 只渲染画布
   if (renderMode === 'canvas-only') {
     return (
-      <div ref={containerRef} className="relative h-full w-full overflow-hidden bg-[#fafafa]">
+      <div ref={containerRef} className="relative h-full w-full overflow-hidden bg-gradient-to-b from-gray-50 to-white">
         <ForceGraph2D
           ref={graphRef}
           graphData={graphData}
@@ -659,7 +659,7 @@ export const KnowledgeGraph: React.FC<KnowledgeGraphProps> = ({ renderMode }) =>
           onNodeClick={handleNodeClick}
           onNodeHover={setHoveredNode}
           onBackgroundClick={handleBackgroundClick}
-          backgroundColor="#fafafa"
+          backgroundColor="#F8FAFB"
           cooldownTicks={200}
           warmupTicks={0}
           d3AlphaDecay={0.03}
@@ -674,9 +674,9 @@ export const KnowledgeGraph: React.FC<KnowledgeGraphProps> = ({ renderMode }) =>
 
   // 默认：渲染完整视图（工具栏 + 画布）
   return (
-    <div className="flex h-full w-full flex-col bg-[#fafafa]">
+    <div className="flex h-full w-full flex-col bg-gradient-to-b from-gray-50 to-white">
       {/* 工具栏 */}
-      <div className="flex w-full items-center justify-between gap-4 border-b border-border bg-white px-4 py-3">
+      <div className="flex w-full items-center justify-between gap-4 border-b border-blue-100 bg-gradient-to-r from-blue-50 to-white px-4 py-4" style={{boxShadow: '0 2px 8px rgba(37, 99, 235, 0.06)'}}>
         {/* 左侧：搜索框 + 分类过滤 + 全部显示 */}
         <div className="flex flex-1 items-center justify-center gap-4 min-w-0">
           {/* 搜索框 */}
@@ -769,7 +769,7 @@ export const KnowledgeGraph: React.FC<KnowledgeGraphProps> = ({ renderMode }) =>
       </div>
 
       {/* 画布 */}
-      <div ref={containerRef} className="relative flex-1 w-full overflow-hidden">
+      <div ref={containerRef} className="relative flex-1 w-full overflow-hidden bg-gradient-to-b from-gray-50 to-white">
         <ForceGraph2D
           ref={graphRef}
           graphData={graphData}
@@ -784,7 +784,7 @@ export const KnowledgeGraph: React.FC<KnowledgeGraphProps> = ({ renderMode }) =>
           onNodeClick={handleNodeClick}
           onNodeHover={setHoveredNode}
           onBackgroundClick={handleBackgroundClick}
-          backgroundColor="#fafafa"
+          backgroundColor="#F8FAFB"
           // ⚡ 让 ForceGraph2D 进行充分的力导向布局
           // 因为组件始终挂载（display: none），布局会在后台自动进行
           // 增加 cooldownTicks 让布局有更多时间稳定

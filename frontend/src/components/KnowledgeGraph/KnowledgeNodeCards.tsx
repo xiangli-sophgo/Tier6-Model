@@ -5,7 +5,7 @@
 import React from 'react'
 import { Card, CardHeader, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
-import { Book, Link2, FileText } from 'lucide-react'
+import { Book, Link2, FileText, X } from 'lucide-react'
 import { ForceKnowledgeNode, CATEGORY_COLORS, CATEGORY_NAMES } from './types'
 import knowledgeData from '../../data/knowledge-graph'
 
@@ -91,12 +91,13 @@ export const KnowledgeNodeCards: React.FC<KnowledgeNodeCardsProps> = ({ nodes, o
             <span className="flex-1 overflow-hidden text-ellipsis whitespace-nowrap text-base">
               {node.fullName || node.name}
             </span>
-            <a
+            <button
               onClick={() => onClose(node.id)}
-              className="cursor-pointer text-sm text-primary hover:underline"
+              className="flex-shrink-0 p-1 rounded-md text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors"
+              title="关闭"
             >
-              关闭
-            </a>
+              <X className="h-4 w-4" />
+            </button>
           </div>
         </CardHeader>
 

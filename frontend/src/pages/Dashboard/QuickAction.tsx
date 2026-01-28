@@ -22,22 +22,23 @@ export const QuickAction: React.FC<QuickActionProps> = ({
 }) => {
   return (
     <Card
-      className="cursor-pointer text-center hover:shadow-md"
+      className="cursor-pointer text-center transition-all duration-300 hover:shadow-md"
       onClick={onClick}
     >
-      <div className="px-4 py-6">
+      <div className="px-4 py-8">
         <div
-          className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-lg text-[22px] text-white"
+          className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl text-[24px] transition-transform duration-300 hover:scale-110"
           style={{
-            background: `linear-gradient(135deg, ${color} 0%, ${color}cc 100%)`,
+            background: `linear-gradient(135deg, ${color}15 0%, ${color}08 100%)`,
+            color: color,
           }}
         >
           {icon}
         </div>
-        <h5 className="mb-1 font-display text-[15px] font-semibold">
+        <h5 className="mb-2 font-display text-[15px] font-semibold text-text-primary">
           {title}
         </h5>
-        <p className="text-xs text-text-secondary">{description}</p>
+        <p className="text-xs text-text-muted leading-relaxed">{description}</p>
       </div>
     </Card>
   )

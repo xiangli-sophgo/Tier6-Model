@@ -926,7 +926,7 @@ export const TopologyGraph: React.FC<TopologyGraphProps> = ({
     }}>
       {/* 悬浮面包屑导航 */}
       {embedded && breadcrumbs.length > 0 && (
-        <div className="absolute top-4 left-4 z-[100] bg-white px-4 py-2.5 rounded-[10px] border border-gray-200/50 shadow-md flex items-center gap-3">
+        <div className="absolute top-4 left-4 z-[50] bg-white px-4 py-2.5 rounded-[10px] border border-gray-200/50 shadow-md flex items-center gap-3">
           {/* 视图切换器 */}
           {viewMode && onViewModeChange && (
             <Tabs value={viewMode} onValueChange={(value) => onViewModeChange(value as '3d' | 'topology')}>

@@ -45,6 +45,8 @@ export interface EvaluationResult {
 export interface EvaluationTask {
   id: number
   task_id: string
+  result_id?: number  // 结果 ID（每个结果展开为单独的行）
+  result_rank?: number  // 结果排名（按分数）
   experiment_id: number
   status: 'pending' | 'running' | 'completed' | 'failed' | 'cancelled'
   progress: number
@@ -65,6 +67,22 @@ export interface EvaluationTask {
   benchmark_name?: string
   topology_config_name?: string
   results?: EvaluationResult[]
+  result?: {  // 当前结果的性能指标
+    throughput: number
+    tps_per_chip: number
+    tpot: number
+    ttft: number
+    mfu: number
+    score: number
+    chips: number
+    parallelism: {
+      dp: number
+      tp: number
+      pp: number
+      ep: number
+      sp: number
+    }
+  }
 }
 
 export interface Experiment {

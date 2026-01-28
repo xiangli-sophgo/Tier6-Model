@@ -32,6 +32,15 @@ export interface AnalysisHistoryItem {
   hardwareConfig: HardwareConfig
 }
 
+// 子任务进度（自动搜索模式）
+export interface SubTaskProgress {
+  candidateIndex: number                        // 候选方案索引
+  parallelism: ParallelismStrategy              // 并行策略
+  status: 'pending' | 'running' | 'completed' | 'failed'
+  progress: number                              // 0-100
+  chips?: number                                // 使用的芯片数
+}
+
 // 分析任务（轻量级，用于任务列表）
 export interface AnalysisTask {
   id: string                                    // 唯一ID (uuid，与后端 task_id 一致)
@@ -60,6 +69,9 @@ export interface AnalysisTask {
 
   // 进度（自动搜索模式）
   progress?: { current: number; total: number }
+
+  // 子任务进度（自动搜索模式的多个候选方案）
+  subTasks?: SubTaskProgress[]
 
   // 关联的历史记录ID（完成后自动保存到历史记录）
   historyId?: string

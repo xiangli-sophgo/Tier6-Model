@@ -16,6 +16,7 @@ import {
   Eye,
   RefreshCw,
   Zap,
+  Info,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -32,6 +33,12 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog'
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 import { AnalysisTask } from '../shared'
 
 interface AnalysisTaskListProps {
@@ -119,22 +126,27 @@ const StatItem: React.FC<{ title: string; value: string | number; valueColor?: s
   </div>
 )
 
-// 运行中任务卡片组件
+// 运行中/失败任务卡片组件
 interface RunningTaskCardProps {
   task: AnalysisTask
   onCancel: () => void
+  onDelete: () => void
 }
 
-const RunningTaskCard: React.FC<RunningTaskCardProps> = ({ task, onCancel }) => {
+const RunningTaskCard: React.FC<RunningTaskCardProps> = ({ task, onCancel, onDelete }) => {
   const [elapsedTime, setElapsedTime] = useState(getElapsedTime(task.startTime))
+  const [showProgressModal, setShowProgressModal] = useState(false)
 
-  // 每秒更新运行时间
+  const isFailed = task.status === 'failed'
+
+  // 每秒更新运行时间（仅运行中的任务）
   useEffect(() => {
+    if (isFailed) return
     const timer = setInterval(() => {
       setElapsedTime(getElapsedTime(task.startTime))
     }, 1000)
     return () => clearInterval(timer)
-  }, [task.startTime])
+  }, [task.startTime, isFailed])
 
   const progress = task.progress
     ? Math.round((task.progress.current / task.progress.total) * 100)
@@ -142,40 +154,182 @@ const RunningTaskCard: React.FC<RunningTaskCardProps> = ({ task, onCancel }) => 
 
   const taskName = task.experimentName || task.benchmarkName || task.modelName
 
+  // 是否为自动搜索模式（多个候选方案并行评估）
+  const isAutoMode = task.mode === 'auto' && task.subTasks && task.subTasks.length > 0
+
+  // 计算子任务统计
+  const getSubTaskStats = () => {
+    if (!task.subTasks) return { running: 0, completed: 0, pending: 0, failed: 0 }
+    return {
+      running: task.subTasks.filter(t => t.status === 'running').length,
+      completed: task.subTasks.filter(t => t.status === 'completed').length,
+      pending: task.subTasks.filter(t => t.status === 'pending').length,
+      failed: task.subTasks.filter(t => t.status === 'failed').length,
+    }
+  }
+
+  // 处理进度条点击
+  const handleProgressClick = () => {
+    if (isAutoMode) {
+      setShowProgressModal(true)
+    }
+  }
+
+  const stats = getSubTaskStats()
+
   return (
-    <div className="mb-3 p-3 border border-blue-200 bg-blue-50 rounded-lg">
+    <div className={`mb-3 p-3 border rounded-lg ${
+      isFailed
+        ? 'border-red-200 bg-red-50'
+        : 'border-blue-200 bg-blue-50'
+    }`}>
       {/* 标题栏 */}
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-2">
-          <Zap className="h-4 w-4 text-yellow-500" />
+          <Zap className={`h-4 w-4 ${isFailed ? 'text-red-500' : 'text-yellow-500'}`} />
           <span className="font-medium text-sm">{taskName}</span>
           <StatusBadge status={task.status} />
         </div>
-        <Button variant="destructive" size="sm" onClick={onCancel}>
-          <StopCircle className="h-3.5 w-3.5 mr-1" />
-          取消
-        </Button>
+        {isFailed ? (
+          <Button variant="outline" size="sm" onClick={onDelete} className="text-red-500 hover:text-red-600 border-red-200">
+            <Trash2 className="h-3.5 w-3.5 mr-1" />
+            关闭
+          </Button>
+        ) : (
+          <Button variant="destructive" size="sm" onClick={onCancel}>
+            <StopCircle className="h-3.5 w-3.5 mr-1" />
+            取消
+          </Button>
+        )}
       </div>
 
       {/* 统计数据 */}
-      <div className="grid grid-cols-3 gap-4 mb-3">
-        <StatItem title="进度" value={`${progress}%`} valueColor="#1890ff" />
-        <StatItem title="运行时间" value={elapsedTime} valueColor="#1890ff" />
-        <StatItem title="芯片数" value={task.chips || '-'} />
-      </div>
+      {isAutoMode ? (
+        // 自动模式：显示候选方案统计
+        <div className="grid grid-cols-3 gap-4 mb-3">
+          <StatItem title="进度" value={`${progress}%`} valueColor="#1890ff" />
+          <StatItem title="运行时间" value={elapsedTime} valueColor="#1890ff" />
+          <StatItem title="候选方案" value={`${stats.completed}/${task.subTasks?.length || 0}`} valueColor="#52c41a" />
+        </div>
+      ) : (
+        // 手动模式：显示芯片数
+        <div className="grid grid-cols-3 gap-4 mb-3">
+          <StatItem title="进度" value={`${progress}%`} valueColor="#1890ff" />
+          <StatItem title="运行时间" value={elapsedTime} valueColor="#1890ff" />
+          <StatItem title="芯片数" value={task.chips || '-'} />
+        </div>
+      )}
 
       {/* 分隔线 */}
-      <div className="border-t border-blue-200 my-3" />
+      <div className={`border-t my-3 ${isFailed ? 'border-red-200' : 'border-blue-200'}`} />
 
-      {/* 进度条 */}
-      <Progress value={progress} className="h-2" />
+      {isFailed ? (
+        /* 失败时显示错误信息 */
+        <div className="p-3 bg-red-100 rounded-md">
+          <div className="flex items-start gap-2">
+            <XCircle className="h-4 w-4 text-red-500 mt-0.5 flex-shrink-0" />
+            <div className="text-sm text-red-700 break-all">
+              {task.error || '未知错误'}
+            </div>
+          </div>
+        </div>
+      ) : (
+        /* 进度条（自动模式可点击查看详情） */
+        <div
+          style={{
+            cursor: isAutoMode ? 'pointer' : 'default',
+          }}
+          onClick={handleProgressClick}
+        >
+          <Progress value={progress} className="h-2" />
+        </div>
+      )}
 
       {/* 详情 */}
-      <div className="mt-2 text-xs text-gray-600 flex items-center gap-2">
-        <span>模式: {task.mode === 'auto' ? '自动搜索' : '手动'}</span>
-        <span className="text-gray-300">|</span>
-        <span>策略: {formatParallelism(task.parallelism)}</span>
+      <div className="mt-2 text-xs text-gray-600 flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <span>模式: {task.mode === 'auto' ? '自动搜索' : '手动'}</span>
+          <span className="text-gray-300">|</span>
+          <span>策略: {formatParallelism(task.parallelism)}</span>
+        </div>
+        {isAutoMode && !isFailed && (
+          <span className="text-xs text-gray-500 flex items-center gap-1">
+            <Info className="h-3 w-3" />
+            点击进度条查看详情
+          </span>
+        )}
       </div>
+
+      {/* 子任务详情弹窗 */}
+      <Dialog open={showProgressModal} onOpenChange={setShowProgressModal}>
+        <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>候选方案评估进度</DialogTitle>
+          </DialogHeader>
+
+          {task.subTasks && (
+            <div>
+              {/* 统计信息 */}
+              <div className="grid grid-cols-4 gap-4 mb-4 p-4 bg-gray-50 rounded-lg">
+                <StatItem title="运行中" value={stats.running} valueColor="#1890ff" />
+                <StatItem title="已完成" value={stats.completed} valueColor="#52c41a" />
+                <StatItem title="等待中" value={stats.pending} valueColor="#faad14" />
+                <StatItem title="失败" value={stats.failed} valueColor="#ff4d4f" />
+              </div>
+
+              {/* 运行中的子任务列表 */}
+              <div className="space-y-3">
+                <h4 className="text-sm font-medium text-gray-700 mb-2">运行中的方案</h4>
+                {task.subTasks.filter(t => t.status === 'running').length > 0 ? (
+                  task.subTasks
+                    .filter(t => t.status === 'running')
+                    .map((subTask) => (
+                      <div key={subTask.candidateIndex} className="p-3 border border-blue-200 bg-blue-50 rounded">
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="text-sm font-medium text-blue-600">
+                            方案 {subTask.candidateIndex + 1}
+                          </span>
+                          <span className="text-xs text-gray-600">
+                            {formatParallelism(subTask.parallelism)}
+                            {subTask.chips && ` · ${subTask.chips}芯片`}
+                          </span>
+                        </div>
+                        <Progress value={subTask.progress} className="h-2" />
+                        <div className="text-xs text-gray-500 mt-1">{subTask.progress}%</div>
+                      </div>
+                    ))
+                ) : (
+                  <div className="text-center py-6 text-gray-400 text-sm">暂无运行中的方案</div>
+                )}
+              </div>
+
+              {/* 已完成的子任务列表（折叠显示） */}
+              {stats.completed > 0 && (
+                <details className="mt-4">
+                  <summary className="text-sm font-medium text-gray-700 cursor-pointer mb-2">
+                    已完成的方案 ({stats.completed})
+                  </summary>
+                  <div className="space-y-2 mt-2">
+                    {task.subTasks
+                      .filter(t => t.status === 'completed')
+                      .map((subTask) => (
+                        <div key={subTask.candidateIndex} className="p-2 border border-green-200 bg-green-50 rounded flex items-center justify-between">
+                          <span className="text-sm text-green-700">
+                            方案 {subTask.candidateIndex + 1}
+                          </span>
+                          <span className="text-xs text-gray-600">
+                            {formatParallelism(subTask.parallelism)}
+                            {subTask.chips && ` · ${subTask.chips}芯片`}
+                          </span>
+                        </div>
+                      ))}
+                  </div>
+                </details>
+              )}
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
@@ -262,9 +416,10 @@ export const AnalysisTaskList: React.FC<AnalysisTaskListProps> = ({
   onClearCompleted,
   onRefresh,
 }) => {
-  // 分离运行中的任务和历史任务
-  const runningTasks = tasks.filter(t => t.status === 'running')
-  const historyTasks = tasks.filter(t => t.status !== 'running')
+  // 分离运行中/失败的任务和历史任务
+  // 失败的任务也显示为卡片，方便查看错误详情
+  const runningTasks = tasks.filter(t => t.status === 'running' || t.status === 'failed')
+  const historyTasks = tasks.filter(t => t.status !== 'running' && t.status !== 'failed')
 
   if (tasks.length === 0) {
     return (
@@ -276,12 +431,13 @@ export const AnalysisTaskList: React.FC<AnalysisTaskListProps> = ({
 
   return (
     <div>
-      {/* 运行中的任务卡片 */}
+      {/* 运行中/失败的任务卡片 */}
       {runningTasks.map(task => (
         <RunningTaskCard
           key={task.id}
           task={task}
           onCancel={() => onCancelTask(task.id)}
+          onDelete={() => onDeleteTask(task.id)}
         />
       ))}
 

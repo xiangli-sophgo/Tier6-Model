@@ -69,12 +69,12 @@ export const BaseCard: React.FC<BaseCardProps> = ({
   }
 
   return (
-    <div className={cn('overflow-hidden rounded-lg border border-border bg-bg-elevated', className)} style={style}>
+    <div className={cn('card overflow-hidden rounded-2xl border border-blue-100 bg-bg-elevated transition-all', className)} style={style}>
       {/* 标题区域 */}
       <div
         className={cn(
-          'flex items-center justify-between gap-3 border-b border-border bg-[#FAFAFA] px-5 py-3.5',
-          collapsible && 'cursor-pointer select-none',
+          'flex items-center justify-between gap-3 border-b border-blue-100 bg-gradient-to-r from-blue-50 to-white px-6 py-4',
+          collapsible && 'cursor-pointer select-none hover:from-blue-50/80',
           collapsible && !isExpanded && 'border-b-0'
         )}
         onClick={handleToggle}
@@ -82,7 +82,7 @@ export const BaseCard: React.FC<BaseCardProps> = ({
         <div className="flex flex-1 items-center gap-2.5 min-w-0">
           {/* 可折叠图标 */}
           {collapsible && (
-            <span className="flex-shrink-0 text-xs text-[#9ca3af] transition-transform">
+            <span className="flex-shrink-0 text-xs text-blue-400 transition-transform">
               {isExpanded ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
             </span>
           )}
@@ -100,8 +100,8 @@ export const BaseCard: React.FC<BaseCardProps> = ({
 
           {/* 标题和副标题 */}
           <div className="flex-1 min-w-0">
-            <div className="text-base font-semibold leading-tight text-[#1f2937]">{title}</div>
-            {subtitle && <div className="mt-0.5 text-[13px] leading-tight text-[#6b7280]">{subtitle}</div>}
+            <div className="text-base font-semibold leading-tight text-blue-900">{title}</div>
+            {subtitle && <div className="mt-0.5 text-[13px] leading-tight text-text-muted">{subtitle}</div>}
           </div>
         </div>
 
@@ -115,7 +115,7 @@ export const BaseCard: React.FC<BaseCardProps> = ({
 
       {/* 内容区域 */}
       {(!collapsible || isExpanded) && (
-        <div className={cn('bg-white p-5', bodyClassName)} style={styles?.body}>
+        <div className={cn('bg-gradient-to-b from-white to-blue-50/20 p-6', bodyClassName)} style={styles?.body}>
           {children}
         </div>
       )}

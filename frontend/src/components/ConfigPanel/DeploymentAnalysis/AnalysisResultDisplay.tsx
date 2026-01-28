@@ -1170,7 +1170,7 @@ export const AnalysisResultDisplay: React.FC<AnalysisResultDisplayProps> = ({
               expanded={expandedSections.candidates}
               onExpandChange={(expanded) => setExpandedSections(prev => ({ ...prev, candidates: expanded }))}
             >
-              <div className="max-h-[200px] overflow-auto">
+              <div className="max-h-[400px] overflow-auto">
               {topKPlans.map((p, i) => {
                 const isSelected = p.plan.plan_id === result?.plan.plan_id
                 return (

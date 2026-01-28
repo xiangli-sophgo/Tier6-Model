@@ -17,35 +17,38 @@ export const MainLayout: React.FC = () => {
   const { ui } = useWorkbench()
 
   return (
-    <div className="flex h-screen">
+    <div className="h-screen w-screen overflow-hidden">
       <Sidebar />
-      <div className="flex-1 h-screen overflow-hidden">
-        <main className="h-full overflow-hidden bg-gray-100">
+      <div className={`h-screen transition-all duration-300 ${ui.sidebarCollapsed ? 'ml-16' : 'ml-[180px]'}`}>
+        <main className="h-full w-full bg-gray-100 relative">
           {/* 全局视角模式：所有页面保持挂载，通过显示/隐藏来切换 */}
           {/* 这样可以保留所有组件的状态和位置（如知识图谱的节点坐标） */}
 
           {/* Dashboard */}
-          <div className={`${ui.viewMode === 'dashboard' ? 'block' : 'hidden'} h-full w-full`}>
+          <div className={`${ui.viewMode === 'dashboard' ? 'block' : 'hidden'} absolute inset-0 overflow-auto`}>
             <Dashboard />
           </div>
 
           {/* Topology Setup */}
-          <div className={`${ui.viewMode === 'topology' ? 'flex' : 'hidden'} h-full w-full`}>
+          <div className={`${ui.viewMode === 'topology' ? 'flex' : 'hidden'} absolute inset-0 overflow-auto`}>
             <TopologySetup />
           </div>
 
           {/* Deployment Analysis */}
-          <div className={`${ui.viewMode === 'deployment' ? 'flex' : 'hidden'} h-full w-full`}>
+          <div className={`${ui.viewMode === 'deployment' ? 'flex' : 'hidden'} absolute inset-0 overflow-auto`}>
             <DeploymentAnalysis />
           </div>
 
           {/* Results */}
-          <div className={`${ui.viewMode === 'results' ? 'flex' : 'hidden'} h-full w-full`}>
+          <div
+            className={`${ui.viewMode === 'results' ? 'flex' : 'hidden'} absolute inset-0 overflow-y-auto overflow-x-hidden`}
+            style={{ overscrollBehavior: 'none' }}
+          >
             <Results />
           </div>
 
           {/* Knowledge Network */}
-          <div className={`${ui.viewMode === 'knowledge' ? 'flex' : 'hidden'} h-full w-full`}>
+          <div className={`${ui.viewMode === 'knowledge' ? 'flex' : 'hidden'} absolute inset-0 overflow-auto`}>
             <Knowledge />
           </div>
         </main>

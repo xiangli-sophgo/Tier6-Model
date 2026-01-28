@@ -3,6 +3,7 @@ FastAPI 接口模块
 
 提供 LLM 推理模拟的 REST API 接口。
 """
+# Route order fixed: static routes before dynamic routes
 
 import asyncio
 import json
@@ -169,7 +170,7 @@ class EvaluationRequest(BaseModel):
 
     # GEMM评估配置
     enable_tile_search: bool = Field(True, description="是否启用Tile搜索（关闭可提升评估速度）")
-    enable_partition_search: bool = Field(False, description="是否启用分区搜索（关闭可极大提升速度，推荐关闭）")
+    enable_partition_search: bool = Field(True, description="是否启用分区搜索")
 
     # 模拟配置
     max_simulated_tokens: int = Field(4, ge=1, le=16, description="最大模拟token数（Decode阶段）")
@@ -183,7 +184,7 @@ class ExperimentUpdateRequest(BaseModel):
 
 class BatchDeleteExperimentsRequest(BaseModel):
     """批量删除实验请求"""
-    experiment_ids: list[int] = Field(..., min_items=1, description="要删除的实验 ID 列表")
+    experiment_ids: list[int] = Field(..., min_length=1, description="要删除的实验 ID 列表")
 
 
 class ExperimentExportData(BaseModel):
@@ -602,6 +603,27 @@ async def list_topologies():
         try:
             with open(file_path, "r", encoding="utf-8") as f:
                 data = json.load(f)
+
+                # 从 generated_topology 中统计实际数量
+                total_pods = 0
+                total_racks = 0
+                total_boards = 0
+                total_chips = 0
+
+                if "generated_topology" in data and data["generated_topology"]:
+                    topology = data["generated_topology"]
+                    if "pods" in topology and topology["pods"]:
+                        total_pods = len(topology["pods"])
+                        for pod in topology["pods"]:
+                            if "racks" in pod and pod["racks"]:
+                                total_racks += len(pod["racks"])
+                                for rack in pod["racks"]:
+                                    if "boards" in rack and rack["boards"]:
+                                        total_boards += len(rack["boards"])
+                                        for board in rack["boards"]:
+                                            if "chips" in board and board["chips"]:
+                                                total_chips += len(board["chips"])
+
                 # 返回摘要信息
                 topologies.append({
                     "name": data.get("name", file_path.stem),
@@ -610,6 +632,11 @@ async def list_topologies():
                     "racks_per_pod": data.get("racks_per_pod"),
                     "created_at": data.get("created_at"),
                     "updated_at": data.get("updated_at"),
+                    # 添加统计数量
+                    "total_pods": total_pods,
+                    "total_racks": total_racks,
+                    "total_boards": total_boards,
+                    "total_chips": total_chips,
                 })
         except Exception as e:
             logger.warning(f"读取拓扑配置文件失败 {file_path}: {e}")
@@ -1018,8 +1045,10 @@ async def list_experiments(db: Session = Depends(get_db)):
                 "id": exp.id,
                 "name": exp.name,
                 "description": exp.description,
-                "total_tasks": exp.total_tasks,
-                "completed_tasks": exp.completed_tasks,
+                # 统计所有评估结果数量（自动搜索中每个方案算一个任务）
+                "total_tasks": sum(len(t.results) for t in exp.tasks),
+                # 统计已完成任务的结果数量
+                "completed_tasks": sum(len(t.results) for t in exp.tasks if t.status == TaskStatus.COMPLETED),
                 "created_at": exp.created_at.isoformat() if exp.created_at else None,
             }
             for exp in experiments
@@ -1027,119 +1056,12 @@ async def list_experiments(db: Session = Depends(get_db)):
     }
 
 
-@app.get("/api/evaluation/experiments/{experiment_id}")
-async def get_experiment_details(experiment_id: int, db: Session = Depends(get_db)):
-    """获取实验详情（包含所有任务）"""
-    try:
-        experiment = db.query(Experiment).filter(Experiment.id == experiment_id).first()
-        if not experiment:
-            raise HTTPException(status_code=404, detail=f"实验不存在: {experiment_id}")
+# ============================================
+# 实验静态路由（必须在动态路由 {experiment_id} 之前）
+# ============================================
 
-        tasks = db.query(EvaluationTask).filter(EvaluationTask.experiment_id == experiment_id).all()
-
-        # 为每个任务附加代表性结果（得分最高的结果）
-        tasks_with_results = []
-        for task in tasks:
-            task_dict = {
-                "id": task.id,
-                "task_id": task.task_id,
-                "experiment_id": task.experiment_id,
-                "status": task.status.value,
-                "progress": task.progress,
-                "message": task.message,
-                "error": task.error,
-                "created_at": task.created_at.isoformat() if task.created_at else None,
-                "started_at": task.started_at.isoformat() if task.started_at else None,
-                "completed_at": task.completed_at.isoformat() if task.completed_at else None,
-                "config_snapshot": task.config_snapshot,
-                "benchmark_name": task.benchmark_name,
-                "topology_config_name": task.topology_config_name,
-                "search_mode": task.search_mode,
-                "manual_parallelism": task.manual_parallelism,
-                "search_constraints": task.search_constraints,
-                "search_stats": task.search_stats,
-            }
-
-            # 查询该任务的所有结果，选择得分最高的
-            results = db.query(EvaluationResult).filter(
-                EvaluationResult.task_id == task.id
-            ).order_by(EvaluationResult.score.desc()).all()
-
-            if results:
-                best_result = results[0]
-                # 从 full_result 中提取 tpot 和 ttft
-                full_result = best_result.full_result or {}
-                stats = full_result.get('stats', {})
-
-                task_dict['result'] = {
-                    'throughput': best_result.tps,
-                    'tps_per_chip': best_result.tps_per_chip,
-                    'tpot': stats.get('avg_tpot', 0),
-                    'ttft': stats.get('ttft', 0),
-                    'mfu': best_result.mfu,
-                    'score': best_result.score,
-                    'chips': best_result.chips,
-                    'parallelism': {
-                        'dp': best_result.dp,
-                        'tp': best_result.tp,
-                        'pp': best_result.pp,
-                        'ep': best_result.ep,
-                        'sp': best_result.sp,
-                    }
-                }
-            else:
-                task_dict['result'] = None
-
-            tasks_with_results.append(task_dict)
-
-        return {
-            "id": experiment.id,
-            "name": experiment.name,
-            "description": experiment.description,
-            "total_tasks": experiment.total_tasks,
-            "completed_tasks": experiment.completed_tasks,
-            "created_at": experiment.created_at.isoformat() if experiment.created_at else None,
-            "updated_at": experiment.updated_at.isoformat() if experiment.updated_at else None,
-            "tasks": tasks_with_results
-        }
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"获取实验详情失败: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"获取失败: {str(e)}")
-
-
-@app.patch("/api/evaluation/experiments/{experiment_id}")
-async def update_experiment(
-    experiment_id: int,
-    request: ExperimentUpdateRequest,
-    db: Session = Depends(get_db)
-):
-    """更新实验信息（支持 inline 编辑）"""
-    experiment = db.query(Experiment).filter(Experiment.id == experiment_id).first()
-    if not experiment:
-        raise HTTPException(status_code=404, detail=f"实验不存在: {experiment_id}")
-
-    try:
-        if request.name is not None:
-            experiment.name = request.name
-        if request.description is not None:
-            experiment.description = request.description
-
-        db.commit()
-        db.refresh(experiment)
-
-        return {
-            "id": experiment.id,
-            "name": experiment.name,
-            "description": experiment.description,
-            "created_at": experiment.created_at.isoformat() if experiment.created_at else None,
-            "updated_at": experiment.updated_at.isoformat() if experiment.updated_at else None,
-        }
-    except Exception as e:
-        db.rollback()
-        logger.error(f"更新实验失败: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"更新失败: {str(e)}")
+# 存储临时导入文件
+_import_temp_files: dict[str, dict[str, Any]] = {}
 
 
 @app.post("/api/evaluation/experiments/batch-delete")
@@ -1177,31 +1099,6 @@ async def batch_delete_experiments(
         db.rollback()
         logger.error(f"批量删除实验失败: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"删除失败: {str(e)}")
-
-
-@app.delete("/api/evaluation/experiments/{experiment_id}")
-async def delete_experiment(experiment_id: int, db: Session = Depends(get_db)):
-    """删除实验及其所有任务和结果"""
-    experiment = db.query(Experiment).filter(Experiment.id == experiment_id).first()
-    if not experiment:
-        raise HTTPException(status_code=404, detail=f"实验不存在: {experiment_id}")
-
-    try:
-        # 删除实验（级联删除任务和结果）
-        db.delete(experiment)
-        db.commit()
-        return {"message": f"实验 '{experiment.name}' 已删除"}
-    except Exception as e:
-        db.rollback()
-        raise HTTPException(status_code=500, detail=f"删除失败: {str(e)}")
-
-
-# ============================================
-# 导入导出端点
-# ============================================
-
-# 存储临时导入文件
-_import_temp_files: dict[str, dict[str, Any]] = {}
 
 
 @app.get("/api/evaluation/experiments/export")
@@ -1411,6 +1308,191 @@ async def execute_import_experiments(
 
 
 # ============================================
+# 实验动态路由（必须在静态路由之后）
+# ============================================
+
+@app.get("/api/evaluation/experiments/{experiment_id}")
+async def get_experiment_details(experiment_id: int, db: Session = Depends(get_db)):
+    """获取实验详情（包含所有评估结果，每个结果作为单独的行）"""
+    try:
+        experiment = db.query(Experiment).filter(Experiment.id == experiment_id).first()
+        if not experiment:
+            raise HTTPException(status_code=404, detail=f"实验不存在: {experiment_id}")
+
+        tasks = db.query(EvaluationTask).filter(EvaluationTask.experiment_id == experiment_id).all()
+
+        # 将每个任务的所有结果展开为单独的条目
+        tasks_with_results = []
+        for task in tasks:
+            # 查询该任务的所有结果，按得分降序排列
+            results = db.query(EvaluationResult).filter(
+                EvaluationResult.task_id == task.id
+            ).order_by(EvaluationResult.score.desc()).all()
+
+            if results:
+                # 为每个结果创建一个任务条目
+                for idx, result in enumerate(results):
+                    # 从 full_result 中提取 tpot 和 ttft
+                    full_result = result.full_result or {}
+                    stats = full_result.get('stats', {})
+
+                    task_dict = {
+                        "id": task.id,
+                        "task_id": task.task_id,
+                        "result_id": result.id,  # 新增：结果 ID
+                        "result_rank": idx + 1,  # 新增：结果排名
+                        "experiment_id": task.experiment_id,
+                        "status": task.status.value,
+                        "progress": task.progress,
+                        "message": task.message,
+                        "error": task.error,
+                        "created_at": result.created_at.isoformat() if result.created_at else (task.created_at.isoformat() if task.created_at else None),
+                        "started_at": task.started_at.isoformat() if task.started_at else None,
+                        "completed_at": task.completed_at.isoformat() if task.completed_at else None,
+                        "config_snapshot": task.config_snapshot,
+                        "benchmark_name": task.benchmark_name,
+                        "topology_config_name": task.topology_config_name,
+                        "search_mode": task.search_mode,
+                        "manual_parallelism": task.manual_parallelism,
+                        "search_constraints": task.search_constraints,
+                        "search_stats": task.search_stats,
+                        "result": {
+                            'throughput': result.tps,
+                            'tps_per_chip': result.tps_per_chip,
+                            'tpot': result.tpot,
+                            'ttft': result.ttft,
+                            'mfu': result.mfu,
+                            'score': result.score,
+                            'chips': result.chips,
+                            'parallelism': {
+                                'dp': result.dp,
+                                'tp': result.tp,
+                                'pp': result.pp,
+                                'ep': result.ep,
+                                'sp': result.sp,
+                            }
+                        }
+                    }
+                    tasks_with_results.append(task_dict)
+            # 注意：不再显示没有结果的已完成任务，避免空行
+
+        return {
+            "id": experiment.id,
+            "name": experiment.name,
+            "description": experiment.description,
+            "total_tasks": experiment.total_tasks,
+            "completed_tasks": experiment.completed_tasks,
+            "created_at": experiment.created_at.isoformat() if experiment.created_at else None,
+            "updated_at": experiment.updated_at.isoformat() if experiment.updated_at else None,
+            "tasks": tasks_with_results
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"获取实验详情失败: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"获取失败: {str(e)}")
+
+
+@app.patch("/api/evaluation/experiments/{experiment_id}")
+async def update_experiment(
+    experiment_id: int,
+    request: ExperimentUpdateRequest,
+    db: Session = Depends(get_db)
+):
+    """更新实验信息（支持 inline 编辑）"""
+    experiment = db.query(Experiment).filter(Experiment.id == experiment_id).first()
+    if not experiment:
+        raise HTTPException(status_code=404, detail=f"实验不存在: {experiment_id}")
+
+    try:
+        if request.name is not None:
+            experiment.name = request.name
+        if request.description is not None:
+            experiment.description = request.description
+
+        db.commit()
+        db.refresh(experiment)
+
+        return {
+            "id": experiment.id,
+            "name": experiment.name,
+            "description": experiment.description,
+            "created_at": experiment.created_at.isoformat() if experiment.created_at else None,
+            "updated_at": experiment.updated_at.isoformat() if experiment.updated_at else None,
+        }
+    except Exception as e:
+        db.rollback()
+        logger.error(f"更新实验失败: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"更新失败: {str(e)}")
+
+
+@app.delete("/api/evaluation/experiments/{experiment_id}")
+async def delete_experiment(experiment_id: int, db: Session = Depends(get_db)):
+    """删除实验及其所有任务和结果"""
+    experiment = db.query(Experiment).filter(Experiment.id == experiment_id).first()
+    if not experiment:
+        raise HTTPException(status_code=404, detail=f"实验不存在: {experiment_id}")
+
+    try:
+        # 删除实验（级联删除任务和结果）
+        db.delete(experiment)
+        db.commit()
+        return {"message": f"实验 '{experiment.name}' 已删除"}
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"删除失败: {str(e)}")
+
+
+class BatchDeleteResultsRequest(BaseModel):
+    """批量删除结果请求"""
+    result_ids: list[int]
+
+
+@app.post("/api/evaluation/experiments/{experiment_id}/results/batch-delete")
+async def batch_delete_results(
+    experiment_id: int,
+    request: BatchDeleteResultsRequest,
+    db: Session = Depends(get_db)
+):
+    """批量删除评估结果"""
+    try:
+        # 验证实验存在
+        experiment = db.query(Experiment).filter(Experiment.id == experiment_id).first()
+        if not experiment:
+            raise HTTPException(status_code=404, detail=f"实验不存在: {experiment_id}")
+
+        if not request.result_ids:
+            raise HTTPException(status_code=400, detail="结果 ID 列表不能为空")
+
+        # 查询要删除的结果
+        results = db.query(EvaluationResult).filter(
+            EvaluationResult.id.in_(request.result_ids)
+        ).all()
+
+        if not results:
+            raise HTTPException(status_code=404, detail="未找到指定的结果")
+
+        # 删除结果
+        deleted_count = len(results)
+        for result in results:
+            db.delete(result)
+
+        db.commit()
+
+        return {
+            "success": True,
+            "message": f"成功删除 {deleted_count} 个结果",
+            "deleted_count": deleted_count
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        logger.error(f"批量删除结果失败: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"删除失败: {str(e)}")
+
+
+# ============================================
 # WebSocket 端点
 # ============================================
 
@@ -1431,12 +1513,9 @@ async def websocket_endpoint(websocket: WebSocket):
     }
     """
     await websocket.accept()
-    print("[DEBUG WS API] WebSocket client connected")
-    logger.info("WebSocket client connected")
 
     # 订阅全局任务更新队列（使用 task_manager 的订阅功能）
     queue = task_manager.subscribe_global()
-    print(f"[DEBUG WS API] Subscribed to global queue")
 
     try:
         # 持续从队列获取更新并推送给客户端
@@ -1444,19 +1523,14 @@ async def websocket_endpoint(websocket: WebSocket):
             try:
                 # 等待队列中的更新，超时后发送心跳
                 message = await asyncio.wait_for(queue.get(), timeout=30.0)
-                print(f"[DEBUG WS API] Got message from queue: task_id={message.get('task_id')}, progress={message.get('progress')}")
                 await websocket.send_json(message)
-                print(f"[DEBUG WS API] Sent message to client")
                 logger.info(f"[WS] Sent message to client: task_id={message.get('task_id')}, progress={message.get('progress')}")
             except asyncio.TimeoutError:
                 # 发送心跳保持连接
-                print("[DEBUG WS API] Sending heartbeat")
                 await websocket.send_json({"type": "heartbeat"})
     except WebSocketDisconnect:
-        print("[DEBUG WS API] WebSocket client disconnected")
         logger.info("WebSocket client disconnected")
     except Exception as e:
-        print(f"[DEBUG WS API] WebSocket error: {e}")
         logger.error(f"WebSocket error: {e}")
     finally:
         task_manager.unsubscribe_global(queue)

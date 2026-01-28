@@ -6,6 +6,21 @@
 
 import { useEffect, useRef, useCallback } from 'react'
 
+export interface SubTaskProgress {
+  candidate_index: number
+  parallelism: {
+    dp: number
+    tp: number
+    pp: number
+    ep: number
+    sp: number
+    moe_tp?: number
+  }
+  status: 'pending' | 'running' | 'completed' | 'failed'
+  progress: number
+  chips?: number
+}
+
 export interface TaskUpdate {
   type: 'task_update'
   task_id: string
@@ -14,9 +29,10 @@ export interface TaskUpdate {
   message: string
   error?: string
   search_stats?: {
-    total_plans: number
-    feasible_plans: number
-    infeasible_plans: number
+    total_plans?: number
+    feasible_plans?: number
+    infeasible_plans?: number
+    sub_tasks?: SubTaskProgress[]
   }
 }
 
@@ -78,22 +94,17 @@ export function useTaskWebSocket(options: UseTaskWebSocketOptions = {}) {
       const ws = new WebSocket(wsUrl)
 
       ws.onopen = () => {
-        console.log('[WebSocket] Connected to', wsUrl)
         reconnectCountRef.current = 0
         onConnectRef.current?.()
       }
 
       ws.onmessage = (event) => {
-        console.log('[DEBUG WS Frontend] Raw message received:', event.data)
         try {
           const data = JSON.parse(event.data) as TaskUpdate
-          console.log('[DEBUG WS Frontend] Parsed message:', data)
           if (data.type === 'task_update') {
-            console.log('[DEBUG WS Frontend] Calling onTaskUpdate callback')
             onTaskUpdateRef.current?.(data)
-          } else if (data.type === 'heartbeat') {
-            console.log('[DEBUG WS Frontend] Heartbeat received')
           }
+          // heartbeat 消息静默处理
         } catch (error) {
           console.error('[WebSocket] Failed to parse message:', error)
         }
@@ -104,14 +115,12 @@ export function useTaskWebSocket(options: UseTaskWebSocketOptions = {}) {
       }
 
       ws.onclose = () => {
-        console.log('[WebSocket] Disconnected')
         onDisconnectRef.current?.()
 
         // 自动重连
         if (autoReconnect) {
           reconnectCountRef.current++
           const delay = Math.min(1000 * Math.pow(2, reconnectCountRef.current), 30000) // 指数退避，最大 30 秒
-          console.log(`[WebSocket] Reconnecting in ${delay}ms (attempt ${reconnectCountRef.current})`)
           reconnectTimerRef.current = setTimeout(() => {
             connect()
           }, delay)

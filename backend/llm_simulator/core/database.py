@@ -169,6 +169,8 @@ class EvaluationResult(Base):
     tps = Column(Float, nullable=False)
     tps_per_batch = Column(Float, nullable=False)
     tps_per_chip = Column(Float, nullable=False)
+    ttft = Column(Float, nullable=True)  # Time To First Token (ms)
+    tpot = Column(Float, nullable=True)  # Time Per Output Token (ms)
     mfu = Column(Float, nullable=False)
 
     # 计算量和内存

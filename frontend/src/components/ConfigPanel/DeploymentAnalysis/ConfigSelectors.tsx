@@ -567,7 +567,7 @@ export const BenchmarkConfigSelector: React.FC<BenchmarkConfigSelectorProps> = (
 }) => {
   const [presetId, setPresetId] = useState<string>('')
   const [customBenchmarks, setCustomBenchmarks] = useState<CustomBenchmark[]>([])
-  const [openSections, setOpenSections] = useState<Record<string, boolean>>({ basic: true })
+  const [openSections, setOpenSections] = useState<Record<string, boolean>>({ basic: false })
   const [paramsStr, setParamsStr] = useState<string>('--')
 
   const modelList = getModelList()
@@ -725,7 +725,7 @@ export const BenchmarkConfigSelector: React.FC<BenchmarkConfigSelectorProps> = (
                   <div><div className="mb-1"><ConfigLabel name="model_name" label="模型选择" /></div>
                     <Select value={modelConfig.model_name} onValueChange={(name) => { const preset = modelList.find(m => m.name === name || m.id === name); if (preset) onModelChange(getModelPreset(preset.id)) }}>
                       <SelectTrigger className="w-full h-7"><SelectValue /></SelectTrigger>
-                      <SelectContent>{modelList.map(m => (<SelectItem key={m.id} value={m.id}>{m.params ? `${m.name} (${m.params})` : m.name}</SelectItem>))}</SelectContent>
+                      <SelectContent>{modelList.map(m => (<SelectItem key={m.id} value={m.name}>{m.params ? `${m.name} (${m.params})` : m.name}</SelectItem>))}</SelectContent>
                     </Select>
                   </div>
                   <div><div className="mb-1"><ConfigLabel name="model_type" label="模型类型" /></div>

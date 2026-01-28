@@ -16,6 +16,7 @@ import type { GanttChartData, GanttTask } from '../../../../utils/llmDeployment/
 interface GanttChartProps {
   data: GanttChartData | null
   showLegend?: boolean
+  onTaskClick?: (task: GanttTask) => void
 }
 
 /** 任务类型颜色映射 */
@@ -154,6 +155,7 @@ const tooltipStyle: React.CSSProperties = {
 export const GanttChart: React.FC<GanttChartProps> = ({
   data,
   showLegend = true,
+  onTaskClick,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null)
   const [containerWidth, setContainerWidth] = useState(0)
@@ -457,6 +459,16 @@ export const GanttChart: React.FC<GanttChartProps> = ({
     setTooltip({ segment, x: e.clientX + 10, y: e.clientY + 10 })
   }, [])
 
+  // 点击处理 - 选择段内最长的任务
+  const handleSegmentClick = useCallback((segment: AggregatedSegment) => {
+    if (!onTaskClick || segment.tasks.length === 0) return
+    // 找出持续时间最长的任务
+    const longestTask = segment.tasks.reduce((prev, curr) =>
+      (curr.end - curr.start) > (prev.end - prev.start) ? curr : prev
+    )
+    onTaskClick(longestTask)
+  }, [onTaskClick])
+
   const handleSegmentLeave = useCallback(() => {
     setTooltip(null)
   }, [])
@@ -488,10 +500,11 @@ export const GanttChart: React.FC<GanttChartProps> = ({
           height={BAR_HEIGHT}
           fill={TASK_COLORS[type] || '#999'}
           rx={2}
-          style={{ cursor: 'pointer' }}
+          style={{ cursor: onTaskClick ? 'pointer' : 'default' }}
           onMouseEnter={(e) => handleSegmentHover(segment, e)}
           onMouseMove={(e) => handleSegmentHover(segment, e)}
           onMouseLeave={handleSegmentLeave}
+          onClick={() => handleSegmentClick(segment)}
         />
       )
     }
@@ -510,13 +523,14 @@ export const GanttChart: React.FC<GanttChartProps> = ({
         fill={TASK_COLORS[dominantType] || '#999'}
         opacity={0.6 + dominantRatio * 0.4}
         rx={2}
-        style={{ cursor: 'pointer' }}
+        style={{ cursor: onTaskClick ? 'pointer' : 'default' }}
         onMouseEnter={(e) => handleSegmentHover(segment, e)}
         onMouseMove={(e) => handleSegmentHover(segment, e)}
         onMouseLeave={handleSegmentLeave}
+        onClick={() => handleSegmentClick(segment)}
       />
     )
-  }, [resourceIndexMap, xScale, yScale, handleSegmentHover, handleSegmentLeave])
+  }, [resourceIndexMap, xScale, yScale, handleSegmentHover, handleSegmentLeave, handleSegmentClick, onTaskClick])
 
   if (!data || data.tasks.length === 0) {
     return (

@@ -367,7 +367,7 @@ const NavigationOverlay: React.FC<{
   onViewModeChange?: (mode: '3d' | 'topology') => void
 }> = ({ breadcrumbs, onBreadcrumbClick, viewMode, onViewModeChange }) => {
   return (
-    <div className="absolute top-4 left-4 z-[100] bg-white/95 px-4 py-2 rounded-lg shadow-md flex items-center gap-3">
+    <div className="absolute top-4 left-4 z-[50] bg-white/95 px-4 py-2 rounded-lg shadow-md flex items-center gap-3">
       {/* 视图切换器 - 自定义 Segmented */}
       {viewMode && onViewModeChange && (
         <div className="flex rounded-md border border-gray-200 overflow-hidden">

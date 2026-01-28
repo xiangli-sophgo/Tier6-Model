@@ -52,6 +52,7 @@ registerAllModules()
 const getStorageKey = (experimentId: number) => `task_table_visible_columns_${experimentId}`
 const getFixedColumnsKey = (experimentId: number) => `task_table_fixed_columns_${experimentId}`
 const getColumnOrderKey = (experimentId: number) => `task_table_column_order_${experimentId}`
+const getRowOrderKey = (experimentId: number) => `task_table_row_order_${experimentId}`
 
 // 树节点类型
 interface TreeNode {
@@ -97,7 +98,7 @@ function SortableColumnItem({ id, isFixed, onToggleFixed }: SortableColumnItemPr
         onCheckedChange={() => onToggleFixed(id)}
         className="mr-2"
       />
-      <span className="flex-1 truncate text-sm">{id.replace(/_/g, ' ')}</span>
+      <span className="flex-1 truncate text-sm">{getColumnDisplayName(id)}</span>
     </div>
   )
 }
@@ -189,7 +190,8 @@ interface Props {
   loading: boolean
   experimentId: number
   onTaskSelect: (task: EvaluationTask) => void
-  onTasksDelete?: (taskIds: string[]) => Promise<void>
+  onTaskDoubleClick?: (task: EvaluationTask) => void
+  onResultsDelete?: (resultIds: number[]) => Promise<void>
 }
 
 export default function TaskTable({
@@ -197,11 +199,12 @@ export default function TaskTable({
   loading,
   experimentId,
   onTaskSelect,
-  onTasksDelete,
+  onTaskDoubleClick,
+  onResultsDelete,
 }: Props) {
-  // 只显示已完成的任务
+  // 显示所有有结果的任务（包括取消前已保存结果的任务）
   const completedTasks = useMemo(() => {
-    return tasks.filter(task => task.status === 'completed')
+    return tasks.filter(task => task.result !== undefined && task.result !== null)
   }, [tasks])
 
   // 提取所有可用字段
@@ -222,11 +225,56 @@ export default function TaskTable({
   // 选择模式
   const [selectMode, setSelectMode] = useState(false)
 
+  // 行顺序（存储 task_id）
+  const [rowOrder, setRowOrder] = useState<string[]>([])
+
   // Handsontable ref
   const hotTableRef = useRef<HotTableClass>(null)
 
   // 分类数据
   const classifiedFields = useMemo(() => classifyTaskFieldsWithHierarchy(allFieldKeys), [allFieldKeys])
+
+  // 列标题映射
+  const columnNameMap: Record<string, string> = {
+    'benchmark_name': 'Benchmark',
+    'topology_config_name': '拓扑配置',
+    'status': '任务状态',
+    'throughput': 'TPS',
+    'tps_per_chip': 'TPS/Chip',
+    'tpot': 'TPOT (ms)',
+    'ttft': 'TTFT (ms)',
+    'mfu': 'MFU (%)',
+    'mbu': 'MBU (%)',
+    'score': '综合得分',
+    'chips': '芯片数',
+    'parallelism_dp': 'DP',
+    'parallelism_tp': 'TP',
+    'parallelism_pp': 'PP',
+    'parallelism_ep': 'EP',
+    'parallelism_sp': 'SP',
+    'created_at': '创建时间',
+    'result_rank': '排名',
+    'result_id': '结果ID',
+  }
+
+  // 统一的列名格式化函数
+  const getColumnDisplayName = (col: string): string => {
+    // 优先使用中文映射
+    if (columnNameMap[col]) {
+      return columnNameMap[col]
+    }
+    // 搜索统计字段
+    if (col.startsWith('search_stats_')) {
+      const key = col.replace('search_stats_', '')
+      return `搜索统计: ${key.replace(/_/g, ' ')}`
+    }
+    // 性能指标字段
+    if (col.startsWith('best_')) {
+      return col.replace(/^best_/, '').replace(/_/g, ' ')
+    }
+    // 默认处理：替换下划线
+    return col.replace(/_/g, ' ')
+  }
 
   // 生成树形数据用于列选择器
   const treeData = useMemo((): TreeNode[] => {
@@ -238,7 +286,7 @@ export default function TaskTable({
         title: `重要信息 (${classified.important.length})`,
         key: 'category_important',
         children: classified.important.map((col) => ({
-          title: col.replace(/_/g, ' '),
+          title: getColumnDisplayName(col),
           key: col,
         })),
       })
@@ -249,7 +297,7 @@ export default function TaskTable({
         title: `配置参数 (${classified.config.length})`,
         key: 'category_config',
         children: classified.config.map((col) => ({
-          title: col.replace(/_/g, ' '),
+          title: getColumnDisplayName(col),
           key: col,
         })),
       })
@@ -260,7 +308,7 @@ export default function TaskTable({
         title: `搜索统计 (${classified.stats.length})`,
         key: 'category_stats',
         children: classified.stats.map((col) => ({
-          title: col.replace(/^search_stats_/, '').replace(/_/g, ' '),
+          title: getColumnDisplayName(col),
           key: col,
         })),
       })
@@ -271,7 +319,7 @@ export default function TaskTable({
         title: `性能指标 (${classified.performance.length})`,
         key: 'category_performance',
         children: classified.performance.map((col) => ({
-          title: col.replace(/^best_/, '').replace(/_/g, ' '),
+          title: getColumnDisplayName(col),
           key: col,
         })),
       })
@@ -282,7 +330,7 @@ export default function TaskTable({
         title: `时间信息 (${classified.time.length})`,
         key: 'category_time',
         children: classified.time.map((col) => ({
-          title: col.replace(/_/g, ' '),
+          title: getColumnDisplayName(col),
           key: col,
         })),
       })
@@ -297,6 +345,7 @@ export default function TaskTable({
     const defaultColumns = [
       'benchmark_name',
       'topology_config_name',
+      'status',
       'throughput',
       'tps_per_chip',
       'tpot',
@@ -375,6 +424,35 @@ export default function TaskTable({
     }
   }, [columnOrder, experimentId])
 
+  // 初始化行顺序
+  useEffect(() => {
+    if (completedTasks.length === 0) {
+      setRowOrder([])
+      return
+    }
+    const saved = localStorage.getItem(getRowOrderKey(experimentId))
+    if (saved) {
+      try {
+        const savedOrder: string[] = JSON.parse(saved)
+        const currentIds = new Set(completedTasks.map((t) => t.task_id))
+        const validOrder = savedOrder.filter((id) => currentIds.has(id))
+        const newIds = completedTasks.filter((t) => !savedOrder.includes(t.task_id)).map((t) => t.task_id)
+        setRowOrder([...validOrder, ...newIds])
+        return
+      } catch {
+        // ignore
+      }
+    }
+    setRowOrder(completedTasks.map((t) => t.task_id))
+  }, [completedTasks, experimentId])
+
+  // 保存行顺序
+  useEffect(() => {
+    if (rowOrder.length > 0) {
+      localStorage.setItem(getRowOrderKey(experimentId), JSON.stringify(rowOrder))
+    }
+  }, [rowOrder, experimentId])
+
   // 切换固定列
   const toggleFixedColumn = (col: string) => {
     setFixedColumns((prev) =>
@@ -418,40 +496,9 @@ export default function TaskTable({
     return allColumns.filter((col) => fixedColumns.includes(col)).length
   }, [allColumns, fixedColumns])
 
-  // 中文列标题映射
-  const columnNameMap: Record<string, string> = {
-    'benchmark_name': '基准名称',
-    'topology_config_name': '拓扑配置',
-    'throughput': '吞吐量 (tokens/s)',
-    'tps_per_chip': '单卡吞吐量',
-    'tpot': 'TPOT (ms)',
-    'ttft': 'TTFT (ms)',
-    'mfu': 'MFU (%)',
-    'score': '综合得分',
-    'chips': '芯片数',
-    'parallelism_dp': 'DP',
-    'parallelism_tp': 'TP',
-    'parallelism_pp': 'PP',
-    'parallelism_ep': 'EP',
-    'parallelism_sp': 'SP',
-    'created_at': '创建时间',
-  }
-
   // 列头
   const colHeaders = useMemo(() => {
-    return allColumns.map((col) => {
-      // 优先使用中文映射
-      if (columnNameMap[col]) {
-        return columnNameMap[col]
-      }
-      // 搜索统计字段
-      if (col.startsWith('search_stats_')) {
-        const key = col.replace('search_stats_', '')
-        return `搜索统计: ${key.replace(/_/g, ' ')}`
-      }
-      // 默认处理：替换下划线
-      return col.replace(/_/g, ' ')
-    })
+    return allColumns.map((col) => getColumnDisplayName(col))
   }, [allColumns])
 
   // 拖拽结束处理
@@ -526,8 +573,39 @@ export default function TaskTable({
 
   const checkedKeys = useMemo(() => visibleColumns, [visibleColumns])
 
+  // 根据行顺序排列的任务
+  const sortedTasks = useMemo(() => {
+    if (completedTasks.length === 0) return []
+    if (rowOrder.length === 0) return completedTasks
+    const taskMap = new Map(completedTasks.map((t) => [t.task_id, t]))
+    const sorted = rowOrder.filter((id) => taskMap.has(id)).map((id) => taskMap.get(id)!)
+    const orderedIds = new Set(rowOrder)
+    const remaining = completedTasks.filter((t) => !orderedIds.has(t.task_id))
+    return [...sorted, ...remaining]
+  }, [completedTasks, rowOrder])
+
   // 从任务对象中提取字段值
   const getTaskFieldValue = (task: EvaluationTask, field: string): string | number => {
+    // 新增的结果字段（result_id, result_rank）
+    if (field === 'result_id' || field === 'result_rank') {
+      const value = (task as any)[field]
+      if (value === undefined || value === null) return '-'
+      return value
+    }
+
+    // 状态字段特殊处理（中文显示）
+    if (field === 'status') {
+      const status = task.status
+      const statusMap: Record<string, string> = {
+        'pending': '等待中',
+        'running': '运行中',
+        'completed': '已完成',
+        'failed': '失败',
+        'cancelled': '已取消',
+      }
+      return statusMap[status] || status
+    }
+
     // 基础字段（benchmark_name, topology_config_name, created_at 等）
     if (field in task) {
       const value = (task as any)[field]
@@ -562,8 +640,8 @@ export default function TaskTable({
 
   // 表格数据
   const tableData = useMemo(() => {
-    if (!completedTasks.length) return []
-    return completedTasks.map((task) => {
+    if (!sortedTasks.length) return []
+    return sortedTasks.map((task) => {
       return allColumns.map((col) => {
         const value = getTaskFieldValue(task, col)
         if (typeof value === 'number') {
@@ -581,7 +659,7 @@ export default function TaskTable({
         return value
       })
     })
-  }, [completedTasks, allColumns])
+  }, [sortedTasks, allColumns])
 
   // 数据变化时强制重新渲染
   useEffect(() => {
@@ -592,10 +670,10 @@ export default function TaskTable({
     }
   }, [tableData])
 
-  // 双击行选择
+  // 双击行显示详情
   const handleRowDoubleClick = (row: number) => {
-    if (row >= 0 && completedTasks[row]) {
-      onTaskSelect(completedTasks[row])
+    if (row >= 0 && sortedTasks[row]) {
+      onTaskDoubleClick?.(sortedTasks[row])
     }
   }
 
@@ -614,21 +692,28 @@ export default function TaskTable({
 
   // 全选/取消全选
   const toggleSelectAll = () => {
-    if (selectedRowIndices.size === completedTasks.length) {
+    if (selectedRowIndices.size === sortedTasks.length) {
       setSelectedRowIndices(new Set())
     } else {
-      setSelectedRowIndices(new Set(completedTasks.map((_, idx) => idx)))
+      setSelectedRowIndices(new Set(sortedTasks.map((_, idx) => idx)))
     }
   }
 
-  // 批量删除任务
+  // 批量删除结果
   const [batchDeleting, setBatchDeleting] = useState(false)
   const handleBatchDelete = async () => {
-    if (selectedRowIndices.size === 0 || !onTasksDelete) return
+    if (selectedRowIndices.size === 0 || !onResultsDelete) return
     setBatchDeleting(true)
     try {
-      const taskIds = Array.from(selectedRowIndices).map((idx) => completedTasks[idx].task_id)
-      await onTasksDelete(taskIds)
+      // 获取选中行的 result_id 列表（过滤掉没有 result_id 的行）
+      const resultIds = Array.from(selectedRowIndices)
+        .map((idx) => sortedTasks[idx].result_id)
+        .filter((id): id is number => id !== undefined && id !== null)
+      if (resultIds.length === 0) {
+        toast.warning('选中的行没有有效的结果ID')
+        return
+      }
+      await onResultsDelete(resultIds)
       toast.success('批量删除成功')
       setSelectedRowIndices(new Set())
     } catch {
@@ -640,12 +725,12 @@ export default function TaskTable({
 
   // 导出 CSV
   const handleExport = () => {
-    if (!completedTasks.length) {
+    if (!sortedTasks.length) {
       toast.warning('没有数据可导出')
       return
     }
     const headers = allColumns
-    const rows = completedTasks.map((task) =>
+    const rows = sortedTasks.map((task) =>
       allColumns.map((col) => getTaskFieldValue(task, col)).join(',')
     )
     const csv = [headers.join(','), ...rows].join('\n')
@@ -655,6 +740,16 @@ export default function TaskTable({
     link.download = `tasks_experiment_${experimentId}.csv`
     link.click()
     toast.success('导出成功')
+  }
+
+  // 行拖拽处理
+  const handleBeforeRowMove = (movedRows: number[], finalIndex: number) => {
+    const currentIds = sortedTasks.map((t) => t.task_id)
+    const movedIds = movedRows.map((idx) => currentIds[idx])
+    const remaining = currentIds.filter((_, idx) => !movedRows.includes(idx))
+    remaining.splice(finalIndex, 0, ...movedIds)
+    setRowOrder(remaining)
+    return false // 阻止 Handsontable 内部移动，由 React 状态控制
   }
 
   // 列设置标签页状态
@@ -742,19 +837,31 @@ export default function TaskTable({
       <div>
         <div className="mb-4 flex justify-between items-center">
           <div className="flex items-center gap-2">
-            <Popover>
+            <Popover modal={true}>
               <PopoverTrigger asChild>
                 <Button variant="outline">
                   <Settings className="h-4 w-4 mr-2" />
                   列显示设置 ({visibleColumns.length}/{allFieldKeys.length})
                 </Button>
               </PopoverTrigger>
-              <PopoverContent align="start" className="w-auto p-4">
-                {columnSelector}
+              <PopoverContent
+                align="start"
+                className="w-auto p-4"
+                onInteractOutside={(e) => {
+                  // 防止点击内部元素时关闭
+                  const target = e.target as HTMLElement
+                  if (target.closest('.popover-content-inner')) {
+                    e.preventDefault()
+                  }
+                }}
+              >
+                <div className="popover-content-inner">
+                  {columnSelector}
+                </div>
               </PopoverContent>
             </Popover>
             <span className="text-gray-500 text-xs">
-              {selectMode ? '选择模式：单击行选中，再次点击取消' : '双击行查看详情'}
+              {selectMode ? '选择模式：单击行选中，再次点击取消' : '双击行查看详情 | 双击列头排序 | 拖拽行调整顺序'}
             </span>
           </div>
           <div className="flex items-center gap-2">
@@ -775,13 +882,13 @@ export default function TaskTable({
               </TooltipTrigger>
               <TooltipContent>进入选择模式后单击行可选中，用于批量删除</TooltipContent>
             </Tooltip>
-            {selectMode && onTasksDelete && (
+            {selectMode && onResultsDelete && (
               <>
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <div className="flex items-center gap-2">
                       <Checkbox
-                        checked={selectedRowIndices.size === completedTasks.length && completedTasks.length > 0}
+                        checked={selectedRowIndices.size === sortedTasks.length && sortedTasks.length > 0}
                         onCheckedChange={toggleSelectAll}
                       />
                       <span className="text-sm">全选</span>
@@ -826,7 +933,7 @@ export default function TaskTable({
             )}
             <Tooltip>
               <TooltipTrigger asChild>
-                <Button variant="outline" onClick={handleExport} disabled={!completedTasks.length}>
+                <Button variant="outline" onClick={handleExport} disabled={!sortedTasks.length}>
                   <Download className="h-4 w-4 mr-2" />
                   导出CSV
                 </Button>
@@ -851,13 +958,42 @@ export default function TaskTable({
               height="auto"
               fixedColumnsStart={fixedColumnCount}
               manualColumnResize={true}
+              manualRowMove={true}
+              columnSorting={{ headerAction: false, indicator: true }}
               licenseKey="non-commercial-and-evaluation"
               stretchH="all"
               selectionMode="multiple"
               outsideClickDeselects={false}
+              beforeRowMove={handleBeforeRowMove}
               afterOnCellMouseDown={(event, coords) => {
                 if (selectMode && coords.row >= 0) {
                   toggleRowSelection(coords.row)
+                  return
+                }
+                // 双击列头触发排序
+                if (event.detail === 2 && coords.row === -1 && coords.col >= 0) {
+                  const hot = hotTableRef.current?.hotInstance
+                  if (hot) {
+                    const columnSortingPlugin = hot.getPlugin('columnSorting')
+                    const currentSort = columnSortingPlugin.getSortConfig()
+                    const sortArray = Array.isArray(currentSort) ? currentSort : (currentSort ? [currentSort] : [])
+                    const currentColSort = sortArray.find((s: { column: number }) => s.column === coords.col)
+
+                    let newOrder: 'asc' | 'desc' | undefined
+                    if (!currentColSort) {
+                      newOrder = 'asc'
+                    } else if (currentColSort.sortOrder === 'asc') {
+                      newOrder = 'desc'
+                    } else {
+                      newOrder = undefined // 取消排序
+                    }
+
+                    if (newOrder) {
+                      columnSortingPlugin.sort({ column: coords.col, sortOrder: newOrder })
+                    } else {
+                      columnSortingPlugin.clearSort()
+                    }
+                  }
                   return
                 }
                 if (event.detail === 2 && coords.row >= 0) {

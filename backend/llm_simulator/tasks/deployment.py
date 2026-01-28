@@ -14,6 +14,11 @@ from ..models import create_deepseek_v3, create_deepseek_v3_absorb, create_deeps
 logger = logging.getLogger(__name__)
 
 
+class TaskCancelledException(Exception):
+    """任务取消异常"""
+    pass
+
+
 def evaluate_deployment(
     topology: dict,
     model_config: dict,
@@ -22,6 +27,8 @@ def evaluate_deployment(
     manual_parallelism: Optional[dict] = None,
     search_constraints: Optional[dict] = None,
     progress_callback: Optional[Callable[[int, int, str], None]] = None,
+    result_callback: Optional[Callable[[dict], None]] = None,
+    cancel_check: Optional[Callable[[], bool]] = None,
     enable_tile_search: bool = True,
     enable_partition_search: bool = False,
     max_simulated_tokens: int = 4,
@@ -37,12 +44,17 @@ def evaluate_deployment(
         manual_parallelism: 手动模式的并行策略
         search_constraints: 自动模式的搜索约束
         progress_callback: 进度回调函数 (current, total, message)
+        result_callback: 结果回调函数 (自动模式下边评估边保存)
+        cancel_check: 取消检查函数，返回 True 表示任务被取消
 
     Returns:
         评估结果字典，包含:
         - top_k_plans: 可行方案列表
         - infeasible_plans: 不可行方案列表
         - search_stats: 搜索统计
+
+    Raises:
+        TaskCancelledException: 任务被取消时抛出
     """
 
     # 计算总芯片数
@@ -62,6 +74,7 @@ def evaluate_deployment(
             manual_parallelism,
             total_chips,
             progress_callback,
+            cancel_check,
             enable_tile_search,
             enable_partition_search,
             max_simulated_tokens
@@ -74,10 +87,39 @@ def evaluate_deployment(
             search_constraints,
             total_chips,
             progress_callback,
+            result_callback,
+            cancel_check,
             enable_tile_search,
             enable_partition_search,
             max_simulated_tokens
         )
+
+
+def _calculate_required_chips(parallelism: dict, model_config: dict) -> int:
+    """计算实际使用的芯片数
+
+    Args:
+        parallelism: 并行策略配置
+        model_config: 模型配置
+
+    Returns:
+        实际使用的芯片数
+
+    Note:
+        - PP（Pipeline Parallelism）暂未启用，默认为1，后续讨论是否影响芯片数计算
+        - MoE 模型：实际芯片数 = DP × TP
+          因为 MoE 约束：DP × TP = MoE_TP × EP（Attention 和 MoE 共用这些芯片）
+        - 非 MoE 模型：实际芯片数 = DP × TP × EP
+    """
+    dp = parallelism.get("dp", 1)
+    tp = parallelism.get("tp", 1)
+    ep = parallelism.get("ep", 1)
+
+    is_moe = model_config.get("moe_config") is not None
+    if is_moe:
+        return dp * tp
+    else:
+        return dp * tp * ep
 
 
 def _evaluate_manual_mode(
@@ -87,11 +129,17 @@ def _evaluate_manual_mode(
     manual_parallelism: dict,
     total_chips: int,
     progress_callback: Optional[Callable[[int, int, str], None]] = None,
+    cancel_check: Optional[Callable[[], bool]] = None,
     enable_tile_search: bool = True,
     enable_partition_search: bool = False,
     max_simulated_tokens: int = 4,
 ) -> dict:
     """手动模式评估（带细粒度进度）"""
+
+    # 检查取消
+    if cancel_check and cancel_check():
+        logger.info("任务在开始前被取消")
+        raise TaskCancelledException("任务已取消")
 
     if progress_callback:
         progress_callback(0, 100, "开始手动模式评估...")
@@ -108,7 +156,8 @@ def _evaluate_manual_mode(
     ep = manual_parallelism["ep"]
     sp = manual_parallelism.get("sp", 1)  # sp 是可选的，默认为 1
 
-    required_chips = dp * tp * pp * ep
+    # 计算实际使用的芯片数
+    required_chips = _calculate_required_chips(manual_parallelism, model_config)
 
     if progress_callback:
         progress_callback(5, 100, "检查芯片数量...")
@@ -143,11 +192,9 @@ def _evaluate_manual_mode(
     try:
         # 创建内部进度回调，将模拟器的 0-100% 映射到外部的 10-95%
         def sim_progress_callback(percent: float, message: str):
-            print(f"[DEBUG SIM] sim_progress_callback called: percent={percent}, message={message}", flush=True)
             if progress_callback:
                 # 映射: 模拟器的 0-100% -> 外部的 10-95%
                 external_progress = 10 + percent * 0.85
-                print(f"[DEBUG SIM] calling progress_callback: {int(external_progress)}/100", flush=True)
                 progress_callback(int(external_progress), 100, message)
 
         if progress_callback:
@@ -216,6 +263,8 @@ def _evaluate_auto_mode(
     search_constraints: dict,
     total_chips: int,
     progress_callback: Optional[Callable[[int, int, str], None]] = None,
+    result_callback: Optional[Callable[[dict], None]] = None,
+    cancel_check: Optional[Callable[[], bool]] = None,
     enable_tile_search: bool = True,
     enable_partition_search: bool = False,
     max_simulated_tokens: int = 4,
@@ -228,8 +277,13 @@ def _evaluate_auto_mode(
       总进度 = (2/10)*100% + (50%/10) = 20% + 5% = 25%
     """
 
+    # 检查取消
+    if cancel_check and cancel_check():
+        logger.info("任务在开始前被取消")
+        raise TaskCancelledException("任务已取消")
+
     max_chips = search_constraints.get("max_chips", total_chips)
-    top_k = search_constraints.get("top_k", 10)
+    # 注意：已移除 top_k 限制，现在返回所有可行方案
 
     if progress_callback:
         progress_callback(0, 100, "准备评估...")
@@ -247,6 +301,22 @@ def _evaluate_auto_mode(
     total_candidates = len(candidates)
     logger.info(f"自动模式: 生成 {total_candidates} 个候选方案")
 
+    # 初始化子任务进度跟踪（所有方案初始为 pending）
+    sub_tasks = []
+    for i, candidate in enumerate(candidates):
+        sub_tasks.append({
+            "candidate_index": i,
+            "parallelism": candidate,
+            "status": "pending",
+            "progress": 0,
+            "chips": candidate["dp"] * candidate["tp"] * candidate.get("pp", 1) * candidate.get("ep", 1),
+        })
+
+    # 定义一个辅助函数，用于推送子任务状态
+    def update_sub_task(index: int, status: str, progress: int):
+        sub_tasks[index]["status"] = status
+        sub_tasks[index]["progress"] = progress
+
     if progress_callback:
         progress_callback(2, 100, f"开始评估 {total_candidates} 个方案...")
 
@@ -258,51 +328,77 @@ def _evaluate_auto_mode(
     progress_per_plan = 98.0 / total_candidates if total_candidates > 0 else 98.0
 
     for i, candidate in enumerate(candidates):
+        # 检查取消（每个方案开始前检查）
+        if cancel_check and cancel_check():
+            logger.info(f"任务在评估第 {i + 1}/{total_candidates} 个方案前被取消")
+            raise TaskCancelledException("任务已取消")
+
         # 计算当前方案开始时的基础进度
         base_progress = 2 + i * progress_per_plan
+
+        # 标记当前方案为 running
+        update_sub_task(i, "running", 0)
 
         # 创建内部进度回调，将方案的 0-100% 映射到该方案的进度份额
         def make_inner_callback(plan_index: int, base: float, per_plan: float):
             def inner_callback(inner_percent: float, message: str):
                 if progress_callback:
+                    # 更新子任务进度
+                    update_sub_task(plan_index, "running", int(inner_percent))
                     # 累加进度: 基础进度 + 内部进度 * 该方案的份额
                     total_progress = base + (inner_percent / 100.0) * per_plan
-                    progress_callback(int(total_progress), 100, f"[{plan_index + 1}/{total_candidates}] {message}")
+                    progress_callback(int(total_progress), 100, f"[{plan_index + 1}/{total_candidates}] {message}", sub_tasks=sub_tasks)
             return inner_callback
 
         inner_progress = make_inner_callback(i, base_progress, progress_per_plan)
 
         # 报告方案开始
         if progress_callback:
-            progress_callback(int(base_progress), 100, f"评估方案 {i + 1}/{total_candidates}...")
+            progress_callback(int(base_progress), 100, f"评估方案 {i + 1}/{total_candidates}...", sub_tasks=sub_tasks)
 
-        result = _evaluate_single_plan_with_progress(
-            parallelism=candidate,
-            total_chips=total_chips,
-            model_config=model_config,
-            inference_config=inference_config,
-            topology=topology,
-            hardware_config=hardware_config,
-            progress_callback=inner_progress,
-            enable_tile_search=enable_tile_search,
-            enable_partition_search=enable_partition_search,
-            max_simulated_tokens=max_simulated_tokens,
-        )
+        try:
+            result = _evaluate_single_plan_with_progress(
+                parallelism=candidate,
+                total_chips=total_chips,
+                model_config=model_config,
+                inference_config=inference_config,
+                topology=topology,
+                hardware_config=hardware_config,
+                progress_callback=inner_progress,
+                cancel_check=cancel_check,
+                enable_tile_search=enable_tile_search,
+                enable_partition_search=enable_partition_search,
+                max_simulated_tokens=max_simulated_tokens,
+            )
 
-        if result.get("is_feasible", False):
-            feasible_plans.append(result)
-        else:
-            infeasible_plans.append(result)
+            if result.get("is_feasible", False):
+                # 标记为已完成
+                update_sub_task(i, "completed", 100)
+                feasible_plans.append(result)
+                # 每完成一个可行方案就立即保存
+                if result_callback:
+                    try:
+                        result_callback(result)
+                    except Exception as e:
+                        logger.error(f"保存结果失败: {e}")
+            else:
+                # 标记为失败
+                update_sub_task(i, "failed", 100)
+                infeasible_plans.append(result)
+        except Exception as e:
+            logger.error(f"评估方案 {i + 1} 失败: {e}")
+            update_sub_task(i, "failed", 0)
+            # 继续评估下一个方案
+            continue
 
-    # 按得分排序，取 Top-K
+    # 按得分排序（返回所有可行方案，不再截断为 top_k）
     feasible_plans.sort(key=lambda x: x.get("score", 0), reverse=True)
-    top_k_plans = feasible_plans[:top_k]
 
     if progress_callback:
         progress_callback(100, 100, f"评估完成，找到 {len(feasible_plans)} 个可行方案")
 
     return {
-        "top_k_plans": top_k_plans,
+        "top_k_plans": feasible_plans,  # 返回所有可行方案，按分数排序
         "infeasible_plans": infeasible_plans,
         "search_stats": {
             "total_plans": total_candidates,
@@ -317,9 +413,16 @@ def _generate_parallelism_candidates(
     model_config: dict,
     hardware_config: dict
 ) -> List[dict]:
-    """生成并行策略候选"""
+    """生成并行策略候选
+
+    芯片数计算规则：
+    - MoE 模型：chips = DP × TP（因为 DP×TP = MoE_TP×EP 约束）
+    - 非 MoE 模型：chips = DP × TP × EP
+    - PP 暂不启用，默认为1，不影响芯片数计算
+    """
 
     candidates = []
+    is_moe = model_config.get("moe_config") is not None
 
     # TODO: 实现智能的候选生成算法
     # 应该根据以下因素生成合法的因子分解：
@@ -329,26 +432,49 @@ def _generate_parallelism_candidates(
     # 4. 可用芯片数（max_chips）
     # 5. 拓扑结构（同板/同机/跨机的带宽差异）
 
-    # 示例：简单的因子分解（需要改进）
-    for tp in [1, 2, 4, 8, 16]:
-        if tp > max_chips:
-            continue
-        for pp in [1, 2, 4, 8]:
-            if tp * pp > max_chips:
+    # 候选生成策略
+    if is_moe:
+        # MoE 模型：实际芯片数 = DP × TP
+        # EP 由 MoE 约束自动确定，这里也枚举不同的 EP
+        for tp in [1, 2, 4, 8, 16, 32]:
+            if tp > max_chips:
                 continue
-            for ep in [1, 2, 4, 8]:
-                if tp * pp * ep > max_chips:
+            for ep in [1, 2, 4, 8, 16, 32]:
+                # 计算 DP，使得 DP * TP <= max_chips
+                dp = max_chips // tp
+                if dp > 0:
+                    # MoE 约束：DP * TP = MoE_TP * EP
+                    # 设置 moe_tp = (DP * TP) / EP
+                    if (dp * tp) % ep == 0:
+                        moe_tp = (dp * tp) // ep
+                        candidates.append({
+                            "dp": dp,
+                            "tp": tp,
+                            "pp": 1,  # PP 暂不启用
+                            "ep": ep,
+                            "sp": 1,
+                            "moe_tp": moe_tp,
+                        })
+    else:
+        # 非 MoE 模型：实际芯片数 = DP × TP × EP
+        for tp in [1, 2, 4, 8, 16, 32]:
+            if tp > max_chips:
+                continue
+            for ep in [1, 2, 4, 8, 16, 32]:
+                if tp * ep > max_chips:
                     continue
-                dp = max_chips // (tp * pp * ep)
+                # 计算 DP，使得 DP * TP * EP <= max_chips
+                dp = max_chips // (tp * ep)
                 if dp > 0:
                     candidates.append({
                         "dp": dp,
                         "tp": tp,
-                        "pp": pp,
+                        "pp": 1,  # PP 暂不启用
                         "ep": ep,
-                        "sp": 1  # Sequence Parallelism 通常与 TP 绑定
+                        "sp": 1,
                     })
 
+    logger.info(f"生成 {len(candidates)} 个候选方案 (is_moe={is_moe}, max_chips={max_chips})")
     return candidates
 
 
@@ -367,7 +493,8 @@ def _evaluate_single_plan(
     pp = parallelism["pp"]
     ep = parallelism["ep"]
 
-    required_chips = dp * tp * pp * ep
+    # 计算实际使用的芯片数
+    required_chips = _calculate_required_chips(parallelism, model_config)
 
     if required_chips > total_chips:
         return _create_infeasible_result(
@@ -416,6 +543,7 @@ def _evaluate_single_plan_with_progress(
     topology: dict,
     hardware_config: dict,
     progress_callback: Optional[Callable[[float, str], None]] = None,
+    cancel_check: Optional[Callable[[], bool]] = None,
     enable_tile_search: bool = True,
     enable_partition_search: bool = False,
     max_simulated_tokens: int = 4,
@@ -432,7 +560,13 @@ def _evaluate_single_plan_with_progress(
         progress_callback: 进度回调函数 (percent: float, message: str) -> None
             percent: 0-100 的进度百分比
             message: 进度描述信息
+        cancel_check: 取消检查函数
     """
+
+    # 检查取消
+    if cancel_check and cancel_check():
+        logger.info("单个方案评估被取消")
+        raise TaskCancelledException("任务已取消")
 
     # 直接访问字段，缺失时会立即 KeyError
     dp = parallelism["dp"]
@@ -440,7 +574,8 @@ def _evaluate_single_plan_with_progress(
     pp = parallelism["pp"]
     ep = parallelism["ep"]
 
-    required_chips = dp * tp * pp * ep
+    # 计算实际使用的芯片数
+    required_chips = _calculate_required_chips(parallelism, model_config)
 
     # 报告检查进度
     if progress_callback:
@@ -587,10 +722,9 @@ def _transform_to_ds_tpu_format(
     batch_size = inference_config.get("batch_size", 1)
     tps_per_batch = tps / batch_size if batch_size > 0 else 0
 
-    # 修正 tps_per_chip 计算（对齐 DS_TPU）
-    tp = parallelism.get("tp", 1)
-    dp = parallelism.get("dp", 1)
-    tps_per_chip = tps / (tp * dp) if (tp * dp) > 0 else 0
+    # 修正 tps_per_chip 计算：除以实际使用的芯片数
+    actual_chips = _calculate_required_chips(parallelism, model_config)
+    tps_per_chip = tps / actual_chips if actual_chips > 0 else 0
 
     # 使用 PerformanceAnalyzer 获取详细的 layers 信息
     layers_info = {}
@@ -647,8 +781,9 @@ def _transform_to_ds_tpu_format(
         kv_cache_params = 2 * num_layers * hidden_size * seq_len * batch_size
         dram_occupy = (model_params + kv_cache_params) * bytes_per_param
 
-    # 计算综合得分：tps_per_chip * mfu
-    score = tps_per_chip * mfu
+    # TODO: 综合得分计算公式需要重新设计，暂时设置为 0
+    # 原公式：score = tps_per_chip * mfu（不太合理，后续讨论修改）
+    score = 0
 
     return {
         "parallelism": parallelism,
@@ -660,6 +795,8 @@ def _transform_to_ds_tpu_format(
         "tps": tps,
         "tps_per_batch": tps_per_batch,
         "tps_per_chip": tps_per_chip,
+        "ttft": ttft / 1000.0,  # 转换为毫秒
+        "tpot": avg_tpot / 1000.0,  # 转换为毫秒
         "mfu": mfu,
         "flops": flops,
         "dram_occupy": dram_occupy,

@@ -178,7 +178,7 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
   onLayoutChange,
 }) => {
   return (
-    <div className="absolute right-4 top-4 z-[100] rounded-lg border border-border bg-white p-3.5 shadow-md">
+    <div className="absolute right-4 top-4 z-[50] rounded-lg border border-border bg-white p-3.5 shadow-md">
       <div className="flex items-center gap-3">
         <Tabs
           value={multiLevelOptions?.enabled ? 'multi' : 'single'}

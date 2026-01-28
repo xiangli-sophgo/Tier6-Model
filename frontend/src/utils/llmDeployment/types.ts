@@ -925,3 +925,93 @@ export interface InfeasibleResult {
   /** 不可行原因 */
   reason: string;
 }
+
+// ============================================
+// 层级与通信聚合类型
+// ============================================
+
+/** 层级时间分解 */
+export interface LayerBreakdown {
+  /** 层索引 */
+  layerIndex: number;
+  /** 推理阶段 */
+  phase: 'prefill' | 'decode';
+  /** 计算时间 (us) */
+  computeTime: number;
+  /** 访存时间 (us) */
+  memoryTime: number;
+  /** 通信时间分解 */
+  commTime: {
+    tp: number;
+    pp: number;
+    ep: number;
+    sp: number;
+  };
+  /** 总时间 (us) */
+  totalTime: number;
+  /** 计算量 (FLOPs) */
+  flops: number;
+  /** DRAM 流量 (bytes) */
+  dramTraffic: number;
+  /** 任务数量 */
+  taskCount: number;
+}
+
+/** 通信类型详情 */
+export interface CommTypeDetail {
+  /** 时间 (us) */
+  time: number;
+  /** 数据量 (bytes) */
+  volume: number;
+  /** 通信次数 */
+  count: number;
+  /** 使用的算法 */
+  algorithm?: string;
+}
+
+/** 通信类型分解 */
+export interface CommTypeBreakdown {
+  /** 总通信时间 (us) */
+  totalTime: number;
+  /** 各类型通信详情 */
+  breakdown: {
+    tp: CommTypeDetail;
+    pp: CommTypeDetail;
+    ep: CommTypeDetail;
+    sp: CommTypeDetail;
+  };
+  /** 通信瓶颈层 (时间最长的前3层) */
+  bottleneckLayers: number[];
+}
+
+/** 扩展的 GanttTask (包含详细性能信息) */
+export interface GanttTaskExtended extends GanttTask {
+  /** 计算时间 (us) */
+  compute_time_us?: number;
+  /** 访存时间 (us) */
+  memory_time_us?: number;
+  /** 通信时间 (us) */
+  comm_time_us?: number;
+  /** 计算量 (FLOPs) */
+  flops?: number;
+  /** GEMM 形状 [M, N, K] */
+  gemm_shape?: [number, number, number];
+  /** 最优 tile 配置 */
+  best_tile?: string;
+  /** 最优分区配置 */
+  best_partition?: string;
+  /** 架构利用率 */
+  arch_utilization?: number;
+  /** 有效利用率 */
+  effective_utilization?: number;
+  /** DRAM 流量 (bytes) */
+  dram_traffic_bytes?: number;
+  /** DRAM 占用 (bytes) */
+  dram_occupy_bytes?: number;
+  /** 通信数据量 (bytes) */
+  comm_size_bytes?: number;
+  /** 通信算法 */
+  comm_algorithm?: string;
+  /** 通信组大小 */
+  comm_group_size?: number;
+}

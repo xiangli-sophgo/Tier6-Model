@@ -73,6 +73,7 @@ import {
   extractChipGroupsFromConfig,
   generateHardwareConfigFromPanelConfig,
   ChipGroupInfo,
+  extractHardwareSummary,
 } from '../../../utils/llmDeployment/topologyHardwareExtractor'
 import {
   RackConfig,
@@ -198,8 +199,8 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
   // Tile 搜索开关（默认开启）
   const [enableTileSearch, setEnableTileSearch] = useState<boolean>(true)
 
-  // 分区搜索开关（默认关闭，提升速度）
-  const [enablePartitionSearch, setEnablePartitionSearch] = useState<boolean>(false)
+  // 分区搜索开关（默认开启）
+  const [enablePartitionSearch, setEnablePartitionSearch] = useState<boolean>(true)
 
   // 最大模拟 token 数（默认 4）
   const [maxSimulatedTokens, setMaxSimulatedTokens] = useState<number>(4)
@@ -582,27 +583,34 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
 
   // WebSocket 任务更新处理（实时接收后端进度）
   const handleTaskUpdate = useCallback(async (update: TaskUpdate) => {
-    console.log('[DEBUG Panel] handleTaskUpdate called:', update)
-    console.log('[DEBUG Panel] Current tasks:', analysisTasksRef.current.map(t => ({ id: t.id, status: t.status })))
-
     // 直接检查任务是否存在于本地任务列表中（使用 ref 访问最新值）
     const taskExists = analysisTasksRef.current.some(t => t.id === update.task_id)
-    console.log('[DEBUG Panel] Task exists:', taskExists, 'for task_id:', update.task_id)
 
     if (!taskExists) {
       // 可能是其他页面的任务或已删除的任务，忽略
-      console.log('[DEBUG Panel] Task not found, ignoring')
       return
     }
 
     const localTaskId = update.task_id
-    console.log('[DEBUG Panel] Updating task:', localTaskId, 'with progress:', update.progress)
 
     if (update.status === 'running') {
-      // 更新进度
-      updateTask(localTaskId, {
+      // 更新进度和子任务
+      const updateData: Partial<AnalysisTask> = {
         progress: { current: Math.round(update.progress), total: 100 },
-      })
+      }
+
+      // 如果有子任务数据，转换并更新
+      if (update.search_stats?.sub_tasks) {
+        updateData.subTasks = update.search_stats.sub_tasks.map(st => ({
+          candidateIndex: st.candidate_index,
+          parallelism: st.parallelism,
+          status: st.status,
+          progress: st.progress,
+          chips: st.chips,
+        }))
+      }
+
+      updateTask(localTaskId, updateData)
     } else if (update.status === 'completed') {
       // 任务完成，获取结果
       try {
@@ -625,14 +633,23 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
             mbu: topPlan.mbu as number,
           })
         } else {
+          // 没有可行方案，提取失败原因
+          let errorMessage = '未找到可行方案'
+          if (results.infeasible_plans && results.infeasible_plans.length > 0) {
+            const firstInfeasible = results.infeasible_plans[0] as Record<string, unknown>
+            const reason = firstInfeasible.infeasible_reason as string
+            if (reason) {
+              errorMessage = `${errorMessage}: ${reason}`
+            }
+          }
           updateTask(localTaskId, {
             status: 'failed',
             endTime: Date.now(),
-            error: '未找到可行方案',
+            error: errorMessage,
           })
         }
       } catch (error) {
-        console.error('获取任务结果失败:', error)
+        console.error('[DeploymentAnalysis] 获取任务结果失败:', error)
         updateTask(localTaskId, {
           status: 'failed',
           endTime: Date.now(),
@@ -656,8 +673,6 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
   // 使用 WebSocket 订阅任务更新
   useTaskWebSocket({
     onTaskUpdate: handleTaskUpdate,
-    onConnect: () => console.log('[DeploymentAnalysis] WebSocket connected'),
-    onDisconnect: () => console.log('[DeploymentAnalysis] WebSocket disconnected'),
   })
 
   // 查看任务结果（跳转到结果管理页面）
@@ -763,8 +778,12 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
     }
   }, [analysisResult, topKPlans, infeasiblePlans, hardwareConfig, displayModelConfig, displayInferenceConfig, modelConfig, inferenceConfig, loading, errorMsg, searchStats, searchProgress, onAnalysisDataChange, handleMapToTopology, handleCancelAnalysis, topology, onTrafficResultChange, viewMode, history, handleLoadFromHistory, handleDeleteHistory, handleClearHistory])
 
-  // 计算最大可用芯片数
-  const maxChips = hardwareConfig ? hardwareConfig.node.chips_per_node * hardwareConfig.cluster.num_nodes : 0
+  // 计算最大可用芯片数（从拓扑配置中提取实际芯片总数）
+  const maxChips = React.useMemo(() => {
+    if (!topology) return 0
+    const summary = extractHardwareSummary(topology)
+    return summary.totalChips
+  }, [topology])
 
   // 运行分析（提交到后端执行）
   const handleRunAnalysis = useCallback(async () => {
@@ -784,6 +803,14 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
     // 生成临时任务 ID（提交后会更新为后端返回的 ID）
     const tempTaskId = `temp-${Date.now()}`
 
+    // 计算实际使用的芯片数
+    // MoE 模型: DP × TP（因为 MoE 约束 DP × TP = MoE_TP × EP，Attention 和 MoE 共用芯片）
+    // 非 MoE 模型: DP × TP × EP
+    const isMoE = !!modelConfig.moe_config
+    const actualChips = parallelismMode === 'manual'
+      ? (isMoE ? strategy.dp * strategy.tp : strategy.dp * strategy.tp * strategy.ep)
+      : maxChips
+
     // 先创建本地任务记录并显示卡片（立即响应用户操作）
     const newTask: AnalysisTask = {
       id: tempTaskId,
@@ -794,7 +821,7 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
       benchmarkName,
       parallelism: strategy,
       mode: parallelismMode,
-      chips: maxChips,
+      chips: actualChips,
     }
     addTask(newTask)
 
@@ -812,6 +839,21 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
         comm_latency_config: { ...commLatencyConfig },
       }
 
+      // 生成拓扑配置名称（如果未选择配置文件，则自动生成）
+      let finalTopologyConfigName = selectedTopologyConfig
+      if (!finalTopologyConfigName) {
+        // 计算拓扑层级信息
+        const totalPods = localPodCount
+        const totalRacks = localRacksPerPod * localPodCount
+        const totalBoards = localRackConfig
+          ? localRackConfig.boards.reduce((sum, b) => sum + b.count, 0) * localRacksPerPod * localPodCount
+          : 0
+        const totalChips = maxChips
+
+        // 格式: P{Pod数}-R{Rack总数}-B{Board总数}-C{Chip总数}
+        finalTopologyConfigName = `P${totalPods}-R${totalRacks}-B${totalBoards}-C${totalChips}`
+      }
+
       // 提交任务到后端
       const response = await submitEvaluation({
         experiment_name: finalExperimentName,
@@ -827,6 +869,8 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
         enable_tile_search: enableTileSearch,
         enable_partition_search: enablePartitionSearch,
         max_simulated_tokens: maxSimulatedTokens,
+        benchmark_name: benchmarkName,
+        topology_config_name: finalTopologyConfigName,
       })
 
       const backendTaskId = response.task_id
@@ -1063,13 +1107,13 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
                   <div className="p-2.5 rounded-lg text-xs border border-green-300 mb-2" style={{ background: colors.successLight }}>
                     <div className="flex justify-between mb-1.5">
                       <span><CheckCircle className="inline h-3.5 w-3.5 mr-1" style={{ color: colors.success }} />拓扑概览</span>
-                      <span>共 <b>{hardwareConfig.node.chips_per_node * hardwareConfig.cluster.num_nodes}</b> 个芯片</span>
+                      <span>共 <b>{maxChips}</b> 个芯片</span>
                     </div>
                     <div className="grid grid-cols-2 gap-x-3 gap-y-1" style={{ color: colors.textSecondary }}>
                       <span>Pod: {localPodCount} 个</span>
                       <span>Rack: {localRacksPerPod * localPodCount} 个</span>
                       <span>Board: {localRackConfig ? localRackConfig.boards.reduce((sum, b) => sum + b.count, 0) * localRacksPerPod * localPodCount : 0} 个</span>
-                      <span>Chip: {hardwareConfig.node.chips_per_node * hardwareConfig.cluster.num_nodes} 个</span>
+                      <span>Chip: {maxChips} 个</span>
                     </div>
                   </div>
 

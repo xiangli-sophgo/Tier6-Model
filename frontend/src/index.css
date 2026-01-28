@@ -10,32 +10,32 @@
 @tailwind utilities;
 
 :root {
-  /* 背景层次 */
-  --bg-base: #F7F7F7;
+  /* 背景层次 - 浅灰蓝色系 */
+  --bg-base: #F8FAFB;
   --bg-elevated: #FFFFFF;
-  --bg-surface: #EFEFEF;
-  --bg-inset: #E8E8E8;
-  --bg-hover: rgba(0, 0, 0, 0.03);
+  --bg-surface: #F0F4F8;
+  --bg-inset: #E8EDF4;
+  --bg-hover: rgba(37, 99, 235, 0.05);
 
   /* 边框 */
-  --border-subtle: rgba(0, 0, 0, 0.05);
-  --border-default: #E5E5E5;
-  --border-strong: #D4D4D4;
+  --border-subtle: rgba(37, 99, 235, 0.08);
+  --border-default: #DDE4F0;
+  --border-strong: #C9D5E8;
 
-  /* 主色 */
-  --primary: #4F6BED;
-  --primary-subtle: rgba(79, 107, 237, 0.08);
+  /* 主色 - 浅蓝色 */
+  --primary: #2563EB;
+  --primary-subtle: rgba(37, 99, 235, 0.06);
 
   /* 文字 */
-  --text-primary: #1A1A1A;
-  --text-secondary: #666666;
-  --text-muted: #999999;
+  --text-primary: #1E293B;
+  --text-secondary: #64748B;
+  --text-muted: #94A3B8;
 
-  /* 阴影 */
-  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.05);
-  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.08), 0 1px 2px rgba(0, 0, 0, 0.04);
-  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.08), 0 2px 4px rgba(0, 0, 0, 0.04);
-  --shadow-focus: 0 0 0 3px rgba(79, 107, 237, 0.2);
+  /* 阴影 - Soft UI柔和阴影 */
+  --shadow-xs: 0 1px 2px rgba(37, 99, 235, 0.04);
+  --shadow-sm: 0 2px 6px rgba(37, 99, 235, 0.08), 0 1px 2px rgba(37, 99, 235, 0.04);
+  --shadow-md: 0 6px 16px rgba(37, 99, 235, 0.1), 0 2px 4px rgba(37, 99, 235, 0.04);
+  --shadow-focus: 0 0 0 3px rgba(37, 99, 235, 0.15);
 
   /* 字体 */
   --font-mono: 'JetBrains Mono', 'SF Mono', monospace;
@@ -93,15 +93,15 @@ button:hover:not(:disabled) {
   transform: translateY(-1px);
 }
 
-/* 卡片悬停效果 */
-[role="article"],
+/* 卡片悬停效果 - Soft UI */
 .card {
-  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.3s ease;
 }
 
-[role="article"]:hover,
-.card:hover {
-  transform: translateY(-2px);
+.card:hover,
+.card:has(button[data-state="open"]) {
+  transform: translateY(-4px);
+  box-shadow: 0 12px 24px rgba(37, 99, 235, 0.12);
 }
 
 /* 等宽字体应用 */
@@ -176,6 +176,29 @@ h1, h2, h3 {
 /* ============================================
    动画效果
    ============================================ */
+
+/* Sidebar 折叠/展开动画 */
+@keyframes sidebar-collapse {
+  0% { width: 180px; }
+  100% { width: 64px; }
+}
+
+@keyframes sidebar-expand {
+  0% { width: 64px; }
+  100% { width: 180px; }
+}
+
+/* Sidebar 文本淡出 */
+@keyframes sidebar-text-fade-out {
+  0% { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+/* Sidebar 文本淡入 */
+@keyframes sidebar-text-fade-in {
+  0% { opacity: 0; }
+  100% { opacity: 1; }
+}
 
 /* 脉冲动画 */
 @keyframes pulse {

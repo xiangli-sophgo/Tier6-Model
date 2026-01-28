@@ -22,21 +22,16 @@ export const DeploymentAnalysis: React.FC = () => {
   const onCancelEvaluation = analysis.deploymentAnalysisData?.onCancelEvaluation
 
   return (
-    <div className="h-full w-full bg-white flex flex-col">
+    <div className="h-full w-full bg-gradient-to-b from-gray-50 to-white flex flex-col">
       {/* 标题栏 */}
-      <div className="px-6 py-4 border-b border-gray-100 bg-white">
-        <div className="flex items-baseline gap-2">
-          <span className="text-xl font-semibold text-gray-900">
-            部署分析
-          </span>
-          <span className="text-[13px] text-gray-400">
-            配置并运行 LLM 部署评估任务
-          </span>
-        </div>
+      <div className="px-8 py-6 border-b border-blue-100 bg-gradient-to-r from-blue-50 to-white flex-shrink-0" style={{boxShadow: '0 2px 12px rgba(37, 99, 235, 0.08)'}}>
+        <h3 className="m-0 bg-gradient-to-r from-blue-600 to-blue-400 bg-clip-text text-2xl font-bold text-transparent">
+          部署分析
+        </h3>
       </div>
 
       {/* 主内容区 */}
-      <div className="flex-1 overflow-auto p-6 bg-white">
+      <div className="flex-1 overflow-auto p-8 bg-gradient-to-b from-gray-50 to-white">
         <div>
           {/* 配置面板 */}
           <div>

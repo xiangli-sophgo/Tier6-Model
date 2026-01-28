@@ -47,25 +47,12 @@ export const Knowledge: React.FC = () => {
   }, [isDragging])
 
   return (
-    <div className="h-full w-full bg-white flex flex-col overflow-hidden">
+    <div className="h-full w-full bg-gradient-to-b from-gray-50 to-white flex flex-col overflow-hidden">
       {/* 标题栏 */}
-      <div
-        style={{
-          width: '100%',
-          padding: '16px 24px',
-          borderBottom: '1px solid #f0f0f0',
-          background: '#fff',
-          flexShrink: 0
-        }}
-      >
-        <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
-          <span style={{ fontSize: 20, fontWeight: 600, color: '#1a1a1a' }}>
-            知识网络
-          </span>
-          <span style={{ fontSize: 13, color: '#8c8c8c' }}>
-            分布式计算知识图谱
-          </span>
-        </div>
+      <div className="px-8 py-6 border-b border-blue-100 bg-gradient-to-r from-blue-50 to-white flex-shrink-0" style={{boxShadow: '0 2px 12px rgba(37, 99, 235, 0.08)'}}>
+        <h3 className="m-0 bg-gradient-to-r from-blue-700 to-blue-500 bg-clip-text text-2xl font-bold text-transparent">
+          知识网络
+        </h3>
       </div>
 
       {/* 工具栏 - 独立层级，横跨整个宽度，在卡片上方 */}
@@ -89,14 +76,14 @@ export const Knowledge: React.FC = () => {
               top: 0,
               bottom: 0,
               width: cardWidth,
-              borderRight: '1px solid #f0f0f0',
+              borderRight: '1px solid #BFDBFE',
               overflow: 'hidden',
               display: 'flex',
               flexDirection: 'column',
-              background: '#fff',
+              background: '#FFFFFF',
               minWidth: '200px',
               maxWidth: '600px',
-              boxShadow: '2px 0 8px rgba(0,0,0,0.1)',
+              boxShadow: '4px 0 16px rgba(37, 99, 235, 0.12)',
               zIndex: 10
             }}>
               <KnowledgeNodeCards
@@ -111,7 +98,7 @@ export const Knowledge: React.FC = () => {
               onMouseDown={handleMouseDown}
               onMouseEnter={(e) => {
                 if (!isDragging) {
-                  (e.currentTarget as HTMLDivElement).style.background = '#e5e5e5'
+                  (e.currentTarget as HTMLDivElement).style.background = '#BFDBFE'
                 }
               }}
               onMouseLeave={(e) => {
@@ -125,7 +112,7 @@ export const Knowledge: React.FC = () => {
                 top: 0,
                 bottom: 0,
                 width: 6,
-                background: isDragging ? '#1890ff' : 'transparent',
+                background: isDragging ? '#2563EB' : 'transparent',
                 cursor: 'col-resize',
                 transition: isDragging ? 'none' : 'background 0.2s',
                 userSelect: 'none',

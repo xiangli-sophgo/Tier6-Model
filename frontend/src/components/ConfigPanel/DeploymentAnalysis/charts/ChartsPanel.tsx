@@ -13,11 +13,15 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { ScoreRadarChart } from './ScoreRadarChart'
 import { MetricsBarChart } from './MetricsBarChart'
 import { MemoryPieChart } from './MemoryPieChart'
 import { RooflineChart } from './RooflineChart'
 import { GanttChart } from './GanttChart'
+import { LayerWaterfallChart } from './LayerWaterfallChart'
+import { CommunicationBreakdownChart } from './CommunicationBreakdownChart'
+import { TaskDetailDrawer } from '../TaskDetailDrawer'
 import { BaseCard } from '../../../common/BaseCard'
 import {
   PlanAnalysisResult,
@@ -25,6 +29,7 @@ import {
   LLMModelConfig,
   InferenceConfig,
   GanttChartData,
+  GanttTask,
   SimulationStats,
   SimulationResult,
 } from '../../../../utils/llmDeployment/types'
@@ -86,6 +91,9 @@ export const ChartsPanel: React.FC<ChartsPanelProps> = ({
     simulation: true,
     comparison: true,
   })
+  const [activeSimTab, setActiveSimTab] = useState<'timeline' | 'layers' | 'communication'>('timeline')
+  const [selectedTask, setSelectedTask] = useState<GanttTask | null>(null)
+  const [isDrawerOpen, setIsDrawerOpen] = useState(false)
 
   // 记录上次运行的result id，避免重复运行
   const lastResultIdRef = useRef<string | null>(null)
@@ -326,10 +334,7 @@ export const ChartsPanel: React.FC<ChartsPanelProps> = ({
           collapsible
           expanded={expandedSections.simulation}
           onExpandChange={(expanded) => setExpandedSections(prev => ({ ...prev, simulation: expanded }))}
-        >
-          <div style={{ ...chartCardStyle, boxShadow: 'none', border: 'none' }}>
-          <div style={chartTitleStyle}>
-            <span className="font-semibold">Prefill + Decode 时序甘特图</span>
+          extra={
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               {isSimulating ? (
                 <span className="text-[11px] text-gray-500">模拟中...</span>
@@ -351,14 +356,67 @@ export const ChartsPanel: React.FC<ChartsPanelProps> = ({
                 <RefreshCw className={`h-4 w-4 ${isSimulating ? 'animate-spin' : ''}`} />
               </Button>
             </div>
-          </div>
-          <GanttChart
-            data={simulationResult?.ganttChart ?? null}
-            showLegend
-          />
-        </div>
+          }
+        >
+          <Tabs value={activeSimTab} onValueChange={(v) => setActiveSimTab(v as typeof activeSimTab)}>
+            <TabsList className="mb-4">
+              <TabsTrigger value="timeline">时序甘特图</TabsTrigger>
+              <TabsTrigger value="layers">层级分析</TabsTrigger>
+              <TabsTrigger value="communication">通信分析</TabsTrigger>
+            </TabsList>
+
+            <TabsContent value="timeline">
+              <div style={{ ...chartCardStyle, boxShadow: 'none', border: 'none' }}>
+                <div style={chartTitleStyle}>
+                  <span className="font-semibold">Prefill + Decode 时序甘特图</span>
+                  <span className="text-[11px] text-gray-500">点击任务查看详情</span>
+                </div>
+                <GanttChart
+                  data={simulationResult?.ganttChart ?? null}
+                  showLegend
+                  onTaskClick={(task) => {
+                    setSelectedTask(task)
+                    setIsDrawerOpen(true)
+                  }}
+                />
+              </div>
+            </TabsContent>
+
+            <TabsContent value="layers">
+              <div style={{ ...chartCardStyle, boxShadow: 'none', border: 'none' }}>
+                <div style={chartTitleStyle}>
+                  <span className="font-semibold">层级时间分解</span>
+                  <span className="text-[11px] text-gray-500">每层的计算/访存/通信占比</span>
+                </div>
+                <LayerWaterfallChart
+                  data={simulationResult?.ganttChart ?? null}
+                  height={Math.max(300, (simulationResult?.ganttChart?.tasks?.length ?? 0) > 100 ? 500 : 350)}
+                />
+              </div>
+            </TabsContent>
+
+            <TabsContent value="communication">
+              <div style={{ ...chartCardStyle, boxShadow: 'none', border: 'none' }}>
+                <div style={chartTitleStyle}>
+                  <span className="font-semibold">通信开销分析</span>
+                  <span className="text-[11px] text-gray-500">TP/PP/EP/SP 通信分解</span>
+                </div>
+                <CommunicationBreakdownChart
+                  data={simulationResult?.ganttChart ?? null}
+                  height={400}
+                />
+              </div>
+            </TabsContent>
+          </Tabs>
         </BaseCard>
       </div>
+
+      {/* 任务详情侧边栏 */}
+      <TaskDetailDrawer
+        task={selectedTask}
+        open={isDrawerOpen}
+        onOpenChange={setIsDrawerOpen}
+      />
 
     </div>
   )

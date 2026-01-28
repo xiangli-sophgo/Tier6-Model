@@ -38,7 +38,7 @@ interface PhysicalChip {
 /**
  * 从拓扑中收集所有芯片信息
  */
-function collectChipsFromTopology(topology: HierarchicalTopology): PhysicalChip[] {
+export function collectChipsFromTopology(topology: HierarchicalTopology): PhysicalChip[] {
   const chips: PhysicalChip[] = [];
 
   topology.pods.forEach((pod: PodConfig, podIndex: number) => {

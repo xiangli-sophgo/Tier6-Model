@@ -51,6 +51,8 @@ class GlobalWorkerPool:
                 logger.info(f"初始化全局资源池，最大 worker 数量: {self._max_global_workers}")
                 self._allocated_workers: Dict[str, int] = {}
                 self._task_executors: Dict[str, ThreadPoolExecutor] = {}
+                # 取消标志集合
+                self._cancelled_tasks: set = set()
                 # WebSocket 订阅者管理
                 self._global_subscribers: List[asyncio.Queue] = []
                 self._main_loop: Optional[asyncio.AbstractEventLoop] = None
@@ -89,8 +91,6 @@ class GlobalWorkerPool:
         if not subscribers:
             return
 
-        print(f"[DEBUG] notify_subscribers_sync: task_id={task_id}, progress={data.get('progress')}, subscribers={len(subscribers)}")
-
         message = {"type": "task_update", **data}
 
         try:
@@ -106,7 +106,6 @@ class GlobalWorkerPool:
 
     async def _push_to_queues(self, subscribers: List[asyncio.Queue], message: dict):
         """向所有订阅者队列推送消息"""
-        print(f"[DEBUG] _push_to_queues: pushing to {len(subscribers)} queues")
         for queue in subscribers:
             try:
                 await queue.put(message)
@@ -131,6 +130,8 @@ class GlobalWorkerPool:
                 logger.info(f"[Task {task_id}] 释放 {released} workers")
             if task_id in self._task_executors:
                 del self._task_executors[task_id]
+            # 清理取消标志
+            self._cancelled_tasks.discard(task_id)
 
     def register_executor(self, task_id: str, executor: ThreadPoolExecutor):
         """注册任务的 executor"""
@@ -138,13 +139,23 @@ class GlobalWorkerPool:
             self._task_executors[task_id] = executor
 
     def cancel_task(self, task_id: str) -> bool:
-        """取消任务"""
+        """取消任务（设置取消标志并尝试关闭 executor）"""
         with self._lock:
+            # 设置取消标志（协作式取消）
+            self._cancelled_tasks.add(task_id)
+            logger.info(f"[Task {task_id}] 设置取消标志")
+
+            # 尝试关闭 executor（只能取消队列中的任务，运行中的任务需要协作式检查）
             executor = self._task_executors.get(task_id)
             if executor:
                 executor.shutdown(wait=False, cancel_futures=True)
                 return True
             return False
+
+    def is_cancelled(self, task_id: str) -> bool:
+        """检查任务是否被取消"""
+        with self._lock:
+            return task_id in self._cancelled_tasks
 
 
 # 全局单例
@@ -181,8 +192,6 @@ def _update_task_status(
     top_plan: Optional[dict] = None,
 ):
     """更新任务状态到数据库并广播"""
-    print(f"[DEBUG] _update_task_status: task_id={task_id}, status={status.value}, progress={progress}")
-
     with get_db_session() as db:
         task = db.query(EvaluationTask).filter(EvaluationTask.task_id == task_id).first()
         if not task:
@@ -221,8 +230,45 @@ def _update_task_status(
         })
 
 
+def _save_single_result(task_id: str, result_data: dict):
+    """保存单个评估结果到数据库（边评估边保存）"""
+    with get_db_session() as db:
+        task = db.query(EvaluationTask).filter(EvaluationTask.task_id == task_id).first()
+        if not task:
+            raise ValueError(f"Task {task_id} not found")
+
+        result = EvaluationResult(
+            task_id=task.id,
+            dp=result_data["parallelism"]["dp"],
+            tp=result_data["parallelism"]["tp"],
+            pp=result_data["parallelism"].get("pp", 1),
+            ep=result_data["parallelism"].get("ep", 1),
+            sp=result_data["parallelism"].get("sp", 1),
+            moe_tp=result_data["parallelism"].get("moe_tp"),
+            chips=result_data["chips"],
+            total_elapse_us=result_data["total_elapse_us"],
+            total_elapse_ms=result_data["total_elapse_ms"],
+            comm_elapse_us=result_data["comm_elapse_us"],
+            tps=result_data["tps"],
+            tps_per_batch=result_data["tps_per_batch"],
+            tps_per_chip=result_data["tps_per_chip"],
+            ttft=result_data.get("ttft", 0),
+            tpot=result_data.get("tpot", 0),
+            mfu=result_data["mfu"],
+            flops=result_data["flops"],
+            dram_occupy=result_data["dram_occupy"],
+            score=result_data["score"],
+            is_feasible=1 if result_data.get("is_feasible", True) else 0,
+            infeasible_reason=result_data.get("infeasible_reason"),
+            full_result=result_data,
+        )
+        db.add(result)
+        db.commit()
+        logger.info(f"[Task {task_id}] 保存结果: DP={result_data['parallelism']['dp']}, TP={result_data['parallelism']['tp']}, EP={result_data['parallelism']['ep']}")
+
+
 def _save_results(task_id: str, results: list, db: Session):
-    """保存评估结果到数据库"""
+    """批量保存评估结果到数据库（手动模式使用）"""
     task = db.query(EvaluationTask).filter(EvaluationTask.task_id == task_id).first()
     if not task:
         raise ValueError(f"Task {task_id} not found")
@@ -243,6 +289,8 @@ def _save_results(task_id: str, results: list, db: Session):
             tps=result_data["tps"],
             tps_per_batch=result_data["tps_per_batch"],
             tps_per_chip=result_data["tps_per_chip"],
+            ttft=result_data.get("ttft", 0),
+            tpot=result_data.get("tpot", 0),
             mfu=result_data["mfu"],
             flops=result_data["flops"],
             dram_occupy=result_data["dram_occupy"],
@@ -253,7 +301,7 @@ def _save_results(task_id: str, results: list, db: Session):
         )
         db.add(result)
 
-    task.experiment.completed_tasks += 1
+    # 注意：不再在这里更新 completed_tasks，因为前端现在直接统计 EvaluationResult 数量
     db.commit()
 
 
@@ -282,11 +330,24 @@ def _execute_evaluation(
     _worker_pool.register_executor(task_id, executor)
 
     try:
+        # 创建取消检查回调
+        def cancel_check() -> bool:
+            """检查任务是否被取消（协作式取消）"""
+            return _worker_pool.is_cancelled(task_id)
+
         # 调用评估函数
-        def progress_callback(current: int, total: int, message: str = ""):
+        def progress_callback(current: int, total: int, message: str = "", sub_tasks: list = None):
             progress = (current / total * 100) if total > 0 else 0
-            print(f"[DEBUG MANAGER] progress_callback: current={current}, total={total}, progress={progress}, message={message}")
-            _update_task_status(task_id, TaskStatus.RUNNING, progress, message)
+            search_stats = None
+            if sub_tasks is not None:
+                search_stats = {"sub_tasks": sub_tasks}
+            _update_task_status(task_id, TaskStatus.RUNNING, progress, message, search_stats=search_stats)
+
+        # 自动模式下边评估边保存，手动模式下最后统一保存
+        result_callback = None
+        if search_mode == 'auto':
+            def result_callback(result_data: dict):
+                _save_single_result(task_id, result_data)
 
         result = evaluate_deployment(
             topology=topology,
@@ -296,15 +357,22 @@ def _execute_evaluation(
             manual_parallelism=manual_parallelism,
             search_constraints=search_constraints,
             progress_callback=progress_callback,
+            result_callback=result_callback,
+            cancel_check=cancel_check,
             enable_tile_search=enable_tile_search,
             enable_partition_search=enable_partition_search,
             max_simulated_tokens=max_simulated_tokens,
         )
 
-        # 保存结果
-        with get_db_session() as db:
-            if result["top_k_plans"]:
-                _save_results(task_id, result["top_k_plans"], db)
+        # 保存结果（自动模式已经边评估边保存，只有手动模式需要在此保存）
+        if search_mode == 'manual':
+            with get_db_session() as db:
+                # 保存可行方案
+                if result["top_k_plans"]:
+                    _save_results(task_id, result["top_k_plans"], db)
+                # 也保存不可行方案（用于返回失败原因）
+                if result.get("infeasible_plans"):
+                    _save_results(task_id, result["infeasible_plans"], db)
 
         # 保存搜索统计
         search_stats = result.get("search_stats", {})
@@ -341,9 +409,14 @@ def _execute_evaluation(
         logger.info(f"[Task {task_id}] Completed successfully")
 
     except Exception as e:
-        error_msg = f"{str(e)}\n{traceback.format_exc()}"
-        logger.error(f"[Task {task_id}] Failed: {error_msg}")
-        _update_task_status(task_id, TaskStatus.FAILED, 0.0, "评估失败", error_msg)
+        # 检查是否为取消异常
+        if "TaskCancelledException" in str(type(e).__name__) or "cancelled" in str(e).lower():
+            logger.info(f"[Task {task_id}] Task cancelled by user")
+            _update_task_status(task_id, TaskStatus.CANCELLED, 0.0, "任务已取消")
+        else:
+            error_msg = f"{str(e)}\n{traceback.format_exc()}"
+            logger.error(f"[Task {task_id}] Failed: {error_msg}")
+            _update_task_status(task_id, TaskStatus.FAILED, 0.0, "评估失败", error_msg)
     finally:
         # 清理资源
         executor.shutdown(wait=True)
@@ -476,11 +549,22 @@ def get_task_results(task_id: str) -> Optional[dict]:
             return None
 
         results = db.query(EvaluationResult).filter(EvaluationResult.task_id == task.id).all()
+
+        # 按 is_feasible 区分可行方案和不可行方案
+        top_k_plans = []
+        infeasible_plans = []
+        for r in results:
+            if r.is_feasible:
+                top_k_plans.append(r.full_result)
+            else:
+                infeasible_plans.append(r.full_result)
+
         return {
             "task_id": task.task_id,
             "experiment_name": task.experiment.name,
             "status": task.status.value,
-            "top_k_plans": [r.full_result for r in results],
+            "top_k_plans": top_k_plans,
+            "infeasible_plans": infeasible_plans,
             "search_stats": task.search_stats,
         }
 

@@ -1369,7 +1369,12 @@ export const ConfigPanel: React.FC<ConfigPanelProps> = ({
               </AlertDialog>
               <Button
                 variant="outline"
-                onClick={() => setSaveModalOpen(true)}
+                onClick={() => {
+                  // 自动生成配置名称: P{Pod数}-R{Rack总数}-B{Board总数}-C{Chip总数}
+                  const autoName = `P${stats.pods}-R${stats.racks}-B${stats.boards}-C${stats.chips}`
+                  setConfigName(autoName)
+                  setSaveModalOpen(true)
+                }}
               >
                 <Save className="h-4 w-4 mr-1" />
                 保存配置
@@ -1443,8 +1448,13 @@ export const ConfigPanel: React.FC<ConfigPanelProps> = ({
                 {savedConfigs.map(config => {
                   // 计算汇总信息
                   const hasExtendedConfig = Boolean(config.rack_config || config.chip_configs)
-                  const totalChips = config.chip_configs?.reduce((sum, c) => sum + c.total_count, 0) || 0
                   const chipTypeNames = config.chip_configs?.map(c => c.hardware.chip_type).join(', ') || ''
+
+                  // 使用后端统计的数量（如果存在）
+                  const totalPods = (config as any).total_pods || 0
+                  const totalRacks = (config as any).total_racks || 0
+                  const totalBoards = (config as any).total_boards || 0
+                  const totalChips = (config as any).total_chips || 0
 
                   return (
                     <Card
@@ -1461,8 +1471,7 @@ export const ConfigPanel: React.FC<ConfigPanelProps> = ({
                             )}
                             <div className="mt-1">
                               <span className="text-gray-500 text-[11px]">
-                                Pod:{config.pod_count} | Rack:{config.racks_per_pod}
-                                {hasExtendedConfig && totalChips > 0 && ` | Chip: ${totalChips}`}
+                                Pod:{totalPods} | Rack:{totalRacks} | Board:{totalBoards} | Chip:{totalChips}
                               </span>
                             </div>
                             {hasExtendedConfig && chipTypeNames && (
