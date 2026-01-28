@@ -97,6 +97,8 @@ export function adaptSimulationResult(
   };
 
   // 3. 延迟分析（从后端 stats 提取）
+  // 注意：avgTpot 单位是微秒(us)，需要转换为毫秒(ms)
+  const avgTpotMs = stats.avgTpot / 1000.0;
   const latency: LatencyAnalysis = {
     prefill_compute_latency_ms: stats.prefill.computeTime,
     prefill_comm_latency_ms: stats.prefill.commTime,
@@ -105,17 +107,17 @@ export function adaptSimulationResult(
     decode_compute_latency_ms: stats.decode.computeTime,
     decode_memory_latency_ms: 0,
     decode_comm_latency_ms: stats.decode.commTime,
-    decode_per_token_latency_ms: stats.avgTpot,
+    decode_per_token_latency_ms: avgTpotMs,
     end_to_end_latency_ms: stats.totalRunTime,
     pipeline_bubble_ratio: stats.maxPpBubbleRatio,
     bottleneck_type: 'compute',
     bottleneck_details: '基于后端仿真结果',
   };
 
-  // 4. 吞吐量分析（从后端 stats 提取）
-  const throughput: ThroughputAnalysis = {
+  // 4. 吞吐量分析（优先使用后端计算的 throughput，否则降级计算）
+  const throughput: ThroughputAnalysis = simulation.throughput || {
     tokens_per_second: (stats.simulatedTokens / stats.totalRunTime) * 1000,
-    tps_per_batch: stats.avgTpot > 0 ? 1000 / stats.avgTpot : 0,
+    tps_per_batch: avgTpotMs > 0 ? 1000 / avgTpotMs : 0,
     tps_per_chip: 0,
     requests_per_second: 0,
     model_flops_utilization: stats.dynamicMfu,
@@ -141,7 +143,7 @@ export function adaptSimulationResult(
     plan: {
       plan_id: `${parallelism.tp > 1 ? `tp${parallelism.tp}` : ''}${parallelism.pp > 1 ? `_pp${parallelism.pp}` : ''}${parallelism.ep > 1 ? `_ep${parallelism.ep}` : ''}${parallelism.dp > 1 ? `_dp${parallelism.dp}` : ''}`.replace(/^_/, '') || 'single',
       parallelism,
-      total_chips: parallelism.dp * parallelism.tp,
+      total_chips: stats.totalChips || (parallelism.dp * parallelism.tp * parallelism.pp * parallelism.ep),
     },
     memory,
     communication,

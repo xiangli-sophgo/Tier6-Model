@@ -169,7 +169,7 @@ export const TaskDetailPanel: React.FC<TaskDetailPanelProps> = ({ task, onAnalyz
           <div className="space-y-0.5">
             <InfoRow label="综合得分" value={formatNumber(result.score)} />
             <InfoRow label="芯片数" value={result.chips || '-'} />
-            <InfoRow label="吞吐量 (TPS)" value={formatNumber(result.throughput)} />
+            <InfoRow label="吞吐量 (TPS)" value={formatNumber(result.tps)} />
             <InfoRow label="单芯片吞吐 (TPS/Chip)" value={formatNumber(result.tps_per_chip)} />
             <InfoRow label="TPOT (ms)" value={formatNumber(result.tpot, 4)} />
             <InfoRow label="TTFT (ms)" value={formatNumber(result.ttft, 4)} />

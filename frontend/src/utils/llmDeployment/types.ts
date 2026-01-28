@@ -402,18 +402,24 @@ export interface ThroughputAnalysis {
 
 /** 成本分析结果 */
 export interface CostAnalysis {
-  /** 硬件成本 ($/hour/chip) */
-  hardware_cost_per_hour: number;
-  /** 总硬件成本 ($/hour) */
-  total_hardware_cost_per_hour: number;
-  /** 成本每百万 token ($/M tokens) - 综合输入输出 */
+  /** 服务器总成本 ($) */
+  server_cost: number;
+  /** 互联总成本 ($) */
+  interconnect_cost: number;
+  /** 总成本 ($) */
+  total_cost: number;
+  /** 互联带宽需求 (Gbps) */
+  bandwidth_gbps: number;
+  /** 所需 lane 数量 */
+  lanes: number;
+  /** 单 lane 成本 ($/lane) */
+  lane_cost: number;
+  /** 单芯片摊派成本 ($) */
+  cost_per_chip: number;
+  /** 每百万 tokens 成本 ($/M tokens) */
   cost_per_million_tokens: number;
-  /** 输入 token 成本 ($/M tokens) */
-  input_cost_per_million_tokens: number;
-  /** 输出 token 成本 ($/M tokens) */
-  output_cost_per_million_tokens: number;
-  /** Token/美元 效率 */
-  tokens_per_dollar: number;
+  /** 模型大小 (GB) */
+  model_size_gb: number;
 }
 
 /** 资源利用率分析 */
@@ -851,7 +857,8 @@ export interface SimulationStats {
   dynamicMbu: number;
   maxPpBubbleRatio: number;
   totalEvents: number;
-  prefillFlops: number;
+  prefillFlops?: number;
+  totalChips?: number;
   /** 错误原因（仅当模拟失败时存在） */
   errorReason?: string;
 }
@@ -860,6 +867,8 @@ export interface SimulationStats {
 export interface SimulationResult {
   ganttChart: GanttChartData;
   stats: SimulationStats;
+  /** 吞吐量分析（后端计算） */
+  throughput?: ThroughputAnalysis;
   timestamp: number;
 }
 

@@ -678,163 +678,81 @@ export const MetricDetailCard: React.FC<MetricDetailCardProps> = ({ metric, resu
     case 'cost':
       const costData = result.cost
       if (!costData) return null
-      // 计算每小时处理的token数
-      const tokensPerHour = throughput.tokens_per_second * 3600
-      // 计算输出/输入成本比
-      const outputInputRatio = costData.input_cost_per_million_tokens > 0
-        ? (costData.output_cost_per_million_tokens / costData.input_cost_per_million_tokens).toFixed(1)
-        : '-'
+
+      // 格式化大数字
+      const formatCost = (val: number) => {
+        if (val >= 1e6) return `$${(val / 1e6).toFixed(2)}M`
+        if (val >= 1e3) return `$${(val / 1e3).toFixed(1)}K`
+        return `$${val.toFixed(0)}`
+      }
+
       return (
         <div style={detailWrapperStyle}>
           <div style={{ fontSize: 18, fontWeight: 600, color: '#fa8c16', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
             <span>Cost Analysis (成本分析)</span>
-            <span style={{ fontSize: 12, fontWeight: 400, color: '#8c8c8c' }}>经济性指标 · $/M tokens</span>
+            <span style={{ fontSize: 12, fontWeight: 400, color: '#8c8c8c' }}>集群采购成本 · 互联成本分层模型</span>
           </div>
           <div style={{ marginBottom: 16 }}>
-            <div style={sectionTitleStyle}>指标定义</div>
+            <div style={sectionTitleStyle}>成本模型说明</div>
             <div style={descStyle}>
-              每百万Token的推理成本，是衡量部署经济性的核心指标。
-              成本 = 硬件租用成本 / 吞吐量。输出成本通常是输入成本的3-5倍，
-              因为Decode阶段每token需要完整的前向传播，而Prefill可以批量处理。
+              LLM 推理集群成本由 <strong>服务器成本（线性）</strong> + <strong>互联成本（阶梯式）</strong> 构成。
+              互联成本根据芯片规模分层定价：8芯片引入交换机($55/lane)，64+芯片需全光方案($247/lane)。
             </div>
           </div>
 
-          <FormulaCard
-            title="核心公式"
-            tex={String.raw`\text{Cost}_{\text{/M}} = \frac{\text{Price}_{\text{chip}} \times N_{\text{chips}} \times 10^6}{\text{TPS}_{\text{total}} \times 3600}`}
-            description="(单芯片价格 × 芯片数 × 100万) / (总TPS × 3600)"
-            result={`$${costData.cost_per_million_tokens.toFixed(4)}`}
-            unit="/M tokens"
-            resultColor="#fa541c"
-          />
-
-          <VariableList
-            title="参数说明"
-            variables={[
-              {
-                symbol: '\\text{Price}_{\\text{chip}}',
-                name: '单芯片租用价格',
-                description: `云服务商每小时租用价格，当前 $${costData.hardware_cost_per_hour.toFixed(2)}/h`,
-              },
-              {
-                symbol: 'N_{\\text{chips}}',
-                name: '芯片数量',
-                description: `$= \\text{DP} \\times \\text{TP} \\times \\text{PP} \\times \\text{EP} = ${plan.total_chips}$`,
-              },
-              {
-                symbol: '\\text{TPS}_{\\text{total}}',
-                name: '集群总吞吐',
-                description: `$= \\text{TPS}_{\\text{chip}} \\times N_{\\text{chips}} = ${throughput.tokens_per_second.toFixed(0)}$ tok/s`,
-              },
-              {
-                symbol: '\\text{Cost}_{\\text{input}}',
-                name: '输入成本',
-                description: 'Prefill阶段成本，批量处理效率高',
-              },
-              {
-                symbol: '\\text{Cost}_{\\text{output}}',
-                name: '输出成本',
-                description: 'Decode阶段成本，逐token生成，通常是输入的3-5倍',
-              },
-            ]}
-          />
-
-          <CalculationSteps
-            title="计算分解"
-            steps={[
-              {
-                label: '总硬件成本',
-                formula: '\\text{Cost}_{\\text{hw}} = \\text{Price}_{\\text{chip}} \\times N_{\\text{chips}}',
-                value: `$${costData.hardware_cost_per_hour.toFixed(2)} × ${plan.total_chips}`,
-                unit: `= $${costData.total_hardware_cost_per_hour.toFixed(2)}/h`,
-              },
-              {
-                label: '每小时Token数',
-                formula: '\\text{Tokens/h} = \\text{TPS}_{\\text{total}} \\times 3600',
-                value: tokensPerHour.toExponential(2),
-                unit: 'tokens',
-              },
-              {
-                label: '每Token成本',
-                formula: '\\text{Cost}_{\\text{/tok}} = \\frac{\\text{Cost}_{\\text{hw}}}{\\text{Tokens/h}}',
-                value: (costData.total_hardware_cost_per_hour / tokensPerHour * 1e6).toFixed(4),
-                unit: '$/M tok',
-              },
-            ]}
-          />
-
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10, marginTop: 16 }}>
-            <div style={{
-              padding: '14px 12px',
-              background: '#fff7e6',
-              borderRadius: 10,
-              textAlign: 'center',
-            }}>
-              <div style={{ fontSize: 11, color: '#ad6800', marginBottom: 4 }}>综合成本</div>
-              <div style={{ fontSize: 18, fontWeight: 700, color: '#fa541c' }}>
-                ${costData.cost_per_million_tokens.toFixed(4)}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 16 }}>
+            <div style={{ padding: '12px', background: '#e6f7ff', borderRadius: 8, borderLeft: '3px solid #1890ff' }}>
+              <div style={{ fontSize: 11, color: '#0958d9', marginBottom: 4, fontWeight: 600 }}>服务器成本</div>
+              <div style={{ fontSize: 20, fontWeight: 700, color: '#1890ff' }}>
+                {formatCost(costData.server_cost)}
               </div>
-              <div style={{ fontSize: 10, color: '#ad6800' }}>/M tokens</div>
+              <div style={{ fontSize: 10, color: '#0958d9', marginTop: 2 }}>
+                {((costData.server_cost / costData.total_cost) * 100).toFixed(1)}% 占比
+              </div>
             </div>
-            <div style={{
-              padding: '14px 12px',
-              background: '#f6ffed',
-              borderRadius: 10,
-              textAlign: 'center',
-            }}>
-              <div style={{ fontSize: 11, color: '#389e0d', marginBottom: 4 }}>输入成本</div>
+            <div style={{ padding: '12px', background: '#fff7e6', borderRadius: 8, borderLeft: '3px solid #fa8c16' }}>
+              <div style={{ fontSize: 11, color: '#d46b08', marginBottom: 4, fontWeight: 600 }}>互联成本</div>
+              <div style={{ fontSize: 20, fontWeight: 700, color: '#fa8c16' }}>
+                {formatCost(costData.interconnect_cost)}
+              </div>
+              <div style={{ fontSize: 10, color: '#d46b08', marginTop: 2 }}>
+                {((costData.interconnect_cost / costData.total_cost) * 100).toFixed(1)}% 占比
+              </div>
+            </div>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 16 }}>
+            <div style={{ padding: '12px', background: '#fff1f0', borderRadius: 8, textAlign: 'center' }}>
+              <div style={{ fontSize: 11, color: '#cf1322', marginBottom: 4 }}>总成本</div>
+              <div style={{ fontSize: 18, fontWeight: 700, color: '#f5222d' }}>
+                {formatCost(costData.total_cost)}
+              </div>
+            </div>
+            <div style={{ padding: '12px', background: '#f6ffed', borderRadius: 8, textAlign: 'center' }}>
+              <div style={{ fontSize: 11, color: '#389e0d', marginBottom: 4 }}>单位成本</div>
               <div style={{ fontSize: 18, fontWeight: 700, color: '#52c41a' }}>
-                ${costData.input_cost_per_million_tokens.toFixed(4)}
+                ${costData.cost_per_million_tokens.toFixed(4)}
               </div>
               <div style={{ fontSize: 10, color: '#389e0d' }}>/M tokens</div>
             </div>
-            <div style={{
-              padding: '14px 12px',
-              background: '#fff1f0',
-              borderRadius: 10,
-              textAlign: 'center',
-            }}>
-              <div style={{ fontSize: 11, color: '#cf1322', marginBottom: 4 }}>输出成本</div>
-              <div style={{ fontSize: 18, fontWeight: 700, color: '#f5222d' }}>
-                ${costData.output_cost_per_million_tokens.toFixed(4)}
-              </div>
-              <div style={{ fontSize: 10, color: '#cf1322' }}>/M tokens</div>
-            </div>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginTop: 10 }}>
-            <div style={{
-              padding: '10px 14px',
-              background: '#f5f5f5',
-              borderRadius: 8,
-              fontSize: 12,
-              color: '#1f2937',
-              textAlign: 'center',
-            }}>
-              效率: <strong style={{ color: '#fa541c' }}>{costData.tokens_per_dollar.toExponential(2)}</strong> tokens/$
-            </div>
-            <div style={{
-              padding: '10px 14px',
-              background: '#f0f5ff',
-              borderRadius: 8,
-              fontSize: 12,
-              color: '#2f54eb',
-              textAlign: 'center',
-            }}>
-              输出/输入比: <strong>{outputInputRatio}×</strong>
-            </div>
+          <div style={{ marginBottom: 16, padding: '10px 12px', background: '#fafafa', borderRadius: 8, fontSize: 11, color: '#595959' }}>
+            <div style={{ marginBottom: 4 }}><strong>模型大小:</strong> {costData.model_size_gb.toFixed(1)} GB</div>
+            <div style={{ marginBottom: 4 }}><strong>互联带宽:</strong> {costData.bandwidth_gbps.toFixed(0)} Gbps ({costData.lanes.toFixed(0)} lanes)</div>
+            <div style={{ marginBottom: 4 }}><strong>Lane 成本:</strong> ${costData.lane_cost.toFixed(0)}/lane</div>
+            <div><strong>单芯成本:</strong> {formatCost(costData.cost_per_chip)}</div>
           </div>
 
-          <div style={{
-            marginTop: 12,
-            padding: '10px 14px',
-            background: '#fffbe6',
-            borderRadius: 8,
-            fontSize: 12,
-            color: '#ad6800',
-          }}>
-            💡 <strong>优化建议</strong>：在满足SLO（TPS/Batch ≥ 10）的前提下，
-            增大Batch Size可提高TPS/Chip，从而降低单位成本。
+          <div style={{ padding: '10px 12px', background: '#f0f5ff', borderRadius: 8, borderLeft: '3px solid #1890ff', fontSize: 11, color: '#0958d9' }}>
+            <div style={{ marginBottom: 4, fontWeight: 600 }}>💡 成本优化建议</div>
+            <div style={{ color: '#1f2937', lineHeight: 1.6 }}>
+              {plan.total_chips === 8 && '✅ 当前 8 芯片，单机方案，成本效率最优'}
+              {plan.total_chips > 8 && plan.total_chips < 16 && '⚠️ 9-15 芯片已引入交换机但规模不足，建议扩展到 16 芯片'}
+              {plan.total_chips >= 16 && plan.total_chips < 32 && '✅ 16-32 芯片规模，DAC 互联，成本可控'}
+              {plan.total_chips >= 32 && plan.total_chips < 64 && '⚠️ 互联成本占比较高，考虑优化 TP 并行度'}
+              {plan.total_chips >= 64 && '⚠️ 大规模集群，互联成本显著，建议评估 ROI'}
+            </div>
           </div>
         </div>
       )

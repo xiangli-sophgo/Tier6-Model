@@ -11,7 +11,6 @@ import {
   LLMModelConfig,
   HardwareConfig,
 } from '../../../utils/llmDeployment/types'
-import { configRowStyle } from './ConfigSelectors'
 
 // 数字输入框组件
 const NumberInput: React.FC<{
@@ -174,21 +173,15 @@ export const ParallelismConfigPanel: React.FC<ParallelismConfigPanelProps> = ({
           </div>
         ) : (
           <div>
-            <div style={configRowStyle}>
+            <div className="flex justify-between items-center mb-3">
               <span className="text-xs">最大使用芯片数</span>
               <Badge variant="outline" className="text-[11px] bg-green-50 text-green-700 border-green-200">
                 {maxChips} 个
               </Badge>
             </div>
-            <div style={configRowStyle}>
-              <span className="text-xs">优化目标</span>
-              <Badge variant="outline" className="text-[11px] bg-blue-50 text-blue-700 border-blue-200">
-                TPS per Chip
-              </Badge>
-            </div>
 
             {/* 搜索约束显示 */}
-            <div className="mt-3">
+            <div>
               <div
                 className="flex justify-between items-center cursor-pointer"
                 onClick={() => setShowConstraints(!showConstraints)}

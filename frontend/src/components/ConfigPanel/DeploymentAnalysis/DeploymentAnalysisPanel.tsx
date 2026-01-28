@@ -628,7 +628,7 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
             score: topPlan.score as number,
             ttft: topPlan.ttft as number,
             tpot: topPlan.tpot as number,
-            throughput: topPlan.throughput as number,
+            tps: topPlan.tps as number,
             mfu: topPlan.mfu as number,
             mbu: topPlan.mbu as number,
           })
@@ -833,10 +833,12 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
     const currentManualStrategy = { ...manualStrategy }
 
     try {
-      // 构建完整的拓扑配置（物理拓扑 + 通信延迟配置）
+      // 构建完整的拓扑配置（物理拓扑 + 通信延迟配置 + 硬件配置）
+      // 注意：后端 _extract_hardware_config 会检查 topology.hardware_config
       const fullTopology = {
         ...topology,
         comm_latency_config: { ...commLatencyConfig },
+        hardware_config: currentHardwareConfig,  // 嵌入硬件配置，确保 chip_type 正确传递
       }
 
       // 生成拓扑配置名称（如果未选择配置文件，则自动生成）

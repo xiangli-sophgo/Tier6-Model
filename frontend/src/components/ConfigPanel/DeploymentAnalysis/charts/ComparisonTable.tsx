@@ -25,8 +25,8 @@ interface ComparisonTableProps {
 const TABLE_ROWS = [
   {
     key: 'ttft',
-    label: 'FTL',
-    tooltip: '首 Token 延迟 (First Token Latency)',
+    label: 'TTFT',
+    tooltip: '首 Token 延迟 (Time To First Token)',
     formatValue: (v: number) => `${v.toFixed(2)} ms`,
     getFormula: (c: FormulaVsSimComparison) => c.formula.ttft_ms,
     getSim: (c: FormulaVsSimComparison) => c.simulation.ttft_ms,

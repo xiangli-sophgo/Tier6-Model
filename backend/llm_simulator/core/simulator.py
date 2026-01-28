@@ -10,7 +10,7 @@ LLM 推理模拟器核心
 from __future__ import annotations
 
 import time
-from typing import Any
+from typing import Any, Optional
 from dataclasses import dataclass, field
 
 from ..config import (
@@ -115,6 +115,8 @@ class LLMInferenceSimulator:
         progress_callback: callable | None = None,
         enable_tile_search: bool = True,
         enable_partition_search: bool = False,
+        max_gemm_processes: Optional[int] = None,
+        moe_tp: int | None = None,
     ):
         """
         初始化模拟器
@@ -136,24 +138,28 @@ class LLMInferenceSimulator:
         self.config = config or SimulationConfig()
         self.comm_latency_config = comm_latency_config
         self.progress_callback = progress_callback
+        self.moe_tp = moe_tp  # MoE 张量并行度（用于 MoE 层计算）
 
         # 初始化新评估器系统
         if self.config.use_precise_evaluator:
             # 根据硬件类型选择芯片架构预设
             chip_type = hardware.chip.chip_type
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.info(f"🔧 芯片类型: {chip_type}")
             try:
                 self.arch = get_arch_preset(chip_type)
-            except KeyError:
+                logger.info(f"✅ 使用架构预设: {self.arch.name}")
+            except (KeyError, ValueError) as e:
                 # 如果没有预设，使用默认 SG2260E
-                import logging
-                logger = logging.getLogger(__name__)
-                logger.warning(f"未找到 {chip_type} 的架构预设，使用 SG2260E")
+                logger.warning(f"未找到 {chip_type} 的架构预设 ({e})，使用 SG2260E")
                 self.arch = get_arch_preset("SG2260E")
 
             # 使用前端传递的通信延迟配置覆盖预设值
             if comm_latency_config:
                 # 覆盖芯片延迟配置
                 from ..evaluators.arch_config import CommunicationLatency
+
                 self.arch.comm_latency = CommunicationLatency(
                     chip_to_chip_us=comm_latency_config.get("chip_to_chip_us", self.arch.comm_latency.chip_to_chip_us),
                     memory_read_latency_us=comm_latency_config.get("memory_read_latency_us", self.arch.comm_latency.memory_read_latency_us),
@@ -164,6 +170,7 @@ class LLMInferenceSimulator:
 
             # 创建协议配置和网络基础设施配置对象 (供通信评估器使用)
             from ..config import ProtocolConfig, NetworkInfraConfig
+
             if comm_latency_config:
                 self.protocol_cfg = ProtocolConfig(
                     rtt_tp_us=comm_latency_config.get("rtt_tp_us", 0.35),
@@ -184,9 +191,10 @@ class LLMInferenceSimulator:
             # enable_partition_search=False 时使用固定分区（关闭分区搜索），速度提升100倍
             fast_mode = not enable_tile_search
             import logging
+
             logger = logging.getLogger(__name__)
-            logger.info(f"🔧 创建 GEMM 评估器: enable_tile_search={enable_tile_search}, enable_partition_search={enable_partition_search}, fast_mode={fast_mode}")
-            self.gemm_evaluator = create_gemm_evaluator(self.arch, fast_mode=fast_mode, enable_partition_search=enable_partition_search)
+            logger.info(f"🔧 创建 GEMM 评估器: enable_tile_search={enable_tile_search}, enable_partition_search={enable_partition_search}, fast_mode={fast_mode}, max_gemm_processes={max_gemm_processes}")
+            self.gemm_evaluator = create_gemm_evaluator(self.arch, fast_mode=fast_mode, enable_partition_search=enable_partition_search, max_gemm_processes=max_gemm_processes)
             evaluator_type = self.gemm_evaluator.__class__.__name__
             logger.info(f"✅ 使用 GEMM 评估器: {evaluator_type}")
 
@@ -197,6 +205,7 @@ class LLMInferenceSimulator:
             # - 多进程并行搜索 + 全局缓存复用
             if self.config.enable_gemm_prewarm:
                 import logging
+
                 logger = logging.getLogger(__name__)
                 logger.info("🚀 GEMM 懒加载模式：预热已禁用，将按需搜索并缓存")
                 # 注：如需启用预热，请在 SimulationConfig 中设置 enable_gemm_prewarm=True
@@ -373,16 +382,28 @@ class LLMInferenceSimulator:
             "batch_size": self.inference.batch_size,
             "seq_len": num_tokens,
             "tp": self.parallelism.tp,
+            "dp": self.parallelism.dp,
+            "ep": self.parallelism.ep,
             "comm_protocol": 1,
         }
 
         if is_moe:
-            # MoE层
-            ffn_config.update({
-                "num_experts": self.model.moe_config.num_experts,
-                "num_experts_per_tok": self.model.moe_config.num_experts_per_tok,
-                "expert_intermediate_size": self.model.moe_config.expert_intermediate_size,
-            })
+            # MoE层 - 需要额外的 moe_tp 参数
+            # 从拓扑配置中获取 moe_tp，如果没有则根据 MoE 约束计算
+            # MoE 约束: DP × TP = MoE_TP × EP
+            moe_tp = self.moe_tp
+            if moe_tp is None:
+                # 根据约束计算: moe_tp = (dp * tp) / ep
+                moe_tp = (self.parallelism.dp * self.parallelism.tp) // self.parallelism.ep if self.parallelism.ep > 0 else 1
+
+            ffn_config.update(
+                {
+                    "num_experts": self.model.moe_config.num_experts,
+                    "num_experts_per_tok": self.model.moe_config.num_experts_per_tok,
+                    "expert_intermediate_size": self.model.moe_config.expert_intermediate_size,
+                    "moe_tp": moe_tp,
+                }
+            )
             ffn_layer = MoELayer(name=f"layer_{layer_index}_moe", config=ffn_config)
         else:
             # 标准MLP层
@@ -390,10 +411,7 @@ class LLMInferenceSimulator:
 
         # ========== 3. 合并Attention和FFN的算子 ==========
         # 创建组合层，包含完整的Transformer层
-        combined_layer = BaseLayer(
-            name=f"layer_{layer_index}",
-            layer_type="TransformerLayer"
-        )
+        combined_layer = BaseLayer(name=f"layer_{layer_index}", layer_type="TransformerLayer")
 
         # 添加Attention的所有算子
         for op in attention_layer.comp_ops:
@@ -436,6 +454,7 @@ class LLMInferenceSimulator:
 
         # 评估所有计算算子
         import logging
+
         logger = logging.getLogger(__name__)
 
         total_ops = len(layer.comp_ops)
@@ -452,8 +471,8 @@ class LLMInferenceSimulator:
                 continue
 
             # 报告详细进度（每10个算子或最后一个）
-            if (op_idx + 1) % 10 == 0 or (op_idx + 1) == total_ops:
-                logger.info(f"      评估算子 {op_idx + 1}/{total_ops} (缓存命中: {cached_ops}, 已评估: {evaluated_ops})")
+            # if (op_idx + 1) % 10 == 0 or (op_idx + 1) == total_ops:
+            # logger.info(f"      评估算子 {op_idx + 1}/{total_ops} (缓存命中: {cached_ops}, 已评估: {evaluated_ops})")
 
             # 评估算子
             if op.operator_type == "MatMulOperator":
@@ -574,6 +593,7 @@ class LLMInferenceSimulator:
     def _report_progress(self, percent: float, message: str):
         """报告进度"""
         import sys
+
         print(f"[DEBUG SIMULATOR] _report_progress: percent={percent}, message={message}", flush=True)
         sys.stdout.flush()
         if self.progress_callback:
@@ -591,6 +611,7 @@ class LLMInferenceSimulator:
             模拟结果
         """
         import logging
+
         logger = logging.getLogger(__name__)
 
         wall_start = time.time()
@@ -608,25 +629,19 @@ class LLMInferenceSimulator:
         if self.config.enable_data_transfer:
             current_time = self._simulate_data_transfer_h2d(current_time)
         h2d_wall_time = (time.time() - phase_start) * 1000
-        logger.info(f"⏱️  [H2D] 墙上时间: {h2d_wall_time:.2f}ms")
         self._report_progress(10, "H2D 完成")
 
         # 阶段2: Prefill 推理 (10-50%)
-        logger.info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-        logger.info("🚀 开始 Prefill 推理阶段")
-        logger.info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
         phase_start = time.time()
         prefill_end_time = self._simulate_prefill_with_progress(current_time)
         phase_transition = prefill_end_time
         prefill_wall_time = (time.time() - phase_start) * 1000
-        logger.info(f"⏱️  [Prefill] 墙上时间: {prefill_wall_time:.2f}ms, 模拟时间: {prefill_end_time:.2f}ms")
 
         # 阶段3: Decode 推理 (50-90%)
         phase_start = time.time()
         decode_end_time = self._simulate_decode_with_progress(prefill_end_time)
         decode_wall_time = (time.time() - phase_start) * 1000
         num_tokens = min(self.config.max_simulated_tokens, self.inference.output_seq_length)
-        logger.info(f"⏱️  [Decode] 墙上时间: {decode_wall_time:.2f}ms ({decode_wall_time/num_tokens:.2f}ms/token), 模拟时间: {decode_end_time - prefill_end_time:.2f}ms")
 
         # 阶段4: 数据收集 (D2H)
         self._report_progress(90, "D2H 数据传输...")
@@ -636,35 +651,27 @@ class LLMInferenceSimulator:
         else:
             final_time = decode_end_time
         d2h_wall_time = (time.time() - phase_start) * 1000
-        logger.info(f"⏱️  [D2H] 墙上时间: {d2h_wall_time:.2f}ms")
 
         # 构建甘特图
         self._report_progress(93, "构建 Gantt 图...")
         phase_start = time.time()
         gantt_data = self.gantt_builder.build(phase_transition=phase_transition)
         gantt_wall_time = (time.time() - phase_start) * 1000
-        logger.info(f"⏱️  [Gantt Build] 墙上时间: {gantt_wall_time:.2f}ms")
 
         # 计算统计信息
         self._report_progress(96, "计算统计信息...")
         phase_start = time.time()
         stats = self._compute_stats(final_time)
         stats_wall_time = (time.time() - phase_start) * 1000
-        logger.info(f"⏱️  [Stats] 墙上时间: {stats_wall_time:.2f}ms")
 
         total_wall_time = (time.time() - wall_start) * 1000
-        logger.info(f"⏱️  [Total] 总墙上时间: {total_wall_time:.2f}ms")
 
         # 📊 打印 GEMM 缓存统计（如果使用了精确评估器）
-        if self.config.use_precise_evaluator and hasattr(self, 'gemm_evaluator'):
+        if self.config.use_precise_evaluator and hasattr(self, "gemm_evaluator"):
             logger.info("")  # 空行分隔
             self.gemm_evaluator.print_cache_stats()
 
         # 📊 打印性能摘要
-        logger.info("")
-        logger.info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-        logger.info("📈 性能摘要 (墙上时间)")
-        logger.info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
         # 计算各阶段时间占比
         stages = [
@@ -836,6 +843,7 @@ class LLMInferenceSimulator:
 
         # Prefill 进度: 10% - 50%
         import logging
+
         logger = logging.getLogger(__name__)
 
         logger.info(f"━━ 开始 Prefill 阶段：共 {num_layers} 层 ━━")
@@ -917,6 +925,7 @@ class LLMInferenceSimulator:
     def _simulate_decode(self, start_time: float) -> float:
         """模拟 Decode 阶段"""
         import logging
+
         logger = logging.getLogger(__name__)
 
         current_time = start_time
@@ -994,6 +1003,7 @@ class LLMInferenceSimulator:
     def _simulate_decode_with_progress(self, start_time: float) -> float:
         """模拟 Decode 阶段 (带进度报告)"""
         import logging
+
         logger = logging.getLogger(__name__)
 
         current_time = start_time
@@ -1117,21 +1127,22 @@ class LLMInferenceSimulator:
         if self.config.evaluation_granularity == "fine":
             # 检查是否为 MoE 层且启用了 TBO 优化
             from ..layers import MoELayer
+
             if self.config.enable_tbo and isinstance(layer, MoELayer):
                 # TBO 模式: 标记被重叠隐藏的通信算子
-                dispatch_lat = layer._get_operator_latency('dispatch')
-                combine_lat = layer._get_operator_latency('combine')
+                dispatch_lat = layer._get_operator_latency("dispatch")
+                combine_lat = layer._get_operator_latency("combine")
 
-                routed_gate_lat = layer._get_operator_latency('routed_gate')
-                routed_up_lat = layer._get_operator_latency('routed_up')
-                routed_down_lat = layer._get_operator_latency('routed_down')
-                routed_allreduce_lat = layer._get_operator_latency('routed_allreduce')
+                routed_gate_lat = layer._get_operator_latency("routed_gate")
+                routed_up_lat = layer._get_operator_latency("routed_up")
+                routed_down_lat = layer._get_operator_latency("routed_down")
+                routed_allreduce_lat = layer._get_operator_latency("routed_allreduce")
                 routed_compute_lat = routed_gate_lat + routed_up_lat + routed_down_lat + routed_allreduce_lat
 
-                shared_gate_lat = layer._get_operator_latency('shared_gate')
-                shared_up_lat = layer._get_operator_latency('shared_up')
-                shared_down_lat = layer._get_operator_latency('shared_down')
-                shared_allreduce_lat = layer._get_operator_latency('shared_allreduce')
+                shared_gate_lat = layer._get_operator_latency("shared_gate")
+                shared_up_lat = layer._get_operator_latency("shared_up")
+                shared_down_lat = layer._get_operator_latency("shared_down")
+                shared_allreduce_lat = layer._get_operator_latency("shared_allreduce")
                 shared_compute_lat = shared_gate_lat + shared_up_lat + shared_down_lat + shared_allreduce_lat
 
                 # 计算被隐藏的延迟
@@ -1148,39 +1159,36 @@ class LLMInferenceSimulator:
 
                     # 构造详细信息字典
                     extra_fields = {
-                        'flops': op.flops,
-                        'params_bytes': op.param,
-                        'dram_occupy_bytes': op.dram_occupy,
-                        'dram_traffic_bytes': op.dram_traffic,
-                        'compute_time_us': op.comp_elapse,
-                        'memory_time_us': op.dma_elapse,
-                        'arch_utilization': op.urate,
-                        'parallel_config': {
-                            'tp': self.parallelism.tp,
-                            'dp': self.parallelism.dp,
-                            'pp': self.parallelism.pp,
-                            'ep': self.parallelism.ep,
-                            'sp': self.parallelism.sp,
-                        }
+                        "flops": op.flops,
+                        "params_bytes": op.param,
+                        "dram_occupy_bytes": op.dram_occupy,
+                        "dram_traffic_bytes": op.dram_traffic,
+                        "compute_time_us": op.comp_elapse,
+                        "memory_time_us": op.dma_elapse,
+                        "arch_utilization": op.urate,
+                        "parallel_config": {
+                            "tp": self.parallelism.tp,
+                            "dp": self.parallelism.dp,
+                            "pp": self.parallelism.pp,
+                            "ep": self.parallelism.ep,
+                            "sp": self.parallelism.sp,
+                        },
                     }
 
                     # 添加 GEMM 优化结果
                     if op.best_tile is not None:
-                        extra_fields['best_tile'] = op.best_tile
+                        extra_fields["best_tile"] = op.best_tile
                     if op.best_partition is not None:
-                        extra_fields['best_partition'] = op.best_partition
-                    if hasattr(op, 'parallel_params') and op.parallel_params:
-                        extra_fields['gemm_shape'] = {
-                            'G': op.parallel_params.get('G'),
-                            'M': op.parallel_params.get('M'),
-                            'K': op.parallel_params.get('K'),
-                            'N': op.parallel_params.get('N'),
+                        extra_fields["best_partition"] = op.best_partition
+                    if hasattr(op, "parallel_params") and op.parallel_params:
+                        extra_fields["gemm_shape"] = {
+                            "G": op.parallel_params.get("G"),
+                            "M": op.parallel_params.get("M"),
+                            "K": op.parallel_params.get("K"),
+                            "N": op.parallel_params.get("N"),
                         }
 
-                    self.gantt_builder.add_compute_task(
-                        task_type, current_time, latency_ms, phase, chip_id, pp_stage, layer_index, token_index,
-                        **extra_fields
-                    )
+                    self.gantt_builder.add_compute_task(task_type, current_time, latency_ms, phase, chip_id, pp_stage, layer_index, token_index, **extra_fields)
                     current_time += latency_ms
 
                 # 遍历通信算子 (应用 TBO 重叠)
@@ -1189,9 +1197,9 @@ class LLMInferenceSimulator:
                     latency_ms = op.comm_elapse / 1000
 
                     # 如果是 dispatch 或 combine，减去被隐藏的部分
-                    if op.name.endswith('dispatch') and dispatch_hidden > 0:
+                    if op.name.endswith("dispatch") and dispatch_hidden > 0:
                         effective_latency_ms = max(0, latency_ms - dispatch_hidden / 1000)
-                    elif op.name.endswith('combine') and combine_hidden > 0:
+                    elif op.name.endswith("combine") and combine_hidden > 0:
                         effective_latency_ms = max(0, latency_ms - combine_hidden / 1000)
                     else:
                         effective_latency_ms = latency_ms
@@ -1199,34 +1207,31 @@ class LLMInferenceSimulator:
                     if effective_latency_ms > 0:
                         # 推断通信组大小
                         comm_group_size = 1
-                        if 'tp' in op.comm_kind or 'allreduce' in op.comm_kind.lower():
+                        if "tp" in op.comm_kind or "allreduce" in op.comm_kind.lower():
                             comm_group_size = self.parallelism.tp
-                        elif 'dp' in op.comm_kind:
+                        elif "dp" in op.comm_kind:
                             comm_group_size = self.parallelism.dp
-                        elif 'ep' in op.comm_kind or 'dispatch' in op.comm_kind or 'combine' in op.comm_kind:
+                        elif "ep" in op.comm_kind or "dispatch" in op.comm_kind or "combine" in op.comm_kind:
                             comm_group_size = self.parallelism.ep
-                        elif 'sp' in op.comm_kind:
+                        elif "sp" in op.comm_kind:
                             comm_group_size = self.parallelism.sp
 
                         # 构造通信详细信息
                         comm_extra = {
-                            'comm_size_bytes': op.comm_size,
-                            'comm_time_us': op.comm_elapse,
-                            'comm_algorithm': op.parallel_params.get('algorithm', 'unknown'),
-                            'comm_group_size': comm_group_size,
-                            'parallel_config': {
-                                'tp': self.parallelism.tp,
-                                'dp': self.parallelism.dp,
-                                'pp': self.parallelism.pp,
-                                'ep': self.parallelism.ep,
-                                'sp': self.parallelism.sp,
-                            }
+                            "comm_size_bytes": op.comm_size,
+                            "comm_time_us": op.comm_elapse,
+                            "comm_algorithm": op.parallel_params.get("algorithm", "unknown"),
+                            "comm_group_size": comm_group_size,
+                            "parallel_config": {
+                                "tp": self.parallelism.tp,
+                                "dp": self.parallelism.dp,
+                                "pp": self.parallelism.pp,
+                                "ep": self.parallelism.ep,
+                                "sp": self.parallelism.sp,
+                            },
                         }
 
-                        self.gantt_builder.add_comm_task(
-                            task_type, current_time, effective_latency_ms, phase, chip_id, pp_stage, layer_index, token_index,
-                            **comm_extra
-                        )
+                        self.gantt_builder.add_comm_task(task_type, current_time, effective_latency_ms, phase, chip_id, pp_stage, layer_index, token_index, **comm_extra)
                         current_time += effective_latency_ms
             else:
                 # 标准模式: 细粒度遍历所有算子
@@ -1236,39 +1241,36 @@ class LLMInferenceSimulator:
 
                     # 构造详细信息字典
                     extra_fields = {
-                        'flops': op.flops,
-                        'params_bytes': op.param,
-                        'dram_occupy_bytes': op.dram_occupy,
-                        'dram_traffic_bytes': op.dram_traffic,
-                        'compute_time_us': op.comp_elapse,
-                        'memory_time_us': op.dma_elapse,
-                        'arch_utilization': op.urate,
-                        'parallel_config': {
-                            'tp': self.parallelism.tp,
-                            'dp': self.parallelism.dp,
-                            'pp': self.parallelism.pp,
-                            'ep': self.parallelism.ep,
-                            'sp': self.parallelism.sp,
-                        }
+                        "flops": op.flops,
+                        "params_bytes": op.param,
+                        "dram_occupy_bytes": op.dram_occupy,
+                        "dram_traffic_bytes": op.dram_traffic,
+                        "compute_time_us": op.comp_elapse,
+                        "memory_time_us": op.dma_elapse,
+                        "arch_utilization": op.urate,
+                        "parallel_config": {
+                            "tp": self.parallelism.tp,
+                            "dp": self.parallelism.dp,
+                            "pp": self.parallelism.pp,
+                            "ep": self.parallelism.ep,
+                            "sp": self.parallelism.sp,
+                        },
                     }
 
                     # 添加 GEMM 优化结果
                     if op.best_tile is not None:
-                        extra_fields['best_tile'] = op.best_tile
+                        extra_fields["best_tile"] = op.best_tile
                     if op.best_partition is not None:
-                        extra_fields['best_partition'] = op.best_partition
-                    if hasattr(op, 'parallel_params') and op.parallel_params:
-                        extra_fields['gemm_shape'] = {
-                            'G': op.parallel_params.get('G'),
-                            'M': op.parallel_params.get('M'),
-                            'K': op.parallel_params.get('K'),
-                            'N': op.parallel_params.get('N'),
+                        extra_fields["best_partition"] = op.best_partition
+                    if hasattr(op, "parallel_params") and op.parallel_params:
+                        extra_fields["gemm_shape"] = {
+                            "G": op.parallel_params.get("G"),
+                            "M": op.parallel_params.get("M"),
+                            "K": op.parallel_params.get("K"),
+                            "N": op.parallel_params.get("N"),
                         }
 
-                    self.gantt_builder.add_compute_task(
-                        task_type, current_time, latency_ms, phase, chip_id, pp_stage, layer_index, token_index,
-                        **extra_fields
-                    )
+                    self.gantt_builder.add_compute_task(task_type, current_time, latency_ms, phase, chip_id, pp_stage, layer_index, token_index, **extra_fields)
                     current_time += latency_ms
 
                 # 遍历所有通信算子
@@ -1278,55 +1280,44 @@ class LLMInferenceSimulator:
 
                     # 推断通信组大小
                     comm_group_size = 1
-                    if 'tp' in op.comm_kind or 'allreduce' in op.comm_kind.lower():
+                    if "tp" in op.comm_kind or "allreduce" in op.comm_kind.lower():
                         comm_group_size = self.parallelism.tp
-                    elif 'dp' in op.comm_kind:
+                    elif "dp" in op.comm_kind:
                         comm_group_size = self.parallelism.dp
-                    elif 'ep' in op.comm_kind or 'dispatch' in op.comm_kind or 'combine' in op.comm_kind:
+                    elif "ep" in op.comm_kind or "dispatch" in op.comm_kind or "combine" in op.comm_kind:
                         comm_group_size = self.parallelism.ep
-                    elif 'sp' in op.comm_kind:
+                    elif "sp" in op.comm_kind:
                         comm_group_size = self.parallelism.sp
 
                     # 构造通信详细信息
                     comm_extra = {
-                        'comm_size_bytes': op.comm_size,
-                        'comm_time_us': op.comm_elapse,
-                        'comm_algorithm': op.parallel_params.get('algorithm', 'unknown'),
-                        'comm_group_size': comm_group_size,
-                        'parallel_config': {
-                            'tp': self.parallelism.tp,
-                            'dp': self.parallelism.dp,
-                            'pp': self.parallelism.pp,
-                            'ep': self.parallelism.ep,
-                            'sp': self.parallelism.sp,
-                        }
+                        "comm_size_bytes": op.comm_size,
+                        "comm_time_us": op.comm_elapse,
+                        "comm_algorithm": op.parallel_params.get("algorithm", "unknown"),
+                        "comm_group_size": comm_group_size,
+                        "parallel_config": {
+                            "tp": self.parallelism.tp,
+                            "dp": self.parallelism.dp,
+                            "pp": self.parallelism.pp,
+                            "ep": self.parallelism.ep,
+                            "sp": self.parallelism.sp,
+                        },
                     }
 
-                    self.gantt_builder.add_comm_task(
-                        task_type, current_time, latency_ms, phase, chip_id, pp_stage, layer_index, token_index,
-                        **comm_extra
-                    )
+                    self.gantt_builder.add_comm_task(task_type, current_time, latency_ms, phase, chip_id, pp_stage, layer_index, token_index, **comm_extra)
                     current_time += latency_ms
         else:
             # 粗粒度：聚合整层
             # 检查是否为 MoE 层且启用了 TBO 优化
             from ..layers import MoELayer
+
             if self.config.enable_tbo and isinstance(layer, MoELayer):
                 # 使用 TBO 优化计算延迟
                 total_layer_time = layer.calculate_latency_with_tbo() / 1000  # us -> ms
 
                 # 添加聚合任务到甘特图
                 if total_layer_time > 0:
-                    self.gantt_builder.add_compute_task(
-                        GanttTaskType.MOE_EXPERT,
-                        current_time,
-                        total_layer_time,
-                        phase,
-                        chip_id,
-                        pp_stage,
-                        layer_index,
-                        token_index
-                    )
+                    self.gantt_builder.add_compute_task(GanttTaskType.MOE_EXPERT, current_time, total_layer_time, phase, chip_id, pp_stage, layer_index, token_index)
                     current_time += total_layer_time
             else:
                 # 标准模式：简单求和
@@ -1345,13 +1336,15 @@ class LLMInferenceSimulator:
 
         # 📊 性能日志（打印前3层的详细timing，或decode第一个token的所有层）
         import logging
+
         logger = logging.getLogger(__name__)
 
         # 条件1: Prefill阶段的前3层
         # 条件2: Decode第一个token的前3层
         # 条件3: 如果环境变量设置了详细日志，打印所有层
         import os
-        verbose_logging = os.environ.get('GEMM_VERBOSE_LOGGING', '0') == '1'
+
+        verbose_logging = os.environ.get("GEMM_VERBOSE_LOGGING", "0") == "1"
 
         should_log = False
         if phase == InferencePhase.PREFILL and layer_index < 3:
@@ -1697,6 +1690,7 @@ def run_simulation(
     enable_tile_search: bool = True,
     enable_partition_search: bool = False,
     max_simulated_tokens: int = 4,
+    max_gemm_processes: Optional[int] = None,
 ) -> dict[str, Any]:
     """
     运行模拟的入口函数
@@ -1762,6 +1756,9 @@ def run_simulation(
         sp=parallelism_dict.get("sp", 1),
     )
 
+    # 获取 MoE 相关的 moe_tp 参数（从 parallelism_dict 中获取）
+    moe_tp = parallelism_dict.get("moe_tp")
+
     chip_hw = hardware_dict.get("chip", {})
     node_hw = hardware_dict.get("node", {})
     cluster_hw = hardware_dict.get("cluster", {})
@@ -1819,6 +1816,8 @@ def run_simulation(
         progress_callback=progress_callback,
         enable_tile_search=enable_tile_search,
         enable_partition_search=enable_partition_search,
+        max_gemm_processes=max_gemm_processes,
+        moe_tp=moe_tp,
     )
 
     result = simulator.simulate()
@@ -1828,8 +1827,28 @@ def run_simulation(
 
     # 计算吞吐量指标
     total_chips = parallelism.dp * parallelism.tp * parallelism.pp * parallelism.ep
-    tps = 1_000_000.0 / result.stats.avg_tpot if result.stats.avg_tpot > 0 else 0.0  # tokens/秒
-    tps_per_chip = tps / total_chips if total_chips > 0 else 0.0
+
+    # TPOT 转换：微秒 -> 毫秒
+    tpot_ms = result.stats.avg_tpot / 1000.0 if result.stats.avg_tpot > 0 else 0.0
+
+    # TPS per Batch: 单个请求每秒生成的token数 (用户体验指标)
+    # 公式: 1000ms/s / TPOT(ms/token) = tokens/s per request
+    tps_per_batch = 1000.0 / tpot_ms if tpot_ms > 0 else 0.0
+
+    # TPS per Chip: 单芯片（单DP rank）每秒处理的总token数 (成本效益指标)
+    # 公式: TPS_batch × batch_size = tokens/s per chip
+    tps_per_chip = tps_per_batch * inference.batch_size
+
+    # Total TPS: 集群总吞吐量 (tokens/s)
+    # 公式: TPS_chip × DP = total tokens/s (DP线性扩展吞吐)
+    tokens_per_second = tps_per_chip * parallelism.dp
+
+    # 理论峰值吞吐量（基于硬件算力，仅作参考）
+    theoretical_max_tps = tokens_per_second / max(result.stats.dynamic_mfu, 0.01) if result.stats.dynamic_mfu > 0 else 0.0
+
+    # Requests per second: 每秒处理的请求数
+    # 在持续decode场景下，每个请求占用一个batch slot
+    requests_per_second = tokens_per_second / inference.output_seq_length if inference.output_seq_length > 0 else 0.0
 
     return {
         "ganttChart": convert_to_frontend_format(result.gantt_chart),
@@ -1854,13 +1873,21 @@ def run_simulation(
             "simulatedTokens": result.stats.simulated_tokens,
             "ttft": result.stats.ttft,
             "avgTpot": result.stats.avg_tpot,
-            "tps": tps,  # 新增：吞吐量（tokens/秒）
-            "tpsPerChip": tps_per_chip,  # 新增：每芯片吞吐量（tokens/秒）
-            "totalChips": total_chips,  # 新增：总芯片数
             "dynamicMfu": result.stats.dynamic_mfu,
             "dynamicMbu": result.stats.dynamic_mbu,
             "maxPPBubbleRatio": result.stats.max_pp_bubble_ratio,
             "totalEvents": result.stats.total_events,
+            "totalChips": total_chips,
+        },
+        # 吞吐量指标（独立对象，与前端 ThroughputAnalysis 对应）
+        "throughput": {
+            "tokens_per_second": tokens_per_second,           # 集群总吞吐 (tokens/s)
+            "tps_per_batch": tps_per_batch,                   # 单请求TPS (tokens/s per request) - 用户体验指标
+            "tps_per_chip": tps_per_chip,                     # 单芯片TPS (tokens/s per chip) - 成本效益指标
+            "requests_per_second": requests_per_second,       # 请求吞吐 (requests/s)
+            "model_flops_utilization": result.stats.dynamic_mfu,  # MFU (0-1)
+            "memory_bandwidth_utilization": result.stats.dynamic_mbu,  # MBU (0-1)
+            "theoretical_max_throughput": theoretical_max_tps,  # 理论峰值吞吐 (tokens/s)
         },
         "timestamp": result.timestamp,
     }

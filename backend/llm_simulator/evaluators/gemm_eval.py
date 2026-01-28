@@ -75,7 +75,7 @@ class GEMMResult:
 class GEMMEvaluator:
     """GEMM 精确评估器"""
 
-    def __init__(self, arch: AcceleratorMicroArch, enable_partition_search: bool = True, enable_tile_search: bool = True):
+    def __init__(self, arch: AcceleratorMicroArch, enable_partition_search: bool = True, enable_tile_search: bool = True, max_gemm_processes: Optional[int] = None):
         """
         初始化评估器
 
@@ -83,10 +83,12 @@ class GEMMEvaluator:
             arch: 硬件微架构配置
             enable_partition_search: 是否启用分区搜索（False时使用固定分区，速度提升100倍）
             enable_tile_search: 是否启用 tile 搜索（False时使用固定 tile）
+            max_gemm_processes: GEMM 并行搜索的最大进程数（None 时自动设置为 cpu_count() // 2）
         """
         self.arch = arch
         self.enable_partition_search = enable_partition_search
         self.enable_tile_search = enable_tile_search
+        self.max_gemm_processes = max_gemm_processes
         self._valid_partitions = self._compute_valid_partitions()
 
         # 持久化缓存管理器（自动加载磁盘缓存）
@@ -651,8 +653,11 @@ class GEMMEvaluator:
             for p_g, p_m, p_n, p_k in self._valid_partitions
         ]
 
-        # 使用多进程池（限制到 CPU 核心数的一半，避免系统过载）
-        max_workers = max(1, cpu_count() // 2)
+        # 使用多进程池（限制到指定数量或 CPU 核心数的一半，避免系统过载）
+        if self.max_gemm_processes is not None:
+            max_workers = max(1, self.max_gemm_processes)
+        else:
+            max_workers = max(1, cpu_count() // 2)
         num_processes = min(len(tasks), max_workers)
 
         try:

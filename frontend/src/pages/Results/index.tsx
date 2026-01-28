@@ -63,6 +63,7 @@ import { ChartsPanel } from '@/components/ConfigPanel/DeploymentAnalysis/charts'
 import { PlanAnalysisResult, HardwareConfig, LLMModelConfig, InferenceConfig } from '@/utils/llmDeployment/types'
 import TaskTable from './components/TaskTable'
 import TaskDetailPanel from './components/TaskDetailPanel'
+import { useWorkbench } from '@/contexts/WorkbenchContext'
 
 // 分页组件
 const Pagination: React.FC<{
@@ -128,6 +129,7 @@ const Pagination: React.FC<{
 }
 
 export const Results: React.FC = () => {
+  const { ui } = useWorkbench()
   const [experiments, setExperiments] = useState<Experiment[]>([])
   const [loading, setLoading] = useState(false)
   const [selectedExperimentId, setSelectedExperimentId] = useState<number | null>(null)
@@ -179,10 +181,12 @@ export const Results: React.FC = () => {
     }
   }
 
-  // 首次加载
+  // 当切换到结果管理页面时自动刷新
   useEffect(() => {
-    loadExperiments()
-  }, [])
+    if (ui.viewMode === 'results') {
+      loadExperiments()
+    }
+  }, [ui.viewMode])
 
   // 加载实验详情
   const loadExperimentDetail = async (id: number) => {
@@ -386,9 +390,9 @@ export const Results: React.FC = () => {
         bottleneck_type: 'balanced' as const,
       },
       throughput: {
-        tokens_per_second: plan.throughput,
+        tokens_per_second: plan.tps,
         tps_per_chip: plan.tps_per_chip,
-        tps_per_batch: plan.throughput,
+        tps_per_batch: plan.tps_per_batch,
         model_flops_utilization: plan.mfu,
         memory_bandwidth_utilization: plan.mbu,
       },
@@ -396,6 +400,7 @@ export const Results: React.FC = () => {
         total_per_chip_gb: plan.dram_occupy ? plan.dram_occupy / (1024 * 1024 * 1024) : 0,  // 字节转 GB
         is_memory_sufficient: true,
       },
+      cost: plan.cost || undefined,
       communication: {},
       utilization: {},
       score: {
@@ -515,12 +520,6 @@ export const Results: React.FC = () => {
                   topKPlans={analysisResults}
                   loading={taskResultsLoading}
                   viewMode="detail"
-                  hardware={hardwareConfig}
-                  model={modelConfig as unknown as LLMModelConfig}
-                  inference={inferenceConfig as unknown as InferenceConfig}
-                  configSnapshot={selectedTask.config_snapshot}
-                  benchmarkName={selectedTask.benchmark_name}
-                  topologyConfigName={selectedTask.topology_config_name}
                   onSelectPlan={(plan) => {
                     // 切换选中的方案
                     const idx = analysisResults.findIndex(p => p.plan?.plan_id === plan.plan?.plan_id)
@@ -647,7 +646,7 @@ export const Results: React.FC = () => {
 
               {/* 任务详情面板 - 在 Card 外面独立渲染 */}
               {detailTask && (
-                <div className="mt-4 mb-8 border border-blue-100 rounded-lg bg-white">
+                <Card className="mt-4 mb-8">
                   {/* 标题栏 */}
                   <div className="flex items-center justify-between bg-gradient-to-r from-blue-50 to-white px-4 py-3 border-b border-blue-100 rounded-t-lg">
                     <div className="flex items-center gap-2">
@@ -693,7 +692,7 @@ export const Results: React.FC = () => {
                       />
                     </div>
                   )}
-                </div>
+                </Card>
               )}
             </div>
           </div>

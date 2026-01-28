@@ -35,11 +35,23 @@ export function extractTaskFields(tasks: EvaluationTask[]): string[] {
   // 性能指标字段（从 result 中提取）
   fields.add('throughput')
   fields.add('tps_per_chip')
+  fields.add('tps_per_batch')
   fields.add('tpot')
   fields.add('ttft')
   fields.add('mfu')
+  fields.add('mbu')
   fields.add('score')
   fields.add('chips')
+  fields.add('dram_occupy')
+  fields.add('flops')
+  fields.add('end_to_end_latency')
+
+  // 成本指标字段
+  fields.add('cost_total')
+  fields.add('cost_per_million_tokens')
+  fields.add('cost_server')
+  fields.add('cost_interconnect')
+  fields.add('cost_per_chip')
 
   // 并行策略字段
   fields.add('parallelism_dp')
@@ -47,6 +59,7 @@ export function extractTaskFields(tasks: EvaluationTask[]): string[] {
   fields.add('parallelism_pp')
   fields.add('parallelism_ep')
   fields.add('parallelism_sp')
+  fields.add('parallelism_moe_tp')
 
   // 时间字段
   fields.add('created_at')
@@ -66,8 +79,8 @@ export function classifyTaskFields(fieldKeys: string[]): ClassifiedTaskFields {
     time: [],
   }
 
-  const performanceFields = ['throughput', 'tps_per_chip', 'tpot', 'ttft', 'mfu', 'score', 'chips']
-  const parallelismFields = ['parallelism_dp', 'parallelism_tp', 'parallelism_pp', 'parallelism_ep', 'parallelism_sp']
+  const performanceFields = ['throughput', 'tps_per_chip', 'tps_per_batch', 'tpot', 'ttft', 'mfu', 'mbu', 'score', 'chips', 'dram_occupy', 'flops', 'end_to_end_latency', 'cost_total', 'cost_per_million_tokens', 'cost_server', 'cost_interconnect', 'cost_per_chip']
+  const parallelismFields = ['parallelism_dp', 'parallelism_tp', 'parallelism_pp', 'parallelism_ep', 'parallelism_sp', 'parallelism_moe_tp']
 
   fieldKeys.forEach(key => {
     if (key.startsWith('search_stats_')) {

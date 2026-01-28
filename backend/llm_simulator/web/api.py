@@ -34,6 +34,7 @@ from ..config import (
     set_max_global_workers,
 )
 from ..tasks import manager as task_manager
+from .column_presets import router as column_presets_router
 
 # 配置日志
 logging.basicConfig(
@@ -289,6 +290,9 @@ app.add_middleware(
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["Content-Type", "Authorization"],
 )
+
+# 注册列配置方案路由
+app.include_router(column_presets_router)
 
 
 # 启动事件：初始化数据库和 WebSocket
@@ -1359,17 +1363,23 @@ async def get_experiment_details(experiment_id: int, db: Session = Depends(get_d
                         "result": {
                             'throughput': result.tps,
                             'tps_per_chip': result.tps_per_chip,
+                            'tps_per_batch': result.tps_per_batch,
                             'tpot': result.tpot,
                             'ttft': result.ttft,
                             'mfu': result.mfu,
+                            'mbu': full_result.get('mbu', 0),  # 从 full_result 获取
                             'score': result.score,
                             'chips': result.chips,
+                            'dram_occupy': result.dram_occupy,
+                            'flops': result.flops,
+                            'cost': full_result.get('cost'),  # 成本分析结果
                             'parallelism': {
                                 'dp': result.dp,
                                 'tp': result.tp,
                                 'pp': result.pp,
                                 'ep': result.ep,
                                 'sp': result.sp,
+                                'moe_tp': result.moe_tp,
                             }
                         }
                     }

@@ -199,7 +199,7 @@ export const ChartsPanel: React.FC<ChartsPanelProps> = ({
 
   const metricOptions = [
     { value: 'score', label: '综合评分' },
-    { value: 'ttft', label: 'FTL (ms)' },
+    { value: 'ttft', label: 'TTFT (ms)' },
     { value: 'tpot', label: 'TPOT (ms)' },
     { value: 'throughput', label: '总吞吐 (tok/s)' },
     { value: 'tps_per_batch', label: 'TPS/Batch (tok/s)' },
@@ -207,7 +207,7 @@ export const ChartsPanel: React.FC<ChartsPanelProps> = ({
     { value: 'mfu', label: 'MFU (%)' },
     { value: 'mbu', label: 'MBU (%)' },
     { value: 'cost', label: '成本 ($/M)' },
-    { value: 'p99_ttft', label: 'FTL P99 (ms)' },
+    { value: 'p99_ttft', label: 'TTFT P99 (ms)' },
     { value: 'p99_tpot', label: 'TPOT P99 (ms)' },
   ]
 

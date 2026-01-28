@@ -29,8 +29,9 @@ export interface EvaluationResult {
   sp: number
   moe_tp?: number
   chips: number
-  throughput: number
-  tps_per_chip: number
+  tps: number           // 集群总吞吐 (tokens/s)
+  tps_per_batch: number // 单请求TPS (tokens/s per request)
+  tps_per_chip: number  // 单芯片TPS (tokens/s per chip)
   ttft: number
   tpot: number
   mfu: number
@@ -68,19 +69,33 @@ export interface EvaluationTask {
   topology_config_name?: string
   results?: EvaluationResult[]
   result?: {  // 当前结果的性能指标
-    throughput: number
-    tps_per_chip: number
+    tps: number           // 集群总吞吐 (tokens/s)
+    tps_per_batch: number // 单请求TPS (tokens/s per request)
+    tps_per_chip: number  // 单芯片TPS (tokens/s per chip)
     tpot: number
     ttft: number
     mfu: number
+    mbu: number           // 内存带宽利用率
     score: number
     chips: number
+    cost?: {              // 成本分析结果
+      server_cost: number
+      interconnect_cost: number
+      total_cost: number
+      bandwidth_gbps: number
+      lanes: number
+      lane_cost: number
+      cost_per_chip: number
+      cost_per_million_tokens: number
+      model_size_gb: number
+    }
     parallelism: {
       dp: number
       tp: number
       pp: number
       ep: number
       sp: number
+      moe_tp?: number
     }
   }
 }
@@ -191,8 +206,9 @@ export interface TaskResultsResponse {
     }
     chips: number
     is_feasible: boolean
-    throughput: number
-    tps_per_chip: number
+    tps: number           // 集群总吞吐 (tokens/s)
+    tps_per_batch: number // 单请求TPS (tokens/s per request)
+    tps_per_chip: number  // 单芯片TPS (tokens/s per chip)
     ttft: number
     tpot: number
     mfu: number
@@ -200,6 +216,17 @@ export interface TaskResultsResponse {
     score: number
     dram_occupy?: number  // 显存占用 (字节)，后端返回
     flops?: number        // 计算量 (FLOPs)，后端返回
+    cost?: {              // 成本评估结果
+      server_cost: number           // 服务器总成本 ($)
+      interconnect_cost: number     // 互联总成本 ($)
+      total_cost: number            // 总成本 ($)
+      bandwidth_gbps: number        // 互联带宽需求 (Gbps)
+      lanes: number                 // 所需 lane 数量
+      lane_cost: number             // 单 lane 成本 ($/lane)
+      cost_per_chip: number         // 单芯片摊派成本 ($)
+      cost_per_million_tokens: number  // 每百万 tokens 成本 ($/M tokens)
+      model_size_gb: number         // 模型大小 (GB)
+    }
   }>
   infeasible_plans: unknown[]
   search_stats: Record<string, unknown>
@@ -368,5 +395,69 @@ export async function executeImport(
     temp_file_id: tempFileId,
     configs,
   })
+  return response.data
+}
+
+// ============================================
+// 列配置方案相关 API
+// ============================================
+
+/**
+ * 列配置方案
+ */
+export interface ColumnPreset {
+  name: string
+  experiment_id: number
+  visible_columns: string[]
+  column_order: string[]
+  fixed_columns: string[]
+  created_at: string
+}
+
+/**
+ * 配置文件结构
+ */
+export interface PresetsFile {
+  version: number
+  presets: ColumnPreset[]
+}
+
+/**
+ * 获取所有列配置方案
+ */
+export async function getColumnPresets(): Promise<PresetsFile> {
+  const response = await api.get('/column-presets/')
+  return response.data
+}
+
+/**
+ * 获取指定实验的列配置方案
+ */
+export async function getColumnPresetsByExperiment(experimentId: number): Promise<{ presets: ColumnPreset[] }> {
+  const response = await api.get(`/column-presets/${experimentId}`)
+  return response.data
+}
+
+/**
+ * 保存所有列配置方案
+ */
+export async function saveColumnPresets(presetsFile: PresetsFile): Promise<{ message: string; count: number }> {
+  const response = await api.post('/column-presets/', presetsFile)
+  return response.data
+}
+
+/**
+ * 添加或更新单个列配置方案
+ */
+export async function addColumnPreset(preset: ColumnPreset): Promise<{ message: string; preset: ColumnPreset }> {
+  const response = await api.post('/column-presets/add', preset)
+  return response.data
+}
+
+/**
+ * 删除列配置方案
+ */
+export async function deleteColumnPreset(experimentId: number, name: string): Promise<{ message: string }> {
+  const response = await api.delete(`/column-presets/${experimentId}/${encodeURIComponent(name)}`)
   return response.data
 }

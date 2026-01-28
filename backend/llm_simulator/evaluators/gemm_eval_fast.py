@@ -4,7 +4,7 @@ GEMM 快速评估器 - 禁用 Tile 搜索
 """
 
 import os
-from typing import Tuple
+from typing import Tuple, Optional
 from .gemm_eval import GEMMEvaluator, GEMMResult
 from .arch_config import AcceleratorMicroArch
 from .utils import ceil_div
@@ -137,7 +137,7 @@ class FastGEMMEvaluator(GEMMEvaluator):
         return max_time, result
 
 
-def create_gemm_evaluator(arch: AcceleratorMicroArch, fast_mode: bool = False, enable_partition_search: bool = True):
+def create_gemm_evaluator(arch: AcceleratorMicroArch, fast_mode: bool = False, enable_partition_search: bool = True, max_gemm_processes: Optional[int] = None):
     """
     创建GEMM评估器
 
@@ -145,8 +145,9 @@ def create_gemm_evaluator(arch: AcceleratorMicroArch, fast_mode: bool = False, e
         arch: 硬件架构
         fast_mode: 是否使用快速模式（禁用tile搜索）
         enable_partition_search: 是否启用分区搜索（禁用可极大提升速度）
+        max_gemm_processes: GEMM 并行搜索的最大进程数（None 时自动设置）
     """
     if fast_mode or DISABLE_TILE_SEARCH:
-        return FastGEMMEvaluator(arch, enable_partition_search=enable_partition_search)
+        return FastGEMMEvaluator(arch, enable_partition_search=enable_partition_search, max_gemm_processes=max_gemm_processes)
     else:
-        return GEMMEvaluator(arch, enable_partition_search=enable_partition_search)
+        return GEMMEvaluator(arch, enable_partition_search=enable_partition_search, max_gemm_processes=max_gemm_processes)

@@ -4,12 +4,13 @@
  */
 
 import { useState, useEffect, useMemo, useRef } from 'react'
-import { Download, Settings, Trash2, Search, GripVertical, ChevronRight, ChevronDown } from 'lucide-react'
+import { Download, Settings, Trash2, Search, GripVertical, ChevronRight, ChevronDown, Save, Plus, Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { HotTable, HotTableClass } from '@handsontable/react'
 import { registerAllModules } from 'handsontable/registry'
 import 'handsontable/dist/handsontable.full.min.css'
 import type { EvaluationTask } from '@/api/results'
+import { getColumnPresetsByExperiment, addColumnPreset, deleteColumnPreset, type ColumnPreset } from '@/api/results'
 import { classifyTaskFieldsWithHierarchy, extractTaskFields } from '../utils/taskFieldClassifier'
 import {
   DndContext,
@@ -34,6 +35,13 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from '@/components/ui/dialog'
+import {
   AlertDialog,
   AlertDialogAction,
   AlertDialogCancel,
@@ -53,6 +61,59 @@ const getStorageKey = (experimentId: number) => `task_table_visible_columns_${ex
 const getFixedColumnsKey = (experimentId: number) => `task_table_fixed_columns_${experimentId}`
 const getColumnOrderKey = (experimentId: number) => `task_table_column_order_${experimentId}`
 const getRowOrderKey = (experimentId: number) => `task_table_row_order_${experimentId}`
+
+// 列标题映射
+const columnNameMap: Record<string, string> = {
+  'benchmark_name': 'Benchmark',
+  'topology_config_name': '拓扑配置',
+  'status': '任务状态',
+  'throughput': 'TPS',
+  'tps_per_chip': 'TPS/Chip',
+  'tps_per_batch': 'TPS/Batch',
+  'tpot': 'TPOT (ms)',
+  'ttft': 'TTFT (ms)',
+  'mfu': 'MFU (%)',
+  'mbu': 'MBU (%)',
+  'score': '综合得分',
+  'chips': '芯片数',
+  'dram_occupy': '显存占用 (GB)',
+  'flops': '计算量 (TFLOPs)',
+  'end_to_end_latency': 'E2E延迟 (ms)',
+  'parallelism_dp': 'DP',
+  'parallelism_tp': 'TP',
+  'parallelism_pp': 'PP',
+  'parallelism_ep': 'EP',
+  'parallelism_sp': 'SP',
+  'parallelism_moe_tp': 'MoE_TP',
+  'created_at': '创建时间',
+  'result_rank': '排名',
+  'result_id': '结果ID',
+  // 成本字段
+  'cost_total': '总成本 ($)',
+  'cost_per_million_tokens': '单位成本 ($/M)',
+  'cost_server': '服务器成本 ($)',
+  'cost_interconnect': '互联成本 ($)',
+  'cost_per_chip': '单芯成本 ($)',
+}
+
+// 统一的列名格式化函数
+const getColumnDisplayName = (col: string): string => {
+  // 优先使用中文映射
+  if (columnNameMap[col]) {
+    return columnNameMap[col]
+  }
+  // 搜索统计字段
+  if (col.startsWith('search_stats_')) {
+    const key = col.replace('search_stats_', '')
+    return `搜索统计: ${key.replace(/_/g, ' ')}`
+  }
+  // 性能指标字段
+  if (col.startsWith('best_')) {
+    return col.replace(/^best_/, '').replace(/_/g, ' ')
+  }
+  // 默认处理：替换下划线
+  return col.replace(/_/g, ' ')
+}
 
 // 树节点类型
 interface TreeNode {
@@ -228,53 +289,18 @@ export default function TaskTable({
   // 行顺序（存储 task_id）
   const [rowOrder, setRowOrder] = useState<string[]>([])
 
+  // 配置方案相关状态
+  const [presets, setPresets] = useState<ColumnPreset[]>([])
+  const [presetsLoading, setPresetsLoading] = useState(false)
+  const [savePresetModalVisible, setSavePresetModalVisible] = useState(false)
+  const [newPresetName, setNewPresetName] = useState('')
+  const [savingPreset, setSavingPreset] = useState(false)
+
   // Handsontable ref
   const hotTableRef = useRef<HotTableClass>(null)
 
   // 分类数据
   const classifiedFields = useMemo(() => classifyTaskFieldsWithHierarchy(allFieldKeys), [allFieldKeys])
-
-  // 列标题映射
-  const columnNameMap: Record<string, string> = {
-    'benchmark_name': 'Benchmark',
-    'topology_config_name': '拓扑配置',
-    'status': '任务状态',
-    'throughput': 'TPS',
-    'tps_per_chip': 'TPS/Chip',
-    'tpot': 'TPOT (ms)',
-    'ttft': 'TTFT (ms)',
-    'mfu': 'MFU (%)',
-    'mbu': 'MBU (%)',
-    'score': '综合得分',
-    'chips': '芯片数',
-    'parallelism_dp': 'DP',
-    'parallelism_tp': 'TP',
-    'parallelism_pp': 'PP',
-    'parallelism_ep': 'EP',
-    'parallelism_sp': 'SP',
-    'created_at': '创建时间',
-    'result_rank': '排名',
-    'result_id': '结果ID',
-  }
-
-  // 统一的列名格式化函数
-  const getColumnDisplayName = (col: string): string => {
-    // 优先使用中文映射
-    if (columnNameMap[col]) {
-      return columnNameMap[col]
-    }
-    // 搜索统计字段
-    if (col.startsWith('search_stats_')) {
-      const key = col.replace('search_stats_', '')
-      return `搜索统计: ${key.replace(/_/g, ' ')}`
-    }
-    // 性能指标字段
-    if (col.startsWith('best_')) {
-      return col.replace(/^best_/, '').replace(/_/g, ' ')
-    }
-    // 默认处理：替换下划线
-    return col.replace(/_/g, ' ')
-  }
 
   // 生成树形数据用于列选择器
   const treeData = useMemo((): TreeNode[] => {
@@ -348,11 +374,14 @@ export default function TaskTable({
       'status',
       'throughput',
       'tps_per_chip',
+      'tps_per_batch',
       'tpot',
       'ttft',
       'mfu',
+      'mbu',
       'score',
       'chips',
+      'dram_occupy',
       'created_at'
     ].filter(col => allFieldKeys.includes(col))
 
@@ -424,6 +453,15 @@ export default function TaskTable({
     }
   }, [columnOrder, experimentId])
 
+  // 生成唯一行键（task_id + result_id，因为同一个 task 可能有多个 result）
+  const getRowKey = (task: EvaluationTask): string => {
+    const resultId = (task as any).result_id
+    if (resultId !== undefined && resultId !== null) {
+      return `${task.task_id}_${resultId}`
+    }
+    return task.task_id
+  }
+
   // 初始化行顺序
   useEffect(() => {
     if (completedTasks.length === 0) {
@@ -434,16 +472,16 @@ export default function TaskTable({
     if (saved) {
       try {
         const savedOrder: string[] = JSON.parse(saved)
-        const currentIds = new Set(completedTasks.map((t) => t.task_id))
+        const currentIds = new Set(completedTasks.map((t) => getRowKey(t)))
         const validOrder = savedOrder.filter((id) => currentIds.has(id))
-        const newIds = completedTasks.filter((t) => !savedOrder.includes(t.task_id)).map((t) => t.task_id)
+        const newIds = completedTasks.filter((t) => !savedOrder.includes(getRowKey(t))).map((t) => getRowKey(t))
         setRowOrder([...validOrder, ...newIds])
         return
       } catch {
         // ignore
       }
     }
-    setRowOrder(completedTasks.map((t) => t.task_id))
+    setRowOrder(completedTasks.map((t) => getRowKey(t)))
   }, [completedTasks, experimentId])
 
   // 保存行顺序
@@ -452,6 +490,98 @@ export default function TaskTable({
       localStorage.setItem(getRowOrderKey(experimentId), JSON.stringify(rowOrder))
     }
   }, [rowOrder, experimentId])
+
+  // 从服务器加载配置方案
+  const loadPresetsFromServer = async () => {
+    setPresetsLoading(true)
+    try {
+      const response = await getColumnPresetsByExperiment(experimentId)
+      setPresets(response.presets || [])
+    } catch (error) {
+      console.error('加载配置方案失败:', error)
+      toast.error('加载配置方案失败')
+    } finally {
+      setPresetsLoading(false)
+    }
+  }
+
+  // 初始化时加载配置方案
+  useEffect(() => {
+    loadPresetsFromServer()
+  }, [experimentId])
+
+  // 保存当前配置为新方案
+  const handleSavePreset = async () => {
+    if (!newPresetName.trim()) {
+      toast.warning('请输入配置名称')
+      return
+    }
+
+    const preset: ColumnPreset = {
+      name: newPresetName.trim(),
+      experiment_id: experimentId,
+      visible_columns: [...visibleColumns],
+      column_order: [...columnOrder],
+      fixed_columns: [...fixedColumns],
+      created_at: new Date().toISOString(),
+    }
+
+    setSavingPreset(true)
+    try {
+      const response = await addColumnPreset(preset)
+      toast.success(response.message)
+      await loadPresetsFromServer()
+      setSavePresetModalVisible(false)
+      setNewPresetName('')
+    } catch (error) {
+      console.error('保存配置方案失败:', error)
+      toast.error('保存配置方案失败')
+    } finally {
+      setSavingPreset(false)
+    }
+  }
+
+  // 加载配置方案
+  const handleLoadPreset = (preset: ColumnPreset) => {
+    // 验证列是否存在
+    const validVisible = preset.visible_columns.filter(col => allFieldKeys.includes(col))
+    const validOrder = preset.column_order.filter(col => allFieldKeys.includes(col))
+    const validFixed = preset.fixed_columns.filter(col => allFieldKeys.includes(col))
+
+    if (validVisible.length === 0) {
+      toast.warning('该配置方案中的列在当前数据中不存在')
+      return
+    }
+
+    // 销毁 Handsontable 实例避免渲染错误
+    if (hotTableRef.current?.hotInstance) {
+      hotTableRef.current.hotInstance.deselectCell()
+    }
+
+    // 批量更新状态
+    setVisibleColumns(validVisible)
+    setColumnOrder(validOrder)
+    setFixedColumns(validFixed)
+
+    // 延迟刷新表格
+    setTimeout(() => {
+      hotTableRef.current?.hotInstance?.render()
+    }, 0)
+
+    toast.success(`已加载配置方案「${preset.name}」`)
+  }
+
+  // 删除配置方案
+  const handleDeletePreset = async (presetName: string) => {
+    try {
+      const response = await deleteColumnPreset(experimentId, presetName)
+      toast.success(response.message)
+      await loadPresetsFromServer()
+    } catch (error) {
+      console.error('删除配置方案失败:', error)
+      toast.error('删除配置方案失败')
+    }
+  }
 
   // 切换固定列
   const toggleFixedColumn = (col: string) => {
@@ -577,10 +707,10 @@ export default function TaskTable({
   const sortedTasks = useMemo(() => {
     if (completedTasks.length === 0) return []
     if (rowOrder.length === 0) return completedTasks
-    const taskMap = new Map(completedTasks.map((t) => [t.task_id, t]))
+    const taskMap = new Map(completedTasks.map((t) => [getRowKey(t), t]))
     const sorted = rowOrder.filter((id) => taskMap.has(id)).map((id) => taskMap.get(id)!)
     const orderedIds = new Set(rowOrder)
-    const remaining = completedTasks.filter((t) => !orderedIds.has(t.task_id))
+    const remaining = completedTasks.filter((t) => !orderedIds.has(getRowKey(t)))
     return [...sorted, ...remaining]
   }, [completedTasks, rowOrder])
 
@@ -620,11 +750,33 @@ export default function TaskTable({
     }
 
     // 性能指标字段（从 result 中提取）
-    const performanceFields = ['throughput', 'tps_per_chip', 'tpot', 'ttft', 'mfu', 'score', 'chips']
+    const performanceFields = ['throughput', 'tps_per_chip', 'tps_per_batch', 'tpot', 'ttft', 'mfu', 'mbu', 'score', 'chips']
     if (performanceFields.includes(field)) {
       const result = (task as any).result
       if (!result) return '-'
       return result[field] ?? '-'
+    }
+
+    // 显存占用字段（从 result 转换为 GB）
+    if (field === 'dram_occupy') {
+      const result = (task as any).result
+      if (!result || !result.dram_occupy) return '-'
+      return result.dram_occupy / (1024 * 1024 * 1024) // 字节转 GB
+    }
+
+    // 计算量字段（从 result 转换为 TFLOPs）
+    if (field === 'flops') {
+      const result = (task as any).result
+      if (!result || !result.flops) return '-'
+      return result.flops / 1e12 // FLOPs 转 TFLOPs
+    }
+
+    // E2E延迟（通过 ttft + tpot * output_length 计算，这里简化为 ttft + tpot * 100）
+    if (field === 'end_to_end_latency') {
+      const result = (task as any).result
+      if (!result || !result.ttft || !result.tpot) return '-'
+      // 假设输出长度为100个token（可根据实际配置调整）
+      return result.ttft + result.tpot * 100
     }
 
     // 并行策略字段
@@ -633,6 +785,27 @@ export default function TaskTable({
       if (!result || !result.parallelism) return '-'
       const strategyKey = field.replace('parallelism_', '')
       return result.parallelism[strategyKey] ?? '-'
+    }
+
+    // 成本字段（从 result.cost 中提取）
+    if (field.startsWith('cost_')) {
+      const result = (task as any).result
+      if (!result || !result.cost) return '-'
+
+      const costKey = field.replace('cost_', '')
+      const costMap: Record<string, keyof typeof result.cost> = {
+        'total': 'total_cost',
+        'per_million_tokens': 'cost_per_million_tokens',
+        'server': 'server_cost',
+        'interconnect': 'interconnect_cost',
+        'per_chip': 'cost_per_chip',
+      }
+
+      const mappedKey = costMap[costKey]
+      if (mappedKey && result.cost[mappedKey] !== undefined) {
+        return result.cost[mappedKey]
+      }
+      return '-'
     }
 
     return '-'
@@ -645,8 +818,8 @@ export default function TaskTable({
       return allColumns.map((col) => {
         const value = getTaskFieldValue(task, col)
         if (typeof value === 'number') {
-          // MFU 百分比字段
-          if (col === 'mfu') {
+          // MFU/MBU 百分比字段
+          if (col === 'mfu' || col === 'mbu') {
             return `${(value * 100).toFixed(2)}%`
           }
           // 浮点数保留两位
@@ -744,7 +917,7 @@ export default function TaskTable({
 
   // 行拖拽处理
   const handleBeforeRowMove = (movedRows: number[], finalIndex: number) => {
-    const currentIds = sortedTasks.map((t) => t.task_id)
+    const currentIds = sortedTasks.map((t) => getRowKey(t))
     const movedIds = movedRows.map((idx) => currentIds[idx])
     const remaining = currentIds.filter((_, idx) => !movedRows.includes(idx))
     remaining.splice(finalIndex, 0, ...movedIds)
@@ -753,7 +926,7 @@ export default function TaskTable({
   }
 
   // 列设置标签页状态
-  const [columnSettingTab, setColumnSettingTab] = useState<'select' | 'order'>('select')
+  const [columnSettingTab, setColumnSettingTab] = useState<'select' | 'order' | 'preset'>('select')
 
   // 列选择器
   const columnSelector = (
@@ -772,6 +945,13 @@ export default function TaskTable({
           onClick={() => setColumnSettingTab('order')}
         >
           排序列 ({orderedVisibleColumns.length})
+        </Button>
+        <Button
+          variant={columnSettingTab === 'preset' ? 'default' : 'outline'}
+          size="sm"
+          onClick={() => setColumnSettingTab('preset')}
+        >
+          配置方案 ({presets.length})
         </Button>
       </div>
 
@@ -801,7 +981,7 @@ export default function TaskTable({
             onCheck={handleColumnCheck}
           />
         </>
-      ) : (
+      ) : columnSettingTab === 'order' ? (
         <>
           <div className="mb-2 text-xs text-gray-500">
             拖拽调整列顺序，勾选复选框固定列到左侧
@@ -827,6 +1007,99 @@ export default function TaskTable({
               </div>
             </SortableContext>
           </DndContext>
+        </>
+      ) : (
+        <>
+          {/* 配置方案标签页 */}
+          <div className="mb-3">
+            <Button
+              className="w-full bg-blue-600 hover:bg-blue-700"
+              size="sm"
+              onClick={() => setSavePresetModalVisible(true)}
+            >
+              <Save className="h-4 w-4 mr-2" />
+              保存当前配置为方案
+            </Button>
+          </div>
+
+          {presetsLoading ? (
+            <div className="flex items-center justify-center py-8">
+              <Loader2 className="h-6 w-6 animate-spin text-gray-400" />
+            </div>
+          ) : presets.length === 0 ? (
+            <div className="text-center py-8 text-gray-400 text-sm">
+              暂无保存的配置方案
+            </div>
+          ) : (
+            <div className="space-y-2 max-h-[400px] overflow-auto">
+              {presets.map((preset) => (
+                <div
+                  key={preset.name}
+                  className="p-3 border border-gray-200 rounded-lg hover:border-blue-300 hover:bg-blue-50 transition-colors"
+                >
+                  <div className="flex items-start justify-between">
+                    <div className="flex-1">
+                      <div className="font-medium text-sm mb-1">{preset.name}</div>
+                      <div className="text-xs text-gray-500">
+                        {preset.visible_columns.length} 列 · {preset.fixed_columns.length} 固定
+                      </div>
+                      <div className="text-xs text-gray-400 mt-1">
+                        {new Date(preset.created_at).toLocaleString('zh-CN')}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1 ml-2">
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => handleLoadPreset(preset)}
+                            className="h-7 w-7 p-0"
+                          >
+                            <Download className="h-3.5 w-3.5" />
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>加载配置</TooltipContent>
+                      </Tooltip>
+                      <AlertDialog>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <AlertDialogTrigger asChild>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="h-7 w-7 p-0 text-red-500 hover:text-red-600 hover:bg-red-50"
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </Button>
+                            </AlertDialogTrigger>
+                          </TooltipTrigger>
+                          <TooltipContent>删除配置</TooltipContent>
+                        </Tooltip>
+                        <AlertDialogContent>
+                          <AlertDialogHeader>
+                            <AlertDialogTitle>删除配置方案</AlertDialogTitle>
+                            <AlertDialogDescription>
+                              确定要删除配置方案「{preset.name}」吗？此操作不可恢复。
+                            </AlertDialogDescription>
+                          </AlertDialogHeader>
+                          <AlertDialogFooter>
+                            <AlertDialogCancel>取消</AlertDialogCancel>
+                            <AlertDialogAction
+                              className="bg-red-600 hover:bg-red-700"
+                              onClick={() => handleDeletePreset(preset.name)}
+                            >
+                              删除
+                            </AlertDialogAction>
+                          </AlertDialogFooter>
+                        </AlertDialogContent>
+                      </AlertDialog>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </>
       )}
     </div>
@@ -1018,6 +1291,55 @@ export default function TaskTable({
             vertical-align: middle;
           }
         `}</style>
+
+        {/* 保存配置方案对话框 */}
+        <Dialog open={savePresetModalVisible} onOpenChange={setSavePresetModalVisible}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>保存配置方案</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4 py-4">
+              <div>
+                <label className="text-sm font-medium mb-2 block">配置名称</label>
+                <Input
+                  placeholder="输入配置方案名称"
+                  value={newPresetName}
+                  onChange={(e) => setNewPresetName(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !savingPreset) {
+                      handleSavePreset()
+                    }
+                  }}
+                  autoFocus
+                />
+              </div>
+              <div className="text-sm text-gray-500 space-y-1">
+                <div>当前配置:</div>
+                <div>• 显示列: {visibleColumns.length} 列</div>
+                <div>• 固定列: {fixedColumns.length} 列</div>
+              </div>
+            </div>
+            <DialogFooter>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setSavePresetModalVisible(false)
+                  setNewPresetName('')
+                }}
+                disabled={savingPreset}
+              >
+                取消
+              </Button>
+              <Button
+                onClick={handleSavePreset}
+                disabled={savingPreset || !newPresetName.trim()}
+              >
+                {savingPreset && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                保存
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
     </TooltipProvider>
   )

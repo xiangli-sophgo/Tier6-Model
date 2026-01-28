@@ -52,16 +52,13 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import { PlanAnalysisResult, HardwareConfig, LLMModelConfig, InferenceConfig, DEFAULT_SCORE_WEIGHTS } from '../../../utils/llmDeployment/types'
+import { PlanAnalysisResult, DEFAULT_SCORE_WEIGHTS } from '../../../utils/llmDeployment/types'
 import { InfeasibleResult } from '../../../utils/llmDeployment'
-import { generateBenchmarkName, parseBenchmarkParts } from '../../../utils/llmDeployment/benchmarkNaming'
+import { generateBenchmarkName } from '../../../utils/llmDeployment/benchmarkNaming'
 import { AnalysisHistoryItem, AnalysisViewMode } from '../shared'
 import { colors } from './ConfigSelectors'
 import { BaseCard } from '../../common/BaseCard'
 import { MetricDetailCard } from './components/MetricDetailCard'
-import { ModelInfoCard } from './components/ModelInfoCard'
-import { ParallelismInfo, ParallelismCard, type ParallelismType } from './components/ParallelismInfo'
-import { ConfigSnapshotDisplay } from './components/ConfigSnapshotDisplay'
 
 // ============================================
 // 历史记录列表组件
@@ -160,7 +157,7 @@ const HistoryList: React.FC<HistoryListProps> = ({
               <TableHead className="w-[260px]">Benchmark</TableHead>
               <TableHead className="w-[160px]">并行策略</TableHead>
               <TableHead className="w-[120px] text-center">TPS/Chip</TableHead>
-              <TableHead className="w-[90px] text-center">FTL</TableHead>
+              <TableHead className="w-[90px] text-center">TTFT</TableHead>
               <TableHead className="w-[40px]"></TableHead>
             </TableRow>
           </TableHeader>
@@ -188,7 +185,7 @@ const HistoryList: React.FC<HistoryListProps> = ({
                   </div>
                 </TableCell>
                 <TableCell className="text-center text-sm">
-                  {record.chips > 0 ? (record.throughput / record.chips).toFixed(0) : 0} tok/s
+                  {record.chips > 0 ? (record.tps / record.chips).toFixed(0) : 0} tok/s
                 </TableCell>
                 <TableCell className="text-center text-sm">
                   {record.ttft.toFixed(1)} ms
@@ -294,22 +291,6 @@ interface AnalysisResultDisplayProps {
   onLoadFromHistory?: (item: AnalysisHistoryItem) => void
   onDeleteHistory?: (id: string) => void
   onClearHistory?: () => void
-  // 详情视图功能按钮
-  canMapToTopology?: boolean
-  onMapToTopology?: () => void
-  onClearTraffic?: () => void
-  // HeroKPIPanel 需要的数据
-  hardware?: HardwareConfig
-  model?: LLMModelConfig
-  inference?: InferenceConfig
-  // 配置快照（从任务中获取）
-  configSnapshot?: {
-    model: Record<string, unknown>
-    inference: Record<string, unknown>
-    topology: Record<string, unknown>
-  }
-  benchmarkName?: string
-  topologyConfigName?: string
 }
 
 type MetricType = 'ttft' | 'tpot' | 'throughput' | 'tps_batch' | 'tps_chip' | 'mfu' | 'mbu' | 'cost' | 'percentiles' | 'bottleneck' | 'e2e' | 'chips' | 'memory' | null
@@ -330,24 +311,12 @@ export const AnalysisResultDisplay: React.FC<AnalysisResultDisplayProps> = ({
   onLoadFromHistory,
   onDeleteHistory,
   onClearHistory,
-  canMapToTopology,
-  onMapToTopology,
-  onClearTraffic,
-  hardware: _hardware,
-  model,
-  inference,
-  configSnapshot,
-  benchmarkName,
-  topologyConfigName,
 }) => {
   const [selectedMetric, setSelectedMetric] = useState<MetricType>(null)
   const [showScoreDetails, setShowScoreDetails] = useState(false)
-  const [showModelArchitecture, setShowModelArchitecture] = useState(false)
-  const [selectedParallelism, setSelectedParallelism] = useState<ParallelismType | null>(null)
 
   // 各章节折叠状态
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
-    deployment: true,
     performance: true,
     suggestions: true,
     candidates: true,
@@ -597,7 +566,7 @@ export const AnalysisResultDisplay: React.FC<AnalysisResultDisplayProps> = ({
     )
   }
 
-  const { plan, memory, latency, throughput, score, suggestions, is_feasible, infeasibility_reason } = result
+  const { memory, latency, throughput, score, suggestions, is_feasible, infeasibility_reason } = result
 
   // 统一的可点击卡片样式（适用于所有交互卡片）
   // 使用固定2px边框避免布局抖动，未选中时使用透明边框
@@ -623,225 +592,6 @@ export const AnalysisResultDisplay: React.FC<AnalysisResultDisplayProps> = ({
     <TooltipProvider>
       <div>
         {/* ═══════════════════════════════════════════════════════════════ */}
-        {/* 一、部署方案 */}
-        {/* ═══════════════════════════════════════════════════════════════ */}
-        <div className="mb-4">
-          <BaseCard
-            title="部署方案"
-            accentColor="#5E6AD2"
-            collapsible
-            expanded={expandedSections.deployment}
-            onExpandChange={(expanded) => setExpandedSections(prev => ({ ...prev, deployment: expanded }))}
-          >
-            {/* 1. Benchmark 参数卡片（默认显示） */}
-            {inference && model && (
-              <div className="mb-4">
-                <div className="text-[13px] font-medium mb-2" style={{ color: colors.text }}>Benchmark</div>
-
-                {/* Benchmark 参数卡片 */}
-                <div className="flex flex-wrap gap-3">
-                  {parseBenchmarkParts(model, inference).map((part, idx) => (
-                    <div
-                      key={idx}
-                      style={{
-                        ...(idx === 0 ? clickableCardStyle(showModelArchitecture) : {
-                          padding: '12px 16px',
-                          background: colors.cardBg,
-                          borderRadius: 8,
-                          border: '2px solid transparent',
-                          outline: `1px solid ${colors.border}`,
-                          outlineOffset: '-2px',
-                        }),
-                        minWidth: 100,
-                        cursor: idx === 0 ? 'pointer' : 'default',
-                        position: 'relative',
-                      }}
-                      onClick={() => idx === 0 && setShowModelArchitecture(!showModelArchitecture)}
-                    >
-                      {/* 右上角标记：仅第一个卡片显示 */}
-                      {idx === 0 && (
-                        <Info
-                          className="absolute top-2 right-2 h-3 w-3 cursor-pointer"
-                          style={{ color: showModelArchitecture ? colors.interactive : '#d9d9d9' }}
-                        />
-                      )}
-                      <div className="text-center text-lg font-semibold mb-1" style={{ color: colors.primary }}>
-                        {part.key}
-                      </div>
-                      <div className="text-[13px]">
-                        <span className="text-gray-400">{part.label}：</span>
-                        <span className="font-medium" style={{ color: colors.text }}>{part.value}</span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-
-                {/* 模型架构详细信息 */}
-                {showModelArchitecture && (
-                  <div className="mt-4 pt-4 border-t border-dashed border-gray-200">
-                    <div className="text-[13px] font-medium mb-3" style={{ color: colors.text }}>模型架构</div>
-                    <ModelInfoCard model={model} inference={inference} />
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* 分割线 */}
-            <div
-              className="h-px mb-4"
-              style={{ background: 'linear-gradient(to right, transparent, #e8e8e8, transparent)' }}
-            />
-
-            {/* 2. 并行策略卡片 */}
-            <div className="mb-4">
-              <div className="text-[13px] font-medium mb-2" style={{ color: colors.text }}>并行策略</div>
-              <div className="flex gap-2">
-                <ParallelismCard
-                  type="dp"
-                  value={plan.parallelism.dp}
-                  selected={selectedParallelism === 'dp'}
-                  onClick={() => setSelectedParallelism(selectedParallelism === 'dp' ? null : 'dp')}
-                />
-                <ParallelismCard
-                  type="tp"
-                  value={plan.parallelism.tp}
-                  selected={selectedParallelism === 'tp'}
-                  onClick={() => setSelectedParallelism(selectedParallelism === 'tp' ? null : 'tp')}
-                />
-                {/* 不显示 PP */}
-                {plan.parallelism.ep > 1 && (
-                  <ParallelismCard
-                    type="ep"
-                    value={plan.parallelism.ep}
-                    selected={selectedParallelism === 'ep'}
-                    onClick={() => setSelectedParallelism(selectedParallelism === 'ep' ? null : 'ep')}
-                  />
-                )}
-                {plan.parallelism.moe_tp && plan.parallelism.moe_tp > 1 && (
-                  <ParallelismCard
-                    type="moe_tp"
-                    value={plan.parallelism.moe_tp}
-                    selected={selectedParallelism === 'moe_tp'}
-                    onClick={() => setSelectedParallelism(selectedParallelism === 'moe_tp' ? null : 'moe_tp')}
-                  />
-                )}
-                {plan.parallelism.sp > 1 && (
-                  <ParallelismCard
-                    type="sp"
-                    value={plan.parallelism.sp}
-                    selected={selectedParallelism === 'sp'}
-                    onClick={() => setSelectedParallelism(selectedParallelism === 'sp' ? null : 'sp')}
-                  />
-                )}
-              </div>
-
-              {/* 并行策略详细介绍 - 显示在并行策略小节内 */}
-              {selectedParallelism && (
-                <div className="mt-3">
-                  <ParallelismInfo type={selectedParallelism} />
-                </div>
-              )}
-            </div>
-
-            {/* 分割线 */}
-            <div
-              className="h-px mb-4"
-              style={{ background: 'linear-gradient(to right, transparent, #e8e8e8, transparent)' }}
-            />
-
-            {/* 3. 芯片数量配置 */}
-            <div className="mb-3">
-              <div className="text-[13px] font-medium mb-2" style={{ color: colors.text }}>芯片数量配置</div>
-
-              {/* 总芯片数和搜索统计 */}
-              <div className="text-[13px] mb-3" style={{ color: colors.textSecondary }}>
-                <span>总芯片数: <b style={{ color: colors.text }}>{plan.total_chips}</b></span>
-                {searchStats && (
-                  <span className="ml-4">
-                    搜索: {searchStats.evaluated} 方案 · {searchStats.feasible} 可行 · {searchStats.timeMs.toFixed(0)}ms
-                  </span>
-                )}
-              </div>
-
-              {/* 硬件拓扑配置 */}
-              {_hardware && (
-                <div className="p-2.5 px-3 bg-gray-50 rounded-lg border border-gray-200">
-                  <div className="flex flex-wrap gap-4 text-xs">
-                    {/* Chip配置 */}
-                    <div>
-                      <span className="text-gray-400">Chip: </span>
-                      <b style={{ color: colors.text }}>{_hardware.chip.chip_type}</b>
-                      <span className="text-gray-300 ml-1">
-                        ({_hardware.chip.compute_tflops_fp16} TFLOPs, {_hardware.chip.memory_gb}GB, {_hardware.chip.memory_bandwidth_gbps} GB/s)
-                      </span>
-                    </div>
-                    {/* Board配置 */}
-                    <div>
-                      <span className="text-gray-400">Board: </span>
-                      <b style={{ color: colors.text }}>{_hardware.node.chips_per_node} Chips/Board</b>
-                      <span className="text-gray-300 ml-1">
-                        (NVLink {_hardware.node.intra_node_bandwidth_gbps} GB/s)
-                      </span>
-                    </div>
-                    {/* 总Board数：根据总芯片数和每Board芯片数计算 */}
-                    <div>
-                      <span className="text-gray-400">总计: </span>
-                      <b style={{ color: colors.text }}>{Math.ceil(plan.total_chips / _hardware.node.chips_per_node)} Boards</b>
-                      <span className="text-gray-300 ml-1">
-                        (Board间 {_hardware.cluster.inter_node_bandwidth_gbps} GB/s)
-                      </span>
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* 拓扑映射操作 */}
-            {canMapToTopology && (
-              <div
-                className="mt-3 pt-3 flex justify-between items-center"
-                style={{ borderTop: `1px dashed ${colors.borderLight}` }}
-              >
-                <span className="text-[11px]" style={{ color: colors.textSecondary }}>
-                  将并行策略映射到拓扑视图，查看通信流量分布
-                </span>
-                <div className="flex gap-1.5">
-                  <Button
-                    size="sm"
-                    onClick={onMapToTopology}
-                    className="text-[11px]"
-                  >
-                    映射到拓扑
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={onClearTraffic}
-                    className="text-[11px]"
-                  >
-                    清除映射
-                  </Button>
-                </div>
-              </div>
-            )}
-
-            {/* 配置快照展示 */}
-            {configSnapshot && (
-              <div className="mt-4">
-                <div className="text-[13px] font-medium mb-3" style={{ color: colors.text }}>
-                  完整配置快照
-                </div>
-                <ConfigSnapshotDisplay
-                  configSnapshot={configSnapshot}
-                  benchmarkName={benchmarkName}
-                  topologyConfigName={topologyConfigName}
-                />
-              </div>
-            )}
-          </BaseCard>
-        </div>
-
-        {/* ═══════════════════════════════════════════════════════════════ */}
         {/* 二、性能分析 */}
         {/* ═══════════════════════════════════════════════════════════════ */}
         <div className="mb-4">
@@ -858,7 +608,7 @@ export const AnalysisResultDisplay: React.FC<AnalysisResultDisplayProps> = ({
           <div className="grid grid-cols-4 gap-2 mb-3">
             <div style={{ ...metricCardStyle(selectedMetric === 'ttft'), textAlign: 'center', position: 'relative' }} onClick={() => setSelectedMetric(selectedMetric === 'ttft' ? null : 'ttft')}>
               <Info className="absolute top-2 right-2 h-2.5 w-2.5" style={{ color: selectedMetric === 'ttft' ? colors.interactive : '#d9d9d9' }} />
-              <span className="text-[13px]" style={{ color: colors.textSecondary }}>FTL</span>
+              <span className="text-[13px]" style={{ color: colors.textSecondary }}>TTFT</span>
               <div className="text-lg font-semibold mt-1" style={{ color: colors.text }}>
                 {latency?.prefill_total_latency_ms?.toFixed(1) || '0.0'} <span className="text-xs font-normal" style={{ color: colors.textSecondary }}>ms</span>
               </div>

@@ -19,7 +19,7 @@ export interface AnalysisHistoryItem {
   score: number
   ttft: number
   tpot: number
-  throughput: number
+  tps: number  // 集群总吞吐 (tokens/s)
   mfu: number
   mbu: number
   cost: number | null
@@ -62,7 +62,7 @@ export interface AnalysisTask {
   score?: number
   ttft?: number                                 // ms
   tpot?: number                                 // ms/token
-  throughput?: number                           // tokens/s
+  tps?: number                                  // 集群总吞吐 (tokens/s)
   mfu?: number                                  // Model FLOPs Utilization (0-1)
   mbu?: number                                  // Memory Bandwidth Utilization (0-1)
   error?: string                                // 失败原因

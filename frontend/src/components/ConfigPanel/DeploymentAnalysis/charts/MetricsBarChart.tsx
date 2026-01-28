@@ -24,7 +24,7 @@ const METRIC_CONFIG: Record<MetricType, {
   lowerIsBetter?: boolean
 }> = {
   ttft: {
-    name: 'FTL',
+    name: 'TTFT',
     unit: 'ms',
     accessor: (p) => p.latency.prefill_total_latency_ms,
     colorStart: '#69c0ff',
@@ -83,7 +83,7 @@ const METRIC_CONFIG: Record<MetricType, {
     lowerIsBetter: true,
   },
   p99_ttft: {
-    name: 'FTL P99',
+    name: 'TTFT P99',
     unit: 'ms',
     accessor: (p) => p.latency.ttft_percentiles?.p99 ?? p.latency.prefill_total_latency_ms * 1.8,
     colorStart: '#85a5ff',

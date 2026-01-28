@@ -5,10 +5,14 @@
 """
 
 import logging
+import threading
+from multiprocessing import cpu_count
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Dict, Any, Optional, Callable, List
 from ..core.simulator import run_simulation
 from ..core.analyzer import PerformanceAnalyzer
 from ..evaluators import get_arch_preset
+from ..evaluators.cost_evaluator import evaluate_deployment_cost
 from ..models import create_deepseek_v3, create_deepseek_v3_absorb, create_deepseek_v32
 
 logger = logging.getLogger(__name__)
@@ -32,6 +36,7 @@ def evaluate_deployment(
     enable_tile_search: bool = True,
     enable_partition_search: bool = False,
     max_simulated_tokens: int = 4,
+    max_workers: int = 1,
 ) -> dict:
     """
     评估部署方案
@@ -91,7 +96,8 @@ def evaluate_deployment(
             cancel_check,
             enable_tile_search,
             enable_partition_search,
-            max_simulated_tokens
+            max_simulated_tokens,
+            max_workers
         )
 
 
@@ -200,6 +206,12 @@ def _evaluate_manual_mode(
         if progress_callback:
             progress_callback(10, 100, "运行模拟器...")
 
+        # 手动模式使用保守的进程数，避免多任务串行执行时过度竞争
+        # 公式: max(2, cpu_count() // 4)
+        # 例如: 16核CPU -> 4进程, 8核CPU -> 2进程
+        manual_gemm_processes = max(2, cpu_count() // 4)
+        logger.info(f"手动模式 GEMM 进程数: {manual_gemm_processes} (CPU核数: {cpu_count()})")
+
         sim_result = run_simulation(
             topology_dict=topology,
             model_dict=model_config,
@@ -210,6 +222,7 @@ def _evaluate_manual_mode(
             enable_tile_search=enable_tile_search,
             enable_partition_search=enable_partition_search,
             max_simulated_tokens=max_simulated_tokens,
+            max_gemm_processes=manual_gemm_processes,
         )
 
         if progress_callback:
@@ -268,13 +281,17 @@ def _evaluate_auto_mode(
     enable_tile_search: bool = True,
     enable_partition_search: bool = False,
     max_simulated_tokens: int = 4,
+    max_workers: int = 1,
 ) -> dict:
-    """自动模式评估（搜索最优方案，带累加进度）
+    """自动模式评估（搜索最优方案，支持并行评估）
 
     进度计算方式：
     - 总进度 = (已完成方案数 / 总方案数) * 100% + (当前方案内部进度 / 总方案数)
     - 例如：10 个方案，第 3 个方案执行到 50%
       总进度 = (2/10)*100% + (50%/10) = 20% + 5% = 25%
+
+    Args:
+        max_workers: 并行评估的最大 worker 数量（1 表示串行）
     """
 
     # 检查取消
@@ -309,7 +326,7 @@ def _evaluate_auto_mode(
             "parallelism": candidate,
             "status": "pending",
             "progress": 0,
-            "chips": candidate["dp"] * candidate["tp"] * candidate.get("pp", 1) * candidate.get("ep", 1),
+            "chips": _calculate_required_chips(candidate, model_config),
         })
 
     # 定义一个辅助函数，用于推送子任务状态
@@ -318,7 +335,13 @@ def _evaluate_auto_mode(
         sub_tasks[index]["progress"] = progress
 
     if progress_callback:
-        progress_callback(2, 100, f"开始评估 {total_candidates} 个方案...")
+        progress_callback(2, 100, f"开始评估 {total_candidates} 个方案（并行度={max_workers}）...")
+
+    # 计算每个方案的 GEMM 进程数（动态调整避免系统过载）
+    # 公式：max(1, cpu_count() // (2 * max_workers))
+    # 例如：16核CPU，max_workers=4，则每个方案用 16//(2*4)=2 个进程
+    max_gemm_processes = max(1, cpu_count() // (2 * max_workers))
+    logger.info(f"每个评估任务使用 {max_gemm_processes} 个 GEMM 进程（总 worker={max_workers}，CPU核={cpu_count()}）")
 
     # 评估所有候选方案
     feasible_plans = []
@@ -327,36 +350,53 @@ def _evaluate_auto_mode(
     # 预留 2% 给准备工作，98% 给方案评估
     progress_per_plan = 98.0 / total_candidates if total_candidates > 0 else 98.0
 
-    for i, candidate in enumerate(candidates):
-        # 检查取消（每个方案开始前检查）
-        if cancel_check and cancel_check():
-            logger.info(f"任务在评估第 {i + 1}/{total_candidates} 个方案前被取消")
-            raise TaskCancelledException("任务已取消")
+    # 线程安全的进度更新锁
+    progress_lock = threading.Lock()
 
-        # 计算当前方案开始时的基础进度
-        base_progress = 2 + i * progress_per_plan
+    # 跟踪已完成方案数
+    completed_count = [0]  # 使用列表以便在闭包中修改
 
-        # 标记当前方案为 running
-        update_sub_task(i, "running", 0)
-
-        # 创建内部进度回调，将方案的 0-100% 映射到该方案的进度份额
-        def make_inner_callback(plan_index: int, base: float, per_plan: float):
-            def inner_callback(inner_percent: float, message: str):
-                if progress_callback:
+    # 创建内部进度回调，将方案的 0-100% 映射到该方案的进度份额
+    def make_inner_callback(plan_index: int):
+        def inner_callback(inner_percent: float, message: str):
+            if progress_callback:
+                with progress_lock:
                     # 更新子任务进度
                     update_sub_task(plan_index, "running", int(inner_percent))
-                    # 累加进度: 基础进度 + 内部进度 * 该方案的份额
-                    total_progress = base + (inner_percent / 100.0) * per_plan
-                    progress_callback(int(total_progress), 100, f"[{plan_index + 1}/{total_candidates}] {message}", sub_tasks=sub_tasks)
-            return inner_callback
+                    # 计算总进度：已完成方案进度 + 当前方案内部进度
+                    base_progress = 2 + completed_count[0] * progress_per_plan
+                    current_plan_progress = (inner_percent / 100.0) * progress_per_plan
+                    total_progress = base_progress + current_plan_progress
+                    # 尝试传递 sub_tasks 信息给前端（使用 try-except 处理不同签名）
+                    try:
+                        progress_callback(int(total_progress), 100, f"[{completed_count[0] + 1}/{total_candidates}] {message}", sub_tasks=sub_tasks)
+                    except TypeError:
+                        # 如果 progress_callback 不支持 sub_tasks 参数，只传递基本参数
+                        progress_callback(int(total_progress), 100, f"[{completed_count[0] + 1}/{total_candidates}] {message}")
+        return inner_callback
 
-        inner_progress = make_inner_callback(i, base_progress, progress_per_plan)
-
-        # 报告方案开始
-        if progress_callback:
-            progress_callback(int(base_progress), 100, f"评估方案 {i + 1}/{total_candidates}...", sub_tasks=sub_tasks)
-
+    # 评估单个方案的worker函数
+    def evaluate_plan_worker(plan_index: int, candidate: dict):
+        """Worker函数：评估单个方案"""
         try:
+            # 检查取消
+            if cancel_check and cancel_check():
+                logger.info(f"任务在评估方案 {plan_index + 1} 前被取消")
+                raise TaskCancelledException("任务已取消")
+
+            # 标记当前方案为 running
+            with progress_lock:
+                update_sub_task(plan_index, "running", 0)
+                # 报告任务开始状态
+                if progress_callback:
+                    base_progress = 2 + completed_count[0] * progress_per_plan
+                    try:
+                        progress_callback(int(base_progress), 100, f"评估方案 {plan_index + 1}/{total_candidates}...", sub_tasks=sub_tasks)
+                    except TypeError:
+                        progress_callback(int(base_progress), 100, f"评估方案 {plan_index + 1}/{total_candidates}...")
+
+            inner_progress = make_inner_callback(plan_index)
+
             result = _evaluate_single_plan_with_progress(
                 parallelism=candidate,
                 total_chips=total_chips,
@@ -369,12 +409,31 @@ def _evaluate_auto_mode(
                 enable_tile_search=enable_tile_search,
                 enable_partition_search=enable_partition_search,
                 max_simulated_tokens=max_simulated_tokens,
+                max_gemm_processes=max_gemm_processes,  # 传递动态调整后的 GEMM 进程数
             )
 
-            if result.get("is_feasible", False):
-                # 标记为已完成
-                update_sub_task(i, "completed", 100)
-                feasible_plans.append(result)
+            return (plan_index, result, None)
+
+        except Exception as e:
+            logger.error(f"评估方案 {plan_index + 1} 失败: {e}")
+            return (plan_index, None, str(e))
+
+    # 根据 max_workers 选择执行模式
+    if max_workers == 1:
+        # 串行模式（保持原有行为）
+        for i, candidate in enumerate(candidates):
+            plan_index, result, error = evaluate_plan_worker(i, candidate)
+
+            if error:
+                with progress_lock:
+                    update_sub_task(plan_index, "failed", 0)
+                completed_count[0] += 1
+                continue
+
+            if result and result.get("is_feasible", False):
+                with progress_lock:
+                    update_sub_task(plan_index, "completed", 100)
+                    feasible_plans.append(result)
                 # 每完成一个可行方案就立即保存
                 if result_callback:
                     try:
@@ -382,14 +441,55 @@ def _evaluate_auto_mode(
                     except Exception as e:
                         logger.error(f"保存结果失败: {e}")
             else:
-                # 标记为失败
-                update_sub_task(i, "failed", 100)
-                infeasible_plans.append(result)
-        except Exception as e:
-            logger.error(f"评估方案 {i + 1} 失败: {e}")
-            update_sub_task(i, "failed", 0)
-            # 继续评估下一个方案
-            continue
+                with progress_lock:
+                    update_sub_task(plan_index, "failed", 100)
+                    if result:
+                        infeasible_plans.append(result)
+
+            completed_count[0] += 1
+
+    else:
+        # 并行模式
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            # 提交所有任务
+            future_to_index = {
+                executor.submit(evaluate_plan_worker, i, candidate): i
+                for i, candidate in enumerate(candidates)
+            }
+
+            # 按完成顺序处理结果
+            for future in as_completed(future_to_index):
+                # 检查取消
+                if cancel_check and cancel_check():
+                    logger.info("任务被取消，停止评估")
+                    executor.shutdown(wait=False, cancel_futures=True)
+                    raise TaskCancelledException("任务已取消")
+
+                plan_index, result, error = future.result()
+
+                if error:
+                    with progress_lock:
+                        update_sub_task(plan_index, "failed", 0)
+                    completed_count[0] += 1
+                    continue
+
+                if result and result.get("is_feasible", False):
+                    with progress_lock:
+                        update_sub_task(plan_index, "completed", 100)
+                        feasible_plans.append(result)
+                    # 每完成一个可行方案就立即保存
+                    if result_callback:
+                        try:
+                            result_callback(result)
+                        except Exception as e:
+                            logger.error(f"保存结果失败: {e}")
+                else:
+                    with progress_lock:
+                        update_sub_task(plan_index, "failed", 100)
+                        if result:
+                            infeasible_plans.append(result)
+
+                completed_count[0] += 1
 
     # 按得分排序（返回所有可行方案，不再截断为 top_k）
     feasible_plans.sort(key=lambda x: x.get("score", 0), reverse=True)
@@ -447,14 +547,16 @@ def _generate_parallelism_candidates(
                     # 设置 moe_tp = (DP * TP) / EP
                     if (dp * tp) % ep == 0:
                         moe_tp = (dp * tp) // ep
-                        candidates.append({
+                        candidate = {
                             "dp": dp,
                             "tp": tp,
                             "pp": 1,  # PP 暂不启用
                             "ep": ep,
                             "sp": 1,
                             "moe_tp": moe_tp,
-                        })
+                        }
+                        candidates.append(candidate)
+                        logger.debug(f"生成 MoE 候选: DP={dp}, TP={tp}, EP={ep}, MoE_TP={moe_tp}, 芯片数={dp*tp}")
     else:
         # 非 MoE 模型：实际芯片数 = DP × TP × EP
         for tp in [1, 2, 4, 8, 16, 32]:
@@ -475,6 +577,19 @@ def _generate_parallelism_candidates(
                     })
 
     logger.info(f"生成 {len(candidates)} 个候选方案 (is_moe={is_moe}, max_chips={max_chips})")
+
+    # 打印前5个候选方案用于调试
+    if len(candidates) > 0:
+        logger.info(f"前5个候选方案示例:")
+        for i, c in enumerate(candidates[:5]):
+            logger.info(f"  方案{i+1}: DP={c['dp']}, TP={c['tp']}, EP={c['ep']}, MoE_TP={c.get('moe_tp', 'N/A')}, 芯片数={_calculate_required_chips(c, model_config)}")
+
+    # 打印候选方案的统计信息
+    if len(candidates) > 0:
+        ep_values = set(c['ep'] for c in candidates)
+        moe_tp_values = set(c.get('moe_tp') for c in candidates if 'moe_tp' in c)
+        logger.info(f"候选方案统计: 总数={len(candidates)}, EP取值={sorted(ep_values)}, MoE_TP取值={sorted(moe_tp_values) if moe_tp_values else 'N/A'}")
+
     return candidates
 
 
@@ -547,6 +662,7 @@ def _evaluate_single_plan_with_progress(
     enable_tile_search: bool = True,
     enable_partition_search: bool = False,
     max_simulated_tokens: int = 4,
+    max_gemm_processes: Optional[int] = None,
 ) -> dict:
     """评估单个方案（带细粒度进度回调）
 
@@ -604,6 +720,7 @@ def _evaluate_single_plan_with_progress(
             progress_callback=progress_callback,  # 传递进度回调
             enable_tile_search=enable_tile_search,
             max_simulated_tokens=max_simulated_tokens,
+            max_gemm_processes=max_gemm_processes,  # 传递 GEMM 进程数限制
         )
 
         if progress_callback:
@@ -681,14 +798,14 @@ def _create_model_instance(model_config: dict, inference_config: dict, paralleli
         if mla_config:
             # 有 MLA 配置，选择对应的工厂函数
             # 简化：默认使用 absorb 变体（Decode 阶段）
-            return create_deepseek_v3_absorb(full_config)
+            return create_deepseek_v3_absorb(**full_config)
         else:
             # 标准 DeepSeek V3
-            return create_deepseek_v3(full_config)
+            return create_deepseek_v3(**full_config)
     else:
         # 其他模型类型，使用基础工厂
         logger.warning(f"Unknown model type: {model_name}, using deepseek_v3 as fallback")
-        return create_deepseek_v3(full_config)
+        return create_deepseek_v3(**full_config)
 
 
 def _transform_to_ds_tpu_format(
@@ -707,6 +824,7 @@ def _transform_to_ds_tpu_format(
     avg_tpot = stats.get("avgTpot", 0)  # 微秒/token
     ttft = stats.get("ttft", 0)  # 微秒
     mfu = stats.get("dynamicMfu", 0)
+    mbu = stats.get("dynamicMbu", 0)
 
     # Decode 阶段通信时间
     decode_stats = stats.get("decode", {})
@@ -785,6 +903,49 @@ def _transform_to_ds_tpu_format(
     # 原公式：score = tps_per_chip * mfu（不太合理，后续讨论修改）
     score = 0
 
+    # 成本评估
+    cost_result = {}
+    try:
+        # 提取芯片类型
+        hardware_config = _extract_hardware_config(topology)
+        chip_type = hardware_config.get("chip", {}).get("chip_type", "SG2262")
+
+        # 获取模型参数量
+        num_parameters = model_config.get("num_parameters", 0)
+        if num_parameters == 0:
+            # 如果没有直接提供 num_parameters，尝试从其他参数估算
+            hidden_size = model_config.get("hidden_size", 0)
+            num_layers = model_config.get("num_layers", 0)
+            intermediate_size = model_config.get("intermediate_size", 0)
+            vocab_size = model_config.get("vocab_size", 0)
+            if all([hidden_size, num_layers, intermediate_size]):
+                # 简化估算：Attention + FFN 参数
+                num_parameters = num_layers * (
+                    4 * hidden_size * hidden_size +  # QKV + O
+                    3 * hidden_size * intermediate_size  # Gate + Up + Down
+                ) + vocab_size * hidden_size  # Embedding + LM Head
+
+        # 计算成本（仅当有足够信息时）
+        if num_parameters > 0 and avg_tpot > 0 and tps > 0:
+            cost_result = evaluate_deployment_cost(
+                chips=chips,
+                chip_type=chip_type,
+                num_parameters=num_parameters,
+                tp=parallelism.get("tp", 1),
+                tpot_ms=avg_tpot / 1000.0,  # 微秒转毫秒
+                tps=tps,
+                bytes_per_param=2  # FP16/BF16
+            )
+            logger.info(f"成本评估完成: 总成本=${cost_result.get('total_cost', 0):,.2f}, 单位成本=${cost_result.get('cost_per_million_tokens', 0):.4f}/M tokens")
+        else:
+            logger.warning(f"跳过成本计算: num_parameters={num_parameters}, avg_tpot={avg_tpot}, tps={tps}")
+    except Exception as e:
+        logger.warning(f"成本评估失败，跳过: {e}")
+        cost_result = {}
+
+    # 记录日志以便调试
+    logger.info(f"保存结果: DP={parallelism['dp']}, TP={parallelism['tp']}, PP={parallelism.get('pp', 1)}, EP={parallelism.get('ep', 1)}, MoE_TP={parallelism.get('moe_tp', 'N/A')}, 芯片数={chips}")
+
     return {
         "parallelism": parallelism,
         "chips": chips,
@@ -798,10 +959,12 @@ def _transform_to_ds_tpu_format(
         "ttft": ttft / 1000.0,  # 转换为毫秒
         "tpot": avg_tpot / 1000.0,  # 转换为毫秒
         "mfu": mfu,
+        "mbu": mbu,
         "flops": flops,
         "dram_occupy": dram_occupy,
         "score": score,
         "layers": layers_info,  # 添加详细的 layers 信息
+        "cost": cost_result,  # 成本评估结果
     }
 
 

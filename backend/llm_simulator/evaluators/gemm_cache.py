@@ -11,6 +11,9 @@ GEMM 持久化缓存管理器
 import json
 import hashlib
 import logging
+import os
+import uuid
+import fcntl
 from pathlib import Path
 from typing import Dict, Optional, TYPE_CHECKING
 from datetime import datetime
@@ -51,6 +54,9 @@ class GEMMPersistentCache:
         cache_dir = Path(__file__).parent.parent.parent / ".cache" / "gemm"
         cache_dir.mkdir(parents=True, exist_ok=True)
         self.cache_file = cache_dir / f"gemm_cache_{self.arch_fingerprint}.json"
+
+        # 调试日志：确认使用的架构
+        logger.info(f"📦 GEMM 缓存初始化: arch={arch.name}, fingerprint={self.arch_fingerprint}, file={self.cache_file.name}")
 
         # 内存缓存（快速访问）
         self._cache: Dict[str, "GEMMResult"] = {}
@@ -235,57 +241,124 @@ class GEMMPersistentCache:
         result: "GEMMResult",
         search_time_ms: float
     ):
-        """保存单条记录到磁盘（增量更新）"""
-        try:
-            # 读取现有数据
-            if self.cache_file.exists():
-                with open(self.cache_file, 'r', encoding='utf-8') as f:
-                    data = json.load(f)
-            else:
-                data = self._create_empty_cache_file()
+        """
+        保存单条记录到磁盘（增量更新）
 
-            # 添加新条目
-            data["cache_entries"][cache_key] = {
-                "shape": {"G": G, "M": M, "K": K, "N": N},
-                "dtypes": {"input": input_dtype, "output": output_dtype},
-                "search_mode": {
-                    "tile_search": enable_tile_search,
-                    "partition_search": enable_partition_search
-                },
-                "result": {
-                    "latency_us": result.latency_us,
-                    "compute_time_us": result.compute_time_us,
-                    "memory_time_us": result.memory_time_us,
-                    "flops": result.flops,
-                    "dram_traffic_bytes": result.dram_traffic_bytes,
-                    "arch_utilization": result.arch_utilization,
-                    "effective_utilization": result.effective_utilization,
-                    "best_tile": list(result.best_tile),
-                    "best_loop_order": result.best_loop_order,
-                    "best_partition": list(result.best_partition)
-                },
-                "metadata": {
-                    "timestamp": datetime.now().isoformat(),
-                    "search_time_ms": search_time_ms
-                }
-            }
+        并发安全设计：
+        1. 使用唯一临时文件名（PID + UUID）避免多进程覆盖
+        2. 使用文件锁保护读-改-写的原子性
+        3. 失败时优雅降级，不影响主流程
+        """
+        # 生成唯一临时文件名，避免并发冲突
+        unique_suffix = f".{os.getpid()}_{uuid.uuid4().hex[:8]}.tmp"
+        tmp_file = self.cache_file.parent / f"{self.cache_file.stem}{unique_suffix}"
+        lock_file = self.cache_file.with_suffix('.lock')
 
-            # 更新统计信息
-            data["statistics"]["total_entries"] = len(data["cache_entries"])
-            data["statistics"]["last_updated"] = datetime.now().isoformat()
-            data["statistics"]["total_search_time_hours"] = (
-                data["statistics"].get("total_search_time_hours", 0) +
-                search_time_ms / 1000 / 3600
-            )
+        max_retries = 3
 
-            # 原子写入（先写临时文件，再替换）
-            tmp_file = self.cache_file.with_suffix('.tmp')
-            with open(tmp_file, 'w', encoding='utf-8') as f:
-                json.dump(data, f, indent=2, ensure_ascii=False)
-            tmp_file.replace(self.cache_file)
+        for attempt in range(max_retries):
+            try:
+                # 确保目录存在
+                self.cache_file.parent.mkdir(parents=True, exist_ok=True)
 
-        except Exception as e:
-            logger.error(f"保存缓存失败: {e}")
+                # 使用文件锁保护整个读-改-写过程
+                with open(lock_file, 'w') as lf:
+                    try:
+                        # 获取排他锁（非阻塞，失败则重试）
+                        fcntl.flock(lf.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    except (IOError, OSError):
+                        # 无法获取锁，等待后重试
+                        if attempt < max_retries - 1:
+                            import time
+                            time.sleep(0.1 * (attempt + 1))  # 递增等待
+                            continue
+                        else:
+                            logger.warning(f"无法获取缓存锁，跳过本次保存")
+                            return
+
+                    try:
+                        # 读取现有数据
+                        if self.cache_file.exists():
+                            try:
+                                with open(self.cache_file, 'r', encoding='utf-8') as f:
+                                    data = json.load(f)
+                            except json.JSONDecodeError as e:
+                                logger.warning(f"缓存文件损坏 ({e}), 将重新创建")
+                                backup = self.cache_file.with_suffix('.corrupted')
+                                try:
+                                    if backup.exists():
+                                        backup.unlink()
+                                    self.cache_file.rename(backup)
+                                    logger.info(f"已备份损坏的缓存文件到: {backup}")
+                                except OSError:
+                                    pass  # 备份失败不影响主流程
+                                data = self._create_empty_cache_file()
+                        else:
+                            data = self._create_empty_cache_file()
+
+                        # 添加新条目
+                        data["cache_entries"][cache_key] = {
+                            "shape": {"G": G, "M": M, "K": K, "N": N},
+                            "dtypes": {"input": input_dtype, "output": output_dtype},
+                            "search_mode": {
+                                "tile_search": enable_tile_search,
+                                "partition_search": enable_partition_search
+                            },
+                            "result": {
+                                "latency_us": result.latency_us,
+                                "compute_time_us": result.compute_time_us,
+                                "memory_time_us": result.memory_time_us,
+                                "flops": result.flops,
+                                "dram_traffic_bytes": result.dram_traffic_bytes,
+                                "arch_utilization": result.arch_utilization,
+                                "effective_utilization": result.effective_utilization,
+                                "best_tile": list(result.best_tile),
+                                "best_loop_order": result.best_loop_order,
+                                "best_partition": list(result.best_partition)
+                            },
+                            "metadata": {
+                                "timestamp": datetime.now().isoformat(),
+                                "search_time_ms": search_time_ms
+                            }
+                        }
+
+                        # 更新统计信息
+                        data["statistics"]["total_entries"] = len(data["cache_entries"])
+                        data["statistics"]["last_updated"] = datetime.now().isoformat()
+                        data["statistics"]["total_search_time_hours"] = (
+                            data["statistics"].get("total_search_time_hours", 0) +
+                            search_time_ms / 1000 / 3600
+                        )
+
+                        # 写入唯一临时文件
+                        with open(tmp_file, 'w', encoding='utf-8') as f:
+                            json.dump(data, f, indent=2, ensure_ascii=False)
+
+                        # 原子替换
+                        tmp_file.replace(self.cache_file)
+
+                        # 成功，退出重试循环
+                        return
+
+                    finally:
+                        # 释放锁
+                        fcntl.flock(lf.fileno(), fcntl.LOCK_UN)
+
+            except Exception as e:
+                # 清理临时文件
+                try:
+                    if tmp_file.exists():
+                        tmp_file.unlink()
+                except OSError:
+                    pass
+
+                if attempt < max_retries - 1:
+                    logger.debug(f"保存缓存失败 (尝试 {attempt + 1}/{max_retries}): {e}")
+                    import time
+                    time.sleep(0.05 * (attempt + 1))
+                else:
+                    # 最终失败，记录警告但不抛出异常（优雅降级）
+                    logger.warning(f"保存缓存失败，跳过本次保存: {e}")
 
     def _create_empty_cache_file(self) -> dict:
         """创建空缓存文件结构"""

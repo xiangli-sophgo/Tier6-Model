@@ -232,6 +232,10 @@ def _update_task_status(
 
 def _save_single_result(task_id: str, result_data: dict):
     """保存单个评估结果到数据库（边评估边保存）"""
+    # 调试日志：记录要保存的并行参数
+    parallelism = result_data.get("parallelism", {})
+    logger.info(f"[{task_id[:8]}] 保存结果: DP={parallelism.get('dp')}, TP={parallelism.get('tp')}, EP={parallelism.get('ep')}, MoE_TP={parallelism.get('moe_tp')}, 芯片数={result_data.get('chips')}")
+
     with get_db_session() as db:
         task = db.query(EvaluationTask).filter(EvaluationTask.task_id == task_id).first()
         if not task:
@@ -362,6 +366,7 @@ def _execute_evaluation(
             enable_tile_search=enable_tile_search,
             enable_partition_search=enable_partition_search,
             max_simulated_tokens=max_simulated_tokens,
+            max_workers=max_workers,  # 传递并发度参数
         )
 
         # 保存结果（自动模式已经边评估边保存，只有手动模式需要在此保存）
