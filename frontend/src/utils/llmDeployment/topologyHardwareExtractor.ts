@@ -6,7 +6,7 @@
 
 import { HierarchicalTopology, ConnectionConfig } from '../../types'
 import { FlexBoardChipConfig } from '../../components/ConfigPanel/shared'
-import { ChipHardwareConfig, HardwareConfig, NodeConfig, ClusterConfig } from './types'
+import { ChipHardwareConfig, HardwareConfig, BoardConfig, RackConfig, PodConfig } from './types'
 import { getChipConfig } from './presets'
 
 /**
@@ -190,6 +190,18 @@ export function extractChipGroupsFromConfig(
       // 优先从保存的配置中读取硬件参数
       let chipConfig: ChipHardwareConfig
 
+      // SG2260E 默认微架构参数
+      const defaultMicroArch = {
+        cube_m: 16,
+        cube_k: 32,
+        cube_n: 8,
+        sram_size_kb: 2048,
+        sram_utilization: 0.45,
+        lane_num: 16,
+        align_bytes: 32,
+        compute_dma_overlap_rate: 0.8,
+      }
+
       // 方案1: 如果配置中已有完整的硬件参数，直接使用（不依赖后端）
       if (chip.compute_tflops_fp16 && chip.memory_gb && chip.memory_bandwidth_gbps) {
         chipConfig = {
@@ -201,6 +213,7 @@ export function extractChipGroupsFromConfig(
           memory_gb: chip.memory_gb,
           memory_bandwidth_gbps: chip.memory_bandwidth_gbps,
           memory_bandwidth_utilization: chip.memory_bandwidth_utilization || 0.85,
+          ...defaultMicroArch,
         }
       }
       // 方案2: 从预设获取（后端预设 + 自定义预设）
@@ -220,6 +233,7 @@ export function extractChipGroupsFromConfig(
             memory_gb: 64,
             memory_bandwidth_gbps: 1200,
             memory_bandwidth_utilization: 0.85,
+            ...defaultMicroArch,
           }
         }
       }
@@ -235,6 +249,7 @@ export function extractChipGroupsFromConfig(
           memory_gb: 64,
           memory_bandwidth_gbps: 1200,
           memory_bandwidth_utilization: 0.85,
+          ...defaultMicroArch,
         }
       }
 
@@ -298,24 +313,31 @@ export function generateHardwareConfig(
     return null
   }
 
-  // 芯片配置
-  const chip: ChipHardwareConfig = chipGroup.chipConfig
+  // 芯片配置（暂时使用旧的chipConfig，后续会在UI层修正）
+  const chip: ChipHardwareConfig = chipGroup.chipConfig as any
 
-  // 节点配置 (Board = Node)
-  const node: NodeConfig = {
-    chips_per_node: chipGroup.chipsPerBoard,
-    intra_node_bandwidth_gbps: summary.intraNodeBandwidthGbps,
-    intra_node_latency_us: summary.intraNodeLatencyUs,
+  // Board配置
+  const board: BoardConfig = {
+    chips_per_board: chipGroup.chipsPerBoard,
+    b2b_bandwidth_gbps: summary.interNodeBandwidthGbps,
+    b2b_latency_us: summary.interNodeLatencyUs,
   }
 
-  // 集群配置
-  const cluster: ClusterConfig = {
-    num_nodes: chipGroup.boardCount,
-    inter_node_bandwidth_gbps: summary.interNodeBandwidthGbps,
-    inter_node_latency_us: summary.interNodeLatencyUs,
+  // Rack配置
+  const rack: RackConfig = {
+    boards_per_rack: Math.ceil(chipGroup.boardCount / summary.totalRacks),
+    r2r_bandwidth_gbps: summary.interNodeBandwidthGbps,
+    r2r_latency_us: summary.interNodeLatencyUs,
   }
 
-  return { chip, node, cluster }
+  // Pod配置
+  const pod: PodConfig = {
+    racks_per_pod: Math.ceil(summary.totalRacks / summary.totalPods),
+    p2p_bandwidth_gbps: summary.interNodeBandwidthGbps,
+    p2p_latency_us: summary.interNodeLatencyUs,
+  }
+
+  return { chip, board, rack, pod }
 }
 
 /**

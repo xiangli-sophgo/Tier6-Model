@@ -55,6 +55,7 @@ export const KnowledgeGraph: React.FC<KnowledgeGraphProps> = ({ renderMode }) =>
   const { knowledge, ui } = useWorkbench()
   const {
     knowledgeHighlightedNodeId: highlightedNodeId,
+    knowledgeHoveredSearchResultId: hoveredSearchResultIdFromContext,
     knowledgeVisibleCategories: visibleCategories,
     knowledgeNodes: cachedNodes,
     knowledgeViewBox: _cachedViewBox,
@@ -62,6 +63,7 @@ export const KnowledgeGraph: React.FC<KnowledgeGraphProps> = ({ renderMode }) =>
     knowledgeGraphActions,
     addKnowledgeSelectedNode,
     clearKnowledgeHighlight,
+    setKnowledgeHoveredSearchResultId,
     setKnowledgeVisibleCategories: setVisibleCategories,
     setKnowledgeEnableDrag: setEnableDrag,
     setKnowledgeGraphActions,
@@ -79,10 +81,13 @@ export const KnowledgeGraph: React.FC<KnowledgeGraphProps> = ({ renderMode }) =>
   const [searchQuery, setSearchQuery] = useState('')
   const [dimensions, setDimensions] = useState({ width: 800, height: 600 })
   const [searchResultCount, setSearchResultCount] = useState(0)
+  const [showSearchResults, setShowSearchResults] = useState(false)
+  const [selectedSearchIndex, setSelectedSearchIndex] = useState(0)
 
   // Refs
   const graphRef = useRef<ForceGraphMethods<GraphNode, GraphLink>>()
   const containerRef = useRef<HTMLDivElement>(null)
+  const searchContainerRef = useRef<HTMLDivElement>(null)
 
   // 获取节点列表 - 优先使用预初始化的缓存，否则从原始数据加载
   const allNodes = useMemo(() => {
@@ -117,6 +122,8 @@ export const KnowledgeGraph: React.FC<KnowledgeGraphProps> = ({ renderMode }) =>
   const matchedNodeIds = useMemo(() => {
     if (!searchQuery.trim()) {
       setSearchResultCount(0)
+      setShowSearchResults(false)
+      setKnowledgeHoveredSearchResultId(null)  // 清除悬停高亮
       return null
     }
 
@@ -127,6 +134,7 @@ export const KnowledgeGraph: React.FC<KnowledgeGraphProps> = ({ renderMode }) =>
         cachedNodes: cachedNodes.length,
       })
       setSearchResultCount(0)
+      setShowSearchResults(false)
       return null
     }
 
@@ -145,6 +153,8 @@ export const KnowledgeGraph: React.FC<KnowledgeGraphProps> = ({ renderMode }) =>
     })
 
     setSearchResultCount(matched.size)
+    setShowSearchResults(matched.size > 0)
+    setSelectedSearchIndex(0)
 
     // 调试日志
     if (matched.size === 0) {
@@ -174,6 +184,15 @@ export const KnowledgeGraph: React.FC<KnowledgeGraphProps> = ({ renderMode }) =>
   const visibleNodes = useMemo(() => {
     return allNodes.filter(n => visibleCategories.has(n.category))
   }, [allNodes, visibleCategories])
+
+  // 获取匹配的节点列表（用于搜索结果显示）
+  const matchedNodes = useMemo(() => {
+    if (!matchedNodeIds || matchedNodeIds.size === 0) return []
+    return Array.from(matchedNodeIds)
+      .map(id => allNodes.find(n => n.id === id))
+      .filter((n): n is GraphNode => n !== undefined)
+      .filter(n => visibleCategories.has(n.category))
+  }, [matchedNodeIds, allNodes, visibleCategories])
 
   // 过滤可见边（显示所有可见节点之间的关系）
   const visibleLinks = useMemo(() => {
@@ -220,6 +239,48 @@ export const KnowledgeGraph: React.FC<KnowledgeGraphProps> = ({ renderMode }) =>
     // 直接强制转换为 ForceKnowledgeNode（它们的结构兼容）
     addKnowledgeSelectedNode(node as any)
   }, [addKnowledgeSelectedNode])
+
+  // 聚焦到指定节点
+  const focusOnNode = useCallback((node: GraphNode) => {
+    // 优先使用 Context 中的 actions（适用于 toolbar-only 模式调用）
+    const actions = knowledgeGraphActions || graphRef.current
+
+    if (!actions) {
+      console.warn('⚠️ 无法聚焦节点：graphRef 和 knowledgeGraphActions 均不可用')
+      return
+    }
+
+    // 添加到选中列表
+    addKnowledgeSelectedNode(node as any)
+
+    // 缩放并居中到该节点
+    if (node.x !== undefined && node.y !== undefined) {
+      if ('centerAt' in actions) {
+        actions.centerAt(node.x, node.y, 1000)
+        actions.zoom(3, 1000)
+        console.log(`🎯 聚焦到节点: ${node.name} (${node.x}, ${node.y})`)
+      }
+    } else {
+      console.warn(`⚠️ 节点 ${node.name} 没有坐标信息`)
+    }
+  }, [addKnowledgeSelectedNode, knowledgeGraphActions])
+
+  // 搜索结果点击处理
+  const handleSearchResultClick = useCallback((node: GraphNode, index: number) => {
+    console.log(`🖱️ 点击搜索结果: ${node.name}`, node)
+    setSelectedSearchIndex(index)
+
+    // 清除悬停高亮
+    setKnowledgeHoveredSearchResultId(null)
+
+    // 先关闭下拉列表
+    setShowSearchResults(false)
+
+    // 延迟聚焦，确保画布已渲染
+    setTimeout(() => {
+      focusOnNode(node)
+    }, 100)
+  }, [focusOnNode, setKnowledgeHoveredSearchResultId])
 
   // 背景点击 - 清除高亮
   const handleBackgroundClick = useCallback(() => {
@@ -398,6 +459,41 @@ export const KnowledgeGraph: React.FC<KnowledgeGraphProps> = ({ renderMode }) =>
     }
   }, [renderMode, setKnowledgeGraphActions, performRelayout])
 
+  // 点击搜索框外部关闭下拉列表
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as Node
+
+      // 如果点击的是搜索框容器内的元素，不关闭
+      if (searchContainerRef.current && searchContainerRef.current.contains(target)) {
+        return
+      }
+
+      // 否则关闭下拉列表并清除高亮
+      setShowSearchResults(false)
+      setKnowledgeHoveredSearchResultId(null)
+    }
+
+    if (showSearchResults) {
+      // 延迟绑定，避免立即触发
+      setTimeout(() => {
+        document.addEventListener('mousedown', handleClickOutside, true)  // 使用捕获阶段
+      }, 0)
+
+      return () => document.removeEventListener('mousedown', handleClickOutside, true)
+    }
+  }, [showSearchResults, setKnowledgeHoveredSearchResultId])
+
+  // 单个搜索结果自动聚焦
+  useEffect(() => {
+    if (matchedNodes.length === 1 && searchQuery.trim()) {
+      const timer = setTimeout(() => {
+        focusOnNode(matchedNodes[0])
+      }, 500) // 500ms 延迟，避免频繁触发
+      return () => clearTimeout(timer)
+    }
+  }, [matchedNodes, searchQuery, focusOnNode])
+
   // 节点渲染
   const paintNode = useCallback((node: GraphNode, ctx: CanvasRenderingContext2D, _globalScale: number) => {
     const radius = getNodeRadius(node.id!)
@@ -406,30 +502,15 @@ export const KnowledgeGraph: React.FC<KnowledgeGraphProps> = ({ renderMode }) =>
     // 判断节点状态 - 使用预计算的 adjacencyMap
     const isHighlighted = node.id === highlightedNodeId
     const isHovered = hoveredNode?.id === node.id
+    const isSearchResultHovered = node.id === hoveredSearchResultIdFromContext  // 搜索结果列表悬停（从 Context 读取）
     const isAdjacent = highlightedNodeId ? (adjacencyMap.get(highlightedNodeId)?.has(node.id!) || false) : false
     const isMatched = matchedNodeIds ? matchedNodeIds.has(node.id!) : true
     const isFiltered = matchedNodeIds && !isMatched
     const isDimmed = highlightedNodeId && !isHighlighted && !isAdjacent
 
-    // 搜索时的外圈高亮（搜索匹配的节点）- 加强效果
-    if (matchedNodeIds && isMatched && !isFiltered) {
-      // 外圈 - 高对比度金色
-      ctx.beginPath()
-      ctx.arc(node.x!, node.y!, radius + 6, 0, 2 * Math.PI)
-      ctx.strokeStyle = '#FFD700'  // 金色，更显眼
-      ctx.lineWidth = 3.5
-      ctx.globalAlpha = 0.8
-      ctx.stroke()
-
-      // 内圈 - 节点颜色的浅色
-      ctx.beginPath()
-      ctx.arc(node.x!, node.y!, radius + 2, 0, 2 * Math.PI)
-      ctx.strokeStyle = color
-      ctx.lineWidth = 1.5
-      ctx.globalAlpha = 0.6
-      ctx.stroke()
-      ctx.globalAlpha = 1
-    }
+    // 搜索时：未匹配的节点变暗，匹配的节点保持原样并加强高亮
+    const isSearchActive = matchedNodeIds && matchedNodeIds.size > 0
+    const shouldDimNode = isSearchActive && !isMatched
 
     // 绘制高亮外圈（节点被选中时）
     if ((isHighlighted || isAdjacent) && !isDimmed) {
@@ -443,32 +524,78 @@ export const KnowledgeGraph: React.FC<KnowledgeGraphProps> = ({ renderMode }) =>
     }
 
     // 绘制主圆形
+    const nodeRadius = isSearchResultHovered ? radius * 1.3 : radius  // 悬停时放大
     ctx.beginPath()
-    ctx.arc(node.x!, node.y!, radius, 0, 2 * Math.PI)
+    ctx.arc(node.x!, node.y!, nodeRadius, 0, 2 * Math.PI)
 
-    if (isDimmed) {
+    // 搜索结果悬停 - 强烈多重外发光
+    if (isSearchResultHovered) {
+      ctx.shadowBlur = 30
+      ctx.shadowColor = 'rgba(168, 85, 247, 0.8)'  // 紫色
+      ctx.fillStyle = color
+      ctx.globalAlpha = 1
+      ctx.fill()
+
+      // 多重阴影效果
+      ctx.shadowBlur = 20
+      ctx.shadowColor = 'rgba(168, 85, 247, 0.6)'
+      ctx.fill()
+      ctx.shadowBlur = 10
+      ctx.shadowColor = 'rgba(168, 85, 247, 0.4)'
+      ctx.fill()
+      ctx.shadowBlur = 0
+    }
+    // 普通搜索匹配 - 柔和外发光
+    else if (isSearchActive && isMatched && !isFiltered) {
+      ctx.shadowBlur = 20
+      ctx.shadowColor = 'rgba(0, 217, 255, 0.7)'  // 青色
+      ctx.fillStyle = color
+      ctx.globalAlpha = 1
+      ctx.fill()
+      ctx.shadowBlur = 0
+    }
+    // 未匹配节点 - 强烈变暗
+    else if (shouldDimNode) {
+      ctx.fillStyle = '#ddd'
+      ctx.globalAlpha = 0.08
+      ctx.fill()
+    }
+    // 其他状态
+    else if (isDimmed) {
       ctx.fillStyle = '#ccc'
       ctx.globalAlpha = 0.3
+      ctx.fill()
     } else if (isFiltered) {
-      ctx.fillStyle = color + '4D' // 30% opacity
+      ctx.fillStyle = color + '4D'
       ctx.globalAlpha = 0.3
+      ctx.fill()
     } else {
       ctx.fillStyle = color
       ctx.globalAlpha = 1
+      ctx.fill()
     }
 
-    ctx.fill()
-
     // 边框
-    ctx.strokeStyle = isDimmed ? '#999' : isFiltered ? '#ccc' : '#fff'
-    ctx.lineWidth = 1.5
+    if (shouldDimNode) {
+      ctx.strokeStyle = '#ccc'
+      ctx.globalAlpha = 0.1
+    } else if (isSearchResultHovered) {
+      ctx.strokeStyle = '#FFFFFF'
+      ctx.lineWidth = 2.5
+      ctx.globalAlpha = 1
+    } else {
+      ctx.strokeStyle = isDimmed ? '#999' : isFiltered ? '#ccc' : '#fff'
+      ctx.lineWidth = 1.5
+      ctx.globalAlpha = isDimmed || isFiltered ? 0.5 : 1
+    }
     ctx.stroke()
 
     ctx.globalAlpha = 1
+    ctx.shadowBlur = 0
 
-    // 悬停效果 - 发光
-    if (isHovered && !isDimmed) {
-      ctx.shadowBlur = 10
+    // Canvas悬停效果 - 发光（仅当不是搜索结果悬停时）
+    if (isHovered && !isDimmed && !isSearchResultHovered) {
+      ctx.shadowBlur = 15
       ctx.shadowColor = color
       ctx.beginPath()
       ctx.arc(node.x!, node.y!, radius, 0, 2 * Math.PI)
@@ -498,11 +625,18 @@ export const KnowledgeGraph: React.FC<KnowledgeGraphProps> = ({ renderMode }) =>
     ctx.font = `600 ${fontSize}px Sans-Serif`
     ctx.textAlign = 'center'
     ctx.textBaseline = 'middle'
-    ctx.fillStyle = isDimmed ? '#999' : '#fff'
-    ctx.globalAlpha = isDimmed ? 0.5 : 1
+
+    if (shouldDimNode) {
+      ctx.fillStyle = '#aaa'
+      ctx.globalAlpha = 0.3
+    } else {
+      ctx.fillStyle = isDimmed ? '#999' : '#fff'
+      ctx.globalAlpha = isDimmed ? 0.5 : 1
+    }
+
     ctx.fillText(label, node.x!, node.y!)
     ctx.globalAlpha = 1
-  }, [highlightedNodeId, hoveredNode, matchedNodeIds, getNodeRadius, adjacencyMap])
+  }, [highlightedNodeId, hoveredNode, hoveredSearchResultIdFromContext, matchedNodeIds, getNodeRadius, adjacencyMap])
 
   // 边渲染
   const paintLink = useCallback((link: GraphLink, ctx: CanvasRenderingContext2D, _globalScale: number) => {
@@ -516,7 +650,8 @@ export const KnowledgeGraph: React.FC<KnowledgeGraphProps> = ({ renderMode }) =>
 
     // 判断边状态
     const isHighlighted = highlightedNodeId && (sourceId === highlightedNodeId || targetId === highlightedNodeId)
-    const isFiltered = matchedNodeIds && (!matchedNodeIds.has(sourceId) || !matchedNodeIds.has(targetId))
+    const isSearchActive = matchedNodeIds && matchedNodeIds.size > 0
+    const isSearchFiltered = isSearchActive && (!matchedNodeIds.has(sourceId) || !matchedNodeIds.has(targetId))
     const isDimmed = highlightedNodeId && !isHighlighted
 
     // 绘制边
@@ -527,9 +662,10 @@ export const KnowledgeGraph: React.FC<KnowledgeGraphProps> = ({ renderMode }) =>
     if (isDimmed) {
       ctx.strokeStyle = '#ddd'
       ctx.globalAlpha = 0.2
-    } else if (isFiltered) {
-      ctx.strokeStyle = '#ccc'
-      ctx.globalAlpha = 0.15
+    } else if (isSearchFiltered) {
+      // 搜索时未匹配的边 - 强烈变暗
+      ctx.strokeStyle = '#e5e5e5'
+      ctx.globalAlpha = 0.1
     } else if (isHighlighted) {
       ctx.strokeStyle = '#666'
       ctx.globalAlpha = 1
@@ -547,31 +683,72 @@ export const KnowledgeGraph: React.FC<KnowledgeGraphProps> = ({ renderMode }) =>
   // 只渲染工具栏
   if (renderMode === 'toolbar-only') {
     return (
-      <div className="flex w-full items-center justify-between gap-4 border-b border-blue-100 bg-gradient-to-r from-blue-50 to-white px-4 py-4" style={{boxShadow: '0 2px 8px rgba(37, 99, 235, 0.06)'}}>
-        {/* 左侧：搜索框 + 分类过滤 + 全部显示 */}
-        <div className="flex flex-1 items-center justify-center gap-4 min-w-0">
-          {/* 搜索框 */}
-          <div className="flex flex-shrink-0 items-center gap-2">
-            <div className="relative w-[200px]">
-              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-text-secondary" />
-              <Input
-                placeholder="搜索名词..."
-                value={searchQuery}
-                onChange={e => setSearchQuery(e.target.value)}
-                className="pl-9"
-              />
-            </div>
-            {/* 搜索结果反馈 */}
-            {searchQuery.trim() && (
-              <span className={`text-xs font-medium whitespace-nowrap ${
-                searchResultCount > 0 ? 'text-success' : 'text-error'
-              }`}>
-                {searchResultCount > 0
-                  ? `找到 ${searchResultCount}`
-                  : '未找到'}
-              </span>
-            )}
-          </div>
+      <div className="flex w-full items-center justify-between gap-6 border-b border-blue-100 bg-gradient-to-r from-blue-50 to-white px-6 py-2.5" style={{boxShadow: '0 2px 8px rgba(37, 99, 235, 0.06)'}}>
+        {/* 左侧：搜索框 */}
+        <div ref={searchContainerRef} className="relative w-[280px]">
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-text-secondary" />
+          <Input
+            placeholder="搜索名词..."
+            value={searchQuery}
+            onChange={e => setSearchQuery(e.target.value)}
+            onFocus={() => matchedNodes.length > 0 && setShowSearchResults(true)}
+            className="pl-9"
+          />
+          {/* 搜索结果下拉列表 */}
+          {showSearchResults && matchedNodes.length > 0 && (
+            <div className="absolute top-full left-0 mt-2 w-[450px] max-h-[500px] overflow-y-auto bg-white rounded-lg shadow-xl border border-gray-200" style={{ zIndex: 9999 }}>
+                  <div className="p-2">
+                    <div className="flex items-center justify-between text-xs px-2 py-1 mb-1">
+                      <span className="text-text-muted">
+                        找到 {matchedNodes.length} 个匹配结果
+                      </span>
+                      {matchedNodes.length === 1 && (
+                        <span className="text-blue-500 font-medium">
+                          自动定位中...
+                        </span>
+                      )}
+                    </div>
+                    {matchedNodes.map((node, index) => (
+                      <div
+                        key={node.id}
+                        className="flex items-start gap-3 p-2 rounded cursor-pointer hover:bg-gray-50"
+                        onClick={() => handleSearchResultClick(node, index)}
+                        onMouseEnter={() => setKnowledgeHoveredSearchResultId(node.id)}
+                        onMouseLeave={() => setKnowledgeHoveredSearchResultId(null)}
+                      >
+                        {/* 颜色指示器 */}
+                        <div
+                          className="flex-shrink-0 w-3 h-3 rounded-full mt-1"
+                          style={{ backgroundColor: CATEGORY_COLORS[node.category] }}
+                        />
+                        {/* 节点信息 */}
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 mb-1">
+                            <span className="font-medium text-sm text-text-primary">
+                              {node.name}
+                            </span>
+                            <Badge
+                              variant="outline"
+                              className="text-xs px-1 py-0"
+                              style={{
+                                borderColor: CATEGORY_COLORS[node.category],
+                                color: CATEGORY_COLORS[node.category]
+                              }}
+                            >
+                              {CATEGORY_NAMES[node.category]}
+                            </Badge>
+                          </div>
+                          <p className="text-xs text-text-secondary line-clamp-2">
+                            {node.definition}
+                          </p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+        </div>
+        <div className="flex flex-1 items-center justify-center gap-3 min-w-0">
 
           {/* 分类过滤 */}
           <div className="flex flex-wrap gap-1 min-w-0">
@@ -605,16 +782,15 @@ export const KnowledgeGraph: React.FC<KnowledgeGraphProps> = ({ renderMode }) =>
               size="sm"
               variant="outline"
               onClick={resetKnowledgeCategories}
-              className="flex-shrink-0"
             >
               <RotateCw className="mr-1 h-3 w-3" />
-              全部显示
+              全部
             </Button>
           )}
         </div>
 
         {/* 右侧：重新布局 + 拖动开关 */}
-        <div className="flex flex-shrink-0 items-center gap-3">
+        <div className="flex items-center gap-3">
           {/* 重新布局按钮 */}
           <Button
             size="sm"
@@ -632,7 +808,7 @@ export const KnowledgeGraph: React.FC<KnowledgeGraphProps> = ({ renderMode }) =>
               checked={enableDrag}
               onCheckedChange={setEnableDrag}
             />
-            <span className="text-xs text-text-secondary">
+            <span className="text-xs text-text-secondary whitespace-nowrap">
               {enableDrag ? '可拖动' : '不可拖动'}
             </span>
           </div>
@@ -681,14 +857,68 @@ export const KnowledgeGraph: React.FC<KnowledgeGraphProps> = ({ renderMode }) =>
         <div className="flex flex-1 items-center justify-center gap-4 min-w-0">
           {/* 搜索框 */}
           <div className="flex flex-shrink-0 items-center gap-2">
-            <div className="relative w-[200px]">
+            <div ref={searchContainerRef} className="relative w-[200px]">
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-text-secondary" />
               <Input
                 placeholder="搜索名词..."
                 value={searchQuery}
                 onChange={e => setSearchQuery(e.target.value)}
+                onFocus={() => matchedNodes.length > 0 && setShowSearchResults(true)}
                 className="pl-9"
               />
+              {/* 搜索结果下拉列表 */}
+              {showSearchResults && matchedNodes.length > 0 && (
+                <div className="absolute top-full left-0 mt-2 w-[400px] max-h-[400px] overflow-y-auto bg-white rounded-lg shadow-xl border border-gray-200" style={{ zIndex: 9999 }}>
+                  <div className="p-2">
+                    <div className="flex items-center justify-between text-xs px-2 py-1 mb-1">
+                      <span className="text-text-muted">
+                        找到 {matchedNodes.length} 个匹配结果
+                      </span>
+                      {matchedNodes.length === 1 && (
+                        <span className="text-blue-500 font-medium">
+                          自动定位中...
+                        </span>
+                      )}
+                    </div>
+                    {matchedNodes.map((node, index) => (
+                      <div
+                        key={node.id}
+                        className="flex items-start gap-3 p-2 rounded cursor-pointer hover:bg-gray-50"
+                        onClick={() => handleSearchResultClick(node, index)}
+                        onMouseEnter={() => setKnowledgeHoveredSearchResultId(node.id)}
+                        onMouseLeave={() => setKnowledgeHoveredSearchResultId(null)}
+                      >
+                        {/* 颜色指示器 */}
+                        <div
+                          className="flex-shrink-0 w-3 h-3 rounded-full mt-1"
+                          style={{ backgroundColor: CATEGORY_COLORS[node.category] }}
+                        />
+                        {/* 节点信息 */}
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 mb-1">
+                            <span className="font-medium text-sm text-text-primary">
+                              {node.name}
+                            </span>
+                            <Badge
+                              variant="outline"
+                              className="text-xs px-1 py-0"
+                              style={{
+                                borderColor: CATEGORY_COLORS[node.category],
+                                color: CATEGORY_COLORS[node.category]
+                              }}
+                            >
+                              {CATEGORY_NAMES[node.category]}
+                            </Badge>
+                          </div>
+                          <p className="text-xs text-text-secondary line-clamp-2">
+                            {node.definition}
+                          </p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
             {/* 搜索结果反馈 */}
             {searchQuery.trim() && (

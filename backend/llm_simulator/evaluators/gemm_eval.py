@@ -38,6 +38,199 @@ DEFAULT_INPUT_DTYPE = 'fp8'   # 输入/权重使用 FP8
 DEFAULT_OUTPUT_DTYPE = 'bf16'  # 输出使用 BF16
 
 
+# ==================== 纯函数：核心计算逻辑 ====================
+# 这些函数被 GEMMEvaluator 和 _PartitionEvaluator 共用
+# 使用纯函数可以被 pickle（用于多进程），同时避免代码重复
+
+def _find_legal_tiles_impl(
+    m_blk: int,
+    n_blk: int,
+    k_blk: int,
+    input_dtype_bytes: int,
+    output_dtype_bytes: int,
+    cube_m: int,
+    cube_n: int,
+    cube_k: int,
+    sram_limit: int,
+    lane_num: int,
+    align_bytes: int,
+) -> List[Tuple[int, int, int]]:
+    """
+    搜索所有能放进 SRAM 的 Tile 大小（纯函数实现）
+
+    SRAM 布局:
+    - A tile: [m_t, k_t] × input_dtype_bytes
+    - B tile: [k_t, n_t] × input_dtype_bytes
+    - C tile: [m_t, n_t] × output_dtype_bytes
+    """
+    if m_blk <= 0 or n_blk <= 0 or k_blk <= 0:
+        return [(0, 0, 0)]
+
+    tiles = []
+
+    # 对齐函数
+    def align_row(r: int) -> int:
+        return align_up(r, lane_num)
+
+    def align_col(c: int, elem_bytes: int) -> int:
+        return align_up(c * elem_bytes, align_bytes)
+
+    # 从大到小搜索 Tile (越大越好，数据复用越多)
+    m_start = align_up(m_blk, cube_m)
+    n_start = align_up(n_blk, cube_n)
+
+    for m_t in range(m_start, 0, -cube_m):
+        # 允许 m_t 至少达到 cube_m（最小对齐单元）
+        if m_t > max(m_blk * 2, cube_m):
+            continue
+        align_row_m = align_row(m_t)
+
+        for n_t in range(n_start, 0, -cube_n):
+            # 允许 n_t 至少达到 cube_n
+            if n_t > max(n_blk * 2, cube_n):
+                continue
+            align_col_n = align_col(n_t, output_dtype_bytes)
+            align_row_n = align_row(n_t)  # 用于 B tile 计算
+
+            # C tile 必须放得下: C[m_t, n_t]
+            # 行数对齐到 lane_num，列字节数对齐到 align_bytes
+            c_tile_bytes = align_row_m * align_col_n
+            avail = sram_limit - c_tile_bytes
+
+            if avail <= 0:
+                continue
+
+            # 计算最大 k_t
+            # A tile: [m_t, k_t]，每增加 1 个 k 需要 align_row_m * input_dtype_bytes
+            # B tile: [k_t, n_t]，每增加 1 个 k 需要 align_row_n * input_dtype_bytes
+            bytes_per_k = (align_row_m + align_row_n) * input_dtype_bytes
+            if bytes_per_k <= 0:
+                max_k = k_blk
+            else:
+                max_k = int(avail / bytes_per_k)
+
+            if max_k <= 0:
+                continue
+
+            # 对齐到 cube_k
+            k_t = min(k_blk, max_k)
+            if k_t >= cube_k:
+                k_t = (k_t // cube_k) * cube_k
+
+            if k_t <= 0:
+                continue
+
+            # Pareto 最优检查 (去除被支配的 tile)
+            is_dominated = any(
+                m0 >= m_t and n0 >= n_t and k0 >= k_t
+                for m0, n0, k0 in tiles
+            )
+            if not is_dominated:
+                tiles.append((m_t, n_t, k_t))
+
+    # 如果没找到合法 tile，使用最小的 cube 大小
+    if not tiles:
+        tiles.append((cube_m, cube_n, min(k_blk, cube_k)))
+
+    return tiles
+
+
+def _calc_dram_traffic_impl(
+    loop_order: str,
+    m_blk: int,
+    n_blk: int,
+    k_blk: int,
+    m_t: int,
+    n_t: int,
+    k_t: int,
+    input_dtype_bytes: int,
+    output_dtype_bytes: int,
+) -> int:
+    """
+    计算 DRAM 流量 (字节)（纯函数实现）
+
+    不同循环顺序的流量差异:
+    - mnk: K 在最内层，A/B 各重复加载 tile_num_n/tile_num_m 次
+    - nkm: M 在最内层，B 只加载一次，但 C 需要多次累加
+    - mkn: N 在最内层，A 只加载一次，但 C 需要多次累加
+    """
+    if m_blk <= 0 or n_blk <= 0 or k_blk <= 0:
+        return 0
+
+    if m_t <= 0 or n_t <= 0 or k_t <= 0:
+        return 0
+
+    tile_num_m = ceil_div(m_blk, m_t)
+    tile_num_n = ceil_div(n_blk, n_t)
+    tile_num_k = ceil_div(k_blk, k_t)
+
+    a_size = m_blk * k_blk * input_dtype_bytes
+    b_size = n_blk * k_blk * input_dtype_bytes
+    c_size = m_blk * n_blk * output_dtype_bytes
+
+    if loop_order == 'mnk':
+        # A 重复 tile_num_n 次, B 重复 tile_num_m 次
+        return a_size * tile_num_n + b_size * tile_num_m + c_size
+
+    elif loop_order == 'nkm':
+        # B 只加载一次, A 重复 tile_num_n 次
+        # C 需要 tile_num_k - 1 次累加 (读+写 FP32)
+        fp32_bytes = 4
+        partial_sum_traffic = m_blk * n_blk * fp32_bytes * 2 * max(0, tile_num_k - 1)
+        return b_size + a_size * tile_num_n + partial_sum_traffic + c_size
+
+    else:  # mkn
+        # A 只加载一次, B 重复 tile_num_m 次
+        fp32_bytes = 4
+        partial_sum_traffic = m_blk * n_blk * fp32_bytes * 2 * max(0, tile_num_k - 1)
+        return a_size + b_size * tile_num_m + partial_sum_traffic + c_size
+
+
+def _calc_arch_utilization_impl(
+    g_blk: int,
+    m_blk: int,
+    n_blk: int,
+    k_blk: int,
+    cube_m: int,
+    cube_k: int,
+    cube_n: int,
+    macs_per_cycle: int,
+    freq_ghz: float,
+) -> Tuple[float, float]:
+    """
+    计算架构利用率和计算时间（纯函数实现）
+
+    架构利用率 = 实际 MACs / 对齐后理论 MACs
+
+    Returns:
+        (arch_utilization, compute_time_us)
+    """
+    if m_blk <= 0 or n_blk <= 0 or k_blk <= 0:
+        return 0.0, 0.0
+
+    # 实际 MAC 数
+    real_macs = m_blk * n_blk * k_blk
+
+    # 对齐后的理论 MAC 数
+    theo_macs = (
+        align_up(m_blk, cube_m) *
+        align_up(k_blk, cube_k) *
+        align_up(n_blk, cube_n)
+    )
+
+    arch_util = real_macs / theo_macs if theo_macs > 0 else 0.0
+
+    # 计算时间 (微秒)
+    # t_us = theo_macs × g_blk / macs_per_cycle / (freq_ghz * 1e3)
+    # freq_ghz * 1e3 = GHz * 1000 = cycles/μs
+    if macs_per_cycle <= 0 or freq_ghz <= 0:
+        t_us = 0.0
+    else:
+        t_us = theo_macs * g_blk / macs_per_cycle / freq_ghz / 1e3
+
+    return arch_util, t_us
+
+
 @dataclass
 class GEMMResult:
     """GEMM 评估结果"""
@@ -153,87 +346,15 @@ class GEMMEvaluator:
         """
         搜索所有能放进 SRAM 的 Tile 大小
 
-        SRAM 布局:
-        - A tile: [m_t, k_t] × input_dtype_bytes
-        - B tile: [k_t, n_t] × input_dtype_bytes
-        - C tile: [m_t, n_t] × output_dtype_bytes
+        委托给纯函数实现，避免代码重复
         """
-        if m_blk <= 0 or n_blk <= 0 or k_blk <= 0:
-            return [(0, 0, 0)]
-
-        tiles = []
-        cube_m = self.arch.cube_m
-        cube_n = self.arch.cube_n
-        cube_k = self.arch.cube_k
-        sram_limit = self.arch.effective_sram_bytes
-        lane_num = self.arch.lane_num
-        align_bytes = self.arch.align_bytes
-
-        # 对齐函数
-        def align_row(r: int) -> int:
-            return align_up(r, lane_num)
-
-        def align_col(c: int, elem_bytes: int) -> int:
-            return align_up(c * elem_bytes, align_bytes)
-
-        # 从大到小搜索 Tile (越大越好，数据复用越多)
-        m_start = align_up(m_blk, cube_m)
-        n_start = align_up(n_blk, cube_n)
-
-        for m_t in range(m_start, 0, -cube_m):
-            # 允许 m_t 至少达到 cube_m（最小对齐单元）
-            if m_t > max(m_blk * 2, cube_m):
-                continue
-            align_row_m = align_row(m_t)
-
-            for n_t in range(n_start, 0, -cube_n):
-                # 允许 n_t 至少达到 cube_n
-                if n_t > max(n_blk * 2, cube_n):
-                    continue
-                align_col_n = align_col(n_t, output_dtype_bytes)
-                align_row_n = align_row(n_t)  # 用于 B tile 计算
-
-                # C tile 必须放得下: C[m_t, n_t]
-                # 行数对齐到 lane_num，列字节数对齐到 align_bytes
-                c_tile_bytes = align_row_m * align_col_n
-                avail = sram_limit - c_tile_bytes
-
-                if avail <= 0:
-                    continue
-
-                # 计算最大 k_t
-                # A tile: [m_t, k_t]，每增加 1 个 k 需要 align_row_m * input_dtype_bytes
-                # B tile: [k_t, n_t]，每增加 1 个 k 需要 align_row_n * input_dtype_bytes
-                bytes_per_k = (align_row_m + align_row_n) * input_dtype_bytes
-                if bytes_per_k <= 0:
-                    max_k = k_blk
-                else:
-                    max_k = int(avail / bytes_per_k)
-
-                if max_k <= 0:
-                    continue
-
-                # 对齐到 cube_k
-                k_t = min(k_blk, max_k)
-                if k_t >= cube_k:
-                    k_t = (k_t // cube_k) * cube_k
-
-                if k_t <= 0:
-                    continue
-
-                # Pareto 最优检查 (去除被支配的 tile)
-                is_dominated = any(
-                    m0 >= m_t and n0 >= n_t and k0 >= k_t
-                    for m0, n0, k0 in tiles
-                )
-                if not is_dominated:
-                    tiles.append((m_t, n_t, k_t))
-
-        # 如果没找到合法 tile，使用最小的 cube 大小
-        if not tiles:
-            tiles.append((cube_m, cube_n, min(k_blk, cube_k)))
-
-        return tiles
+        return _find_legal_tiles_impl(
+            m_blk, n_blk, k_blk,
+            input_dtype_bytes, output_dtype_bytes,
+            self.arch.cube_m, self.arch.cube_n, self.arch.cube_k,
+            self.arch.effective_sram_bytes,
+            self.arch.lane_num, self.arch.align_bytes,
+        )
 
     def _calc_dram_traffic(
         self,
@@ -250,41 +371,13 @@ class GEMMEvaluator:
         """
         计算 DRAM 流量 (字节)
 
-        不同循环顺序的流量差异:
-        - mnk: K 在最内层，A/B 各重复加载 tile_num_n/tile_num_m 次
-        - nkm: M 在最内层，B 只加载一次，但 C 需要多次累加
-        - mkn: N 在最内层，A 只加载一次，但 C 需要多次累加
+        委托给纯函数实现，避免代码重复
         """
-        if m_blk <= 0 or n_blk <= 0 or k_blk <= 0:
-            return 0
-
-        if m_t <= 0 or n_t <= 0 or k_t <= 0:
-            return 0
-
-        tile_num_m = ceil_div(m_blk, m_t)
-        tile_num_n = ceil_div(n_blk, n_t)
-        tile_num_k = ceil_div(k_blk, k_t)
-
-        a_size = m_blk * k_blk * input_dtype_bytes
-        b_size = n_blk * k_blk * input_dtype_bytes
-        c_size = m_blk * n_blk * output_dtype_bytes
-
-        if loop_order == 'mnk':
-            # A 重复 tile_num_n 次, B 重复 tile_num_m 次
-            return a_size * tile_num_n + b_size * tile_num_m + c_size
-
-        elif loop_order == 'nkm':
-            # B 只加载一次, A 重复 tile_num_n 次
-            # C 需要 tile_num_k - 1 次累加 (读+写 FP32)
-            fp32_bytes = 4
-            partial_sum_traffic = m_blk * n_blk * fp32_bytes * 2 * max(0, tile_num_k - 1)
-            return b_size + a_size * tile_num_n + partial_sum_traffic + c_size
-
-        else:  # mkn
-            # A 只加载一次, B 重复 tile_num_m 次
-            fp32_bytes = 4
-            partial_sum_traffic = m_blk * n_blk * fp32_bytes * 2 * max(0, tile_num_k - 1)
-            return a_size + b_size * tile_num_m + partial_sum_traffic + c_size
+        return _calc_dram_traffic_impl(
+            loop_order, m_blk, n_blk, k_blk,
+            m_t, n_t, k_t,
+            input_dtype_bytes, output_dtype_bytes,
+        )
 
     def _calc_arch_utilization(
         self,
@@ -296,37 +389,13 @@ class GEMMEvaluator:
         """
         计算架构利用率和计算时间
 
-        架构利用率 = 实际 MACs / 对齐后理论 MACs
-
-        Returns:
-            (arch_utilization, compute_time_us)
+        委托给纯函数实现，避免代码重复
         """
-        if m_blk <= 0 or n_blk <= 0 or k_blk <= 0:
-            return 0.0, 0.0
-
-        # 实际 MAC 数
-        real_macs = m_blk * n_blk * k_blk
-
-        # 对齐后的理论 MAC 数
-        theo_macs = (
-            align_up(m_blk, self.arch.cube_m) *
-            align_up(k_blk, self.arch.cube_k) *
-            align_up(n_blk, self.arch.cube_n)
+        return _calc_arch_utilization_impl(
+            g_blk, m_blk, n_blk, k_blk,
+            self.arch.cube_m, self.arch.cube_k, self.arch.cube_n,
+            self.arch.macs_per_cycle, self.arch.freq_ghz,
         )
-
-        arch_util = real_macs / theo_macs if theo_macs > 0 else 0.0
-
-        # 计算时间 (微秒)
-        # t_us = theo_macs × g_blk / macs_per_cycle / (freq_ghz * 1e3)
-        # freq_ghz * 1e3 = GHz * 1000 = cycles/μs
-        macs_per_cycle = self.arch.macs_per_cycle
-        freq = self.arch.freq_ghz
-        if macs_per_cycle <= 0 or freq <= 0:
-            t_us = 0.0
-        else:
-            t_us = theo_macs * g_blk / macs_per_cycle / freq / 1e3
-
-        return arch_util, t_us
 
     def _evaluate_partition(
         self,
@@ -751,6 +820,8 @@ def _evaluate_partition_worker(args):
 class _PartitionEvaluator:
     """
     轻量级分区评估器，用于多进程
+
+    核心计算逻辑委托给模块级纯函数，避免代码重复
     """
 
     def __init__(self, arch):
@@ -765,75 +836,13 @@ class _PartitionEvaluator:
         output_dtype_bytes: int,
     ) -> List[Tuple[int, int, int]]:
         """搜索所有能放进 SRAM 的 Tile 大小"""
-        if m_blk <= 0 or n_blk <= 0 or k_blk <= 0:
-            return [(0, 0, 0)]
-
-        tiles = []
-        cube_m = self.arch.cube_m
-        cube_n = self.arch.cube_n
-        cube_k = self.arch.cube_k
-        sram_limit = self.arch.effective_sram_bytes
-        lane_num = self.arch.lane_num
-        align_bytes = self.arch.align_bytes
-
-        def align_row(r: int) -> int:
-            return align_up(r, lane_num)
-
-        def align_col(c: int, elem_bytes: int) -> int:
-            return align_up(c * elem_bytes, align_bytes)
-
-        m_start = align_up(m_blk, cube_m)
-        n_start = align_up(n_blk, cube_n)
-
-        for m_t in range(m_start, 0, -cube_m):
-            # 允许 m_t 至少达到 cube_m（最小对齐单元）
-            if m_t > max(m_blk * 2, cube_m):
-                continue
-            align_row_m = align_row(m_t)
-
-            for n_t in range(n_start, 0, -cube_n):
-                # 允许 n_t 至少达到 cube_n
-                if n_t > max(n_blk * 2, cube_n):
-                    continue
-                align_col_n = align_col(n_t, output_dtype_bytes)
-                align_row_n = align_row(n_t)
-
-                # C tile: [m_t, n_t]，行数对齐到 lane_num
-                c_tile_bytes = align_row_m * align_col_n
-                avail = sram_limit - c_tile_bytes
-
-                if avail <= 0:
-                    continue
-
-                # A tile: [m_t, k_t]，B tile: [k_t, n_t]
-                # bytes_per_k = A 每增加 1 个 k 的字节数 + B 每增加 1 个 k 的字节数
-                bytes_per_k = (align_row_m + align_row_n) * input_dtype_bytes
-                if bytes_per_k <= 0:
-                    max_k = k_blk
-                else:
-                    max_k = int(avail / bytes_per_k)
-
-                if max_k <= 0:
-                    continue
-
-                k_t = min(k_blk, max_k)
-                if k_t >= cube_k:
-                    k_t = (k_t // cube_k) * cube_k
-
-                if k_t <= 0:
-                    continue
-
-                is_dominated = any(
-                    m0 >= m_t and n0 >= n_t and k0 >= k_t
-                    for m0, n0, k0 in tiles
-                )
-                if not is_dominated:
-                    tiles.append((m_t, n_t, k_t))
-
-        if not tiles:
-            tiles.append((cube_m, cube_n, min(k_blk, cube_k)))
-
-        return tiles
+        return _find_legal_tiles_impl(
+            m_blk, n_blk, k_blk,
+            input_dtype_bytes, output_dtype_bytes,
+            self.arch.cube_m, self.arch.cube_n, self.arch.cube_k,
+            self.arch.effective_sram_bytes,
+            self.arch.lane_num, self.arch.align_bytes,
+        )
 
     def _calc_dram_traffic(
         self,
@@ -848,29 +857,11 @@ class _PartitionEvaluator:
         output_dtype_bytes: int,
     ) -> int:
         """计算 DRAM 流量"""
-        if m_blk <= 0 or n_blk <= 0 or k_blk <= 0:
-            return 0
-        if m_t <= 0 or n_t <= 0 or k_t <= 0:
-            return 0
-
-        tile_num_m = ceil_div(m_blk, m_t)
-        tile_num_n = ceil_div(n_blk, n_t)
-        tile_num_k = ceil_div(k_blk, k_t)
-
-        a_size = m_blk * k_blk * input_dtype_bytes
-        b_size = n_blk * k_blk * input_dtype_bytes
-        c_size = m_blk * n_blk * output_dtype_bytes
-
-        if loop_order == 'mnk':
-            return a_size * tile_num_n + b_size * tile_num_m + c_size
-        elif loop_order == 'nkm':
-            fp32_bytes = 4
-            partial_sum_traffic = m_blk * n_blk * fp32_bytes * 2 * max(0, tile_num_k - 1)
-            return b_size + a_size * tile_num_n + partial_sum_traffic + c_size
-        else:  # mkn
-            fp32_bytes = 4
-            partial_sum_traffic = m_blk * n_blk * fp32_bytes * 2 * max(0, tile_num_k - 1)
-            return a_size + b_size * tile_num_m + partial_sum_traffic + c_size
+        return _calc_dram_traffic_impl(
+            loop_order, m_blk, n_blk, k_blk,
+            m_t, n_t, k_t,
+            input_dtype_bytes, output_dtype_bytes,
+        )
 
     def _calc_arch_utilization(
         self,
@@ -880,26 +871,11 @@ class _PartitionEvaluator:
         k_blk: int,
     ) -> Tuple[float, float]:
         """计算架构利用率和计算时间"""
-        if m_blk <= 0 or n_blk <= 0 or k_blk <= 0:
-            return 0.0, 0.0
-
-        real_macs = m_blk * n_blk * k_blk
-        theo_macs = (
-            align_up(m_blk, self.arch.cube_m) *
-            align_up(k_blk, self.arch.cube_k) *
-            align_up(n_blk, self.arch.cube_n)
+        return _calc_arch_utilization_impl(
+            g_blk, m_blk, n_blk, k_blk,
+            self.arch.cube_m, self.arch.cube_k, self.arch.cube_n,
+            self.arch.macs_per_cycle, self.arch.freq_ghz,
         )
-
-        arch_util = real_macs / theo_macs if theo_macs > 0 else 0.0
-
-        macs_per_cycle = self.arch.macs_per_cycle
-        freq = self.arch.freq_ghz
-        if macs_per_cycle <= 0 or freq <= 0:
-            t_us = 0.0
-        else:
-            t_us = theo_macs * g_blk / macs_per_cycle / freq / 1e3
-
-        return arch_util, t_us
 
     def evaluate_partition(
         self,

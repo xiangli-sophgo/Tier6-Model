@@ -58,7 +58,7 @@ export const ParallelismConfigPanel: React.FC<ParallelismConfigPanelProps> = ({
 
   // 计算搜索约束范围
   const isMoE = modelConfig.model_type === 'moe' && modelConfig.moe_config
-  const maxTP = Math.min(128, modelConfig.num_attention_heads, hardwareConfig.node.chips_per_node)
+  const maxTP = Math.min(128, modelConfig.num_attention_heads, hardwareConfig.board.chips_per_board)
   const maxEP = isMoE && modelConfig.moe_config ? modelConfig.moe_config.num_experts : 1
 
   return (
@@ -204,7 +204,7 @@ export const ParallelismConfigPanel: React.FC<ParallelismConfigPanelProps> = ({
                     <div className="flex justify-between">
                       <span>TP 约束</span>
                       <span className="text-gray-500">
-                        ≤ min(128, 头数{modelConfig.num_attention_heads}, Board内芯片数{hardwareConfig.node.chips_per_node}) = {maxTP}
+                        ≤ min(128, 头数{modelConfig.num_attention_heads}, Board内芯片数{hardwareConfig.board.chips_per_board}) = {maxTP}
                         <span className="mx-3">&</span>
                         头数 {modelConfig.num_attention_heads} % TP == 0
                       </span>
@@ -227,7 +227,7 @@ export const ParallelismConfigPanel: React.FC<ParallelismConfigPanelProps> = ({
                       <div className="flex justify-between">
                         <span>MoE_TP 约束</span>
                         <span className="text-gray-500">
-                          ≤ min(128, 头数{modelConfig.num_attention_heads}, Board内芯片数{hardwareConfig.node.chips_per_node}) = {maxTP}
+                          ≤ min(128, 头数{modelConfig.num_attention_heads}, Board内芯片数{hardwareConfig.board.chips_per_board}) = {maxTP}
                           <span className="mx-3">&</span>
                           头数 {modelConfig.num_attention_heads} % MoE_TP == 0
                         </span>
@@ -245,7 +245,7 @@ export const ParallelismConfigPanel: React.FC<ParallelismConfigPanelProps> = ({
                     {/* Board 约束 */}
                     <div className="flex justify-between">
                       <span>Board 内芯片数量</span>
-                      <span className="text-gray-500">{hardwareConfig.node.chips_per_node} 个/Board</span>
+                      <span className="text-gray-500">{hardwareConfig.board.chips_per_board} 个/Board</span>
                     </div>
 
                     {/* 当前搜索策略说明 */}

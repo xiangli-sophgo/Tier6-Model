@@ -56,7 +56,7 @@ export const Knowledge: React.FC = () => {
       </div>
 
       {/* 工具栏 - 独立层级，横跨整个宽度，在卡片上方 */}
-      <div style={{ width: '100%', minWidth: 0, flexShrink: 0, overflow: 'hidden' }}>
+      <div style={{ width: '100%', minWidth: 0, flexShrink: 0, position: 'relative', zIndex: 1 }}>
         <KnowledgeGraph renderMode="toolbar-only" />
       </div>
 

@@ -8,7 +8,7 @@ from .core.simulator import run_simulation, LLMInferenceSimulator, SimulationCon
 from .core.topology import TopologyParser
 from .config import (
     LLMModelConfig, InferenceConfig, ParallelismStrategy,
-    HardwareConfig, HierarchicalTopology,
+    HierarchicalTopology,
     SimulationResult, SimulationStats,
     GanttChartData, GanttTask, GanttResource, GanttTaskType,
 )
@@ -21,7 +21,6 @@ __all__ = [
     "LLMModelConfig",
     "InferenceConfig",
     "ParallelismStrategy",
-    "HardwareConfig",
     "HierarchicalTopology",
     "SimulationResult",
     "SimulationStats",

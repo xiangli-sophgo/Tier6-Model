@@ -7,8 +7,8 @@
 from .arch_config import AcceleratorMicroArch
 from .presets import (
     SG2260E_ARCH,
-    H100_SXM_ARCH,
-    A100_ARCH,
+    SG2261_ARCH,
+    SG2262_ARCH,
     ARCH_PRESETS,
     get_arch_preset,
 )
@@ -62,8 +62,8 @@ __all__ = [
     # 配置
     'AcceleratorMicroArch',
     'SG2260E_ARCH',
-    'H100_SXM_ARCH',
-    'A100_ARCH',
+    'SG2261_ARCH',
+    'SG2262_ARCH',
     'ARCH_PRESETS',
     'get_arch_preset',
     # GEMM

@@ -230,9 +230,37 @@ def _update_task_status(
         })
 
 
+def _create_evaluation_result(task_db_id: int, result_data: dict) -> EvaluationResult:
+    """从结果数据创建 EvaluationResult 对象（公共逻辑）"""
+    return EvaluationResult(
+        task_id=task_db_id,
+        dp=result_data["parallelism"]["dp"],
+        tp=result_data["parallelism"]["tp"],
+        pp=result_data["parallelism"].get("pp", 1),
+        ep=result_data["parallelism"].get("ep", 1),
+        sp=result_data["parallelism"].get("sp", 1),
+        moe_tp=result_data["parallelism"].get("moe_tp"),
+        chips=result_data["chips"],
+        total_elapse_us=result_data["total_elapse_us"],
+        total_elapse_ms=result_data["total_elapse_ms"],
+        comm_elapse_us=result_data["comm_elapse_us"],
+        tps=result_data["tps"],
+        tps_per_batch=result_data["tps_per_batch"],
+        tps_per_chip=result_data["tps_per_chip"],
+        ttft=result_data.get("ttft", 0),
+        tpot=result_data.get("tpot", 0),
+        mfu=result_data["mfu"],
+        flops=result_data["flops"],
+        dram_occupy=result_data["dram_occupy"],
+        score=result_data["score"],
+        is_feasible=1 if result_data.get("is_feasible", True) else 0,
+        infeasible_reason=result_data.get("infeasible_reason"),
+        full_result=result_data,
+    )
+
+
 def _save_single_result(task_id: str, result_data: dict):
     """保存单个评估结果到数据库（边评估边保存）"""
-    # 调试日志：记录要保存的并行参数
     parallelism = result_data.get("parallelism", {})
     logger.info(f"[{task_id[:8]}] 保存结果: DP={parallelism.get('dp')}, TP={parallelism.get('tp')}, EP={parallelism.get('ep')}, MoE_TP={parallelism.get('moe_tp')}, 芯片数={result_data.get('chips')}")
 
@@ -241,31 +269,7 @@ def _save_single_result(task_id: str, result_data: dict):
         if not task:
             raise ValueError(f"Task {task_id} not found")
 
-        result = EvaluationResult(
-            task_id=task.id,
-            dp=result_data["parallelism"]["dp"],
-            tp=result_data["parallelism"]["tp"],
-            pp=result_data["parallelism"].get("pp", 1),
-            ep=result_data["parallelism"].get("ep", 1),
-            sp=result_data["parallelism"].get("sp", 1),
-            moe_tp=result_data["parallelism"].get("moe_tp"),
-            chips=result_data["chips"],
-            total_elapse_us=result_data["total_elapse_us"],
-            total_elapse_ms=result_data["total_elapse_ms"],
-            comm_elapse_us=result_data["comm_elapse_us"],
-            tps=result_data["tps"],
-            tps_per_batch=result_data["tps_per_batch"],
-            tps_per_chip=result_data["tps_per_chip"],
-            ttft=result_data.get("ttft", 0),
-            tpot=result_data.get("tpot", 0),
-            mfu=result_data["mfu"],
-            flops=result_data["flops"],
-            dram_occupy=result_data["dram_occupy"],
-            score=result_data["score"],
-            is_feasible=1 if result_data.get("is_feasible", True) else 0,
-            infeasible_reason=result_data.get("infeasible_reason"),
-            full_result=result_data,
-        )
+        result = _create_evaluation_result(task.id, result_data)
         db.add(result)
         db.commit()
         logger.info(f"[Task {task_id}] 保存结果: DP={result_data['parallelism']['dp']}, TP={result_data['parallelism']['tp']}, EP={result_data['parallelism']['ep']}")
@@ -278,31 +282,7 @@ def _save_results(task_id: str, results: list, db: Session):
         raise ValueError(f"Task {task_id} not found")
 
     for result_data in results:
-        result = EvaluationResult(
-            task_id=task.id,
-            dp=result_data["parallelism"]["dp"],
-            tp=result_data["parallelism"]["tp"],
-            pp=result_data["parallelism"].get("pp", 1),
-            ep=result_data["parallelism"].get("ep", 1),
-            sp=result_data["parallelism"].get("sp", 1),
-            moe_tp=result_data["parallelism"].get("moe_tp"),
-            chips=result_data["chips"],
-            total_elapse_us=result_data["total_elapse_us"],
-            total_elapse_ms=result_data["total_elapse_ms"],
-            comm_elapse_us=result_data["comm_elapse_us"],
-            tps=result_data["tps"],
-            tps_per_batch=result_data["tps_per_batch"],
-            tps_per_chip=result_data["tps_per_chip"],
-            ttft=result_data.get("ttft", 0),
-            tpot=result_data.get("tpot", 0),
-            mfu=result_data["mfu"],
-            flops=result_data["flops"],
-            dram_occupy=result_data["dram_occupy"],
-            score=result_data["score"],
-            is_feasible=1 if result_data.get("is_feasible", True) else 0,
-            infeasible_reason=result_data.get("infeasible_reason"),
-            full_result=result_data,
-        )
+        result = _create_evaluation_result(task.id, result_data)
         db.add(result)
 
     # 注意：不再在这里更新 completed_tasks，因为前端现在直接统计 EvaluationResult 数量

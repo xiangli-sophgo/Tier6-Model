@@ -10,27 +10,33 @@ from ..config import (
     HierarchicalTopology, PodConfig, RackConfig, BoardConfig, ChipConfig,
     ConnectionConfig, ChipNode, ChipLink, InterconnectGraph,
     ParallelismStrategy, ChipAssignment, ParallelGroupAssignment,
-    HardwareConfig,
 )
 
 
 class TopologyParser:
-    """拓扑解析器"""
+    """拓扑解析器
 
-    def __init__(self, topology_dict: dict[str, Any], hardware: HardwareConfig):
+    硬件参数现在直接嵌入在拓扑配置中：
+    - ChipConfig: c2c_bandwidth_gbps, c2c_latency_us (同板芯片互联)
+    - BoardConfig: b2b_bandwidth_gbps, b2b_latency_us (同 rack 不同 board)
+    - RackConfig: r2r_bandwidth_gbps, r2r_latency_us (同 pod 不同 rack)
+    - PodConfig: p2p_bandwidth_gbps, p2p_latency_us (跨 pod)
+    """
+
+    def __init__(self, topology_dict: dict[str, Any]):
         """
         初始化解析器
 
         Args:
-            topology_dict: 前端传入的拓扑配置字典
-            hardware: 硬件配置
+            topology_dict: 前端传入的拓扑配置字典（包含硬件参数）
         """
-        self.hardware = hardware
         self.topology = self._parse_topology(topology_dict)
         self.interconnect: InterconnectGraph | None = None
+        # 缓存芯片位置信息，用于快速查找
+        self._chip_location_cache: dict[str, dict[str, Any]] = {}
 
     def _parse_topology(self, data: dict[str, Any]) -> HierarchicalTopology:
-        """解析拓扑配置"""
+        """解析拓扑配置（包含嵌入的硬件参数）"""
         pods = []
         for pod_data in data.get("pods", []):
             racks = []
@@ -40,18 +46,42 @@ class TopologyParser:
                     chips = []
                     for chip_data in board_data.get("chips", []):
                         pos = chip_data.get("position", [0, 0])
-                        chips.append(ChipConfig(
+                        chip = ChipConfig(
                             id=chip_data["id"],
                             type=chip_data.get("type", "chip"),
                             position=tuple(pos) if isinstance(pos, list) else pos,
                             label=chip_data.get("label", ""),
-                        ))
+                            # 硬件参数
+                            num_cores=chip_data.get("num_cores", 0),
+                            compute_tflops_fp8=chip_data.get("compute_tflops_fp8", 0.0),
+                            compute_tflops_bf16=chip_data.get("compute_tflops_bf16", 0.0),
+                            memory_capacity_gb=chip_data.get("memory_capacity_gb", 0.0),
+                            memory_bandwidth_gbps=chip_data.get("memory_bandwidth_gbps", 0.0),
+                            memory_bandwidth_utilization=chip_data.get("memory_bandwidth_utilization", 0.85),
+                            lmem_capacity_mb=chip_data.get("lmem_capacity_mb", 0.0),
+                            lmem_bandwidth_gbps=chip_data.get("lmem_bandwidth_gbps", 0.0),
+                            c2c_bandwidth_gbps=chip_data.get("c2c_bandwidth_gbps", 0.0),
+                            c2c_latency_us=chip_data.get("c2c_latency_us", 0.0),
+                            # 微架构参数（可选）
+                            cube_m=chip_data.get("cube_m"),
+                            cube_k=chip_data.get("cube_k"),
+                            cube_n=chip_data.get("cube_n"),
+                            sram_size_kb=chip_data.get("sram_size_kb"),
+                            sram_utilization=chip_data.get("sram_utilization"),
+                            lane_num=chip_data.get("lane_num"),
+                            align_bytes=chip_data.get("align_bytes"),
+                            compute_dma_overlap_rate=chip_data.get("compute_dma_overlap_rate"),
+                        )
+                        chips.append(chip)
                     boards.append(BoardConfig(
                         id=board_data["id"],
                         u_position=board_data.get("u_position", 1),
                         u_height=board_data.get("u_height", 1),
                         label=board_data.get("label", ""),
                         chips=chips,
+                        # 互联参数
+                        b2b_bandwidth_gbps=board_data.get("b2b_bandwidth_gbps", 0.0),
+                        b2b_latency_us=board_data.get("b2b_latency_us", 0.0),
                     ))
                 pos = rack_data.get("position", [0, 0])
                 racks.append(RackConfig(
@@ -60,6 +90,9 @@ class TopologyParser:
                     label=rack_data.get("label", ""),
                     total_u=rack_data.get("total_u", 42),
                     boards=boards,
+                    # 互联参数
+                    r2r_bandwidth_gbps=rack_data.get("r2r_bandwidth_gbps", 0.0),
+                    r2r_latency_us=rack_data.get("r2r_latency_us", 0.0),
                 ))
             grid = pod_data.get("grid_size", [1, 1])
             pods.append(PodConfig(
@@ -67,6 +100,9 @@ class TopologyParser:
                 label=pod_data.get("label", ""),
                 grid_size=tuple(grid) if isinstance(grid, list) else grid,
                 racks=racks,
+                # 互联参数
+                p2p_bandwidth_gbps=pod_data.get("p2p_bandwidth_gbps", 0.0),
+                p2p_latency_us=pod_data.get("p2p_latency_us", 0.0),
             ))
 
         connections = []
@@ -80,6 +116,137 @@ class TopologyParser:
             ))
 
         return HierarchicalTopology(pods=pods, connections=connections)
+
+    def validate_hardware_params(self) -> None:
+        """验证拓扑中嵌入的硬件参数是否完整
+
+        在需要使用硬件参数进行模拟时调用此方法。
+        如果缺少必需的硬件参数，将抛出 ValueError。
+        """
+        errors = []
+
+        for pod in self.topology.pods:
+            # 验证 Pod 互联参数
+            if pod.p2p_bandwidth_gbps <= 0:
+                errors.append(f"Pod '{pod.id}' 缺少有效的 p2p_bandwidth_gbps")
+
+            for rack in pod.racks:
+                # 验证 Rack 互联参数
+                if rack.r2r_bandwidth_gbps <= 0:
+                    errors.append(f"Rack '{rack.id}' 缺少有效的 r2r_bandwidth_gbps")
+
+                for board in rack.boards:
+                    # 验证 Board 互联参数
+                    if board.b2b_bandwidth_gbps <= 0:
+                        errors.append(f"Board '{board.id}' 缺少有效的 b2b_bandwidth_gbps")
+
+                    for chip in board.chips:
+                        # 验证芯片硬件参数
+                        chip_errors = []
+                        if chip.compute_tflops_bf16 <= 0:
+                            chip_errors.append("compute_tflops_bf16")
+                        if chip.memory_capacity_gb <= 0:
+                            chip_errors.append("memory_capacity_gb")
+                        if chip.memory_bandwidth_gbps <= 0:
+                            chip_errors.append("memory_bandwidth_gbps")
+                        if chip.c2c_bandwidth_gbps <= 0:
+                            chip_errors.append("c2c_bandwidth_gbps")
+
+                        if chip_errors:
+                            errors.append(f"Chip '{chip.id}' 缺少有效的硬件参数: {', '.join(chip_errors)}")
+
+        if errors:
+            raise ValueError(
+                f"拓扑配置中缺少必需的硬件参数:\n" +
+                "\n".join(f"  - {e}" for e in errors[:10]) +
+                (f"\n  ... 还有 {len(errors) - 10} 个错误" if len(errors) > 10 else "")
+            )
+
+    def _build_location_cache(self) -> None:
+        """构建芯片位置缓存，用于快速查找芯片所在的 board/rack/pod"""
+        for pod in self.topology.pods:
+            for rack in pod.racks:
+                for board in rack.boards:
+                    for chip in board.chips:
+                        self._chip_location_cache[chip.id] = {
+                            "chip": chip,
+                            "board": board,
+                            "rack": rack,
+                            "pod": pod,
+                        }
+
+    def _get_chip_location(self, chip_id: str) -> dict[str, Any] | None:
+        """获取芯片的位置信息"""
+        if not self._chip_location_cache:
+            self._build_location_cache()
+        return self._chip_location_cache.get(chip_id)
+
+    def get_chip_config(self, chip_id: str) -> ChipConfig | None:
+        """获取芯片配置（包含硬件参数）"""
+        loc = self._get_chip_location(chip_id)
+        return loc["chip"] if loc else None
+
+    def _get_link_params_by_location(
+        self,
+        loc1: ChipNode,
+        loc2: ChipNode
+    ) -> tuple[str, float, float]:
+        """
+        根据两个芯片的位置确定链路参数
+
+        从拓扑配置中读取嵌入的硬件参数：
+        - 同板芯片: chip.c2c_bandwidth_gbps, chip.c2c_latency_us
+        - 同 rack 不同 board: board.b2b_bandwidth_gbps, board.b2b_latency_us
+        - 同 pod 不同 rack: rack.r2r_bandwidth_gbps, rack.r2r_latency_us
+        - 跨 pod: pod.p2p_bandwidth_gbps, pod.p2p_latency_us
+
+        Args:
+            loc1: 第一个芯片的位置信息
+            loc2: 第二个芯片的位置信息
+
+        Returns:
+            (link_type, bandwidth_gbps, latency_us) 元组
+        """
+        # 获取芯片位置缓存
+        chip1_loc = self._get_chip_location(loc1.chip_id)
+        chip2_loc = self._get_chip_location(loc2.chip_id)
+
+        if not chip1_loc or not chip2_loc:
+            # 如果找不到位置信息，返回默认值
+            return ("unknown", 0.0, 0.0)
+
+        if loc1.board_id == loc2.board_id:
+            # 同板芯片 - 使用 C2C 互联 (如 NVLink)
+            chip: ChipConfig = chip1_loc["chip"]
+            return (
+                "nvlink",
+                chip.c2c_bandwidth_gbps,
+                chip.c2c_latency_us
+            )
+        elif loc1.rack_id == loc2.rack_id:
+            # 同机柜不同板 - 使用 B2B 互联
+            board: BoardConfig = chip1_loc["board"]
+            return (
+                "pcie",
+                board.b2b_bandwidth_gbps,
+                board.b2b_latency_us
+            )
+        elif loc1.pod_id == loc2.pod_id:
+            # 同 Pod 不同机柜 - 使用 R2R 互联
+            rack: RackConfig = chip1_loc["rack"]
+            return (
+                "ib",
+                rack.r2r_bandwidth_gbps,
+                rack.r2r_latency_us
+            )
+        else:
+            # 跨 Pod - 使用 P2P 互联
+            pod: PodConfig = chip1_loc["pod"]
+            return (
+                "ethernet",
+                pod.p2p_bandwidth_gbps,
+                pod.p2p_latency_us
+            )
 
     def build_interconnect_graph(self) -> InterconnectGraph:
         """构建芯片互联图"""
@@ -114,27 +281,7 @@ class TopologyParser:
             # 确定链路类型和参数
             src_node = chip_to_location[src]
             dst_node = chip_to_location[dst]
-
-            if src_node.board_id == dst_node.board_id:
-                # 同板芯片 - 使用节点内带宽 (如NVLink)
-                link_type = "nvlink"
-                bandwidth = self.hardware.node.intra_node_bandwidth_gbps
-                latency = self.hardware.node.intra_node_latency_us
-            elif src_node.rack_id == dst_node.rack_id:
-                # 同机柜不同板 - 使用PCIe或机柜内网络
-                link_type = "pcie"
-                bandwidth = self.hardware.chip.pcie_bandwidth_gbps
-                latency = self.hardware.chip.pcie_latency_us
-            elif src_node.pod_id == dst_node.pod_id:
-                # 同Pod不同机柜 - 使用节点间网络
-                link_type = "ib"
-                bandwidth = self.hardware.cluster.inter_node_bandwidth_gbps
-                latency = self.hardware.cluster.inter_node_latency_us
-            else:
-                # 跨Pod - 使用数据中心网络
-                link_type = "ethernet"
-                bandwidth = self.hardware.cluster.inter_node_bandwidth_gbps / 2  # 假设跨Pod带宽减半
-                latency = self.hardware.cluster.inter_node_latency_us * 2  # 延迟增加
+            link_type, bandwidth, latency = self._get_link_params_by_location(src_node, dst_node)
 
             # 使用连接配置中的显式值覆盖默认值
             if conn.bandwidth > 0:
@@ -163,7 +310,7 @@ class TopologyParser:
                         chip_ids.append(chip.id)
         return chip_ids
 
-    def map_parallelism(self, strategy: ParallelismStrategy) -> ParallelGroupAssignment:
+    def map_parallelism(self, strategy: ParallelismStrategy, is_moe: bool = False) -> ParallelGroupAssignment:
         """
         根据并行策略将芯片分配到各并行组
 
@@ -174,18 +321,26 @@ class TopologyParser:
 
         Args:
             strategy: 并行策略
+            is_moe: 是否为 MoE 模型（影响芯片数计算）
 
         Returns:
             ParallelGroupAssignment: 并行组分配结果
         """
         chip_ids = self.get_all_chip_ids()
-        # 总芯片数 = dp * tp（不包括 PP）
-        total_chips = strategy.dp * strategy.tp
+        # 芯片数计算：
+        # - MoE 模型：DP × TP（因为 MoE 约束 DP×TP = MoE_TP×EP）
+        # - 非 MoE 模型：DP × TP × EP
+        if is_moe:
+            total_chips = strategy.dp * strategy.tp
+            formula_desc = f"DP={strategy.dp} × TP={strategy.tp}"
+        else:
+            total_chips = strategy.dp * strategy.tp * strategy.ep
+            formula_desc = f"DP={strategy.dp} × TP={strategy.tp} × EP={strategy.ep}"
 
         if len(chip_ids) < total_chips:
             raise ValueError(
                 f"芯片数量不足: 需要 {total_chips} 个芯片 "
-                f"(DP={strategy.dp} × TP={strategy.tp})，"
+                f"({formula_desc})，"
                 f"但只有 {len(chip_ids)} 个芯片"
             )
 
@@ -278,9 +433,13 @@ class TopologyParser:
             self.build_interconnect_graph()
 
         if len(group_chips) <= 1:
-            # 单芯片不需要通信，返回最大带宽和零延迟
-            # 避免使用 float('inf')，因为它无法 JSON 序列化
-            return self.hardware.node.intra_node_bandwidth_gbps, 0.0
+            # 单芯片不需要通信
+            # 尝试获取芯片的 C2C 带宽作为默认值
+            if group_chips:
+                chip_config = self.get_chip_config(group_chips[0])
+                if chip_config:
+                    return chip_config.c2c_bandwidth_gbps, 0.0
+            return 0.0, 0.0
 
         # 找到组内所有芯片的位置
         chip_locations = {}
@@ -300,26 +459,17 @@ class TopologyParser:
                 if not loc1 or not loc2:
                     continue
 
-                # 根据位置确定链路参数
-                if loc1.board_id == loc2.board_id:
-                    bw = self.hardware.node.intra_node_bandwidth_gbps
-                    lat = self.hardware.node.intra_node_latency_us
-                elif loc1.rack_id == loc2.rack_id:
-                    bw = self.hardware.chip.pcie_bandwidth_gbps
-                    lat = self.hardware.chip.pcie_latency_us
-                elif loc1.pod_id == loc2.pod_id:
-                    bw = self.hardware.cluster.inter_node_bandwidth_gbps
-                    lat = self.hardware.cluster.inter_node_latency_us
-                else:
-                    bw = self.hardware.cluster.inter_node_bandwidth_gbps / 2
-                    lat = self.hardware.cluster.inter_node_latency_us * 2
-
+                # 使用公共方法获取链路参数
+                _, bw, lat = self._get_link_params_by_location(loc1, loc2)
                 min_bandwidth = min(min_bandwidth, bw)
                 max_latency = max(max_latency, lat)
 
         if min_bandwidth == float('inf'):
-            # 如果没有找到链路，使用默认值
-            min_bandwidth = self.hardware.node.intra_node_bandwidth_gbps
-            max_latency = self.hardware.node.intra_node_latency_us
+            # 如果没有找到链路，尝试使用第一个芯片的 C2C 参数
+            if group_chips:
+                chip_config = self.get_chip_config(group_chips[0])
+                if chip_config:
+                    return chip_config.c2c_bandwidth_gbps, chip_config.c2c_latency_us
+            return 0.0, 0.0
 
         return min_bandwidth, max_latency

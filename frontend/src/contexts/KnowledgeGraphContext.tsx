@@ -30,6 +30,7 @@ export interface KnowledgeGraphActions {
 export interface KnowledgeGraphContextType {
   knowledgeSelectedNodes: ForceKnowledgeNode[]  // 支持多个选中节点（用于详情卡片）
   knowledgeHighlightedNodeId: string | null  // 当前高亮的节点ID（用于图中高亮效果）
+  knowledgeHoveredSearchResultId: string | null  // 搜索结果列表悬停的节点ID
   knowledgeVisibleCategories: Set<KnowledgeCategory>
   knowledgeNodes: ForceKnowledgeNode[]
   knowledgeInitialized: boolean
@@ -39,6 +40,7 @@ export interface KnowledgeGraphContextType {
   addKnowledgeSelectedNode: (node: ForceKnowledgeNode) => void  // 添加节点到列表
   removeKnowledgeSelectedNode: (nodeId: string) => void  // 从列表移除节点
   clearKnowledgeHighlight: () => void  // 清除高亮（不影响详情卡片）
+  setKnowledgeHoveredSearchResultId: (nodeId: string | null) => void  // 设置搜索结果悬停节点
   setKnowledgeVisibleCategories: (categories: Set<KnowledgeCategory>) => void
   setKnowledgeNodes: (nodes: ForceKnowledgeNode[]) => void
   setKnowledgeInitialized: (initialized: boolean) => void
@@ -72,6 +74,7 @@ interface KnowledgeGraphProviderProps {
 export const KnowledgeGraphProvider: React.FC<KnowledgeGraphProviderProps> = ({ children }) => {
   const [knowledgeSelectedNodes, setKnowledgeSelectedNodes] = useState<ForceKnowledgeNode[]>([])
   const [knowledgeHighlightedNodeId, setKnowledgeHighlightedNodeId] = useState<string | null>(null)
+  const [knowledgeHoveredSearchResultId, setKnowledgeHoveredSearchResultId] = useState<string | null>(null)
   const [knowledgeVisibleCategories, setKnowledgeVisibleCategories] = useState<Set<KnowledgeCategory>>(
     new Set(['hardware', 'interconnect', 'parallel', 'communication', 'model', 'inference', 'protocol', 'system'])
   )
@@ -86,12 +89,9 @@ export const KnowledgeGraphProvider: React.FC<KnowledgeGraphProviderProps> = ({ 
     setKnowledgeVisibleCategories(new Set(['hardware', 'interconnect', 'parallel', 'communication', 'model', 'inference', 'protocol', 'system']))
   }, [])
 
-  // 添加知识节点到选中列表（新节点放在最前面，如果已存在则移到最前面），同时设置高亮
+  // 添加知识节点到选中列表（直接替换，不堆叠），同时设置高亮
   const addKnowledgeSelectedNode = useCallback((node: ForceKnowledgeNode) => {
-    setKnowledgeSelectedNodes(prev => {
-      const filtered = prev.filter(n => n.id !== node.id)
-      return [node, ...filtered]
-    })
+    setKnowledgeSelectedNodes([node])
     setKnowledgeHighlightedNodeId(node.id)
   }, [])
 
@@ -360,6 +360,7 @@ export const KnowledgeGraphProvider: React.FC<KnowledgeGraphProviderProps> = ({ 
   const contextValue: KnowledgeGraphContextType = {
     knowledgeSelectedNodes,
     knowledgeHighlightedNodeId,
+    knowledgeHoveredSearchResultId,
     knowledgeVisibleCategories,
     knowledgeNodes,
     knowledgeInitialized,
@@ -369,6 +370,7 @@ export const KnowledgeGraphProvider: React.FC<KnowledgeGraphProviderProps> = ({ 
     addKnowledgeSelectedNode,
     removeKnowledgeSelectedNode,
     clearKnowledgeHighlight,
+    setKnowledgeHoveredSearchResultId,
     setKnowledgeVisibleCategories,
     setKnowledgeNodes,
     setKnowledgeInitialized,

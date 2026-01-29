@@ -200,70 +200,88 @@ export type FlopsDtype = 'BF16' | 'FP16' | 'FP8' | 'INT8';
 export interface ChipHardwareConfig {
   /** 芯片型号 */
   chip_type: string;
-  /** 算力精度 (BF16/FP16/FP8/INT8) */
-  flops_dtype: FlopsDtype;
-  /** 算力 (TFLOPs) - 对应 flops_dtype 精度 */
-  compute_tflops_fp16: number;
-  /** FP8 算力 (TFLOPs) */
-  compute_tflops_fp8?: number;
-  /** INT8 算力 (TOPs) */
-  compute_tops_int8?: number;
   /** 计算核心数 */
-  num_cores?: number;
+  num_cores: number;
+  /** FP8 算力 (TFLOPs) */
+  compute_tflops_fp8: number;
+  /** BF16 算力 (TFLOPs) */
+  compute_tflops_bf16: number;
   /** 内存容量 (GB) */
-  memory_gb: number;
+  memory_capacity_gb: number;
   /** 内存带宽 (GB/s) - 理论带宽 */
   memory_bandwidth_gbps: number;
-  /** 内存带宽利用率 (0-1)，默认 0.9 */
-  memory_bandwidth_utilization?: number;
+  /** 内存带宽利用率 (0-1)，默认 0.85 */
+  memory_bandwidth_utilization: number;
   /** LMEM/SRAM 片上缓存容量 (MB) */
-  lmem_mb?: number;
-  /** L2 缓存容量 (MB) */
-  l2_cache_mb?: number;
-  /** L2 缓存带宽 (GB/s) */
-  l2_bandwidth_gbps?: number;
-  /** C2C 单向带宽 (GB/s) - 芯片间互联 */
-  c2c_bandwidth_gbps?: number;
-  /** C2C 双向带宽 (GB/s) - 芯片间互联 */
-  c2c_bandwidth_bidirectional_gbps?: number;
+  lmem_capacity_mb: number;
+  /** LMEM 缓存带宽 (GB/s) */
+  lmem_bandwidth_gbps: number;
+  /** C2C 互联带宽 (GB/s) - Chip-to-Chip，板内芯片间 */
+  c2c_bandwidth_gbps: number;
+  /** C2C 互联延迟 (us) */
+  c2c_latency_us: number;
   /** 成本 ($/hour) - 云服务商按需实例价格 */
   cost_per_hour?: number;
+
+  // ========== 微架构参数（可选，用于精确 GEMM 评估） ==========
+  /** 矩阵单元 M 维度 (如 SG2260E=16, H100=16) */
+  cube_m?: number;
+  /** 矩阵单元 K 维度 - 累加维度 (如 SG2260E=32, H100=16) */
+  cube_k?: number;
+  /** 矩阵单元 N 维度 (如 SG2260E=8, H100=16) */
+  cube_n?: number;
+  /** 每核 SRAM 大小 (KB) (如 SG2260E=2048, H100=256) */
+  sram_size_kb?: number;
+  /** SRAM 可用比例 (0-1) (如 SG2260E=0.45, H100=0.5) */
+  sram_utilization?: number;
+  /** SIMD lane 数量 - 行对齐基数 (如 SG2260E=16, H100=32) */
+  lane_num?: number;
+  /** 内存对齐字节数 - 列对齐基数 (如 SG2260E=32, H100=128) */
+  align_bytes?: number;
+  /** 计算-搬运重叠率 (0-1) (如 SG2260E=0.8, H100=0.9) */
+  compute_dma_overlap_rate?: number;
 }
 
-/** 节点配置 */
-export interface NodeConfig {
-  /** 节点内芯片数量 */
-  chips_per_node: number;
-  /** 节点内互联带宽 (GB/s，如NVLink) */
-  intra_node_bandwidth_gbps: number;
-  /** 节点内互联延迟 (us) */
-  intra_node_latency_us: number;
-  /** 带宽利用率 (0-1)，默认 0.9 */
-  bandwidth_utilization?: number;
-  /** 通信启动延迟 (us)，默认 1 */
-  startup_latency_us?: number;
-  /** 同步延迟 (us)，默认 1 */
-  sync_latency_us?: number;
+/** Board配置（原Node） */
+export interface BoardConfig {
+  /** Board内芯片数量 */
+  chips_per_board: number;
+  /** B2B 互联带宽 (GB/s) - Board-to-Board，机架内板间 */
+  b2b_bandwidth_gbps: number;
+  /** B2B 互联延迟 (us) */
+  b2b_latency_us: number;
 }
 
-/** 集群配置 */
-export interface ClusterConfig {
-  /** 总节点数 */
-  num_nodes: number;
-  /** 节点间互联带宽 (GB/s，如InfiniBand) */
-  inter_node_bandwidth_gbps: number;
-  /** 节点间互联延迟 (us) */
-  inter_node_latency_us: number;
+/** Rack配置 */
+export interface RackConfig {
+  /** Rack内Board数量 */
+  boards_per_rack: number;
+  /** R2R 互联带宽 (GB/s) - Rack-to-Rack，Pod内机架间 */
+  r2r_bandwidth_gbps: number;
+  /** R2R 互联延迟 (us) */
+  r2r_latency_us: number;
+}
+
+/** Pod配置 */
+export interface PodConfig {
+  /** Pod内Rack数量 */
+  racks_per_pod: number;
+  /** P2P 互联带宽 (GB/s) - Pod-to-Pod，跨Pod */
+  p2p_bandwidth_gbps: number;
+  /** P2P 互联延迟 (us) */
+  p2p_latency_us: number;
 }
 
 /** 完整硬件配置 */
 export interface HardwareConfig {
   /** 芯片配置 */
   chip: ChipHardwareConfig;
-  /** 节点配置 */
-  node: NodeConfig;
-  /** 集群配置 */
-  cluster: ClusterConfig;
+  /** Board配置 */
+  board: BoardConfig;
+  /** Rack配置 */
+  rack: RackConfig;
+  /** Pod配置 */
+  pod: PodConfig;
 }
 
 // ============================================

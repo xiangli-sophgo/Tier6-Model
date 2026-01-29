@@ -17,11 +17,8 @@ from ..config import (
     LLMModelConfig,
     InferenceConfig,
     ParallelismStrategy,
-    HardwareConfig,
     HierarchicalTopology,
-    ChipHardwareConfig,
-    NodeConfig,
-    ClusterConfig,
+    ChipConfig,
     SimulationResult,
     SimulationStats,
     PhaseTimeStats,
@@ -37,6 +34,43 @@ from ..config import (
     validate_hardware_config,
     validate_parallelism_config,
 )
+
+
+@dataclass
+class RuntimeHardwareParams:
+    """运行时硬件参数（从拓扑配置或硬件配置中提取）
+
+    这是一个简化的数据类，用于存储模拟器运行时需要的硬件参数。
+    它不代表完整的硬件配置，只是模拟器需要的参数集合。
+    """
+    # 芯片参数
+    chip_type: str = "Unknown"
+    num_cores: int = 1
+    compute_tflops_fp8: float = 0.0
+    compute_tflops_bf16: float = 0.0
+    memory_capacity_gb: float = 0.0
+    memory_bandwidth_gbps: float = 0.0
+    memory_bandwidth_utilization: float = 0.85
+    lmem_capacity_mb: float = 0.0
+    lmem_bandwidth_gbps: float = 0.0
+    c2c_bandwidth_gbps: float = 0.0
+    c2c_latency_us: float = 0.0
+    # 微架构参数（可选）
+    cube_m: Optional[int] = None
+    cube_k: Optional[int] = None
+    cube_n: Optional[int] = None
+    sram_size_kb: Optional[float] = None
+    sram_utilization: Optional[float] = None
+    lane_num: Optional[int] = None
+    align_bytes: Optional[int] = None
+    compute_dma_overlap_rate: Optional[float] = None
+    # 互联参数（默认值，会被拓扑配置覆盖）
+    b2b_bandwidth_gbps: float = 450.0  # Board-to-Board
+    b2b_latency_us: float = 0.35
+    r2r_bandwidth_gbps: float = 200.0  # Rack-to-Rack
+    r2r_latency_us: float = 2.0
+    p2p_bandwidth_gbps: float = 100.0  # Pod-to-Pod
+    p2p_latency_us: float = 5.0
 from .topology import TopologyParser
 from .gantt import GanttChartBuilder, convert_to_frontend_format
 
@@ -109,7 +143,7 @@ class LLMInferenceSimulator:
         model: LLMModelConfig,
         inference: InferenceConfig,
         parallelism: ParallelismStrategy,
-        hardware: HardwareConfig,
+        hardware: RuntimeHardwareParams,
         config: SimulationConfig | None = None,
         comm_latency_config: dict[str, float] | None = None,
         progress_callback: callable | None = None,
@@ -122,11 +156,11 @@ class LLMInferenceSimulator:
         初始化模拟器
 
         Args:
-            topology_dict: 前端拓扑配置
+            topology_dict: 前端拓扑配置（包含嵌入的硬件参数）
             model: 模型配置
             inference: 推理配置
             parallelism: 并行策略
-            hardware: 硬件配置
+            hardware: 运行时硬件参数
             config: 模拟配置
             comm_latency_config: 通信延迟配置 (前端传递的统一配置，覆盖预设值)
             progress_callback: 进度回调函数 (percent: float, message: str) -> None
@@ -143,7 +177,7 @@ class LLMInferenceSimulator:
         # 初始化新评估器系统
         if self.config.use_precise_evaluator:
             # 根据硬件类型选择芯片架构预设
-            chip_type = hardware.chip.chip_type
+            chip_type = hardware.chip_type
             import logging
             logger = logging.getLogger(__name__)
             logger.info(f"🔧 芯片类型: {chip_type}")
@@ -219,32 +253,35 @@ class LLMInferenceSimulator:
             self.protocol_cfg = None
             self.network_cfg = None
 
-        # 解析拓扑
-        self.topo_parser = TopologyParser(topology_dict, hardware)
+        # 解析拓扑（硬件参数现在嵌入在拓扑配置中）
+        self.topo_parser = TopologyParser(topology_dict)
+        # 验证拓扑中的硬件参数是否完整
+        self.topo_parser.validate_hardware_params()
         self.interconnect = self.topo_parser.build_interconnect_graph()
-        self.group_assignment = self.topo_parser.map_parallelism(parallelism)
+        is_moe = model.moe_config is not None
+        self.group_assignment = self.topo_parser.map_parallelism(parallelism, is_moe=is_moe)
 
         # 获取 TP 组的链路参数
         if self.group_assignment.tp_groups and len(self.group_assignment.tp_groups[0]) > 1:
             self.tp_bandwidth, self.tp_latency = self.topo_parser.get_link_params_for_group(self.group_assignment.tp_groups[0], "allreduce")
         else:
-            self.tp_bandwidth = hardware.node.intra_node_bandwidth_gbps
-            self.tp_latency = hardware.node.intra_node_latency_us
+            self.tp_bandwidth = hardware.b2b_bandwidth_gbps
+            self.tp_latency = hardware.b2b_latency_us
 
         # 获取 PP 组的链路参数
         if self.group_assignment.pp_groups and len(self.group_assignment.pp_groups[0]) > 1:
             self.pp_bandwidth, self.pp_latency = self.topo_parser.get_link_params_for_group(self.group_assignment.pp_groups[0], "p2p")
         else:
-            self.pp_bandwidth = hardware.cluster.inter_node_bandwidth_gbps
-            self.pp_latency = hardware.cluster.inter_node_latency_us
+            self.pp_bandwidth = hardware.r2r_bandwidth_gbps
+            self.pp_latency = hardware.r2r_latency_us
 
         # 获取 EP 组的链路参数 (MoE Expert Parallelism)
         if self.group_assignment.ep_groups and len(self.group_assignment.ep_groups[0]) > 1:
             self.ep_bandwidth, self.ep_latency = self.topo_parser.get_link_params_for_group(self.group_assignment.ep_groups[0], "alltoall")
         else:
-            # 默认使用节点内带宽 (EP 通常在节点内)
-            self.ep_bandwidth = hardware.node.intra_node_bandwidth_gbps
-            self.ep_latency = hardware.node.intra_node_latency_us
+            # 默认使用 Board 内带宽 (EP 通常在 Board 内)
+            self.ep_bandwidth = hardware.b2b_bandwidth_gbps
+            self.ep_latency = hardware.b2b_latency_us
 
         # 甘特图构建器
         self.gantt_builder = GanttChartBuilder(parallelism)
@@ -633,13 +670,13 @@ class LLMInferenceSimulator:
 
         # 阶段2: Prefill 推理 (10-50%)
         phase_start = time.time()
-        prefill_end_time = self._simulate_prefill_with_progress(current_time)
+        prefill_end_time = self._simulate_prefill(current_time, report_progress=True)
         phase_transition = prefill_end_time
         prefill_wall_time = (time.time() - phase_start) * 1000
 
         # 阶段3: Decode 推理 (50-90%)
         phase_start = time.time()
-        decode_end_time = self._simulate_decode_with_progress(prefill_end_time)
+        decode_end_time = self._simulate_decode(prefill_end_time, report_progress=True)
         decode_wall_time = (time.time() - phase_start) * 1000
         num_tokens = min(self.config.max_simulated_tokens, self.inference.output_seq_length)
 
@@ -709,18 +746,19 @@ class LLMInferenceSimulator:
         bytes_per_elem = get_bytes_per_element(self.model.dtype)
         input_size_gb = (self.inference.batch_size * self.inference.input_seq_length * self.model.hidden_size * bytes_per_elem) / (1024**3)
 
-        # PCIe 传输延迟 (简化公式: 数据量 / 带宽 + 固定延迟)
-        pcie_bw_gbps = self.hardware.chip.pcie_bandwidth_gbps
-        pcie_latency_us = self.hardware.chip.pcie_latency_us
-        pcie_latency = (input_size_gb / pcie_bw_gbps) * 1000 + pcie_latency_us / 1000  # 转换为 ms
+        # 数据传输延迟 (使用 C2C 带宽，简化 Host-Device 传输)
+        # 实际 PCIe 带宽约 32-64 GB/s，但对 LLM 推理影响很小，使用 C2C 带宽简化
+        transfer_bw_gbps = self.hardware.c2c_bandwidth_gbps
+        transfer_latency_us = self.hardware.c2c_latency_us
+        transfer_latency = (input_size_gb / transfer_bw_gbps) * 1000 + transfer_latency_us / 1000  # 转换为 ms
 
         # 为第一个 PP stage 的所有芯片添加传输任务
         for chip_id, state in self.chip_states.items():
             if state.pp_stage == 0:
                 self.gantt_builder.add_task(
-                    name="PCIe H2D",
+                    name="H2D Transfer",
                     start=start_time,
-                    end=start_time + pcie_latency,
+                    end=start_time + transfer_latency,
                     task_type=GanttTaskType.PCIE_H2D,
                     phase=InferencePhase.PREFILL,
                     chip_id=chip_id,
@@ -736,19 +774,19 @@ class LLMInferenceSimulator:
         bytes_per_elem = get_bytes_per_element(self.model.dtype)
         output_size_gb = (self.inference.batch_size * self.model.vocab_size * bytes_per_elem) / (1024**3)
 
-        # PCIe 传输延迟 (简化公式: 数据量 / 带宽 + 固定延迟)
-        pcie_bw_gbps = self.hardware.chip.pcie_bandwidth_gbps
-        pcie_latency_us = self.hardware.chip.pcie_latency_us
-        pcie_latency = (output_size_gb / pcie_bw_gbps) * 1000 + pcie_latency_us / 1000  # 转换为 ms
+        # 数据传输延迟 (使用 C2C 带宽，简化 Device-Host 传输)
+        transfer_bw_gbps = self.hardware.c2c_bandwidth_gbps
+        transfer_latency_us = self.hardware.c2c_latency_us
+        transfer_latency = (output_size_gb / transfer_bw_gbps) * 1000 + transfer_latency_us / 1000  # 转换为 ms
 
         # 为最后一个 PP stage 的所有芯片添加传输任务
         last_stage = self.parallelism.pp - 1
         for chip_id, state in self.chip_states.items():
             if state.pp_stage == last_stage:
                 self.gantt_builder.add_task(
-                    name="PCIe D2H",
+                    name="D2H Transfer",
                     start=start_time,
-                    end=start_time + pcie_latency,
+                    end=start_time + transfer_latency,
                     task_type=GanttTaskType.PCIE_D2H,
                     phase=InferencePhase.DECODE,
                     chip_id=chip_id,
@@ -757,80 +795,19 @@ class LLMInferenceSimulator:
 
         return start_time + pcie_latency
 
-    def _simulate_prefill(self, start_time: float) -> float:
-        """模拟 Prefill 阶段"""
-        num_tokens = self.inference.input_seq_length
-        context_length = self.inference.input_seq_length
+    def _simulate_prefill(self, start_time: float, report_progress: bool = False) -> float:
+        """模拟 Prefill 阶段
 
-        # 每个 PP stage 处理的层数（至少为 1，防止除零）
-        layers_per_stage = max(1, self.model.num_layers // self.parallelism.pp)
+        Args:
+            start_time: 开始时间
+            report_progress: 是否报告进度（默认 False）
 
-        # 为每个 PP stage 模拟
-        stage_times = [start_time] * self.parallelism.pp
+        Returns:
+            Prefill 结束时间
+        """
+        import logging
+        logger = logging.getLogger(__name__)
 
-        for layer in range(self.model.num_layers):
-            pp_stage = layer // layers_per_stage
-            if pp_stage >= self.parallelism.pp:
-                pp_stage = self.parallelism.pp - 1
-
-            layer_in_stage = layer % layers_per_stage
-
-            # 获取该 stage 的第一个芯片
-            chip_id = self._get_chip_for_stage(pp_stage)
-            current_time = stage_times[pp_stage]
-
-            # PP 前向传递等待上一个 stage
-            if pp_stage > 0 and layer_in_stage == 0:
-                prev_stage_end = stage_times[pp_stage - 1]
-                if prev_stage_end > current_time:
-                    # 添加气泡
-                    bubble_duration = prev_stage_end - current_time
-                    self.gantt_builder.add_bubble(
-                        start=current_time,
-                        duration=bubble_duration,
-                        phase=InferencePhase.PREFILL,
-                        chip_id=chip_id,
-                        pp_stage=pp_stage,
-                    )
-                    current_time = prev_stage_end
-
-                    # PP P2P 通信
-                    pp_comm_latency = self._calc_pp_comm_latency(num_tokens)
-                    self.gantt_builder.add_comm_task(
-                        task_type=GanttTaskType.PP_COMM,
-                        start=current_time,
-                        duration=pp_comm_latency,
-                        phase=InferencePhase.PREFILL,
-                        chip_id=chip_id,
-                        pp_stage=pp_stage,
-                        layer_index=layer,
-                    )
-                    current_time += pp_comm_latency
-
-            # 模拟单层
-            current_time = self._simulate_single_layer(
-                current_time=current_time,
-                layer_index=layer,
-                num_tokens=num_tokens,
-                context_length=context_length,
-                phase=InferencePhase.PREFILL,
-                chip_id=chip_id,
-                pp_stage=pp_stage,
-            )
-
-            stage_times[pp_stage] = current_time
-
-        # Embedding (在第一层之前) 和 LM Head (在最后一层之后) 已包含在层计算中
-        # 返回最后一个 stage 的结束时间
-        prefill_end = max(stage_times)
-
-        # 更新统计
-        self.prefill_stats.total_time = prefill_end - start_time
-
-        return prefill_end
-
-    def _simulate_prefill_with_progress(self, start_time: float) -> float:
-        """模拟 Prefill 阶段 (带进度报告)"""
         num_tokens = self.inference.input_seq_length
         context_length = self.inference.input_seq_length
         num_layers = self.model.num_layers
@@ -841,22 +818,19 @@ class LLMInferenceSimulator:
         # 为每个 PP stage 模拟
         stage_times = [start_time] * self.parallelism.pp
 
-        # Prefill 进度: 10% - 50%
-        import logging
-
-        logger = logging.getLogger(__name__)
-
-        logger.info(f"━━ 开始 Prefill 阶段：共 {num_layers} 层 ━━")
+        if report_progress:
+            logger.info(f"━━ 开始 Prefill 阶段：共 {num_layers} 层 ━━")
 
         for layer in range(num_layers):
-            layer_wall_start = time.time()
+            layer_wall_start = time.time() if report_progress else None
 
             # 报告进度: 10% + (layer / num_layers) * 40%
-            progress = 10 + (layer / num_layers) * 40
-            layer_progress_msg = f"Prefill Layer {layer + 1}/{num_layers}"
-            self._report_progress(progress, layer_progress_msg)
-            logger.info(f"")
-            logger.info(f"  🔹 开始评估 Layer {layer + 1}/{num_layers} (进度: {progress:.1f}%)")
+            if report_progress:
+                progress = 10 + (layer / num_layers) * 40
+                layer_progress_msg = f"Prefill Layer {layer + 1}/{num_layers}"
+                self._report_progress(progress, layer_progress_msg)
+                logger.info(f"")
+                logger.info(f"  🔹 开始评估 Layer {layer + 1}/{num_layers} (进度: {progress:.1f}%)")
 
             pp_stage = layer // layers_per_stage
             if pp_stage >= self.parallelism.pp:
@@ -910,22 +884,32 @@ class LLMInferenceSimulator:
             stage_times[pp_stage] = current_time
 
             # 打印层评估墙上时间
-            layer_wall_time = (time.time() - layer_wall_start) * 1000
-            logger.info(f"  ✅ Layer {layer + 1}/{num_layers} 完成，墙上时间: {layer_wall_time:.2f}ms")
+            if report_progress and layer_wall_start is not None:
+                layer_wall_time = (time.time() - layer_wall_start) * 1000
+                logger.info(f"  ✅ Layer {layer + 1}/{num_layers} 完成，墙上时间: {layer_wall_time:.2f}ms")
 
         # 返回最后一个 stage 的结束时间
         prefill_end = max(stage_times)
 
         # 更新统计
         self.prefill_stats.total_time = prefill_end - start_time
-        self._report_progress(50, "Prefill 完成")
+
+        if report_progress:
+            self._report_progress(50, "Prefill 完成")
 
         return prefill_end
 
-    def _simulate_decode(self, start_time: float) -> float:
-        """模拟 Decode 阶段"""
-        import logging
+    def _simulate_decode(self, start_time: float, report_progress: bool = False) -> float:
+        """模拟 Decode 阶段
 
+        Args:
+            start_time: 开始时间
+            report_progress: 是否报告进度（默认 False）
+
+        Returns:
+            Decode 结束时间
+        """
+        import logging
         logger = logging.getLogger(__name__)
 
         current_time = start_time
@@ -934,89 +918,11 @@ class LLMInferenceSimulator:
         # 每个 PP stage 处理的层数（至少为 1，防止除零）
         layers_per_stage = max(1, self.model.num_layers // self.parallelism.pp)
 
-        for token_idx in range(num_tokens_to_simulate):
-            token_wall_start = time.time()
-            context_length = self.inference.input_seq_length + token_idx + 1
-            stage_times = [current_time] * self.parallelism.pp
-
-            for layer in range(self.model.num_layers):
-                pp_stage = layer // layers_per_stage
-                if pp_stage >= self.parallelism.pp:
-                    pp_stage = self.parallelism.pp - 1
-
-                layer_in_stage = layer % layers_per_stage
-                chip_id = self._get_chip_for_stage(pp_stage)
-                layer_start = stage_times[pp_stage]
-
-                # PP 等待
-                if pp_stage > 0 and layer_in_stage == 0:
-                    prev_end = stage_times[pp_stage - 1]
-                    if prev_end > layer_start:
-                        bubble = prev_end - layer_start
-                        self.gantt_builder.add_bubble(
-                            start=layer_start,
-                            duration=bubble,
-                            phase=InferencePhase.DECODE,
-                            chip_id=chip_id,
-                            pp_stage=pp_stage,
-                        )
-                        layer_start = prev_end
-
-                        pp_comm = self._calc_pp_comm_latency(1)
-                        self.gantt_builder.add_comm_task(
-                            task_type=GanttTaskType.PP_COMM,
-                            start=layer_start,
-                            duration=pp_comm,
-                            phase=InferencePhase.DECODE,
-                            chip_id=chip_id,
-                            pp_stage=pp_stage,
-                            layer_index=layer,
-                            token_index=token_idx,
-                        )
-                        layer_start += pp_comm
-
-                # 模拟单层 (Decode: 1 token)
-                layer_end = self._simulate_single_layer(
-                    current_time=layer_start,
-                    layer_index=layer,
-                    num_tokens=1,
-                    context_length=context_length,
-                    phase=InferencePhase.DECODE,
-                    chip_id=chip_id,
-                    pp_stage=pp_stage,
-                    token_index=token_idx,
-                )
-
-                stage_times[pp_stage] = layer_end
-
-            current_time = max(stage_times)
-
-            # 📊 每个token的性能日志
-            token_wall_time = (time.time() - token_wall_start) * 1000
-            logger.info(f"    🔹 Token {token_idx}/{num_tokens_to_simulate}: 墙上时间 {token_wall_time:.2f}ms, 遍历了 {self.model.num_layers} 层")
-
-        # 更新统计
-        self.decode_stats.total_time = current_time - start_time
-
-        return current_time
-
-    def _simulate_decode_with_progress(self, start_time: float) -> float:
-        """模拟 Decode 阶段 (带进度报告)"""
-        import logging
-
-        logger = logging.getLogger(__name__)
-
-        current_time = start_time
-        num_tokens_to_simulate = min(self.config.max_simulated_tokens, self.inference.output_seq_length)
-
-        # 每个 PP stage 处理的层数（至少为 1，防止除零）
-        layers_per_stage = max(1, self.model.num_layers // self.parallelism.pp)
-
-        # Decode 进度: 50% - 90%
         for token_idx in range(num_tokens_to_simulate):
             # 报告进度: 50% + (token_idx / num_tokens) * 40%
-            progress = 50 + (token_idx / num_tokens_to_simulate) * 40
-            self._report_progress(progress, f"Decode Token {token_idx + 1}/{num_tokens_to_simulate}")
+            if report_progress:
+                progress = 50 + (token_idx / num_tokens_to_simulate) * 40
+                self._report_progress(progress, f"Decode Token {token_idx + 1}/{num_tokens_to_simulate}")
 
             token_wall_start = time.time()
             context_length = self.inference.input_seq_length + token_idx + 1
@@ -1080,7 +986,9 @@ class LLMInferenceSimulator:
 
         # 更新统计
         self.decode_stats.total_time = current_time - start_time
-        self._report_progress(90, "Decode 完成")
+
+        if report_progress:
+            self._report_progress(90, "Decode 完成")
 
         return current_time
 
@@ -1383,7 +1291,7 @@ class LLMInferenceSimulator:
         qkv_size = hidden_size * hidden_size * 3
         qkv_flops = 2 * num_tokens * qkv_size
         attn_score_flops = 2 * num_tokens * context_length * hidden_size
-        compute_tflops = self.hardware.chip.compute_tflops_fp16 * 1e12
+        compute_tflops = self.hardware.compute_tflops_bf16 * 1e12
         attn_latency_ms = (qkv_flops + attn_score_flops) / compute_tflops * 1000
 
         # FFN 部分延迟估算
@@ -1491,7 +1399,7 @@ class LLMInferenceSimulator:
             # 单 DP 副本的峰值算力 (tp * pp 个芯片)
             # 注意: 不乘 dp，因为每个 dp 副本独立计算相同 FLOPs
             chips_per_replica = self.parallelism.tp * self.parallelism.pp
-            peak_tflops = self.hardware.chip.compute_tflops_fp16 * chips_per_replica
+            peak_tflops = self.hardware.compute_tflops_bf16 * chips_per_replica
 
             prefill_mfu = achieved_tflops / peak_tflops
 
@@ -1514,7 +1422,7 @@ class LLMInferenceSimulator:
             required_bandwidth = data_read_gb / (avg_tpot / 1000)
 
             # 峰值带宽 (考虑 HBM 效率 85%)
-            peak_bandwidth = self.hardware.chip.memory_bandwidth_gbps * 0.85
+            peak_bandwidth = self.hardware.memory_bandwidth_gbps * self.hardware.memory_bandwidth_utilization
             decode_mbu = required_bandwidth / peak_bandwidth
 
         return SimulationStats(
@@ -1760,38 +1668,70 @@ def run_simulation(
     moe_tp = parallelism_dict.get("moe_tp")
 
     chip_hw = hardware_dict.get("chip", {})
-    node_hw = hardware_dict.get("node", {})
-    cluster_hw = hardware_dict.get("cluster", {})
+    board_hw = hardware_dict.get("board", {})
+    rack_hw = hardware_dict.get("rack", {})
+    pod_hw = hardware_dict.get("pod", {})
 
-    # 默认使用 SG2260E 芯片参数
-    hardware = HardwareConfig(
-        chip=ChipHardwareConfig(
-            chip_type=chip_hw.get("chip_type", "SG2260E"),
-            compute_tflops_fp16=chip_hw.get("compute_tflops_fp16", 64),
-            memory_gb=chip_hw.get("memory_gb", 64),
-            memory_bandwidth_gbps=chip_hw.get("memory_bandwidth_gbps", 273),
-            compute_tops_int8=chip_hw.get("compute_tops_int8", 128),
-            num_cores=chip_hw.get("num_cores", 8),
-            memory_bandwidth_utilization=chip_hw.get("memory_bandwidth_utilization", 0.893),
-            l2_cache_mb=chip_hw.get("l2_cache_mb", 16),
-            l2_bandwidth_gbps=chip_hw.get("l2_bandwidth_gbps", 512),
-            pcie_bandwidth_gbps=chip_hw.get("pcie_bandwidth_gbps", 64),
-            pcie_latency_us=chip_hw.get("pcie_latency_us", 1),
-            hbm_random_access_latency_ns=chip_hw.get("hbm_random_access_latency_ns", 100),
-        ),
-        node=NodeConfig(
-            chips_per_node=node_hw.get("chips_per_node", 8),
-            intra_node_bandwidth_gbps=node_hw.get("intra_node_bandwidth_gbps", 64),
-            intra_node_latency_us=node_hw.get("intra_node_latency_us", 1),
-            bandwidth_utilization=node_hw.get("bandwidth_utilization", 0.9),
-            startup_latency_us=node_hw.get("startup_latency_us", 1),
-            sync_latency_us=node_hw.get("sync_latency_us", 1),
-        ),
-        cluster=ClusterConfig(
-            num_nodes=cluster_hw.get("num_nodes", 1),
-            inter_node_bandwidth_gbps=cluster_hw.get("inter_node_bandwidth_gbps", 16),
-            inter_node_latency_us=cluster_hw.get("inter_node_latency_us", 2),
-        ),
+    # ========== 严格参数验证（不使用默认值） ==========
+    def _require_field(config: dict, field: str, config_name: str) -> Any:
+        """要求字段必须存在，否则抛出错误"""
+        if field not in config:
+            raise ValueError(f"{config_name} 缺少必需字段: {field}")
+        return config[field]
+
+    def _require_positive(value: float, field_name: str) -> float:
+        """要求值必须为正数"""
+        if value <= 0:
+            raise ValueError(f"{field_name} 必须为正数，当前值: {value}")
+        return value
+
+    # 验证芯片必需参数
+    chip_type = _require_field(chip_hw, "chip_type", "芯片配置")
+    num_cores = _require_positive(_require_field(chip_hw, "num_cores", "芯片配置"), "num_cores")
+    compute_tflops_bf16 = _require_positive(_require_field(chip_hw, "compute_tflops_bf16", "芯片配置"), "compute_tflops_bf16")
+    memory_capacity_gb = _require_positive(_require_field(chip_hw, "memory_capacity_gb", "芯片配置"), "memory_capacity_gb")
+    memory_bandwidth_gbps = _require_positive(_require_field(chip_hw, "memory_bandwidth_gbps", "芯片配置"), "memory_bandwidth_gbps")
+    c2c_bandwidth_gbps = _require_positive(_require_field(chip_hw, "c2c_bandwidth_gbps", "芯片配置"), "c2c_bandwidth_gbps")
+    c2c_latency_us = _require_field(chip_hw, "c2c_latency_us", "芯片配置")  # 延迟可以为 0
+
+    # 验证互联必需参数
+    b2b_bandwidth_gbps = _require_positive(_require_field(board_hw, "b2b_bandwidth_gbps", "Board 配置"), "b2b_bandwidth_gbps")
+    b2b_latency_us = _require_field(board_hw, "b2b_latency_us", "Board 配置")
+    r2r_bandwidth_gbps = _require_positive(_require_field(rack_hw, "r2r_bandwidth_gbps", "Rack 配置"), "r2r_bandwidth_gbps")
+    r2r_latency_us = _require_field(rack_hw, "r2r_latency_us", "Rack 配置")
+    p2p_bandwidth_gbps = _require_positive(_require_field(pod_hw, "p2p_bandwidth_gbps", "Pod 配置"), "p2p_bandwidth_gbps")
+    p2p_latency_us = _require_field(pod_hw, "p2p_latency_us", "Pod 配置")
+
+    # 构建运行时硬件参数（所有必需参数已验证）
+    hardware = RuntimeHardwareParams(
+        # 芯片参数（必需）
+        chip_type=chip_type,
+        num_cores=num_cores,
+        compute_tflops_fp8=chip_hw.get("compute_tflops_fp8", compute_tflops_bf16 * 2),  # FP8 默认为 BF16 的 2 倍
+        compute_tflops_bf16=compute_tflops_bf16,
+        memory_capacity_gb=memory_capacity_gb,
+        memory_bandwidth_gbps=memory_bandwidth_gbps,
+        memory_bandwidth_utilization=chip_hw.get("memory_bandwidth_utilization", 0.85),
+        lmem_capacity_mb=chip_hw.get("lmem_capacity_mb", 0.0),
+        lmem_bandwidth_gbps=chip_hw.get("lmem_bandwidth_gbps", 0.0),
+        c2c_bandwidth_gbps=c2c_bandwidth_gbps,
+        c2c_latency_us=c2c_latency_us,
+        # 微架构参数（可选）
+        cube_m=chip_hw.get("cube_m"),
+        cube_k=chip_hw.get("cube_k"),
+        cube_n=chip_hw.get("cube_n"),
+        sram_size_kb=chip_hw.get("sram_size_kb"),
+        sram_utilization=chip_hw.get("sram_utilization"),
+        lane_num=chip_hw.get("lane_num"),
+        align_bytes=chip_hw.get("align_bytes"),
+        compute_dma_overlap_rate=chip_hw.get("compute_dma_overlap_rate"),
+        # 互联参数（必需）
+        b2b_bandwidth_gbps=b2b_bandwidth_gbps,
+        b2b_latency_us=b2b_latency_us,
+        r2r_bandwidth_gbps=r2r_bandwidth_gbps,
+        r2r_latency_us=r2r_latency_us,
+        p2p_bandwidth_gbps=p2p_bandwidth_gbps,
+        p2p_latency_us=p2p_latency_us,
     )
 
     config = SimulationConfig(
@@ -1825,8 +1765,9 @@ def run_simulation(
     # 转换为前端格式
     from .gantt import convert_to_frontend_format
 
-    # 计算吞吐量指标
-    total_chips = parallelism.dp * parallelism.tp * parallelism.pp * parallelism.ep
+    # 计算吞吐量指标（使用统一的芯片计算函数）
+    from ..tasks.deployment import calculate_required_chips
+    total_chips = calculate_required_chips(parallelism_dict, model_dict)
 
     # TPOT 转换：微秒 -> 毫秒
     tpot_ms = result.stats.avg_tpot / 1000.0 if result.stats.avg_tpot > 0 else 0.0

@@ -72,12 +72,14 @@ export interface EvaluationTask {
     tps: number           // 集群总吞吐 (tokens/s)
     tps_per_batch: number // 单请求TPS (tokens/s per request)
     tps_per_chip: number  // 单芯片TPS (tokens/s per chip)
-    tpot: number
-    ttft: number
-    mfu: number
+    tpot: number          // Time Per Output Token (ms)
+    ttft: number          // Time To First Token (ms)
+    mfu: number           // 模型算力利用率
     mbu: number           // 内存带宽利用率
-    score: number
-    chips: number
+    score: number         // 综合得分
+    chips: number         // 芯片数
+    dram_occupy: number   // 显存占用 (字节)
+    flops: number         // 计算量 (FLOPs)
     cost?: {              // 成本分析结果
       server_cost: number
       interconnect_cost: number
@@ -89,7 +91,7 @@ export interface EvaluationTask {
       cost_per_million_tokens: number
       model_size_gb: number
     }
-    parallelism: {
+    parallelism?: {       // 并行策略
       dp: number
       tp: number
       pp: number

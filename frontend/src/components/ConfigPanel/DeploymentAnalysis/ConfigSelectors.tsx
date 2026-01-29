@@ -898,7 +898,7 @@ export const HardwareConfigSelector: React.FC<HardwareConfigSelectorProps> = ({ 
   const handleNodeChange = (id: string) => { setNodeId(id); handleConfigChange(chipId, id, numNodes) }
   const handleNumNodesChange = (n: number) => { setNumNodes(n); handleConfigChange(chipId, nodeId, n) }
 
-  const totalChips = value.node.chips_per_node * value.cluster.num_nodes
+  const totalChips = value.board.chips_per_board * value.pod.racks_per_pod * value.rack.boards_per_rack
 
   return (
     <div>
@@ -910,24 +910,24 @@ export const HardwareConfigSelector: React.FC<HardwareConfigSelectorProps> = ({ 
         </Select>
       </div>
       <div style={configRowStyle}>
-        <span className="text-sm">节点类型</span>
+        <span className="text-sm">Board 类型</span>
         <Select value={nodeId} onValueChange={handleNodeChange}>
           <SelectTrigger className="w-[160px] h-8"><SelectValue /></SelectTrigger>
           <SelectContent>{nodeOptions.map(o => (<SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>))}</SelectContent>
         </Select>
       </div>
       <div style={configRowStyle}>
-        <span className="text-sm">节点数量</span>
+        <span className="text-sm">Board 数量</span>
         <NumberInput min={1} max={64} value={numNodes} onChange={(v) => handleNumNodesChange(v || 1)} className="w-[90px]" />
       </div>
       <div className="p-2 bg-blue-50 rounded-md text-xs mt-2">
         <div className="flex justify-between">
           <span className="text-gray-500">总芯片数: <b>{totalChips}</b></span>
-          <span className="text-gray-500">显存: <b>{value.chip.memory_gb}GB</b>/卡</span>
+          <span className="text-gray-500">显存: <b>{value.chip.memory_capacity_gb}GB</b>/卡</span>
         </div>
         <div className="flex justify-between mt-1">
-          <span className="text-gray-500">算力: {value.chip.compute_tflops_fp16} TFLOPs</span>
-          <span className="text-gray-500">节点内: {value.node.intra_node_bandwidth_gbps} GB/s</span>
+          <span className="text-gray-500">算力: {value.chip.compute_tflops_bf16} TFLOPs</span>
+          <span className="text-gray-500">Board内: {value.board.b2b_bandwidth_gbps} GB/s</span>
         </div>
       </div>
     </div>

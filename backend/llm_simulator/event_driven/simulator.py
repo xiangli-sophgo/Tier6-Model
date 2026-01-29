@@ -26,7 +26,6 @@ from ..config import (
     LLMModelConfig,
     InferenceConfig,
     ParallelismStrategy,
-    HardwareConfig,
     SimulationResult,
     SimulationStats,
     PhaseTimeStats,
@@ -35,6 +34,7 @@ from ..config import (
     get_bytes_per_element,
 )
 from ..core.topology import TopologyParser
+from ..core.simulator import RuntimeHardwareParams
 from ..core.gantt import GanttChartBuilder, convert_to_frontend_format
 from ..evaluators import (
     get_arch_preset,
@@ -103,18 +103,18 @@ class EventDrivenSimulator:
         model: LLMModelConfig,
         inference: InferenceConfig,
         parallelism: ParallelismStrategy,
-        hardware: HardwareConfig,
+        hardware: RuntimeHardwareParams,
         config: Optional[EventDrivenSimConfig] = None,
         progress_callback: Optional[Callable[[float, str], None]] = None,
     ):
         """初始化事件驱动仿真器
 
         Args:
-            topology_dict: 前端拓扑配置
+            topology_dict: 前端拓扑配置（包含嵌入的硬件参数）
             model: 模型配置
             inference: 推理配置
             parallelism: 并行策略
-            hardware: 硬件配置
+            hardware: 运行时硬件参数
             config: 仿真配置
             progress_callback: 进度回调函数
         """
@@ -125,10 +125,11 @@ class EventDrivenSimulator:
         self.config = config or EventDrivenSimConfig()
         self.progress_callback = progress_callback
 
-        # 初始化拓扑解析器
-        self.topo_parser = TopologyParser(topology_dict, hardware)
+        # 初始化拓扑解析器（硬件参数现在嵌入在拓扑配置中）
+        self.topo_parser = TopologyParser(topology_dict)
         self.interconnect = self.topo_parser.build_interconnect_graph()
-        self.group_assignment = self.topo_parser.map_parallelism(parallelism)
+        is_moe = model.moe_config is not None
+        self.group_assignment = self.topo_parser.map_parallelism(parallelism, is_moe=is_moe)
 
         # 获取芯片列表
         self.chip_ids = [
@@ -157,7 +158,7 @@ class EventDrivenSimulator:
 
     def _init_evaluators(self) -> None:
         """初始化评估器"""
-        chip_type = self.hardware.chip.chip_type
+        chip_type = self.hardware.chip_type
         try:
             self.arch = get_arch_preset(chip_type)
         except KeyError:
@@ -545,11 +546,11 @@ class EventDrivenSimulator:
         # 输入数据大小
         input_size_bytes = batch_size * seq_length * hidden_size * bytes_per_elem
 
-        # PCIe 传输
-        pcie_bw = self.hardware.chip.pcie_bandwidth_gbps
-        pcie_lat = self.hardware.chip.pcie_latency_us
+        # 数据传输 (使用 C2C 带宽简化)
+        transfer_bw = self.hardware.c2c_bandwidth_gbps
+        transfer_lat = self.hardware.c2c_latency_us
 
-        transfer_time = (input_size_bytes / 1e9) / pcie_bw * 1e6 + pcie_lat
+        transfer_time = (input_size_bytes / 1e9) / transfer_bw * 1e6 + transfer_lat
 
         return transfer_time
 
@@ -652,7 +653,7 @@ class EventDrivenSimulator:
 
         # 计算 MFU
         total_flops = self._calculate_total_flops()
-        peak_tflops = self.hardware.chip.compute_tflops_fp16 * len(self.chip_ids)
+        peak_tflops = self.hardware.compute_tflops_bf16 * len(self.chip_ids)
         achieved_tflops = total_flops / total_time / 1e6 if total_time > 0 else 0
         mfu = achieved_tflops / peak_tflops if peak_tflops > 0 else 0
 

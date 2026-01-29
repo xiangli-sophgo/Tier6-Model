@@ -12,9 +12,20 @@ import json
 import hashlib
 import logging
 import os
+import sys
 import uuid
-import fcntl
 from pathlib import Path
+
+# 跨平台文件锁定支持
+if sys.platform == 'win32':
+    import msvcrt
+    LOCK_AVAILABLE = True
+else:
+    try:
+        import fcntl
+        LOCK_AVAILABLE = True
+    except ImportError:
+        LOCK_AVAILABLE = False
 from typing import Dict, Optional, TYPE_CHECKING
 from datetime import datetime
 
@@ -263,9 +274,19 @@ class GEMMPersistentCache:
 
                 # 使用文件锁保护整个读-改-写过程
                 with open(lock_file, 'w') as lf:
+                    lock_acquired = False
                     try:
                         # 获取排他锁（非阻塞，失败则重试）
-                        fcntl.flock(lf.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                        if LOCK_AVAILABLE:
+                            if sys.platform == 'win32':
+                                try:
+                                    msvcrt.locking(lf.fileno(), msvcrt.LK_NBLCK, 1)
+                                    lock_acquired = True
+                                except (IOError, OSError):
+                                    raise IOError("无法获取锁")
+                            else:
+                                fcntl.flock(lf.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                                lock_acquired = True
                     except (IOError, OSError):
                         # 无法获取锁，等待后重试
                         if attempt < max_retries - 1:
@@ -342,7 +363,14 @@ class GEMMPersistentCache:
 
                     finally:
                         # 释放锁
-                        fcntl.flock(lf.fileno(), fcntl.LOCK_UN)
+                        if lock_acquired and LOCK_AVAILABLE:
+                            if sys.platform == 'win32':
+                                try:
+                                    msvcrt.locking(lf.fileno(), msvcrt.LK_UNLCK, 1)
+                                except (IOError, OSError):
+                                    pass  # 解锁失败不影响主流程
+                            else:
+                                fcntl.flock(lf.fileno(), fcntl.LOCK_UN)
 
             except Exception as e:
                 # 清理临时文件

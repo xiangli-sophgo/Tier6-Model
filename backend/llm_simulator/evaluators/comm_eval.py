@@ -58,15 +58,13 @@ DEFAULT_MOE_TOPK = 8            # MoE topk
 DEFAULT_PREFILL_FACTOR = 8 / 128  # Prefill 系数
 
 
-# ==================== AllReduce 评估器 ====================
+# ==================== 通信评估器基类 ====================
 
-class AllReduceEval:
+class BaseCommEval:
     """
-    AllReduce 通信评估器
+    通信评估器基类
 
-    支持两种模式：
-    1. 分层模式 (TP=8/16/32): 组内 ReduceScatter + 组间 AllReduce + 组内 AllGather
-    2. 扁平模式 (其他 TP): Ring AllReduce
+    提供通用的初始化逻辑，避免子类重复代码。
     """
 
     def __init__(
@@ -79,11 +77,12 @@ class AllReduceEval:
         初始化评估器
 
         Args:
-            arch: 架构配置，需要 intra_bw、inter_bw 和 comm_latency 属性
+            arch: AcceleratorMicroArch 对象，包含芯片特定的延迟参数
             protocol_config: 协议配置 (可选，使用默认值如果未提供)
             network_config: 网络基础设施配置 (可选，使用默认值如果未提供)
         """
         self.arch = arch
+
         # 芯片特定的延迟参数 (从 arch.comm_latency 获取)
         self.c2c_lat = arch.comm_latency.chip_to_chip_us
         self.ddr_r_lat = arch.comm_latency.memory_read_latency_us
@@ -93,10 +92,31 @@ class AllReduceEval:
         # 协议参数 (从 protocol_config 获取，或使用 dataclass 默认值)
         proto = protocol_config if protocol_config is not None else ProtocolConfig()
         self.rtt_tp = proto.rtt_tp_us
+        self.rtt_ep = proto.rtt_ep_us
         self.sync_lat = proto.sync_latency_us
         self.bw_urate = proto.bandwidth_utilization
 
-        self.link_delay = 0  # AllReduce 不使用 link_delay
+        # 网络基础设施参数 (从 network_config 获取，或使用 dataclass 默认值)
+        net = network_config if network_config is not None else NetworkInfraConfig()
+        self.switch_delay = net.switch_delay_us
+        self.cable_delay = net.cable_delay_us
+
+        # 默认 link_delay（子类可覆盖）
+        self.link_delay = 0
+
+
+# ==================== AllReduce 评估器 ====================
+
+class AllReduceEval(BaseCommEval):
+    """
+    AllReduce 通信评估器
+
+    支持两种模式：
+    1. 分层模式 (TP=8/16/32): 组内 ReduceScatter + 组间 AllReduce + 组内 AllGather
+    2. 扁平模式 (其他 TP): Ring AllReduce
+    """
+
+    # AllReduce 不使用 link_delay，使用父类默认值 0
 
     def evaluate_raw(
         self,
@@ -210,41 +230,14 @@ class AllReduceEval:
 
 # ==================== AllGather 评估器 ====================
 
-class AllGatherEval:
+class AllGatherEval(BaseCommEval):
     """
     AllGather 通信评估器
 
     支持分层和扁平两种模式。
     """
 
-    def __init__(
-        self,
-        arch,
-        protocol_config: Optional["ProtocolConfig"] = None,
-        network_config: Optional["NetworkInfraConfig"] = None,
-    ):
-        """初始化评估器
-
-        Args:
-            arch: AcceleratorMicroArch 对象，包含芯片特定的延迟参数
-            protocol_config: 协议配置 (可选)
-            network_config: 网络基础设施配置 (可选)
-        """
-        self.arch = arch
-
-        # 芯片特定的延迟参数 (从 arch.comm_latency 获取)
-        self.c2c_lat = arch.comm_latency.chip_to_chip_us
-        self.ddr_r_lat = arch.comm_latency.memory_read_latency_us
-        self.ddr_w_lat = arch.comm_latency.memory_write_latency_us
-        self.start_lat = arch.comm_latency.comm_start_overhead_us
-
-        # 协议参数 (从 protocol_config 获取，或使用 dataclass 默认值)
-        proto = protocol_config if protocol_config is not None else ProtocolConfig()
-        self.rtt_tp = proto.rtt_tp_us
-        self.sync_lat = proto.sync_latency_us
-        self.bw_urate = proto.bandwidth_utilization
-
-        self.link_delay = 0
+    # AllGather 使用父类默认初始化，link_delay = 0
 
     def evaluate_raw(
         self,
@@ -343,41 +336,14 @@ class AllGatherEval:
 
 # ==================== ReduceScatter 评估器 ====================
 
-class ReduceScatterEval:
+class ReduceScatterEval(BaseCommEval):
     """
     ReduceScatter 通信评估器
 
     支持分层和扁平两种模式。
     """
 
-    def __init__(
-        self,
-        arch,
-        protocol_config: Optional["ProtocolConfig"] = None,
-        network_config: Optional["NetworkInfraConfig"] = None,
-    ):
-        """初始化评估器
-
-        Args:
-            arch: AcceleratorMicroArch 对象，包含芯片特定的延迟参数
-            protocol_config: 协议配置 (可选)
-            network_config: 网络基础设施配置 (可选)
-        """
-        self.arch = arch
-
-        # 芯片特定的延迟参数 (从 arch.comm_latency 获取)
-        self.c2c_lat = arch.comm_latency.chip_to_chip_us
-        self.ddr_r_lat = arch.comm_latency.memory_read_latency_us
-        self.ddr_w_lat = arch.comm_latency.memory_write_latency_us
-        self.start_lat = arch.comm_latency.comm_start_overhead_us
-
-        # 协议参数 (从 protocol_config 获取，或使用 dataclass 默认值)
-        proto = protocol_config if protocol_config is not None else ProtocolConfig()
-        self.rtt_tp = proto.rtt_tp_us
-        self.sync_lat = proto.sync_latency_us
-        self.bw_urate = proto.bandwidth_utilization
-
-        self.link_delay = 0
+    # ReduceScatter 使用父类默认初始化，link_delay = 0
 
     def evaluate_raw(
         self,
@@ -473,14 +439,13 @@ class ReduceScatterEval:
         return CommResult(latency_us=lat, comm_bytes=comm)
 
 
-# ==================== Dispatch 评估器 (MoE 专用) ====================
+# ==================== MoE 通信评估器基类 ====================
 
-class DispatchEval:
+class BaseMoECommEval:
     """
-    Dispatch 通信评估器 (MoE 专用)
+    MoE 通信评估器基类 (Dispatch/Combine 共用)
 
-    Dispatch = EP 跨节点通信 + MoE_TP AllGather
-    用于将 token 分发到各个 expert 所在的芯片
+    提供 MoE 专用的初始化逻辑。
     """
 
     def __init__(
@@ -515,7 +480,6 @@ class DispatchEval:
         self.cable_delay = net.cable_delay_us
 
         # Dispatch/Combine 专用 start_lat (包含 switch_delay 和 cable_delay)
-        # start_lat = 2*c2c_lat + ddr_r_lat + ddr_w_lat + noc_lat + 2*d2d_lat + 2*switch_delay + 2*cable_delay
         self.start_lat = arch.comm_latency.dispatch_combine_start_lat(
             self.switch_delay, self.cable_delay
         )
@@ -523,11 +487,25 @@ class DispatchEval:
         # 协议参数 (从 protocol_config 获取，或使用 dataclass 默认值)
         proto = protocol_config if protocol_config is not None else ProtocolConfig()
         self.rtt_ep = proto.rtt_ep_us
+        self.rtt_tp = proto.rtt_tp_us  # AllGather 用到
         self.bw_urate = proto.bandwidth_utilization
 
         # MoE 参数
         self.topk = moe_topk
         self.prefill_factor = prefill_factor
+
+
+# ==================== Dispatch 评估器 (MoE 专用) ====================
+
+class DispatchEval(BaseMoECommEval):
+    """
+    Dispatch 通信评估器 (MoE 专用)
+
+    Dispatch = EP 跨节点通信 + MoE_TP AllGather
+    用于将 token 分发到各个 expert 所在的芯片
+    """
+
+    # 使用 BaseMoECommEval 的初始化
 
     def evaluate_raw(
         self,
@@ -601,7 +579,7 @@ class DispatchEval:
 
 # ==================== Combine 评估器 (MoE 专用) ====================
 
-class CombineEval:
+class CombineEval(BaseMoECommEval):
     """
     Combine 通信评估器 (MoE 专用)
 
@@ -609,51 +587,7 @@ class CombineEval:
     用于将 expert 输出收集回原始芯片
     """
 
-    def __init__(
-        self,
-        arch,
-        protocol_config: Optional["ProtocolConfig"] = None,
-        network_config: Optional["NetworkInfraConfig"] = None,
-        moe_topk: int = DEFAULT_MOE_TOPK,
-        prefill_factor: float = DEFAULT_PREFILL_FACTOR,
-    ):
-        """初始化评估器
-
-        Args:
-            arch: AcceleratorMicroArch 对象，包含芯片特定的延迟参数
-            protocol_config: 协议配置 (可选)
-            network_config: 网络基础设施配置 (可选)
-            moe_topk: MoE top-k 值 (通常从 moe_config.num_experts_per_tok 获取)
-            prefill_factor: Prefill 系数
-        """
-        self.arch = arch
-
-        # 芯片特定的延迟参数 (从 arch.comm_latency 获取)
-        self.c2c_lat = arch.comm_latency.chip_to_chip_us
-        self.ddr_r_lat = arch.comm_latency.memory_read_latency_us
-        self.ddr_w_lat = arch.comm_latency.memory_write_latency_us
-        self.noc_lat = arch.comm_latency.noc_latency_us
-        self.d2d_lat = arch.comm_latency.die_to_die_latency_us
-
-        # 网络基础设施参数 (从 network_config 获取，或使用 dataclass 默认值)
-        net = network_config if network_config is not None else NetworkInfraConfig()
-        self.switch_delay = net.switch_delay_us
-        self.cable_delay = net.cable_delay_us
-
-        # Combine 专用 start_lat (包含 switch_delay 和 cable_delay)
-        # start_lat = 2*c2c_lat + ddr_r_lat + ddr_w_lat + noc_lat + 2*d2d_lat + 2*switch_delay + 2*cable_delay
-        self.start_lat = arch.comm_latency.dispatch_combine_start_lat(
-            self.switch_delay, self.cable_delay
-        )
-
-        # 协议参数 (从 protocol_config 获取，或使用 dataclass 默认值)
-        proto = protocol_config if protocol_config is not None else ProtocolConfig()
-        self.rtt_ep = proto.rtt_ep_us
-        self.bw_urate = proto.bandwidth_utilization
-
-        # MoE 参数
-        self.topk = moe_topk
-        self.prefill_factor = prefill_factor
+    # 使用 BaseMoECommEval 的初始化
 
     def evaluate_raw(
         self,

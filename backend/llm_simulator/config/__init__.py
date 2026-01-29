@@ -9,18 +9,13 @@ from .types import (
     BottleneckType,
     AllReduceAlgorithm,
     AllToAllAlgorithm,
-    # 拓扑配置
+    # 拓扑配置 (包含硬件参数)
     ChipConfig,
     BoardConfig,
     RackConfig,
     PodConfig,
     ConnectionConfig,
     HierarchicalTopology,
-    # 硬件配置
-    ChipHardwareConfig,
-    NodeConfig,
-    ClusterConfig,
-    HardwareConfig,
     # 模型配置
     MoEConfig,
     MLAConfig,
@@ -74,10 +69,6 @@ __all__ = [
     'PodConfig',
     'ConnectionConfig',
     'HierarchicalTopology',
-    'ChipHardwareConfig',
-    'NodeConfig',
-    'ClusterConfig',
-    'HardwareConfig',
     'MoEConfig',
     'MLAConfig',
     'LLMModelConfig',

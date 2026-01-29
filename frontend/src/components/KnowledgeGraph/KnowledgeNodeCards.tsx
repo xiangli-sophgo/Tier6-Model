@@ -31,13 +31,33 @@ export const KnowledgeNodeCards: React.FC<KnowledgeNodeCardsProps> = ({ nodes, o
     return data.nodes.filter((n: any) => relatedIds.has(n.id))
   }
 
-  // 渲染定义文本（支持 Markdown 格式：**加粗**、\n换行）
+  // 渲染定义文本（支持 Markdown 格式：##标题、**加粗**、\n换行）
   const renderDefinition = (text: string) => {
     // 1. 按换行符拆分
     const lines = text.split('\n')
 
     return lines.map((line, lineIndex) => {
-      // 2. 处理每行中的加粗标记 **text**
+      // 2. 检查是否是标题
+      const h2Match = line.match(/^##\s+(.+)$/)
+      const h3Match = line.match(/^###\s+(.+)$/)
+
+      if (h2Match) {
+        return (
+          <h2 key={lineIndex} className="text-lg font-bold text-gray-800 mt-4 mb-2 first:mt-0">
+            {h2Match[1]}
+          </h2>
+        )
+      }
+
+      if (h3Match) {
+        return (
+          <h3 key={lineIndex} className="text-base font-semibold text-gray-700 mt-3 mb-1.5 first:mt-0">
+            {h3Match[1]}
+          </h3>
+        )
+      }
+
+      // 3. 处理每行中的加粗标记 **text**
       const segments: React.ReactNode[] = []
       const boldRegex = /\*\*([^*]+)\*\*/g
       let lastIndex = 0
@@ -58,7 +78,7 @@ export const KnowledgeNodeCards: React.FC<KnowledgeNodeCardsProps> = ({ nodes, o
         segments.push(line.slice(lastIndex))
       }
 
-      // 3. 判断是否是分点项（以数字+标点开头）
+      // 4. 判断是否是分点项（以数字+标点开头）
       const isListItem = /^\d+[）\.\)]\s*/.test(line)
 
       return (

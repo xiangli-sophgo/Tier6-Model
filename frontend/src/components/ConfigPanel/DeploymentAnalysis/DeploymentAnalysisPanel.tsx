@@ -274,28 +274,45 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
         }
       }
     } else if (!hardwareConfig) {
-      // 如果没有拓扑配置，使用默认值
+      // 如果没有拓扑配置，使用默认值（SG2260E 参数）
       console.warn('未找到拓扑配置，使用默认硬件配置')
       const defaultConfig: HardwareConfig = {
         chip: {
-          chip_type: 'SG2260',
-          flops_dtype: 'BF16',
-          compute_tflops_fp16: 800,
-          compute_tops_int8: 1600,
-          num_cores: 256,
-          memory_gb: 64,
-          memory_bandwidth_gbps: 1200,
+          chip_type: 'SG2260E',
+          num_cores: 64,
+          compute_tflops_fp8: 1536,
+          compute_tflops_bf16: 768,
+          memory_capacity_gb: 64,
+          memory_bandwidth_gbps: 11468,
           memory_bandwidth_utilization: 0.85,
+          lmem_capacity_mb: 2,
+          lmem_bandwidth_gbps: 512,
+          c2c_bandwidth_gbps: 448,
+          c2c_latency_us: 0.2,
+          // 微架构参数（SG2260E 默认值）
+          cube_m: 16,
+          cube_k: 32,
+          cube_n: 8,
+          sram_size_kb: 2048,
+          sram_utilization: 0.45,
+          lane_num: 16,
+          align_bytes: 32,
+          compute_dma_overlap_rate: 0.8,
         },
-        node: {
-          chips_per_node: 8,
-          intra_node_bandwidth_gbps: 450,
-          intra_node_latency_us: 0.35,
+        board: {
+          chips_per_board: 8,
+          b2b_bandwidth_gbps: 450,
+          b2b_latency_us: 0.35,
         },
-        cluster: {
-          num_nodes: 1,
-          inter_node_bandwidth_gbps: 200,
-          inter_node_latency_us: 2,
+        rack: {
+          boards_per_rack: 4,
+          r2r_bandwidth_gbps: 200,
+          r2r_latency_us: 2,
+        },
+        pod: {
+          racks_per_pod: 1,
+          p2p_bandwidth_gbps: 100,
+          p2p_latency_us: 5,
         },
       }
       setHardwareConfig(defaultConfig)
@@ -370,7 +387,7 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
     if (!hardwareConfig) return
 
     const isMoE = modelConfig.model_type === 'moe' && modelConfig.moe_config
-    const maxTP = Math.min(128, modelConfig.num_attention_heads, hardwareConfig.node.chips_per_node)
+    const maxTP = Math.min(128, modelConfig.num_attention_heads, hardwareConfig.board.chips_per_board)
 
     // 找一个能整除头数的 TP 值
     let validTP = 1
@@ -898,6 +915,9 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
 
   // Collapsible panel state for chip parameters
   const [chipParamsOpen, setChipParamsOpen] = useState(false)
+  const [boardParamsOpen, setBoardParamsOpen] = useState(false)
+  const [rackParamsOpen, setRackParamsOpen] = useState(false)
+  const [podParamsOpen, setPodParamsOpen] = useState(false)
   const [commParamsOpen, setCommParamsOpen] = useState(false)
 
   // 如果硬件配置未加载，显示提示（不再是加载中）
@@ -1125,65 +1145,83 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
                       <span>芯片硬件参数: {hardwareConfig.chip.chip_type}</span>
                       <span className="text-gray-500">{chipParamsOpen ? '▲' : '▼'}</span>
                     </CollapsibleTrigger>
-                    <CollapsibleContent className="pt-3 px-2">
-                      {/* 算力 */}
-                      <div className="grid grid-cols-2 gap-4">
+                    <CollapsibleContent>
+                      <div className="p-2 bg-white border border-t-0 rounded-b">
+                      {/* 核心数 + 算力 (合并一行，3列) */}
+                      <div className="grid grid-cols-3 gap-3 mb-2">
+                        <div>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Label className="text-xs text-gray-500 cursor-help">核心数</Label>
+                            </TooltipTrigger>
+                            <TooltipContent>计算核心数量</TooltipContent>
+                          </Tooltip>
+                          <NumberInput
+                            min={1}
+                            value={hardwareConfig.chip.num_cores}
+                            onChange={(v) => setHardwareConfig(prev => prev ? {
+                              ...prev,
+                              chip: { ...prev.chip, num_cores: v ?? 8 }
+                            } : prev)}
+                            className="w-full h-7 mt-0.5"
+                          />
+                        </div>
                         <div>
                           <Tooltip>
                             <TooltipTrigger asChild>
                               <Label className="text-xs text-gray-500 cursor-help">FP8 (TFLOPS)</Label>
                             </TooltipTrigger>
-                            <TooltipContent>FP8 精度算力 (通常是 BF16/FP16 的 2 倍)</TooltipContent>
+                            <TooltipContent>FP8 精度算力</TooltipContent>
                           </Tooltip>
                           <NumberInput
                             min={0}
-                            value={hardwareConfig.chip.compute_tflops_fp8 ?? (hardwareConfig.chip.compute_tflops_fp16 * 2)}
+                            value={hardwareConfig.chip.compute_tflops_fp8}
                             onChange={(v) => setHardwareConfig(prev => prev ? {
                               ...prev,
-                              chip: { ...prev.chip, compute_tflops_fp8: v ?? 0, compute_tflops_fp16: (v ?? 0) / 2 }
+                              chip: { ...prev.chip, compute_tflops_fp8: v ?? 0, compute_tflops_bf16: (v ?? 0) / 2 }
                             } : prev)}
-                            className="w-full h-8 mt-1"
+                            className="w-full h-7 mt-0.5"
                           />
                         </div>
                         <div>
                           <Tooltip>
                             <TooltipTrigger asChild>
-                              <Label className="text-xs text-gray-500 cursor-help">{hardwareConfig.chip.flops_dtype || 'BF16'} (TFLOPS)</Label>
+                              <Label className="text-xs text-gray-500 cursor-help">BF16 (TFLOPS)</Label>
                             </TooltipTrigger>
-                            <TooltipContent>{hardwareConfig.chip.flops_dtype || 'BF16'} 精度算力</TooltipContent>
+                            <TooltipContent>BF16 精度算力</TooltipContent>
                           </Tooltip>
                           <NumberInput
                             min={0}
-                            value={hardwareConfig.chip.compute_tflops_fp16}
+                            value={hardwareConfig.chip.compute_tflops_bf16}
                             onChange={(v) => setHardwareConfig(prev => prev ? {
                               ...prev,
-                              chip: { ...prev.chip, compute_tflops_fp16: v ?? 0, compute_tflops_fp8: (v ?? 0) * 2 }
+                              chip: { ...prev.chip, compute_tflops_bf16: v ?? 0, compute_tflops_fp8: (v ?? 0) * 2 }
                             } : prev)}
-                            className="w-full h-8 mt-1"
+                            className="w-full h-7 mt-0.5"
                           />
                         </div>
                       </div>
 
-                      {/* Memory */}
-                      <div className="border-t border-dashed my-3 pt-2">
+                      {/* Memory (3列: 容量、带宽、利用率) */}
+                      <div className="border-t border-dashed my-2 pt-1.5">
                         <span className="text-xs text-gray-500">Memory</span>
                       </div>
-                      <div className="grid grid-cols-3 gap-4">
+                      <div className="grid grid-cols-3 gap-3 mb-2">
                         <div>
                           <Tooltip>
                             <TooltipTrigger asChild>
                               <Label className="text-xs text-gray-500 cursor-help">容量 (GB)</Label>
                             </TooltipTrigger>
-                            <TooltipContent>内存容量</TooltipContent>
+                            <TooltipContent>显存容量</TooltipContent>
                           </Tooltip>
                           <NumberInput
                             min={0}
-                            value={hardwareConfig.chip.memory_gb}
+                            value={hardwareConfig.chip.memory_capacity_gb}
                             onChange={(v) => setHardwareConfig(prev => prev ? {
                               ...prev,
-                              chip: { ...prev.chip, memory_gb: v ?? 0 }
+                              chip: { ...prev.chip, memory_capacity_gb: v ?? 0 }
                             } : prev)}
-                            className="w-full h-8 mt-1"
+                            className="w-full h-7 mt-0.5"
                           />
                         </div>
                         <div>
@@ -1191,7 +1229,7 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
                             <TooltipTrigger asChild>
                               <Label className="text-xs text-gray-500 cursor-help">带宽 (TB/s)</Label>
                             </TooltipTrigger>
-                            <TooltipContent>内存总带宽 (理论峰值)</TooltipContent>
+                            <TooltipContent>显存总带宽 (理论峰值)</TooltipContent>
                           </Tooltip>
                           <NumberInput
                             min={0}
@@ -1201,47 +1239,290 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
                               ...prev,
                               chip: { ...prev.chip, memory_bandwidth_gbps: (v ?? 0) * 1000 }
                             } : prev)}
-                            className="w-full h-8 mt-1"
+                            className="w-full h-7 mt-0.5"
                           />
                         </div>
+                        <div>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Label className="text-xs text-gray-500 cursor-help">利用率</Label>
+                            </TooltipTrigger>
+                            <TooltipContent>显存带宽利用率 (0-1)</TooltipContent>
+                          </Tooltip>
+                          <NumberInput
+                            min={0}
+                            max={1}
+                            step={0.01}
+                            value={hardwareConfig.chip.memory_bandwidth_utilization}
+                            onChange={(v) => setHardwareConfig(prev => prev ? {
+                              ...prev,
+                              chip: { ...prev.chip, memory_bandwidth_utilization: v ?? 0.85 }
+                            } : prev)}
+                            className="w-full h-7 mt-0.5"
+                          />
+                        </div>
+                      </div>
+
+                      {/* LMEM + C2C (4列: LMEM容量、LMEM带宽、C2C带宽、C2C延迟) */}
+                      <div className="border-t border-dashed my-2 pt-1.5">
+                        <span className="text-xs text-gray-500">LMEM / C2C</span>
+                      </div>
+                      <div className="grid grid-cols-4 gap-3 mb-2">
                         <div>
                           <Tooltip>
                             <TooltipTrigger asChild>
                               <Label className="text-xs text-gray-500 cursor-help">LMEM (MB)</Label>
                             </TooltipTrigger>
-                            <TooltipContent>LMEM/SRAM 片上缓存容量</TooltipContent>
+                            <TooltipContent>LMEM 片上缓存容量</TooltipContent>
                           </Tooltip>
                           <NumberInput
                             min={0}
-                            value={hardwareConfig.chip.lmem_mb ?? 2}
+                            value={hardwareConfig.chip.lmem_capacity_mb}
                             onChange={(v) => setHardwareConfig(prev => prev ? {
                               ...prev,
-                              chip: { ...prev.chip, lmem_mb: v ?? 0 }
+                              chip: { ...prev.chip, lmem_capacity_mb: v ?? 2 }
                             } : prev)}
-                            className="w-full h-8 mt-1"
+                            className="w-full h-7 mt-0.5"
+                          />
+                        </div>
+                        <div>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Label className="text-xs text-gray-500 cursor-help">L带宽 (GB/s)</Label>
+                            </TooltipTrigger>
+                            <TooltipContent>LMEM 缓存带宽</TooltipContent>
+                          </Tooltip>
+                          <NumberInput
+                            min={0}
+                            value={hardwareConfig.chip.lmem_bandwidth_gbps}
+                            onChange={(v) => setHardwareConfig(prev => prev ? {
+                              ...prev,
+                              chip: { ...prev.chip, lmem_bandwidth_gbps: v ?? 512 }
+                            } : prev)}
+                            className="w-full h-7 mt-0.5"
+                          />
+                        </div>
+                        <div>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Label className="text-xs text-gray-500 cursor-help">C2C (GB/s)</Label>
+                            </TooltipTrigger>
+                            <TooltipContent>芯片间互联带宽（板内）</TooltipContent>
+                          </Tooltip>
+                          <NumberInput
+                            min={0}
+                            step={0.1}
+                            value={hardwareConfig.chip.c2c_bandwidth_gbps}
+                            onChange={(v) => setHardwareConfig(prev => prev ? {
+                              ...prev,
+                              chip: { ...prev.chip, c2c_bandwidth_gbps: v ?? 900 }
+                            } : prev)}
+                            className="w-full h-7 mt-0.5"
+                          />
+                        </div>
+                        <div>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Label className="text-xs text-gray-500 cursor-help">延迟 (us)</Label>
+                            </TooltipTrigger>
+                            <TooltipContent>芯片间互联延迟</TooltipContent>
+                          </Tooltip>
+                          <NumberInput
+                            min={0}
+                            step={0.01}
+                            value={hardwareConfig.chip.c2c_latency_us}
+                            onChange={(v) => setHardwareConfig(prev => prev ? {
+                              ...prev,
+                              chip: { ...prev.chip, c2c_latency_us: v ?? 0.01 }
+                            } : prev)}
+                            className="w-full h-7 mt-0.5"
                           />
                         </div>
                       </div>
 
-                      {/* C2C BW / 互联带宽 */}
-                      <div className="border-t border-dashed my-3 pt-2">
-                        <span className="text-xs text-gray-500">C2C BW / 互联带宽</span>
+                      {/* 微架构参数 (更紧凑: 4列布局) */}
+                      <div className="border-t border-dashed my-2 pt-1.5">
+                        <span className="text-xs text-gray-500">微架构 / GEMM</span>
                       </div>
-                      <div className="grid grid-cols-2 gap-4">
+                      <div className="grid grid-cols-4 gap-3 mb-1.5">
                         <div>
                           <Tooltip>
                             <TooltipTrigger asChild>
-                              <Label className="text-xs text-gray-500 cursor-help">单向 (GB/s)</Label>
+                              <Label className="text-xs text-gray-500 cursor-help">Cube M</Label>
                             </TooltipTrigger>
-                            <TooltipContent>芯片间互联单向带宽</TooltipContent>
+                            <TooltipContent>矩阵单元 M 维度</TooltipContent>
+                          </Tooltip>
+                          <NumberInput
+                            min={1}
+                            value={hardwareConfig.chip.cube_m}
+                            onChange={(v) => setHardwareConfig(prev => prev ? {
+                              ...prev,
+                              chip: { ...prev.chip, cube_m: v || undefined }
+                            } : prev)}
+                            className="w-full h-7 mt-0.5"
+                            placeholder="自动"
+                          />
+                        </div>
+                        <div>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Label className="text-xs text-gray-500 cursor-help">Cube K</Label>
+                            </TooltipTrigger>
+                            <TooltipContent>矩阵单元 K 维度</TooltipContent>
+                          </Tooltip>
+                          <NumberInput
+                            min={1}
+                            value={hardwareConfig.chip.cube_k}
+                            onChange={(v) => setHardwareConfig(prev => prev ? {
+                              ...prev,
+                              chip: { ...prev.chip, cube_k: v || undefined }
+                            } : prev)}
+                            className="w-full h-7 mt-0.5"
+                            placeholder="自动"
+                          />
+                        </div>
+                        <div>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Label className="text-xs text-gray-500 cursor-help">Cube N</Label>
+                            </TooltipTrigger>
+                            <TooltipContent>矩阵单元 N 维度</TooltipContent>
+                          </Tooltip>
+                          <NumberInput
+                            min={1}
+                            value={hardwareConfig.chip.cube_n}
+                            onChange={(v) => setHardwareConfig(prev => prev ? {
+                              ...prev,
+                              chip: { ...prev.chip, cube_n: v || undefined }
+                            } : prev)}
+                            className="w-full h-7 mt-0.5"
+                            placeholder="自动"
+                          />
+                        </div>
+                        <div>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Label className="text-xs text-gray-500 cursor-help">Lane 数</Label>
+                            </TooltipTrigger>
+                            <TooltipContent>SIMD lane 数量</TooltipContent>
+                          </Tooltip>
+                          <NumberInput
+                            min={1}
+                            value={hardwareConfig.chip.lane_num}
+                            onChange={(v) => setHardwareConfig(prev => prev ? {
+                              ...prev,
+                              chip: { ...prev.chip, lane_num: v || undefined }
+                            } : prev)}
+                            className="w-full h-7 mt-0.5"
+                            placeholder="自动"
+                          />
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-4 gap-3">
+                        <div>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Label className="text-xs text-gray-500 cursor-help">SRAM (KB)</Label>
+                            </TooltipTrigger>
+                            <TooltipContent>每核 SRAM 大小</TooltipContent>
                           </Tooltip>
                           <NumberInput
                             min={0}
-                            step={0.1}
-                            value={hardwareConfig.chip.c2c_bandwidth_gbps ?? hardwareConfig.node.intra_node_bandwidth_gbps}
+                            value={hardwareConfig.chip.sram_size_kb}
                             onChange={(v) => setHardwareConfig(prev => prev ? {
                               ...prev,
-                              chip: { ...prev.chip, c2c_bandwidth_gbps: v ?? 0 }
+                              chip: { ...prev.chip, sram_size_kb: v || undefined }
+                            } : prev)}
+                            className="w-full h-7 mt-0.5"
+                            placeholder="自动"
+                          />
+                        </div>
+                        <div>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Label className="text-xs text-gray-500 cursor-help">SRAM利用</Label>
+                            </TooltipTrigger>
+                            <TooltipContent>SRAM 可用比例 (0-1)</TooltipContent>
+                          </Tooltip>
+                          <NumberInput
+                            min={0}
+                            max={1}
+                            step={0.01}
+                            value={hardwareConfig.chip.sram_utilization}
+                            onChange={(v) => setHardwareConfig(prev => prev ? {
+                              ...prev,
+                              chip: { ...prev.chip, sram_utilization: v || undefined }
+                            } : prev)}
+                            className="w-full h-7 mt-0.5"
+                            placeholder="自动"
+                          />
+                        </div>
+                        <div>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Label className="text-xs text-gray-500 cursor-help">对齐字节</Label>
+                            </TooltipTrigger>
+                            <TooltipContent>内存对齐字节数</TooltipContent>
+                          </Tooltip>
+                          <NumberInput
+                            min={1}
+                            value={hardwareConfig.chip.align_bytes}
+                            onChange={(v) => setHardwareConfig(prev => prev ? {
+                              ...prev,
+                              chip: { ...prev.chip, align_bytes: v || undefined }
+                            } : prev)}
+                            className="w-full h-7 mt-0.5"
+                            placeholder="自动"
+                          />
+                        </div>
+                        <div>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Label className="text-xs text-gray-500 cursor-help">重叠率</Label>
+                            </TooltipTrigger>
+                            <TooltipContent>计算-搬运重叠率 (0-1)</TooltipContent>
+                          </Tooltip>
+                          <NumberInput
+                            min={0}
+                            max={1}
+                            step={0.01}
+                            value={hardwareConfig.chip.compute_dma_overlap_rate}
+                            onChange={(v) => setHardwareConfig(prev => prev ? {
+                              ...prev,
+                              chip: { ...prev.chip, compute_dma_overlap_rate: v || undefined }
+                            } : prev)}
+                            className="w-full h-7 mt-0.5"
+                            placeholder="自动"
+                          />
+                        </div>
+                      </div>
+                      </div>
+                    </CollapsibleContent>
+                  </Collapsible>
+
+                  {/* Board 配置 */}
+                  <Collapsible open={boardParamsOpen} onOpenChange={setBoardParamsOpen} className="mb-3">
+                    <CollapsibleTrigger className="flex items-center justify-between w-full p-2 rounded bg-gray-100 hover:bg-gray-200 text-sm font-medium">
+                      <span>Board 配置 / 板级互联</span>
+                      <span className="text-gray-500">{boardParamsOpen ? '▲' : '▼'}</span>
+                    </CollapsibleTrigger>
+                    <CollapsibleContent>
+                      <div className="p-2 bg-white border border-t-0 rounded-b">
+                      <div className="grid grid-cols-3 gap-4">
+                        <div>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Label className="text-xs text-gray-500 cursor-help">每板芯片数</Label>
+                            </TooltipTrigger>
+                            <TooltipContent>单个 Board 上的芯片数量</TooltipContent>
+                          </Tooltip>
+                          <NumberInput
+                            min={1}
+                            max={128}
+                            value={hardwareConfig.board.chips_per_board}
+                            onChange={(v) => setHardwareConfig(prev => prev ? {
+                              ...prev,
+                              board: { ...prev.board, chips_per_board: v ?? 8 }
                             } : prev)}
                             className="w-full h-8 mt-1"
                           />
@@ -1249,21 +1530,176 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
                         <div>
                           <Tooltip>
                             <TooltipTrigger asChild>
-                              <Label className="text-xs text-gray-500 cursor-help">双向 (GB/s)</Label>
+                              <Label className="text-xs text-gray-500 cursor-help">B2B 带宽 (GB/s)</Label>
                             </TooltipTrigger>
-                            <TooltipContent>芯片间互联双向带宽</TooltipContent>
+                            <TooltipContent>Board-to-Board 互联带宽</TooltipContent>
                           </Tooltip>
                           <NumberInput
                             min={0}
-                            step={0.1}
-                            value={hardwareConfig.chip.c2c_bandwidth_bidirectional_gbps ?? 996}
+                            step={1}
+                            value={hardwareConfig.board.b2b_bandwidth_gbps}
                             onChange={(v) => setHardwareConfig(prev => prev ? {
                               ...prev,
-                              chip: { ...prev.chip, c2c_bandwidth_bidirectional_gbps: v ?? 0 }
+                              board: { ...prev.board, b2b_bandwidth_gbps: v ?? 450 }
                             } : prev)}
                             className="w-full h-8 mt-1"
                           />
                         </div>
+                        <div>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Label className="text-xs text-gray-500 cursor-help">B2B 延迟 (us)</Label>
+                            </TooltipTrigger>
+                            <TooltipContent>Board-to-Board 互联延迟</TooltipContent>
+                          </Tooltip>
+                          <NumberInput
+                            min={0}
+                            step={0.01}
+                            value={hardwareConfig.board.b2b_latency_us}
+                            onChange={(v) => setHardwareConfig(prev => prev ? {
+                              ...prev,
+                              board: { ...prev.board, b2b_latency_us: v ?? 0.35 }
+                            } : prev)}
+                            className="w-full h-8 mt-1"
+                          />
+                        </div>
+                      </div>
+                      </div>
+                    </CollapsibleContent>
+                  </Collapsible>
+
+                  {/* Rack 配置 */}
+                  <Collapsible open={rackParamsOpen} onOpenChange={setRackParamsOpen} className="mb-3">
+                    <CollapsibleTrigger className="flex items-center justify-between w-full p-2 rounded bg-gray-100 hover:bg-gray-200 text-sm font-medium">
+                      <span>Rack 配置 / 机架互联</span>
+                      <span className="text-gray-500">{rackParamsOpen ? '▲' : '▼'}</span>
+                    </CollapsibleTrigger>
+                    <CollapsibleContent>
+                      <div className="p-2 bg-white border border-t-0 rounded-b">
+                      <div className="grid grid-cols-3 gap-4">
+                        <div>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Label className="text-xs text-gray-500 cursor-help">每架 Board 数</Label>
+                            </TooltipTrigger>
+                            <TooltipContent>单个 Rack 中的 Board 数量</TooltipContent>
+                          </Tooltip>
+                          <NumberInput
+                            min={1}
+                            max={128}
+                            value={hardwareConfig.rack.boards_per_rack}
+                            onChange={(v) => setHardwareConfig(prev => prev ? {
+                              ...prev,
+                              rack: { ...prev.rack, boards_per_rack: v ?? 4 }
+                            } : prev)}
+                            className="w-full h-8 mt-1"
+                          />
+                        </div>
+                        <div>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Label className="text-xs text-gray-500 cursor-help">R2R 带宽 (GB/s)</Label>
+                            </TooltipTrigger>
+                            <TooltipContent>Rack-to-Rack 互联带宽</TooltipContent>
+                          </Tooltip>
+                          <NumberInput
+                            min={0}
+                            step={1}
+                            value={hardwareConfig.rack.r2r_bandwidth_gbps}
+                            onChange={(v) => setHardwareConfig(prev => prev ? {
+                              ...prev,
+                              rack: { ...prev.rack, r2r_bandwidth_gbps: v ?? 200 }
+                            } : prev)}
+                            className="w-full h-8 mt-1"
+                          />
+                        </div>
+                        <div>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Label className="text-xs text-gray-500 cursor-help">R2R 延迟 (us)</Label>
+                            </TooltipTrigger>
+                            <TooltipContent>Rack-to-Rack 互联延迟</TooltipContent>
+                          </Tooltip>
+                          <NumberInput
+                            min={0}
+                            step={0.01}
+                            value={hardwareConfig.rack.r2r_latency_us}
+                            onChange={(v) => setHardwareConfig(prev => prev ? {
+                              ...prev,
+                              rack: { ...prev.rack, r2r_latency_us: v ?? 2 }
+                            } : prev)}
+                            className="w-full h-8 mt-1"
+                          />
+                        </div>
+                      </div>
+                      </div>
+                    </CollapsibleContent>
+                  </Collapsible>
+
+                  {/* Pod 配置 */}
+                  <Collapsible open={podParamsOpen} onOpenChange={setPodParamsOpen} className="mb-3">
+                    <CollapsibleTrigger className="flex items-center justify-between w-full p-2 rounded bg-gray-100 hover:bg-gray-200 text-sm font-medium">
+                      <span>Pod 配置 / 集群互联</span>
+                      <span className="text-gray-500">{podParamsOpen ? '▲' : '▼'}</span>
+                    </CollapsibleTrigger>
+                    <CollapsibleContent>
+                      <div className="p-2 bg-white border border-t-0 rounded-b">
+                      <div className="grid grid-cols-3 gap-4">
+                        <div>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Label className="text-xs text-gray-500 cursor-help">每 Pod Rack 数</Label>
+                            </TooltipTrigger>
+                            <TooltipContent>单个 Pod 中的 Rack 数量</TooltipContent>
+                          </Tooltip>
+                          <NumberInput
+                            min={1}
+                            max={128}
+                            value={hardwareConfig.pod.racks_per_pod}
+                            onChange={(v) => setHardwareConfig(prev => prev ? {
+                              ...prev,
+                              pod: { ...prev.pod, racks_per_pod: v ?? 1 }
+                            } : prev)}
+                            className="w-full h-8 mt-1"
+                          />
+                        </div>
+                        <div>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Label className="text-xs text-gray-500 cursor-help">P2P 带宽 (GB/s)</Label>
+                            </TooltipTrigger>
+                            <TooltipContent>Pod-to-Pod 互联带宽</TooltipContent>
+                          </Tooltip>
+                          <NumberInput
+                            min={0}
+                            step={1}
+                            value={hardwareConfig.pod.p2p_bandwidth_gbps}
+                            onChange={(v) => setHardwareConfig(prev => prev ? {
+                              ...prev,
+                              pod: { ...prev.pod, p2p_bandwidth_gbps: v ?? 100 }
+                            } : prev)}
+                            className="w-full h-8 mt-1"
+                          />
+                        </div>
+                        <div>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Label className="text-xs text-gray-500 cursor-help">P2P 延迟 (us)</Label>
+                            </TooltipTrigger>
+                            <TooltipContent>Pod-to-Pod 互联延迟</TooltipContent>
+                          </Tooltip>
+                          <NumberInput
+                            min={0}
+                            step={0.01}
+                            value={hardwareConfig.pod.p2p_latency_us}
+                            onChange={(v) => setHardwareConfig(prev => prev ? {
+                              ...prev,
+                              pod: { ...prev.pod, p2p_latency_us: v ?? 5 }
+                            } : prev)}
+                            className="w-full h-8 mt-1"
+                          />
+                        </div>
+                      </div>
                       </div>
                     </CollapsibleContent>
                   </Collapsible>
@@ -1278,7 +1714,8 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
                   <span>互联通信参数</span>
                   <span className="text-gray-500">{commParamsOpen ? '▲' : '▼'}</span>
                 </CollapsibleTrigger>
-                <CollapsibleContent className="pt-3 px-2">
+                <CollapsibleContent>
+                      <div className="p-2 bg-white border border-t-0 rounded-b">
                   {/* 协议参数 */}
                   <div className="grid grid-cols-4 gap-4">
                     <div>
@@ -1510,6 +1947,7 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
                         </div>
                       </TooltipContent>
                     </Tooltip>
+                  </div>
                   </div>
                 </CollapsibleContent>
               </Collapsible>

@@ -16,14 +16,14 @@ import { ChipHardwareConfig } from './llmDeployment/types';
  * 网络配置 - 存储带宽和延迟参数
  */
 export interface NetworkConfig {
-  /** 节点内互联带宽 (GB/s) - 如 NVLink */
-  intra_node_bandwidth_gbps: number;
-  /** 节点间互联带宽 (GB/s) - 如 InfiniBand */
-  inter_node_bandwidth_gbps: number;
-  /** 节点内延迟 (us) */
-  intra_node_latency_us: number;
-  /** 节点间延迟 (us) */
-  inter_node_latency_us: number;
+  /** Board 内互联带宽 (GB/s) - 如 NVLink, C2C */
+  intra_board_bandwidth_gbps: number;
+  /** Board 间互联带宽 (GB/s) - 如 InfiniBand, B2B */
+  inter_board_bandwidth_gbps: number;
+  /** Board 内延迟 (us) */
+  intra_board_latency_us: number;
+  /** Board 间延迟 (us) */
+  inter_board_latency_us: number;
 }
 
 /**

@@ -87,7 +87,8 @@ export const Sidebar: React.FC = () => {
                 key={item.key}
                 onClick={() => handleMenuClick(item.key)}
                 className={cn(
-                  "w-full flex items-center gap-3 px-3 py-2.5 rounded-lg",
+                  "w-full flex items-center gap-3 py-2.5 rounded-lg",
+                  collapsed ? "justify-center px-3" : "justify-start px-6",
                   ui.viewMode === item.key
                     ? "bg-blue-100 text-blue-700 font-medium shadow-sm"
                     : "text-text-secondary hover:bg-blue-50 hover:text-blue-600"
@@ -146,21 +147,9 @@ export const Sidebar: React.FC = () => {
                 }}
               >
                 {collapsed ? (
-                  <ChevronRight
-                    className="h-4 w-4"
-                    style={{
-                      transition: 'transform 320ms cubic-bezier(0.4, 0, 0.2, 1)',
-                      transform: 'rotateZ(0deg)'
-                    }}
-                  />
+                  <ChevronRight className="h-4 w-4" />
                 ) : (
-                  <ChevronLeft
-                    className="h-4 w-4"
-                    style={{
-                      transition: 'transform 320ms cubic-bezier(0.4, 0, 0.2, 1)',
-                      transform: 'rotateZ(180deg)'
-                    }}
-                  />
+                  <ChevronLeft className="h-4 w-4" />
                 )}
               </button>
             </TooltipTrigger>

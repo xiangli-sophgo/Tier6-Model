@@ -23,6 +23,55 @@ class TaskCancelledException(Exception):
     pass
 
 
+# ============================================
+# 芯片数量计算公共函数
+# ============================================
+
+def count_topology_chips(topology: dict) -> int:
+    """统计拓扑中的芯片总数
+
+    遍历 pods/racks/boards/chips 结构统计芯片数量。
+
+    Args:
+        topology: 拓扑配置字典
+
+    Returns:
+        芯片总数
+    """
+    total = 0
+    for pod in topology.get("pods", []):
+        for rack in pod.get("racks", []):
+            for board in rack.get("boards", []):
+                total += len(board.get("chips", []))
+    return total
+
+
+def calculate_required_chips(parallelism: dict, model_config: dict) -> int:
+    """计算并行策略所需的芯片数
+
+    Args:
+        parallelism: 并行策略配置 (dp, tp, ep, ...)
+        model_config: 模型配置
+
+    Returns:
+        所需芯片数
+
+    Note:
+        - MoE 模型：DP × TP（因为 MoE 约束 DP×TP = MoE_TP×EP）
+        - 非 MoE 模型：DP × TP × EP
+        - PP 暂未启用，不参与计算
+    """
+    dp = parallelism.get("dp", 1)
+    tp = parallelism.get("tp", 1)
+    ep = parallelism.get("ep", 1)
+
+    is_moe = model_config.get("moe_config") is not None
+    if is_moe:
+        return dp * tp
+    else:
+        return dp * tp * ep
+
+
 def evaluate_deployment(
     topology: dict,
     model_config: dict,
@@ -62,12 +111,8 @@ def evaluate_deployment(
         TaskCancelledException: 任务被取消时抛出
     """
 
-    # 计算总芯片数
-    total_chips = 0
-    for pod in topology.get("pods", []):
-        for rack in pod.get("racks", []):
-            for board in rack.get("boards", []):
-                total_chips += len(board.get("chips", []))
+    # 计算拓扑中的总芯片数
+    total_chips = count_topology_chips(topology)
 
     logger.info(f"开始评估: mode={search_mode}, chips={total_chips}")
 
@@ -99,33 +144,6 @@ def evaluate_deployment(
             max_simulated_tokens,
             max_workers
         )
-
-
-def _calculate_required_chips(parallelism: dict, model_config: dict) -> int:
-    """计算实际使用的芯片数
-
-    Args:
-        parallelism: 并行策略配置
-        model_config: 模型配置
-
-    Returns:
-        实际使用的芯片数
-
-    Note:
-        - PP（Pipeline Parallelism）暂未启用，默认为1，后续讨论是否影响芯片数计算
-        - MoE 模型：实际芯片数 = DP × TP
-          因为 MoE 约束：DP × TP = MoE_TP × EP（Attention 和 MoE 共用这些芯片）
-        - 非 MoE 模型：实际芯片数 = DP × TP × EP
-    """
-    dp = parallelism.get("dp", 1)
-    tp = parallelism.get("tp", 1)
-    ep = parallelism.get("ep", 1)
-
-    is_moe = model_config.get("moe_config") is not None
-    if is_moe:
-        return dp * tp
-    else:
-        return dp * tp * ep
 
 
 def _evaluate_manual_mode(
@@ -163,7 +181,7 @@ def _evaluate_manual_mode(
     sp = manual_parallelism.get("sp", 1)  # sp 是可选的，默认为 1
 
     # 计算实际使用的芯片数
-    required_chips = _calculate_required_chips(manual_parallelism, model_config)
+    required_chips = calculate_required_chips(manual_parallelism, model_config)
 
     if progress_callback:
         progress_callback(5, 100, "检查芯片数量...")
@@ -326,7 +344,7 @@ def _evaluate_auto_mode(
             "parallelism": candidate,
             "status": "pending",
             "progress": 0,
-            "chips": _calculate_required_chips(candidate, model_config),
+            "chips": calculate_required_chips(candidate, model_config),
         })
 
     # 定义一个辅助函数，用于推送子任务状态
@@ -397,7 +415,7 @@ def _evaluate_auto_mode(
 
             inner_progress = make_inner_callback(plan_index)
 
-            result = _evaluate_single_plan_with_progress(
+            result = _evaluate_single_plan(
                 parallelism=candidate,
                 total_chips=total_chips,
                 model_config=model_config,
@@ -582,7 +600,7 @@ def _generate_parallelism_candidates(
     if len(candidates) > 0:
         logger.info(f"前5个候选方案示例:")
         for i, c in enumerate(candidates[:5]):
-            logger.info(f"  方案{i+1}: DP={c['dp']}, TP={c['tp']}, EP={c['ep']}, MoE_TP={c.get('moe_tp', 'N/A')}, 芯片数={_calculate_required_chips(c, model_config)}")
+            logger.info(f"  方案{i+1}: DP={c['dp']}, TP={c['tp']}, EP={c['ep']}, MoE_TP={c.get('moe_tp', 'N/A')}, 芯片数={calculate_required_chips(c, model_config)}")
 
     # 打印候选方案的统计信息
     if len(candidates) > 0:
@@ -599,64 +617,7 @@ def _evaluate_single_plan(
     model_config: dict,
     inference_config: dict,
     topology: dict,
-) -> dict:
-    """评估单个方案（不使用默认值，确保数据完整性）"""
-
-    # 直接访问字段，缺失时会立即 KeyError
-    dp = parallelism["dp"]
-    tp = parallelism["tp"]
-    pp = parallelism["pp"]
-    ep = parallelism["ep"]
-
-    # 计算实际使用的芯片数
-    required_chips = _calculate_required_chips(parallelism, model_config)
-
-    if required_chips > total_chips:
-        return _create_infeasible_result(
-            parallelism,
-            required_chips,
-            f"需要 {required_chips} 个芯片，超出 {total_chips}"
-        )
-
-    # 从拓扑配置中提取硬件配置
-    hardware_config = _extract_hardware_config(topology)
-
-    # 调用真实的模拟器
-    try:
-        sim_result = run_simulation(
-            topology_dict=topology,
-            model_dict=model_config,
-            inference_dict=inference_config,
-            parallelism_dict=parallelism,
-            hardware_dict=hardware_config,
-        )
-
-        # 转换为 DS_TPU 格式
-        return _transform_to_ds_tpu_format(
-            sim_result=sim_result,
-            parallelism=parallelism,
-            chips=required_chips,
-            model_config=model_config,
-            inference_config=inference_config,
-            topology=topology,
-        )
-
-    except Exception as e:
-        logger.error(f"评估方案失败 {parallelism}: {e}")
-        return _create_infeasible_result(
-            parallelism,
-            required_chips,
-            f"模拟失败: {str(e)}"
-        )
-
-
-def _evaluate_single_plan_with_progress(
-    parallelism: dict,
-    total_chips: int,
-    model_config: dict,
-    inference_config: dict,
-    topology: dict,
-    hardware_config: dict,
+    hardware_config: Optional[dict] = None,
     progress_callback: Optional[Callable[[float, str], None]] = None,
     cancel_check: Optional[Callable[[], bool]] = None,
     enable_tile_search: bool = True,
@@ -664,7 +625,7 @@ def _evaluate_single_plan_with_progress(
     max_simulated_tokens: int = 4,
     max_gemm_processes: Optional[int] = None,
 ) -> dict:
-    """评估单个方案（带细粒度进度回调）
+    """评估单个方案
 
     Args:
         parallelism: 并行策略配置
@@ -672,13 +633,16 @@ def _evaluate_single_plan_with_progress(
         model_config: 模型配置
         inference_config: 推理配置
         topology: 拓扑配置
-        hardware_config: 硬件配置（已提取）
+        hardware_config: 硬件配置（可选，未提供时自动从 topology 提取）
         progress_callback: 进度回调函数 (percent: float, message: str) -> None
             percent: 0-100 的进度百分比
             message: 进度描述信息
         cancel_check: 取消检查函数
+        enable_tile_search: 是否启用 tile 搜索
+        enable_partition_search: 是否启用分区搜索
+        max_simulated_tokens: 最大模拟 token 数
+        max_gemm_processes: GEMM 进程数限制
     """
-
     # 检查取消
     if cancel_check and cancel_check():
         logger.info("单个方案评估被取消")
@@ -691,7 +655,7 @@ def _evaluate_single_plan_with_progress(
     ep = parallelism["ep"]
 
     # 计算实际使用的芯片数
-    required_chips = _calculate_required_chips(parallelism, model_config)
+    required_chips = calculate_required_chips(parallelism, model_config)
 
     # 报告检查进度
     if progress_callback:
@@ -706,7 +670,11 @@ def _evaluate_single_plan_with_progress(
             f"需要 {required_chips} 个芯片，超出 {total_chips}"
         )
 
-    # 调用真实的模拟器（带进度回调）
+    # 如果未提供硬件配置，从拓扑中提取
+    if hardware_config is None:
+        hardware_config = _extract_hardware_config(topology)
+
+    # 调用真实的模拟器
     try:
         if progress_callback:
             progress_callback(10, "启动模拟器")
@@ -717,10 +685,10 @@ def _evaluate_single_plan_with_progress(
             inference_dict=inference_config,
             parallelism_dict=parallelism,
             hardware_dict=hardware_config,
-            progress_callback=progress_callback,  # 传递进度回调
+            progress_callback=progress_callback,
             enable_tile_search=enable_tile_search,
             max_simulated_tokens=max_simulated_tokens,
-            max_gemm_processes=max_gemm_processes,  # 传递 GEMM 进程数限制
+            max_gemm_processes=max_gemm_processes,
         )
 
         if progress_callback:
@@ -841,8 +809,13 @@ def _transform_to_ds_tpu_format(
     tps_per_batch = tps / batch_size if batch_size > 0 else 0
 
     # 修正 tps_per_chip 计算：除以实际使用的芯片数
-    actual_chips = _calculate_required_chips(parallelism, model_config)
+    actual_chips = calculate_required_chips(parallelism, model_config)
     tps_per_chip = tps / actual_chips if actual_chips > 0 else 0
+
+    # 从拓扑配置中提取硬件配置（只调用一次，后续复用）
+    hardware_config = _extract_hardware_config(topology)
+    chip_hw = hardware_config.get("chip", {})
+    chip_type = chip_hw.get("chip_type", "SG2260E")
 
     # 使用 PerformanceAnalyzer 获取详细的 layers 信息
     layers_info = {}
@@ -853,10 +826,7 @@ def _transform_to_ds_tpu_format(
         # 创建模型实例
         model = _create_model_instance(model_config, inference_config, parallelism)
 
-        # 从拓扑配置中提取硬件配置
-        hardware_config = _extract_hardware_config(topology)
-        chip_hw = hardware_config.get("chip", {})
-        chip_type = chip_hw.get("chip_type", "SG2260E")
+        # 获取架构预设
         arch = get_arch_preset(chip_type)
 
         # 创建 PerformanceAnalyzer
@@ -903,12 +873,9 @@ def _transform_to_ds_tpu_format(
     # 原公式：score = tps_per_chip * mfu（不太合理，后续讨论修改）
     score = 0
 
-    # 成本评估
+    # 成本评估（复用前面提取的 hardware_config 和 chip_type）
     cost_result = {}
     try:
-        # 提取芯片类型
-        hardware_config = _extract_hardware_config(topology)
-        chip_type = hardware_config.get("chip", {}).get("chip_type", "SG2262")
 
         # 获取模型参数量
         num_parameters = model_config.get("num_parameters", 0)

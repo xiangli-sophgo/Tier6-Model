@@ -289,32 +289,32 @@ export const ConfigPanel: React.FC<ConfigPanelProps> = ({
   // 从连接配置提取网络参数
   const extractNetworkConfig = (): NetworkConfig => {
     // 默认值
-    let intraNodeBandwidth = 900  // NVLink 4.0 GB/s
-    let interNodeBandwidth = 50   // InfiniBand NDR GB/s
-    let intraNodeLatency = 1      // us
-    let interNodeLatency = 2      // us
+    let intraBoardBandwidth = 900  // NVLink 4.0 GB/s (Board 内)
+    let interBoardBandwidth = 50   // InfiniBand NDR GB/s (Board 间)
+    let intraBoardLatency = 1      // us
+    let interBoardLatency = 2      // us
 
     // 从 manualConnectionConfig 的 level_defaults 获取
     if (manualConnectionConfig?.level_defaults) {
       if (manualConnectionConfig.level_defaults.board?.bandwidth) {
-        intraNodeBandwidth = manualConnectionConfig.level_defaults.board.bandwidth
+        intraBoardBandwidth = manualConnectionConfig.level_defaults.board.bandwidth
       }
       if (manualConnectionConfig.level_defaults.board?.latency) {
-        intraNodeLatency = manualConnectionConfig.level_defaults.board.latency
+        intraBoardLatency = manualConnectionConfig.level_defaults.board.latency
       }
       if (manualConnectionConfig.level_defaults.rack?.bandwidth) {
-        interNodeBandwidth = manualConnectionConfig.level_defaults.rack.bandwidth
+        interBoardBandwidth = manualConnectionConfig.level_defaults.rack.bandwidth
       }
       if (manualConnectionConfig.level_defaults.rack?.latency) {
-        interNodeLatency = manualConnectionConfig.level_defaults.rack.latency
+        interBoardLatency = manualConnectionConfig.level_defaults.rack.latency
       }
     }
 
     return {
-      intra_node_bandwidth_gbps: intraNodeBandwidth,
-      inter_node_bandwidth_gbps: interNodeBandwidth,
-      intra_node_latency_us: intraNodeLatency,
-      inter_node_latency_us: interNodeLatency,
+      intra_board_bandwidth_gbps: intraBoardBandwidth,
+      inter_board_bandwidth_gbps: interBoardBandwidth,
+      intra_board_latency_us: intraBoardLatency,
+      inter_board_latency_us: interBoardLatency,
     }
   }
 

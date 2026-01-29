@@ -8,8 +8,9 @@ import {
   LLMModelConfig,
   MLAConfig,
   ChipHardwareConfig,
-  NodeConfig,
-  ClusterConfig,
+  BoardConfig,
+  RackConfig,
+  PodConfig,
   HardwareConfig,
   InferenceConfig,
   BenchmarkScenario,
@@ -263,24 +264,32 @@ export async function loadBackendChipPresets(): Promise<void> {
     for (const chip of chips) {
       backendChipPresetsCache[chip.id] = {
         chip_type: chip.name,
-        flops_dtype: chip.flops_dtype as FlopsDtype,
-        compute_tflops_fp16: chip.compute_tflops,
-        compute_tflops_fp8: chip.compute_tflops * 2,  // FP8 = 2 × BF16/FP16
-        compute_tops_int8: chip.compute_tflops * 2,  // 估算
         num_cores: chip.num_cores,
-        memory_gb: chip.name.includes('SG2262') ? 128 : 64,  // SG2262: 128GB, 其他默认 64GB
+        compute_tflops_fp8: chip.compute_tflops * 2,  // FP8 = 2 × BF16/FP16
+        compute_tflops_bf16: chip.compute_tflops,  // BF16/FP16
+        memory_capacity_gb: chip.name.includes('SG2262') ? 128 : 64,  // SG2262: 128GB, 其他默认 64GB
         memory_bandwidth_gbps: chip.dram_bandwidth_gbps,
         memory_bandwidth_utilization: 0.85,
-        lmem_mb: 2,  // 默认 2MB LMEM
-        c2c_bandwidth_gbps: chip.c2c_bw_unidirectional_gbps,  // C2C 单向带宽
-        c2c_bandwidth_bidirectional_gbps: chip.c2c_bw_unidirectional_gbps * 2,  // C2C 双向带宽 = 单向 × 2
+        lmem_capacity_mb: chip.sram_size_mb || 2,  // 从后端获取 SRAM 大小
+        lmem_bandwidth_gbps: 512,  // 默认 512 GB/s LMEM 带宽
+        c2c_bandwidth_gbps: chip.c2c_bw_unidirectional_gbps,  // C2C 带宽
+        c2c_latency_us: chip.intra_latency_us,  // C2C 延迟
+        // 微架构参数（SG2260E 默认值，用户可在前端修改）
+        cube_m: 16,
+        cube_k: 32,
+        cube_n: 8,
+        sram_size_kb: 2048,
+        sram_utilization: 0.45,
+        lane_num: 16,
+        align_bytes: 32,
+        compute_dma_overlap_rate: 0.8,
       };
       // 保存互联配置
       backendChipInterconnectCache[chip.id] = {
         interconnect_type: chip.name,  // 使用芯片名作为互联类型标识
-        intra_node_bandwidth_gbps: chip.c2c_bw_unidirectional_gbps,
-        intra_node_latency_us: chip.intra_latency_us,
-        recommended_chips_per_node: 8,  // 默认值
+        intra_board_bandwidth_gbps: chip.c2c_bw_unidirectional_gbps,
+        intra_board_latency_us: chip.intra_latency_us,
+        recommended_chips_per_board: 8,  // 默认值
       };
     }
     backendPresetsLoaded = true;
@@ -300,9 +309,9 @@ export function getChipList(): Array<{ id: string; name: string; memory: string;
   const backend = Object.entries(backendChipPresetsCache).map(([id, config]) => ({
     id,
     name: config.chip_type,
-    memory: `${config.memory_gb}GB`,
-    compute: `${config.compute_tflops_fp16.toFixed(0)} ${config.flops_dtype} TFLOPs`,
-    flops_dtype: config.flops_dtype,
+    memory: `${config.memory_capacity_gb}GB`,
+    compute: `${config.compute_tflops_bf16.toFixed(0)} BF16 TFLOPs`,
+    flops_dtype: 'BF16',
     isCustom: false,
     isBackend: true,
   }));
@@ -311,9 +320,9 @@ export function getChipList(): Array<{ id: string; name: string; memory: string;
   const custom = Object.entries(getCustomChipPresets()).map(([id, config]) => ({
     id,
     name: config.chip_type,
-    memory: `${config.memory_gb}GB`,
-    compute: `${config.compute_tflops_fp16} ${config.flops_dtype || 'BF16'} TFLOPs`,
-    flops_dtype: config.flops_dtype,
+    memory: `${config.memory_capacity_gb}GB`,
+    compute: `${config.compute_tflops_bf16} BF16 TFLOPs`,
+    flops_dtype: 'BF16',
     isCustom: true,
     isBackend: false,
   }));
@@ -369,12 +378,12 @@ export function getChipConfig(id: string): ChipHardwareConfig | null {
 export interface ChipInterconnectConfig {
   /** 互联类型名称 (如 NVLink 4.0, PCIe 4.0) */
   interconnect_type: string;
-  /** 节点内带宽 (GB/s) */
-  intra_node_bandwidth_gbps: number;
-  /** 节点内延迟 (us) */
-  intra_node_latency_us: number;
-  /** 推荐的芯片数量/节点 */
-  recommended_chips_per_node: number;
+  /** Board 内带宽 (GB/s) */
+  intra_board_bandwidth_gbps: number;
+  /** Board 内延迟 (us) */
+  intra_board_latency_us: number;
+  /** 推荐的芯片数量/Board */
+  recommended_chips_per_board: number;
 }
 
 /** 获取芯片互联配置（从后端获取） */
@@ -383,67 +392,95 @@ export function getChipInterconnectConfig(chipId: string): ChipInterconnectConfi
 }
 
 // ============================================
-// 预设节点配置
+// 预设 Board 配置
 // ============================================
 
-/** DGX H100 节点 (8x H100 NVLink) */
-export const DGX_H100_NODE: NodeConfig = {
-  chips_per_node: 8,
-  intra_node_bandwidth_gbps: 900,  // NVLink 4.0
-  intra_node_latency_us: 1,
+/** DGX H100 Board (8x H100 NVLink) */
+export const DGX_H100_BOARD: BoardConfig = {
+  chips_per_board: 8,
+  b2b_bandwidth_gbps: 900,  // NVLink 4.0
+  b2b_latency_us: 1,
 };
 
-/** DGX A100 节点 (8x A100 NVLink) */
-export const DGX_A100_NODE: NodeConfig = {
-  chips_per_node: 8,
-  intra_node_bandwidth_gbps: 600,  // NVLink 3.0
-  intra_node_latency_us: 1,
+/** DGX A100 Board (8x A100 NVLink) */
+export const DGX_A100_BOARD: BoardConfig = {
+  chips_per_board: 8,
+  b2b_bandwidth_gbps: 600,  // NVLink 3.0
+  b2b_latency_us: 1,
 };
 
-/** 通用 PCIe 节点 (8x GPU PCIe) */
-export const PCIE_8GPU_NODE: NodeConfig = {
-  chips_per_node: 8,
-  intra_node_bandwidth_gbps: 64,   // PCIe 4.0 x16
-  intra_node_latency_us: 5,
+/** 通用 PCIe Board (8x GPU PCIe) */
+export const PCIE_8GPU_BOARD: BoardConfig = {
+  chips_per_board: 8,
+  b2b_bandwidth_gbps: 64,   // PCIe 4.0 x16
+  b2b_latency_us: 5,
 };
 
-/** 所有预设节点 */
-export const NODE_PRESETS: Record<string, NodeConfig> = {
-  'dgx-h100': DGX_H100_NODE,
-  'dgx-a100': DGX_A100_NODE,
-  'pcie-8gpu': PCIE_8GPU_NODE,
+/** 所有预设 Board */
+export const BOARD_PRESETS: Record<string, BoardConfig> = {
+  'dgx-h100': DGX_H100_BOARD,
+  'dgx-a100': DGX_A100_BOARD,
+  'pcie-8gpu': PCIE_8GPU_BOARD,
 };
 
 // ============================================
-// 预设集群配置
+// 预设 Rack 和 Pod 配置
 // ============================================
 
-/** InfiniBand NDR 集群 */
-export const IB_NDR_CLUSTER: ClusterConfig = {
-  num_nodes: 16,
-  inter_node_bandwidth_gbps: 400,  // NDR 400G
-  inter_node_latency_us: 2,
+/** InfiniBand NDR Rack 配置 */
+export const IB_NDR_RACK: RackConfig = {
+  boards_per_rack: 4,
+  r2r_bandwidth_gbps: 400,  // NDR 400G
+  r2r_latency_us: 2,
 };
 
-/** InfiniBand HDR 集群 */
-export const IB_HDR_CLUSTER: ClusterConfig = {
-  num_nodes: 16,
-  inter_node_bandwidth_gbps: 200,  // HDR 200G
-  inter_node_latency_us: 2,
+/** InfiniBand HDR Rack 配置 */
+export const IB_HDR_RACK: RackConfig = {
+  boards_per_rack: 4,
+  r2r_bandwidth_gbps: 200,  // HDR 200G
+  r2r_latency_us: 2,
 };
 
-/** RoCE 集群 */
-export const ROCE_CLUSTER: ClusterConfig = {
-  num_nodes: 8,
-  inter_node_bandwidth_gbps: 100,  // 100GbE
-  inter_node_latency_us: 5,
+/** RoCE Rack 配置 */
+export const ROCE_RACK: RackConfig = {
+  boards_per_rack: 4,
+  r2r_bandwidth_gbps: 100,  // 100GbE
+  r2r_latency_us: 5,
 };
 
-/** 所有预设集群 */
-export const CLUSTER_PRESETS: Record<string, ClusterConfig> = {
-  'ib-ndr': IB_NDR_CLUSTER,
-  'ib-hdr': IB_HDR_CLUSTER,
-  'roce': ROCE_CLUSTER,
+/** 所有预设 Rack */
+export const RACK_PRESETS: Record<string, RackConfig> = {
+  'ib-ndr': IB_NDR_RACK,
+  'ib-hdr': IB_HDR_RACK,
+  'roce': ROCE_RACK,
+};
+
+/** InfiniBand NDR Pod 配置 */
+export const IB_NDR_POD: PodConfig = {
+  racks_per_pod: 4,
+  p2p_bandwidth_gbps: 400,  // NDR 400G
+  p2p_latency_us: 2,
+};
+
+/** InfiniBand HDR Pod 配置 */
+export const IB_HDR_POD: PodConfig = {
+  racks_per_pod: 4,
+  p2p_bandwidth_gbps: 200,  // HDR 200G
+  p2p_latency_us: 2,
+};
+
+/** RoCE Pod 配置 */
+export const ROCE_POD: PodConfig = {
+  racks_per_pod: 4,
+  p2p_bandwidth_gbps: 100,  // 100GbE
+  p2p_latency_us: 5,
+};
+
+/** 所有预设 Pod */
+export const POD_PRESETS: Record<string, PodConfig> = {
+  'ib-ndr': IB_NDR_POD,
+  'ib-hdr': IB_HDR_POD,
+  'roce': ROCE_POD,
 };
 
 // ============================================
@@ -611,8 +648,9 @@ export function getHardwarePreset(hardwareId: string): HardwareConfig {
   }
   return {
     chip: { ...preset.chip },
-    node: { ...preset.node },
-    cluster: { ...preset.cluster },
+    board: { ...preset.board },
+    rack: { ...preset.rack },
+    pod: { ...preset.pod },
   };
 }
 
@@ -628,20 +666,19 @@ export function getInferencePreset(inferenceId: string): InferenceConfig {
 /** 创建自定义硬件配置 */
 export function createHardwareConfig(
   chipId: string,
-  nodeId: string,
-  numNodes: number,
-  interNodeBandwidth: number = 400
+  boardId: string,
+  rackId: string,
+  podId: string
 ): HardwareConfig {
   const chip = getChipPreset(chipId);
-  const node = NODE_PRESETS[nodeId] ?? DGX_H100_NODE;
+  const board = BOARD_PRESETS[boardId] ?? DGX_H100_BOARD;
+  const rack = RACK_PRESETS[rackId] ?? IB_NDR_RACK;
+  const pod = POD_PRESETS[podId] ?? IB_NDR_POD;
 
   return {
     chip,
-    node: { ...node },
-    cluster: {
-      num_nodes: numNodes,
-      inter_node_bandwidth_gbps: numNodes > 1 ? interNodeBandwidth : 0,
-      inter_node_latency_us: numNodes > 1 ? 2 : 0,
-    },
+    board: { ...board },
+    rack: { ...rack },
+    pod: { ...pod },
   };
 }

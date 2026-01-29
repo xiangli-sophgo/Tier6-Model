@@ -455,18 +455,32 @@ export const Results: React.FC = () => {
           const chip = pods[0].racks[0].boards[0].chips[0]
           return {
             chip: {
-              chip_type: chip.name || 'Unknown',
-              compute_tflops_fp16: chip.compute_tflops_fp16 || 0,
-              memory_gb: chip.memory_gb || 0,
-              memory_bandwidth_gbps: chip.memory_bandwidth_gbps || 0,
-              memory_bandwidth_utilization: chip.memory_bandwidth_utilization || 0.9,
+              chip_type: chip.name,
+              num_cores: (chip as any).num_cores,
+              compute_tflops_fp8: (chip as any).compute_tflops_fp8,
+              compute_tflops_bf16: (chip as any).compute_tflops_bf16,
+              memory_capacity_gb: (chip as any).memory_capacity_gb,
+              memory_bandwidth_gbps: chip.memory_bandwidth_gbps,
+              memory_bandwidth_utilization: chip.memory_bandwidth_utilization,
+              lmem_capacity_mb: (chip as any).lmem_capacity_mb,
+              lmem_bandwidth_gbps: (chip as any).lmem_bandwidth_gbps,
+              c2c_bandwidth_gbps: (chip as any).c2c_bandwidth_gbps,
+              c2c_latency_us: (chip as any).c2c_latency_us,
             },
-            node: {
-              chips_per_node: 8, // 默认值
-              intra_node_bandwidth_gbps: 900,
+            board: {
+              chips_per_board: 8,
+              b2b_bandwidth_gbps: 900,
+              b2b_latency_us: 1,
             },
-            cluster: {
-              inter_node_bandwidth_gbps: 400,
+            rack: {
+              boards_per_rack: 4,
+              r2r_bandwidth_gbps: 400,
+              r2r_latency_us: 2,
+            },
+            pod: {
+              racks_per_pod: 1,
+              p2p_bandwidth_gbps: 400,
+              p2p_latency_us: 2,
             },
           } as HardwareConfig
         }

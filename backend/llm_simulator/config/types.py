@@ -117,45 +117,78 @@ class AllToAllAlgorithm(str, Enum):
 
 
 # ============================================
-# 拓扑配置
+# 拓扑配置 (拓扑结构 + 硬件参数 合并)
 # ============================================
 
 @dataclass
 class ChipConfig:
-    """芯片配置"""
+    """芯片配置 (拓扑 + 硬件参数)"""
+    # === 拓扑信息 ===
     id: str
     type: str = "chip"
     position: tuple[int, int] = (0, 0)
     label: str = ""
+    # === 硬件参数 ===
+    num_cores: int = 0  # 计算核心数
+    compute_tflops_fp8: float = 0.0  # FP8 算力 (TFLOPS)
+    compute_tflops_bf16: float = 0.0  # BF16 算力 (TFLOPS)
+    memory_capacity_gb: float = 0.0  # 显存容量 (GB)
+    memory_bandwidth_gbps: float = 0.0  # 显存带宽 (GB/s)
+    memory_bandwidth_utilization: float = 0.85  # 显存带宽利用率 (0-1)
+    lmem_capacity_mb: float = 0.0  # LMEM/SRAM 片上缓存容量 (MB)
+    lmem_bandwidth_gbps: float = 0.0  # LMEM 缓存带宽 (GB/s)
+    c2c_bandwidth_gbps: float = 0.0  # C2C 芯片间互联带宽 (GB/s)
+    c2c_latency_us: float = 0.0  # C2C 芯片间互联延迟 (us)
+    # === 微架构参数 (可选，用于精确 GEMM 评估) ===
+    cube_m: Optional[int] = None
+    cube_k: Optional[int] = None
+    cube_n: Optional[int] = None
+    sram_size_kb: Optional[float] = None
+    sram_utilization: Optional[float] = None
+    lane_num: Optional[int] = None
+    align_bytes: Optional[int] = None
+    compute_dma_overlap_rate: Optional[float] = None
 
 
 @dataclass
 class BoardConfig:
-    """板卡配置"""
+    """板卡配置 (拓扑 + 互联参数)"""
+    # === 拓扑信息 ===
     id: str
     u_position: int
     u_height: int
     label: str
     chips: list[ChipConfig] = field(default_factory=list)
+    # === 互联参数 (B2B: Board-to-Board) ===
+    b2b_bandwidth_gbps: float = 0.0  # Board 间互联带宽 (GB/s)
+    b2b_latency_us: float = 0.0  # Board 间互联延迟 (us)
 
 
 @dataclass
 class RackConfig:
-    """机柜配置"""
+    """机柜配置 (拓扑 + 互联参数)"""
+    # === 拓扑信息 ===
     id: str
     position: tuple[int, int]
     label: str
     total_u: int = 42
     boards: list[BoardConfig] = field(default_factory=list)
+    # === 互联参数 (R2R: Rack-to-Rack) ===
+    r2r_bandwidth_gbps: float = 0.0  # Rack 间互联带宽 (GB/s)
+    r2r_latency_us: float = 0.0  # Rack 间互联延迟 (us)
 
 
 @dataclass
 class PodConfig:
-    """Pod配置"""
+    """Pod配置 (拓扑 + 互联参数)"""
+    # === 拓扑信息 ===
     id: str
     label: str
     grid_size: tuple[int, int]
     racks: list[RackConfig] = field(default_factory=list)
+    # === 互联参数 (P2P: Pod-to-Pod) ===
+    p2p_bandwidth_gbps: float = 0.0  # Pod 间互联带宽 (GB/s)
+    p2p_latency_us: float = 0.0  # Pod 间互联延迟 (us)
 
 
 @dataclass
@@ -173,95 +206,6 @@ class HierarchicalTopology:
     """层级拓扑配置"""
     pods: list[PodConfig] = field(default_factory=list)
     connections: list[ConnectionConfig] = field(default_factory=list)
-
-
-# ============================================
-# 硬件配置
-# ============================================
-
-@dataclass
-class ChipHardwareConfig:
-    """芯片硬件配置"""
-    chip_type: str
-    compute_tflops_fp16: float
-    memory_gb: float
-    memory_bandwidth_gbps: float
-    compute_tops_int8: float = 0.0
-    cost_per_hour: float = 0.0
-    # 新增参数
-    num_cores: int = 8  # 计算核心数
-    memory_bandwidth_utilization: float = 0.9  # 显存带宽利用率
-    l2_cache_mb: float = 16.0  # L2 缓存容量 (MB)
-    l2_bandwidth_gbps: float = 512.0  # L2 缓存带宽 (GB/s)
-    # 扩展配置
-    pcie_bandwidth_gbps: float = 64.0  # PCIe Gen5 x16 默认
-    pcie_latency_us: float = 1.0
-    hbm_random_access_latency_ns: float = 100.0
-
-    # ========== 微架构参数 (用于精确 GEMM 评估) ==========
-    # 如果提供这些参数，将使用精确 GEMM 评估器
-    # 如果不提供 (None)，评估器会使用预设值
-    cube_m: Optional[int] = None
-    """矩阵单元 M 维度 (如 SG2260E=16, H100=16)"""
-
-    cube_k: Optional[int] = None
-    """矩阵单元 K 维度 (累加维度, 如 SG2260E=32, H100=16)"""
-
-    cube_n: Optional[int] = None
-    """矩阵单元 N 维度 (如 SG2260E=8, H100=16)"""
-
-    sram_size_kb: Optional[float] = None
-    """每核 SRAM 大小 (KB, 如 SG2260E=2048, H100=256)"""
-
-    sram_utilization: Optional[float] = None
-    """SRAM 可用比例 (0-1, 如 SG2260E=0.45, H100=0.5)"""
-
-    lane_num: Optional[int] = None
-    """SIMD lane 数量 (行对齐基数, 如 SG2260E=16, H100=32)"""
-
-    align_bytes: Optional[int] = None
-    """内存对齐字节数 (列对齐基数, 如 SG2260E=32, H100=128)"""
-
-    compute_dma_overlap_rate: Optional[float] = None
-    """计算-搬运重叠率 (0-1, 如 SG2260E=0.8, H100=0.9)"""
-
-    def has_micro_arch(self) -> bool:
-        """检查是否有微架构参数"""
-        return self.cube_m is not None and self.cube_k is not None
-
-
-@dataclass
-class NodeConfig:
-    """节点配置"""
-    chips_per_node: int
-    intra_node_bandwidth_gbps: float
-    intra_node_latency_us: float
-    # 新增参数
-    bandwidth_utilization: float = 0.9  # 带宽利用率
-    startup_latency_us: float = 1.0  # 通信启动延迟
-    sync_latency_us: float = 1.0  # 同步延迟
-    # NVLink 参数 (用于通信延迟计算)
-    nvlink_bandwidth_gbps: float = 400.0  # NVLink 带宽 (H100 NVSwitch: 900 GB/s)
-    nvlink_latency_us: float = 1.0  # NVLink 启动延迟
-
-
-@dataclass
-class ClusterConfig:
-    """集群配置"""
-    num_nodes: int
-    inter_node_bandwidth_gbps: float
-    inter_node_latency_us: float
-    # InfiniBand 参数 (用于跨节点通信)
-    ib_bandwidth_gbps: float = 100.0  # IB 带宽 (NDR: 400 Gb/s = 50 GB/s)
-    ib_latency_us: float = 5.0  # IB 启动延迟
-
-
-@dataclass
-class HardwareConfig:
-    """完整硬件配置"""
-    chip: ChipHardwareConfig
-    node: NodeConfig
-    cluster: ClusterConfig
 
 
 # ============================================
@@ -745,8 +689,9 @@ def validate_hardware_config(hardware_dict: dict) -> None:
 
     required_fields = {
         "chip_type": "芯片型号",
-        "compute_tflops_fp16": "FP16 算力",
-        "memory_gb": "显存容量",
+        "num_cores": "核心数",
+        "compute_tflops_bf16": "BF16 算力",
+        "memory_capacity_gb": "显存容量",
         "memory_bandwidth_gbps": "显存带宽"
     }
 
@@ -758,14 +703,14 @@ def validate_hardware_config(hardware_dict: dict) -> None:
     if missing_fields:
         raise ValueError(f"芯片硬件配置缺少必需字段: {', '.join(missing_fields)}")
 
-    compute_tflops = chip_hw["compute_tflops_fp16"]
-    memory_gb = chip_hw["memory_gb"]
+    compute_tflops = chip_hw["compute_tflops_bf16"]
+    memory_gb = chip_hw["memory_capacity_gb"]
     memory_bw = chip_hw["memory_bandwidth_gbps"]
 
     if compute_tflops <= 0:
-        raise ValueError(f"compute_tflops_fp16 必须为正数，当前值: {compute_tflops}")
+        raise ValueError(f"compute_tflops_bf16 必须为正数，当前值: {compute_tflops}")
     if memory_gb <= 0:
-        raise ValueError(f"memory_gb 必须为正数，当前值: {memory_gb}")
+        raise ValueError(f"memory_capacity_gb 必须为正数，当前值: {memory_gb}")
     if memory_bw <= 0:
         raise ValueError(f"memory_bandwidth_gbps 必须为正数，当前值: {memory_bw}")
 

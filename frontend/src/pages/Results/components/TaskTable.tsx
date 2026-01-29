@@ -67,7 +67,7 @@ const columnNameMap: Record<string, string> = {
   'benchmark_name': 'Benchmark',
   'topology_config_name': '拓扑配置',
   'status': '任务状态',
-  'throughput': 'TPS',
+  'tps': 'TPS',
   'tps_per_chip': 'TPS/Chip',
   'tps_per_batch': 'TPS/Batch',
   'tpot': 'TPOT (ms)',
@@ -372,7 +372,7 @@ export default function TaskTable({
       'benchmark_name',
       'topology_config_name',
       'status',
-      'throughput',
+      'tps',
       'tps_per_chip',
       'tps_per_batch',
       'tpot',
@@ -750,7 +750,7 @@ export default function TaskTable({
     }
 
     // 性能指标字段（从 result 中提取）
-    const performanceFields = ['throughput', 'tps_per_chip', 'tps_per_batch', 'tpot', 'ttft', 'mfu', 'mbu', 'score', 'chips']
+    const performanceFields = ['tps', 'tps_per_chip', 'tps_per_batch', 'tpot', 'ttft', 'mfu', 'mbu', 'score', 'chips']
     if (performanceFields.includes(field)) {
       const result = (task as any).result
       if (!result) return '-'
