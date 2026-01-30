@@ -13,8 +13,10 @@ import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
+import { Label } from '@/components/ui/label'
 import { Card, CardContent } from '@/components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { ConfigCollapsible } from '@/components/ui/config-collapsible'
 import {
   Select,
   SelectContent,
@@ -49,60 +51,40 @@ import {
 import { Textarea } from '@/components/ui/textarea'
 import { GlobalSwitchConfig } from '../../types'
 import { listConfigs, saveConfig, deleteConfig, SavedConfig } from '../../api/topology'
-import { clearAllCache, NetworkConfig, SavedChipConfig } from '../../utils/storage'
+import { clearAllCache } from '../../utils/storage'
 import {
   ChipIcon,
   BoardIcon,
-  BoardConfigs,
   FlexBoardConfig,
   RackConfig,
   ConfigPanelProps,
-  DEFAULT_BOARD_CONFIGS,
   DEFAULT_RACK_CONFIG,
   DEFAULT_SWITCH_CONFIG,
+  DEFAULT_HARDWARE_PARAMS,
   loadCachedConfig,
   saveCachedConfig,
+  HardwareParams,
+  ChipHardwareParams,
+  InterconnectParams,
+  configRowStyle,
 } from './shared'
 import { SwitchLevelConfig, ConnectionEditPanel } from './components'
 import { BaseCard } from '../common/BaseCard'
 import { getChipList, getChipConfig, saveCustomChipPreset, deleteCustomChipPreset, getChipInterconnectConfig } from '../../utils/llmDeployment/presets'
 import { ChipHardwareConfig } from '../../utils/llmDeployment/types'
 
-// 自定义数字输入组件
-const NumberInput: React.FC<{
-  value: number | undefined
-  onChange: (value: number | undefined) => void
-  min?: number
-  max?: number
-  step?: number
-  className?: string
-  disabled?: boolean
-  suffix?: string
-}> = ({ value, onChange, min = 0, max = 9999, step = 1, className = '', disabled = false, suffix }) => (
-  <div className="flex items-center">
-    <Input
-      type="number"
-      value={value ?? ''}
-      onChange={(e) => {
-        const v = e.target.value === '' ? undefined : parseFloat(e.target.value)
-        if (v === undefined || (!isNaN(v) && v >= min && v <= max)) {
-          onChange(v)
-        }
-      }}
-      min={min}
-      max={max}
-      step={step}
-      className={className}
-      disabled={disabled}
-    />
-    {suffix && <span className="ml-1 text-xs text-gray-500">{suffix}</span>}
-  </div>
-)
+// NumberInput 从公共组件导入
+import { NumberInput } from '@/components/ui/number-input'
+import { FormInputField } from '@/components/ui/form-input-field'
+import { TooltipLabel } from '@/components/ui/tooltip-label'
 
 export const ConfigPanel: React.FC<ConfigPanelProps> = ({
   topology,
   onGenerate,
   currentLevel = 'datacenter',
+  // 芯片选择相关
+  selectedChipId,
+  onChipTabActivate,
   // 手动连线相关
   manualConnectionConfig,
   onManualConnectionConfigChange,
@@ -148,12 +130,7 @@ export const ConfigPanel: React.FC<ConfigPanelProps> = ({
   // Rack层级配置
   const [racksPerPod, setRacksPerPod] = useState(cachedConfig?.racksPerPod ?? 4)
 
-  // Board配置（按U高度分类，每种类型有独立的chip配置）- 旧格式，保持兼容
-  const [boardConfigs, setBoardConfigs] = useState<BoardConfigs>(
-    cachedConfig?.boardConfigs ?? DEFAULT_BOARD_CONFIGS
-  )
-
-  // 新的灵活Rack配置
+  // 灵活Rack配置
   const [rackConfig, setRackConfig] = useState<RackConfig>(
     cachedConfig?.rackConfig ?? DEFAULT_RACK_CONFIG
   )
@@ -196,6 +173,37 @@ export const ConfigPanel: React.FC<ConfigPanelProps> = ({
     return DEFAULT_SWITCH_CONFIG
   })
 
+  // 硬件参数配置（芯片参数 + 互联参数）
+  const [hardwareParams, setHardwareParams] = useState<HardwareParams>(() => {
+    if (cachedConfig?.hardwareParams) {
+      // 深度合并默认值
+      return {
+        chip: { ...DEFAULT_HARDWARE_PARAMS.chip, ...cachedConfig.hardwareParams.chip },
+        interconnect: {
+          c2c: { ...DEFAULT_HARDWARE_PARAMS.interconnect.c2c, ...cachedConfig.hardwareParams.interconnect?.c2c },
+          b2b: { ...DEFAULT_HARDWARE_PARAMS.interconnect.b2b, ...cachedConfig.hardwareParams.interconnect?.b2b },
+          r2r: { ...DEFAULT_HARDWARE_PARAMS.interconnect.r2r, ...cachedConfig.hardwareParams.interconnect?.r2r },
+          p2p: { ...DEFAULT_HARDWARE_PARAMS.interconnect.p2p, ...cachedConfig.hardwareParams.interconnect?.p2p },
+        },
+      }
+    }
+    return DEFAULT_HARDWARE_PARAMS
+  })
+
+  // 互联通信延迟配置
+  const [commLatencyConfig, setCommLatencyConfig] = useState({
+    rtt_tp_us: 0.35,
+    rtt_ep_us: 0.85,
+    bandwidth_utilization: 0.95,
+    sync_latency_us: 0,
+    switch_delay_us: 1.0,
+    cable_delay_us: 0.025,
+    memory_read_latency_us: 0.15,
+    memory_write_latency_us: 0.01,
+    noc_latency_us: 0.05,
+    die_to_die_latency_us: 0.04,
+  })
+
   // 保存/加载配置状态
   const [savedConfigs, setSavedConfigs] = useState<SavedConfig[]>([])
   const [saveModalOpen, setSaveModalOpen] = useState(false)
@@ -219,8 +227,8 @@ export const ConfigPanel: React.FC<ConfigPanelProps> = ({
 
   // 配置变化时自动保存到localStorage
   useEffect(() => {
-    saveCachedConfig({ podCount, racksPerPod, boardConfigs, rackConfig, switchConfig, manualConnectionConfig })
-  }, [podCount, racksPerPod, boardConfigs, rackConfig, switchConfig, manualConnectionConfig])
+    saveCachedConfig({ podCount, racksPerPod, rackConfig, switchConfig, manualConnectionConfig, hardwareParams })
+  }, [podCount, racksPerPod, rackConfig, switchConfig, manualConnectionConfig, hardwareParams])
 
   // 配置变化时自动生成拓扑（防抖500ms）
   const isFirstRender = useRef(true)
@@ -232,10 +240,19 @@ export const ConfigPanel: React.FC<ConfigPanelProps> = ({
     }
 
     const timer = setTimeout(() => {
+      console.log('🔧 [ConfigPanel] 生成拓扑配置:', {
+        podCount,
+        racksPerPod,
+        rackConfig: {
+          total_u: rackConfig.total_u,
+          boards: rackConfig.boards,
+          boardsCount: rackConfig.boards.length,
+        },
+        switchConfig: switchConfig?.inter_board,
+      })
       onGenerate({
         pod_count: podCount,
         racks_per_pod: racksPerPod,
-        board_configs: boardConfigs,
         rack_config: rackConfig,
         switch_config: switchConfig,
         manual_connections: manualConnectionConfig,
@@ -243,80 +260,7 @@ export const ConfigPanel: React.FC<ConfigPanelProps> = ({
     }, 500)
 
     return () => clearTimeout(timer)
-  }, [podCount, racksPerPod, boardConfigs, rackConfig, switchConfig, manualConnectionConfig, onGenerate])
-
-  // 从 rackConfig 提取芯片配置列表
-  const extractChipConfigs = (): SavedChipConfig[] => {
-    const chipConfigMap = new Map<string, SavedChipConfig>()
-
-    for (const board of rackConfig.boards) {
-      const boardCount = board.count || 1
-      for (const chip of board.chips) {
-        const key = chip.preset_id || chip.name
-
-        // 获取硬件参数 (优先使用自定义值，其次预设值)
-        const presetConfig = chip.preset_id ? getChipConfig(chip.preset_id) : null
-        const hardware = {
-          chip_type: chip.name,
-          flops_dtype: (presetConfig?.flops_dtype || 'BF16') as 'BF16' | 'FP16' | 'FP8' | 'INT8',
-          compute_tflops_fp16: chip.compute_tflops_fp16 ?? presetConfig?.compute_tflops_fp16 ?? 100,
-          compute_tops_int8: presetConfig?.compute_tops_int8,
-          num_cores: presetConfig?.num_cores,
-          memory_gb: chip.memory_gb ?? presetConfig?.memory_gb ?? 32,
-          memory_bandwidth_gbps: chip.memory_bandwidth_gbps ?? presetConfig?.memory_bandwidth_gbps ?? 1000,
-          memory_bandwidth_utilization: chip.memory_bandwidth_utilization ?? presetConfig?.memory_bandwidth_utilization ?? 0.9,
-          l2_cache_mb: presetConfig?.l2_cache_mb,
-          l2_bandwidth_gbps: presetConfig?.l2_bandwidth_gbps,
-        }
-
-        const existing = chipConfigMap.get(key)
-        if (existing) {
-          existing.total_count += chip.count * boardCount * podCount * racksPerPod
-        } else {
-          chipConfigMap.set(key, {
-            preset_id: chip.preset_id,
-            hardware,
-            total_count: chip.count * boardCount * podCount * racksPerPod,
-            chips_per_board: chip.count,
-          })
-        }
-      }
-    }
-
-    return Array.from(chipConfigMap.values())
-  }
-
-  // 从连接配置提取网络参数
-  const extractNetworkConfig = (): NetworkConfig => {
-    // 默认值
-    let intraBoardBandwidth = 900  // NVLink 4.0 GB/s (Board 内)
-    let interBoardBandwidth = 50   // InfiniBand NDR GB/s (Board 间)
-    let intraBoardLatency = 1      // us
-    let interBoardLatency = 2      // us
-
-    // 从 manualConnectionConfig 的 level_defaults 获取
-    if (manualConnectionConfig?.level_defaults) {
-      if (manualConnectionConfig.level_defaults.board?.bandwidth) {
-        intraBoardBandwidth = manualConnectionConfig.level_defaults.board.bandwidth
-      }
-      if (manualConnectionConfig.level_defaults.board?.latency) {
-        intraBoardLatency = manualConnectionConfig.level_defaults.board.latency
-      }
-      if (manualConnectionConfig.level_defaults.rack?.bandwidth) {
-        interBoardBandwidth = manualConnectionConfig.level_defaults.rack.bandwidth
-      }
-      if (manualConnectionConfig.level_defaults.rack?.latency) {
-        interBoardLatency = manualConnectionConfig.level_defaults.rack.latency
-      }
-    }
-
-    return {
-      intra_board_bandwidth_gbps: intraBoardBandwidth,
-      inter_board_bandwidth_gbps: interBoardBandwidth,
-      intra_board_latency_us: intraBoardLatency,
-      inter_board_latency_us: interBoardLatency,
-    }
-  }
+  }, [podCount, racksPerPod, rackConfig, switchConfig, manualConnectionConfig, onGenerate])
 
   // 保存当前配置
   const handleSaveConfig = async () => {
@@ -325,24 +269,55 @@ export const ConfigPanel: React.FC<ConfigPanelProps> = ({
       return
     }
     try {
-      // 提取芯片配置和网络配置
-      const chipConfigs = extractChipConfigs()
-      const networkConfig = extractNetworkConfig()
+      // 清理 rack_config，移除 chips 中的冗余字段
+      const cleanRackConfig = rackConfig ? {
+        ...rackConfig,
+        boards: rackConfig.boards?.map(board => ({
+          ...board,
+          chips: board.chips?.map(chip => ({
+            count: chip.count,
+            preset_id: chip.preset_id,
+          }))
+        }))
+      } : undefined
 
-      await saveConfig({
+      // 准备保存的配置（只保存核心配置）
+      const configToSave: any = {
         name: configName.trim(),
         description: configDesc.trim() || undefined,
         pod_count: podCount,
         racks_per_pod: racksPerPod,
-        board_configs: boardConfigs,
-        // 扩展字段 - 保存完整配置用于部署分析
-        rack_config: rackConfig,
-        switch_config: switchConfig,
-        manual_connections: manualConnectionConfig,
-        generated_topology: topology || undefined,
-        chip_configs: chipConfigs,
-        network_config: networkConfig,
-      })
+        rack_config: cleanRackConfig,
+        hardware_params: hardwareParams,
+        comm_latency_config: commLatencyConfig,
+      }
+
+      // 保存所有连接（不区分手动还是自动生成）
+      if (topology?.connections && topology.connections.length > 0) {
+        configToSave.connections = topology.connections
+      }
+
+      // 保存手动连接配置（用于重新生成）
+      if (manualConnectionConfig?.enabled || (manualConnectionConfig?.connections && manualConnectionConfig.connections.length > 0)) {
+        configToSave.manual_connections = {
+          enabled: manualConnectionConfig.enabled,
+          mode: manualConnectionConfig.mode,
+          connections: manualConnectionConfig.connections || [],
+        }
+      }
+
+      // 只在交换机启用时保存 switch_config
+      const hasEnabledSwitch = switchConfig && (
+        switchConfig.inter_pod?.enabled ||
+        switchConfig.inter_rack?.enabled ||
+        switchConfig.inter_board?.enabled ||
+        switchConfig.inter_chip?.enabled
+      )
+      if (hasEnabledSwitch) {
+        configToSave.switch_config = switchConfig
+      }
+
+      await saveConfig(configToSave)
       toast.success('配置保存成功')
       setSaveModalOpen(false)
       setConfigName('')
@@ -358,7 +333,6 @@ export const ConfigPanel: React.FC<ConfigPanelProps> = ({
   const handleLoadConfig = (config: SavedConfig) => {
     setPodCount(config.pod_count)
     setRacksPerPod(config.racks_per_pod)
-    setBoardConfigs(config.board_configs)
 
     // 加载扩展配置 (如果存在)
     if (config.rack_config) {
@@ -369,6 +343,23 @@ export const ConfigPanel: React.FC<ConfigPanelProps> = ({
     }
     if (config.manual_connections && onManualConnectionConfigChange) {
       onManualConnectionConfigChange(config.manual_connections)
+    }
+    // 加载硬件参数配置
+    if (config.hardware_params) {
+      setHardwareParams({
+        chip: { ...DEFAULT_HARDWARE_PARAMS.chip, ...config.hardware_params.chip },
+        interconnect: {
+          c2c: { ...DEFAULT_HARDWARE_PARAMS.interconnect.c2c, ...config.hardware_params.interconnect?.c2c },
+          b2b: { ...DEFAULT_HARDWARE_PARAMS.interconnect.b2b, ...config.hardware_params.interconnect?.b2b },
+          r2r: { ...DEFAULT_HARDWARE_PARAMS.interconnect.r2r, ...config.hardware_params.interconnect?.r2r },
+          p2p: { ...DEFAULT_HARDWARE_PARAMS.interconnect.p2p, ...config.hardware_params.interconnect?.p2p },
+        },
+      })
+    }
+
+    // 加载通信延迟配置
+    if ((config as any).comm_latency_config) {
+      setCommLatencyConfig((config as any).comm_latency_config)
     }
 
     setLoadModalOpen(false)
@@ -399,14 +390,6 @@ export const ConfigPanel: React.FC<ConfigPanelProps> = ({
     switches: topology?.switches?.length || 0,
   }
 
-  // 配置项样式
-  const configRowStyle: React.CSSProperties = {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 8,
-  }
-
   // 根据芯片配置更新连接参数（层级默认参数和手动连接）
   // 注意：不直接更新当前连接，因为拓扑重新生成时会使用层级默认参数
   const updateConnectionDefaultsFromChips = React.useCallback((boards: typeof rackConfig.boards) => {
@@ -430,8 +413,8 @@ export const ConfigPanel: React.FC<ConfigPanelProps> = ({
 
     if (!primaryInterconnect) return
 
-    const newBandwidth = primaryInterconnect.intra_node_bandwidth_gbps
-    const newLatency = primaryInterconnect.intra_node_latency_us // us
+    const newBandwidth = primaryInterconnect.intra_board_bandwidth_gbps
+    const newLatency = primaryInterconnect.intra_board_latency_us // us
 
     // 更新层级默认参数和手动连接
     if (onManualConnectionConfigChange) {
@@ -478,6 +461,27 @@ export const ConfigPanel: React.FC<ConfigPanelProps> = ({
     }
   }, [focusedLevel])
 
+  // 芯片选择处理：当点击视图中的芯片时，切换到 Chip Tab 并滚动到对应芯片
+  const chipPanelRefs = useRef<Map<string, HTMLDivElement>>(new Map())
+
+  useEffect(() => {
+    if (selectedChipId) {
+      // 切换到 Chip Tab
+      setLayerTabKey('chip')
+      if (onChipTabActivate) {
+        onChipTabActivate()
+      }
+
+      // 滚动到对应的芯片面板
+      setTimeout(() => {
+        const panelElement = chipPanelRefs.current.get(selectedChipId)
+        if (panelElement) {
+          panelElement.scrollIntoView({ behavior: 'smooth', block: 'start' })
+        }
+      }, 100) // 延迟确保 Tab 切换完成
+    }
+  }, [selectedChipId, onChipTabActivate])
+
   // 汇总信息
   const summaryText = topology
     ? `${stats.pods}Pod ${stats.racks}Rack ${stats.boards}Board ${stats.chips}Chip`
@@ -513,32 +517,60 @@ export const ConfigPanel: React.FC<ConfigPanelProps> = ({
   // 层级配置内容（节点配置 + Switch连接配置）
   const layerConfigContent = (
     <Tabs value={layerTabKey} onValueChange={setLayerTabKey} className="w-full">
-      <TabsList className="grid w-full grid-cols-4">
+      <TabsList className="grid w-full grid-cols-5">
         <TabsTrigger value="datacenter">数据中心</TabsTrigger>
         <TabsTrigger value="pod">Pod层</TabsTrigger>
         <TabsTrigger value="rack">Rack层</TabsTrigger>
         <TabsTrigger value="board">Board层</TabsTrigger>
+        <TabsTrigger value="chip">Chip层</TabsTrigger>
       </TabsList>
 
       <TabsContent value="datacenter">
         <div>
-          {/* Pod数量配置 */}
-          <div className="mb-3 p-3.5 bg-gray-100 rounded-lg border border-gray-200/50">
-            <span className="block font-semibold mb-2.5 text-gray-900">节点配置</span>
-            <div style={configRowStyle}>
-              <span>Pod 数量</span>
-              <NumberInput
+          {/* 节点配置 + 互联参数 - 合并的折叠面板 */}
+          <TooltipProvider>
+          <ConfigCollapsible
+            defaultOpen
+            title={<>节点配置</>}
+          >
+            {/* 节点配置 */}
+            <div className="grid grid-cols-3 gap-3">
+              <FormInputField
+                label="Pod 数量"
+                tooltip="数据中心内的Pod数量"
                 min={1}
                 max={10}
                 value={podCount}
                 onChange={(v) => setPodCount(v || 1)}
-                className="w-20 h-8"
+              />
+              <FormInputField
+                label="P2P带宽 (GB/s)"
+                tooltip="Pod间互联带宽"
+                min={0}
+                max={999999}
+                step={1}
+                value={hardwareParams.interconnect.p2p.bandwidth_gbps}
+                onChange={(v) => setHardwareParams(prev => ({
+                  ...prev,
+                  interconnect: { ...prev.interconnect, p2p: { ...prev.interconnect.p2p, bandwidth_gbps: v ?? 100 } }
+                }))}
+              />
+              <FormInputField
+                label="P2P延迟 (us)"
+                tooltip="Pod间互联延迟"
+                min={0}
+                step={0.1}
+                value={hardwareParams.interconnect.p2p.latency_us}
+                onChange={(v) => setHardwareParams(prev => ({
+                  ...prev,
+                  interconnect: { ...prev.interconnect, p2p: { ...prev.interconnect.p2p, latency_us: v ?? 5.0 } }
+                }))}
               />
             </div>
-          </div>
-          {/* Pod间连接配置 */}
-          <div className="p-3.5 bg-gray-100 rounded-lg border border-gray-200/50">
-            <span className="block font-semibold mb-2.5 text-gray-900">连接配置</span>
+          </ConfigCollapsible>
+          </TooltipProvider>
+          {/* Pod间连接配置 - 折叠面板 */}
+          <ConfigCollapsible defaultOpen title="连接配置">
             <SwitchLevelConfig
               levelKey="inter_pod"
               config={switchConfig.inter_pod}
@@ -546,7 +578,7 @@ export const ConfigPanel: React.FC<ConfigPanelProps> = ({
               onChange={(newConfig) => setSwitchConfig(prev => ({ ...prev, inter_pod: newConfig }))}
               configRowStyle={configRowStyle}
             />
-          </div>
+          </ConfigCollapsible>
           {/* 连接编辑（当前层级或聚焦层级时显示） */}
           {(currentLevel === 'datacenter' || focusedLevel === 'datacenter') && (
             <div className="mt-3">
@@ -574,23 +606,49 @@ export const ConfigPanel: React.FC<ConfigPanelProps> = ({
 
       <TabsContent value="pod">
         <div>
-          {/* Rack数量配置 */}
-          <div className="mb-3 p-3.5 bg-gray-100 rounded-lg border border-gray-200/50">
-            <span className="block font-semibold mb-2.5 text-gray-900">节点配置</span>
-            <div style={configRowStyle}>
-              <span>每Pod机柜数</span>
-              <NumberInput
+          {/* 节点配置 + 互联参数 - 合并的折叠面板 */}
+          <TooltipProvider>
+          <ConfigCollapsible
+            defaultOpen
+            title={<>节点配置</>}
+          >
+            <div className="grid grid-cols-3 gap-3">
+              <FormInputField
+                label="每Pod机柜数"
+                tooltip="每个Pod内的Rack数量"
                 min={1}
                 max={64}
                 value={racksPerPod}
                 onChange={(v) => setRacksPerPod(v || 1)}
-                className="w-20 h-8"
+              />
+              <FormInputField
+                label="R2R带宽 (GB/s)"
+                tooltip="Rack间互联带宽"
+                min={0}
+                max={999999}
+                step={1}
+                value={hardwareParams.interconnect.r2r.bandwidth_gbps}
+                onChange={(v) => setHardwareParams(prev => ({
+                  ...prev,
+                  interconnect: { ...prev.interconnect, r2r: { ...prev.interconnect.r2r, bandwidth_gbps: v ?? 200 } }
+                }))}
+              />
+              <FormInputField
+                label="R2R延迟 (us)"
+                tooltip="Rack间互联延迟"
+                min={0}
+                step={0.1}
+                value={hardwareParams.interconnect.r2r.latency_us}
+                onChange={(v) => setHardwareParams(prev => ({
+                  ...prev,
+                  interconnect: { ...prev.interconnect, r2r: { ...prev.interconnect.r2r, latency_us: v ?? 2.0 } }
+                }))}
               />
             </div>
-          </div>
-          {/* Rack间连接配置 */}
-          <div className="p-3.5 bg-gray-100 rounded-lg border border-gray-200/50">
-            <span className="block font-semibold mb-2.5 text-gray-900">连接配置</span>
+          </ConfigCollapsible>
+          </TooltipProvider>
+          {/* Rack间连接配置 - 折叠面板 */}
+          <ConfigCollapsible defaultOpen title="连接配置">
             <SwitchLevelConfig
               levelKey="inter_rack"
               config={switchConfig.inter_rack}
@@ -598,7 +656,7 @@ export const ConfigPanel: React.FC<ConfigPanelProps> = ({
               onChange={(newConfig) => setSwitchConfig(prev => ({ ...prev, inter_rack: newConfig }))}
               configRowStyle={configRowStyle}
             />
-          </div>
+          </ConfigCollapsible>
           {/* 连接编辑（当前层级或聚焦层级时显示） */}
           {(currentLevel === 'pod' || focusedLevel === 'pod') && (
             <div className="mt-3">
@@ -626,155 +684,185 @@ export const ConfigPanel: React.FC<ConfigPanelProps> = ({
 
       <TabsContent value="rack">
         <div>
-          {/* Board配置 */}
-          <div className="mb-3 p-3.5 rounded-xl border border-gray-200/50" style={{ background: 'linear-gradient(135deg, rgba(248, 250, 252, 0.8) 0%, rgba(241, 245, 249, 0.8) 100%)' }}>
-            {/* 标题和编辑开关 */}
-            <div className="flex justify-between items-center mb-2">
-              <span className="font-semibold">节点配置</span>
-              <div className="flex items-center gap-1.5">
-                <span className="text-gray-500 text-[11px]">编辑</span>
-                <Switch
-                  checked={rackEditMode}
-                  onCheckedChange={setRackEditMode}
-                />
-              </div>
-            </div>
-
-            {/* 汇总信息 */}
-            {(() => {
-              const usedU = rackConfig.boards.reduce((sum, b) => sum + b.u_height * (b.count || 1), 0)
-              const totalBoards = rackConfig.boards.reduce((sum, b) => sum + (b.count || 1), 0)
-              const totalChips = rackConfig.boards.reduce((sum, b) => sum + (b.count || 1) * b.chips.reduce((s, c) => s + c.count, 0), 0)
-              const isOverflow = usedU > rackConfig.total_u
-              return (
-                <div className="mb-2 text-xs text-gray-600">
-                  <span>容量: <strong>{rackConfig.total_u}U</strong></span>
-                  <span className="mx-2 text-gray-300">|</span>
-                  <span>已用: <strong className={isOverflow ? 'text-red-500' : ''}>{usedU}U</strong></span>
-                  <span className="mx-2 text-gray-300">|</span>
-                  <span>板卡: <strong>{totalBoards}</strong></span>
-                  <span className="mx-2 text-gray-300">|</span>
-                  <span>芯片: <strong>{totalChips}</strong></span>
-                </div>
-              )
-            })()}
-
-            {/* 编辑模式：Rack容量 */}
-            {rackEditMode && (
-              <div style={configRowStyle}>
-                <span>Rack容量</span>
-                <NumberInput
-                  min={10}
-                  max={60}
-                  value={rackConfig.total_u}
-                  onChange={(v) => setRackConfig(prev => ({ ...prev, total_u: v || 42 }))}
-                  className="w-[70px] h-8"
-                  suffix="U"
-                />
-              </div>
-            )}
-
-            {/* 板卡列表 */}
-            <div className="mt-2">
-              {rackConfig.boards.map((board, boardIndex) => (
-                <div key={board.id} className="mb-1.5 p-1.5 px-2.5 bg-white rounded-lg border border-gray-200/50">
-                  {rackEditMode ? (
-                    /* 编辑模式 */
-                    <>
-                      <div className="flex justify-between items-center mb-2">
-                        <div className="flex items-center gap-2">
-                          <span className="text-xs whitespace-nowrap">名称:</span>
-                          <Input
-                            value={board.name}
-                            onChange={(e) => {
-                              const newBoards = [...rackConfig.boards]
-                              newBoards[boardIndex] = { ...newBoards[boardIndex], name: e.target.value }
-                              setRackConfig(prev => ({ ...prev, boards: newBoards }))
-                            }}
-                            className="w-[120px] h-7"
-                          />
-                          <span className="text-xs ml-2 whitespace-nowrap">高度:</span>
-                          <NumberInput
-                            min={1}
-                            max={10}
-                            value={board.u_height}
-                            onChange={(v) => {
-                              const newBoards = [...rackConfig.boards]
-                              newBoards[boardIndex] = { ...newBoards[boardIndex], u_height: v || 1 }
-                              setRackConfig(prev => ({ ...prev, boards: newBoards }))
-                            }}
-                            className="w-[70px] h-7"
-                            suffix="U"
-                          />
-                          <span className="text-xs ml-2 whitespace-nowrap">数量:</span>
-                          <NumberInput
-                            min={0}
-                            max={42}
-                            value={board.count || 1}
-                            onChange={(v) => {
-                              const newBoards = [...rackConfig.boards]
-                              newBoards[boardIndex] = { ...newBoards[boardIndex], count: v || 0 }
-                              setRackConfig(prev => ({ ...prev, boards: newBoards }))
-                            }}
-                            className="w-[60px] h-7"
-                          />
-                        </div>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="text-red-500 hover:text-red-600 h-7 w-7 p-0"
-                          onClick={() => {
-                            const newBoards = rackConfig.boards.filter((_, i) => i !== boardIndex)
-                            setRackConfig(prev => ({ ...prev, boards: newBoards }))
-                          }}
-                          disabled={rackConfig.boards.length <= 1}
-                        >
-                          <MinusCircle className="h-4 w-4" />
-                        </Button>
+          {/* 节点配置 + 互联参数 - 合并的折叠面板 */}
+          <TooltipProvider>
+          {(() => {
+            const usedU = rackConfig.boards.reduce((sum, b) => sum + b.u_height * (b.count || 1), 0)
+            const totalBoards = rackConfig.boards.reduce((sum, b) => sum + (b.count || 1), 0)
+            const totalChips = rackConfig.boards.reduce((sum, b) => sum + (b.count || 1) * b.chips.reduce((s, c) => s + c.count, 0), 0)
+            const isOverflow = usedU > rackConfig.total_u
+            return (
+              <ConfigCollapsible
+                defaultOpen
+                title={<>节点配置</>}
+              >
+                    {/* B2B 互联参数 */}
+                    <div className="grid grid-cols-2 gap-3 mb-3 pb-3 border-b border-dashed">
+                      <FormInputField
+                        label="B2B带宽 (GB/s)"
+                        tooltip="Board间互联带宽"
+                        min={0}
+                        max={999999}
+                        step={1}
+                        value={hardwareParams.interconnect.b2b.bandwidth_gbps}
+                        onChange={(v) => setHardwareParams(prev => ({
+                          ...prev,
+                          interconnect: { ...prev.interconnect, b2b: { ...prev.interconnect.b2b, bandwidth_gbps: v ?? 450 } }
+                        }))}
+                      />
+                      <FormInputField
+                        label="B2B延迟 (us)"
+                        tooltip="Board间互联延迟"
+                        min={0}
+                        step={0.01}
+                        value={hardwareParams.interconnect.b2b.latency_us}
+                        onChange={(v) => setHardwareParams(prev => ({
+                          ...prev,
+                          interconnect: { ...prev.interconnect, b2b: { ...prev.interconnect.b2b, latency_us: v ?? 0.35 } }
+                        }))}
+                      />
+                    </div>
+                    {/* 编辑开关 */}
+                    <div className="flex justify-between items-center mb-2">
+                      <div className="text-xs text-gray-600">
+                        <span>容量: <strong>{rackConfig.total_u}U</strong></span>
+                        <span className="mx-2 text-gray-300">|</span>
+                        <span>已用: <strong className={isOverflow ? 'text-red-500' : ''}>{usedU}U</strong></span>
+                        <span className="mx-2 text-gray-300">|</span>
+                        <span>芯片: <strong>{totalChips}</strong></span>
                       </div>
-                    </>
-                  ) : (
-                    /* 展示模式 */
-                    <div className="flex justify-between items-center">
-                      <span className="text-[13px]">{board.name} ×{board.count || 1}</span>
-                      <div className="flex items-center gap-3">
-                        <span className="text-gray-500 text-xs">{board.u_height}U</span>
-                        <span className="text-gray-500 text-xs">
-                          {board.chips.map(c => `${c.name}×${c.count}`).join(' ')}
-                        </span>
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-gray-500 text-[11px]">编辑</span>
+                        <Switch
+                          checked={rackEditMode}
+                          onCheckedChange={setRackEditMode}
+                        />
                       </div>
                     </div>
-                  )}
-                </div>
-              ))}
-            </div>
 
-            {/* 编辑模式：添加板卡按钮 */}
-            {rackEditMode && (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => {
-                  const newBoard: FlexBoardConfig = {
-                    id: `board_${Date.now()}`,
-                    name: 'Board',
-                    u_height: 2,
-                    count: 1,
-                    chips: [{ name: 'Chip', count: 8 }],
-                  }
-                  setRackConfig(prev => ({ ...prev, boards: [...prev.boards, newBoard] }))
-                }}
-                className="w-full mt-1 border-dashed"
-              >
-                <Plus className="h-4 w-4 mr-1" />
-                添加板卡类型
-              </Button>
-            )}
-          </div>
+                    {/* 编辑模式：Rack容量 */}
+                    {rackEditMode && (
+                      <div style={configRowStyle}>
+                        <span className="text-xs">Rack容量</span>
+                        <NumberInput
+                          min={10}
+                          max={60}
+                          value={rackConfig.total_u || 42}
+                          onChange={(v) => setRackConfig(prev => ({ ...prev, total_u: v || 42 }))}
+                          className="w-[70px] h-7"
+                          suffix="U"
+                        />
+                      </div>
+                    )}
 
-          {/* Board间连接配置 */}
-          <div className="p-3.5 bg-gray-100 rounded-lg border border-gray-200/50">
-            <span className="block font-semibold mb-2.5 text-gray-900">连接配置</span>
+                    {/* 板卡列表 */}
+                    <div className="mt-2">
+                      {rackConfig.boards.map((board, boardIndex) => (
+                        <div key={board.id} className="mb-1.5 p-1.5 px-2.5 bg-gray-50 rounded-lg border border-gray-200/50">
+                          {rackEditMode ? (
+                            /* 编辑模式 */
+                            <>
+                              <div className="flex justify-between items-center mb-2">
+                                <div className="flex items-center gap-2">
+                                  <span className="text-xs whitespace-nowrap">名称:</span>
+                                  <Input
+                                    value={board.name}
+                                    onChange={(e) => {
+                                      const newBoards = [...rackConfig.boards]
+                                      newBoards[boardIndex] = { ...newBoards[boardIndex], name: e.target.value }
+                                      setRackConfig(prev => ({ ...prev, boards: newBoards }))
+                                    }}
+                                    className="w-[120px] h-7"
+                                  />
+                                  <span className="text-xs ml-2 whitespace-nowrap">高度:</span>
+                                  <Select
+                                    value={board.u_height.toString()}
+                                    onValueChange={(v) => {
+                                      const newBoards = [...rackConfig.boards]
+                                      newBoards[boardIndex] = { ...newBoards[boardIndex], u_height: parseInt(v) }
+                                      setRackConfig(prev => ({ ...prev, boards: newBoards }))
+                                    }}
+                                  >
+                                    <SelectTrigger className="w-[70px] h-7">
+                                      <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      <SelectItem value="1">1U</SelectItem>
+                                      <SelectItem value="2">2U</SelectItem>
+                                      <SelectItem value="4">4U</SelectItem>
+                                    </SelectContent>
+                                  </Select>
+                                  <span className="text-xs ml-2 whitespace-nowrap">数量:</span>
+                                  <NumberInput
+                                    min={1}
+                                    max={42}
+                                    value={board.count || 1}
+                                    onChange={(v) => {
+                                      const newBoards = [...rackConfig.boards]
+                                      newBoards[boardIndex] = { ...newBoards[boardIndex], count: v || 1 }
+                                      setRackConfig(prev => ({ ...prev, boards: newBoards }))
+                                    }}
+                                    className="w-[60px] h-7"
+                                  />
+                                </div>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="text-red-500 hover:text-red-600 h-7 w-7 p-0"
+                                  onClick={() => {
+                                    const newBoards = rackConfig.boards.filter((_, i) => i !== boardIndex)
+                                    setRackConfig(prev => ({ ...prev, boards: newBoards }))
+                                  }}
+                                  disabled={rackConfig.boards.length <= 1}
+                                >
+                                  <MinusCircle className="h-4 w-4" />
+                                </Button>
+                              </div>
+                            </>
+                          ) : (
+                            /* 展示模式 */
+                            <div className="flex justify-between items-center">
+                              <span className="text-[13px]">{board.name} ×{board.count || 1}</span>
+                              <div className="flex items-center gap-3">
+                                <span className="text-gray-500 text-xs">{board.u_height}U</span>
+                                <span className="text-gray-500 text-xs">
+                                  {board.chips.map(c => `${c.name}×${c.count}`).join(' ')}
+                                </span>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* 编辑模式：添加板卡按钮 */}
+                    {rackEditMode && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          const newBoard: FlexBoardConfig = {
+                            id: `board_${Date.now()}`,
+                            name: 'Board',
+                            u_height: 2,
+                            count: 1,
+                            chips: [{ name: 'Chip', count: 8 }],
+                          }
+                          setRackConfig(prev => ({ ...prev, boards: [...prev.boards, newBoard] }))
+                        }}
+                        className="w-full mt-1 border-dashed"
+                      >
+                        <Plus className="h-4 w-4 mr-1" />
+                        添加板卡类型
+                      </Button>
+                    )}
+              </ConfigCollapsible>
+            )
+          })()}
+          </TooltipProvider>
+
+          {/* Board间连接配置 - 折叠面板 */}
+          <ConfigCollapsible defaultOpen title="连接配置">
             <SwitchLevelConfig
               levelKey="inter_board"
               config={switchConfig.inter_board}
@@ -783,7 +871,7 @@ export const ConfigPanel: React.FC<ConfigPanelProps> = ({
               configRowStyle={configRowStyle}
               viewMode={viewMode}
             />
-          </div>
+          </ConfigCollapsible>
           {/* 连接编辑（当前层级或聚焦层级时显示） */}
           {(currentLevel === 'rack' || focusedLevel === 'rack') && (
             <div className="mt-3">
@@ -811,13 +899,42 @@ export const ConfigPanel: React.FC<ConfigPanelProps> = ({
 
       <TabsContent value="board">
         <div>
-          {/* 芯片配置 */}
-          <div className="mb-3 p-3.5 bg-gray-100 rounded-lg border border-gray-200/50">
-            <span className="block font-semibold mb-2.5 text-gray-900">芯片配置</span>
-            <span className="text-gray-500 text-[11px] mb-2.5 block">
-              为每种板卡类型配置芯片
-            </span>
-            {rackConfig.boards.map((board, boardIndex) => (
+          {/* 芯片配置 + 互联参数 - 合并的折叠面板 */}
+          <TooltipProvider>
+          <ConfigCollapsible
+            defaultOpen
+            title={<>节点配置</>}
+          >
+                {/* C2C 互联参数 */}
+                <div className="grid grid-cols-2 gap-3 mb-3 pb-3 border-b border-dashed">
+                  <FormInputField
+                    label="C2C带宽 (GB/s)"
+                    tooltip="Chip间互联带宽（板内）"
+                    min={0}
+                    max={999999}
+                    step={1}
+                    value={hardwareParams.interconnect.c2c.bandwidth_gbps}
+                    onChange={(v) => setHardwareParams(prev => ({
+                      ...prev,
+                      interconnect: { ...prev.interconnect, c2c: { ...prev.interconnect.c2c, bandwidth_gbps: v ?? 900 } }
+                    }))}
+                  />
+                  <FormInputField
+                    label="C2C延迟 (us)"
+                    tooltip="Chip间互联延迟"
+                    min={0}
+                    step={0.01}
+                    value={hardwareParams.interconnect.c2c.latency_us}
+                    onChange={(v) => setHardwareParams(prev => ({
+                      ...prev,
+                      interconnect: { ...prev.interconnect, c2c: { ...prev.interconnect.c2c, latency_us: v ?? 1.0 } }
+                    }))}
+                  />
+                </div>
+                <span className="text-gray-500 text-[11px] mb-2.5 block">
+                  为每种板卡类型配置芯片
+                </span>
+                {rackConfig.boards.map((board, boardIndex) => (
               <div key={board.id} className="mb-2.5 p-2 px-2.5 bg-white rounded-md border border-gray-200">
                 <div className="flex justify-between items-center mb-1.5">
                   <span className="font-semibold text-xs">{board.name}</span>
@@ -838,23 +955,8 @@ export const ConfigPanel: React.FC<ConfigPanelProps> = ({
                 </div>
                 {board.chips.map((chip, chipIndex) => {
                   const chipPresetList = getChipList()
-                  const presetConfig = chip.preset_id ? getChipConfig(chip.preset_id) : null
-                  // 当前使用的参数值（预设值或自定义值）
-                  const currentTflops = chip.compute_tflops_fp16 ?? presetConfig?.compute_tflops_fp16 ?? 100
-                  const currentMemory = chip.memory_gb ?? presetConfig?.memory_gb ?? 32
-                  const currentBandwidth = chip.memory_bandwidth_gbps ?? presetConfig?.memory_bandwidth_gbps ?? 1000
-                  const currentBwUtil = chip.memory_bandwidth_utilization ?? presetConfig?.memory_bandwidth_utilization ?? 0.9
-                  const currentFlopsDtype = presetConfig?.flops_dtype ?? 'BF16'
-                  // 检查参数是否被修改过
-                  const isModified = presetConfig && (
-                    (chip.compute_tflops_fp16 !== undefined && chip.compute_tflops_fp16 !== presetConfig.compute_tflops_fp16) ||
-                    (chip.memory_gb !== undefined && chip.memory_gb !== presetConfig.memory_gb) ||
-                    (chip.memory_bandwidth_gbps !== undefined && chip.memory_bandwidth_gbps !== presetConfig.memory_bandwidth_gbps) ||
-                    (chip.memory_bandwidth_utilization !== undefined && chip.memory_bandwidth_utilization !== presetConfig.memory_bandwidth_utilization)
-                  )
-                  const isCustomPreset = chipPresetList.find(c => c.id === chip.preset_id)?.isCustom
                   return (
-                    <div key={chipIndex} className="mb-2 p-2 px-2.5 rounded-md" style={{ background: '#fafafa', border: isModified ? '1px solid #faad14' : '1px solid transparent' }}>
+                    <div key={chipIndex} className="mb-2 p-2 px-2.5 rounded-md" style={{ background: '#fafafa', border: '1px solid transparent' }}>
                       {/* 类型选择 */}
                       <div className="flex items-center gap-2 mb-1.5">
                         <span className="text-xs w-[60px] flex-shrink-0">类型:</span>
@@ -868,9 +970,6 @@ export const ConfigPanel: React.FC<ConfigPanelProps> = ({
                                 ...newChips[chipIndex],
                                 name: '自定义芯片',
                                 preset_id: undefined,
-                                compute_tflops_fp16: 100,
-                                memory_gb: 32,
-                                memory_bandwidth_gbps: 1000,
                               }
                             } else {
                               const preset = getChipConfig(value)
@@ -879,9 +978,6 @@ export const ConfigPanel: React.FC<ConfigPanelProps> = ({
                                   ...newChips[chipIndex],
                                   name: preset.chip_type,
                                   preset_id: value,
-                                  compute_tflops_fp16: undefined,
-                                  memory_gb: undefined,
-                                  memory_bandwidth_gbps: undefined,
                                 }
                               }
                             }
@@ -941,7 +1037,7 @@ export const ConfigPanel: React.FC<ConfigPanelProps> = ({
                           <NumberInput
                             min={1}
                             max={64}
-                            value={chip.count}
+                            value={chip.count || 1}
                             onChange={(v) => {
                               const newBoards = [...rackConfig.boards]
                               const newChips = [...newBoards[boardIndex].chips]
@@ -954,246 +1050,16 @@ export const ConfigPanel: React.FC<ConfigPanelProps> = ({
                           <span className="ml-1 text-xs text-gray-500">个</span>
                         </div>
                       </div>
-                      {/* 第二行：芯片参数（可编辑） */}
-                      <div className="flex flex-col gap-1.5">
-                        <div className="flex items-center gap-2">
-                          <TooltipProvider>
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <span className="text-xs w-[60px] flex-shrink-0 cursor-help">算力:</span>
-                              </TooltipTrigger>
-                              <TooltipContent>{currentFlopsDtype} 精度的理论峰值算力</TooltipContent>
-                            </Tooltip>
-                          </TooltipProvider>
-                          <div className="flex flex-1 items-center">
-                            <NumberInput
-                              min={1}
-                              value={currentTflops}
-                              onChange={(v) => {
-                                const newBoards = [...rackConfig.boards]
-                                const newChips = [...newBoards[boardIndex].chips]
-                                newChips[chipIndex] = { ...newChips[chipIndex], compute_tflops_fp16: v || undefined }
-                                newBoards[boardIndex] = { ...newBoards[boardIndex], chips: newChips }
-                                setRackConfig(prev => ({ ...prev, boards: newBoards }))
-                              }}
-                              className="flex-1 h-7"
-                            />
-                            <span className="ml-1 text-xs text-gray-500 whitespace-nowrap">{currentFlopsDtype} TFLOPs</span>
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <TooltipProvider>
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <span className="text-xs w-[60px] flex-shrink-0 cursor-help">显存:</span>
-                              </TooltipTrigger>
-                              <TooltipContent>DRAM 存储容量</TooltipContent>
-                            </Tooltip>
-                          </TooltipProvider>
-                          <div className="flex flex-1 items-center">
-                            <NumberInput
-                              min={1}
-                              value={currentMemory}
-                              onChange={(v) => {
-                                const newBoards = [...rackConfig.boards]
-                                const newChips = [...newBoards[boardIndex].chips]
-                                newChips[chipIndex] = { ...newChips[chipIndex], memory_gb: v || undefined }
-                                newBoards[boardIndex] = { ...newBoards[boardIndex], chips: newChips }
-                                setRackConfig(prev => ({ ...prev, boards: newBoards }))
-                              }}
-                              className="flex-1 h-7"
-                            />
-                            <span className="ml-1 text-xs text-gray-500">GB</span>
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <TooltipProvider>
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <span className="text-xs w-[60px] flex-shrink-0 cursor-help">带宽:</span>
-                              </TooltipTrigger>
-                              <TooltipContent>DRAM 理论带宽</TooltipContent>
-                            </Tooltip>
-                          </TooltipProvider>
-                          <div className="flex flex-1 items-center">
-                            <NumberInput
-                              min={1}
-                              value={currentBandwidth}
-                              onChange={(v) => {
-                                const newBoards = [...rackConfig.boards]
-                                const newChips = [...newBoards[boardIndex].chips]
-                                newChips[chipIndex] = { ...newChips[chipIndex], memory_bandwidth_gbps: v || undefined }
-                                newBoards[boardIndex] = { ...newBoards[boardIndex], chips: newChips }
-                                setRackConfig(prev => ({ ...prev, boards: newBoards }))
-                              }}
-                              className="flex-1 h-7"
-                            />
-                            <span className="ml-1 text-xs text-gray-500">GB/s</span>
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <TooltipProvider>
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <span className="text-xs w-[70px] flex-shrink-0 cursor-help">带宽利用率:</span>
-                              </TooltipTrigger>
-                              <TooltipContent>显存带宽的实际利用率，通常为0.8-0.95</TooltipContent>
-                            </Tooltip>
-                          </TooltipProvider>
-                          <NumberInput
-                            min={0.1}
-                            max={1}
-                            step={0.01}
-                            value={currentBwUtil}
-                            onChange={(v) => {
-                              const newBoards = [...rackConfig.boards]
-                              const newChips = [...newBoards[boardIndex].chips]
-                              newChips[chipIndex] = { ...newChips[chipIndex], memory_bandwidth_utilization: v || undefined }
-                              newBoards[boardIndex] = { ...newBoards[boardIndex], chips: newChips }
-                              setRackConfig(prev => ({ ...prev, boards: newBoards }))
-                            }}
-                            className="flex-1 h-7"
-                          />
-                        </div>
-                      </div>
-                      {/* 第三行：操作按钮 */}
-                      <div className="flex items-center gap-1.5 mt-1.5">
-                        {isModified && (
-                          <TooltipProvider>
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <Button
-                                  variant="link"
-                                  size="sm"
-                                  className="p-0 h-auto text-[11px]"
-                                  onClick={() => {
-                                    const newBoards = [...rackConfig.boards]
-                                    const newChips = [...newBoards[boardIndex].chips]
-                                    newChips[chipIndex] = {
-                                      ...newChips[chipIndex],
-                                      compute_tflops_fp16: undefined,
-                                      memory_gb: undefined,
-                                      memory_bandwidth_gbps: undefined,
-                                      memory_bandwidth_utilization: undefined,
-                                    }
-                                    newBoards[boardIndex] = { ...newBoards[boardIndex], chips: newChips }
-                                    setRackConfig(prev => ({ ...prev, boards: newBoards }))
-                                  }}
-                                >
-                                  重置
-                                </Button>
-                              </TooltipTrigger>
-                              <TooltipContent>重置为预设值</TooltipContent>
-                            </Tooltip>
-                          </TooltipProvider>
-                        )}
-                        {(isModified || !chip.preset_id) && (
-                          <TooltipProvider>
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <Button
-                                  variant="link"
-                                  size="sm"
-                                  className="p-0 h-auto text-[11px]"
-                                  onClick={() => {
-                                    const newName = prompt('输入预设名称:', chip.name || '自定义芯片')
-                                    if (newName) {
-                                      const presetId = `custom-${Date.now()}`
-                                      const config: ChipHardwareConfig = {
-                                        chip_type: newName,
-                                        flops_dtype: currentFlopsDtype,
-                                        compute_tflops_fp16: currentTflops,
-                                        memory_gb: currentMemory,
-                                        memory_bandwidth_gbps: currentBandwidth,
-                                        memory_bandwidth_utilization: currentBwUtil,
-                                      }
-                                      saveCustomChipPreset(presetId, config)
-                                      // 更新当前芯片使用新预设
-                                      const newBoards = [...rackConfig.boards]
-                                      const newChips = [...newBoards[boardIndex].chips]
-                                      newChips[chipIndex] = {
-                                        ...newChips[chipIndex],
-                                        name: newName,
-                                        preset_id: presetId,
-                                        compute_tflops_fp16: undefined,
-                                        memory_gb: undefined,
-                                        memory_bandwidth_gbps: undefined,
-                                        memory_bandwidth_utilization: undefined,
-                                      }
-                                      newBoards[boardIndex] = { ...newBoards[boardIndex], chips: newChips }
-                                      setRackConfig(prev => ({ ...prev, boards: newBoards }))
-                                      toast.success(`已保存预设: ${newName}`)
-                                    }
-                                  }}
-                                >
-                                  <Save className="h-3 w-3 mr-0.5" />
-                                  保存预设
-                                </Button>
-                              </TooltipTrigger>
-                              <TooltipContent>保存为新预设</TooltipContent>
-                            </Tooltip>
-                          </TooltipProvider>
-                        )}
-                        {isCustomPreset && chip.preset_id && (
-                          <AlertDialog>
-                            <AlertDialogTrigger asChild>
-                              <Button
-                                variant="link"
-                                size="sm"
-                                className="p-0 h-auto text-[11px] text-red-500"
-                              >
-                                <Trash2 className="h-3 w-3 mr-0.5" />
-                                删除预设
-                              </Button>
-                            </AlertDialogTrigger>
-                            <AlertDialogContent>
-                              <AlertDialogHeader>
-                                <AlertDialogTitle>确定删除此预设？</AlertDialogTitle>
-                                <AlertDialogDescription>
-                                  此操作将删除该自定义芯片预设，且无法恢复。
-                                </AlertDialogDescription>
-                              </AlertDialogHeader>
-                              <AlertDialogFooter>
-                                <AlertDialogCancel>取消</AlertDialogCancel>
-                                <AlertDialogAction
-                                  onClick={() => {
-                                    if (chip.preset_id) {
-                                      deleteCustomChipPreset(chip.preset_id)
-                                      // 将当前芯片改为自定义
-                                      const newBoards = [...rackConfig.boards]
-                                      const newChips = [...newBoards[boardIndex].chips]
-                                      newChips[chipIndex] = {
-                                        ...newChips[chipIndex],
-                                        preset_id: undefined,
-                                        compute_tflops_fp16: currentTflops,
-                                        memory_gb: currentMemory,
-                                        memory_bandwidth_gbps: currentBandwidth,
-                                        memory_bandwidth_utilization: currentBwUtil,
-                                      }
-                                      newBoards[boardIndex] = { ...newBoards[boardIndex], chips: newChips }
-                                      setRackConfig(prev => ({ ...prev, boards: newBoards }))
-                                      toast.success('已删除预设')
-                                    }
-                                  }}
-                                  className="bg-red-500 hover:bg-red-600"
-                                >
-                                  删除
-                                </AlertDialogAction>
-                              </AlertDialogFooter>
-                            </AlertDialogContent>
-                          </AlertDialog>
-                        )}
-                      </div>
                     </div>
                   )
                 })}
               </div>
             ))}
-          </div>
+          </ConfigCollapsible>
+          </TooltipProvider>
 
-          {/* Chip间连接配置 */}
-          <div className="p-3.5 bg-gray-100 rounded-lg border border-gray-200/50">
-            <span className="block font-semibold mb-2.5 text-gray-900">连接配置</span>
+          {/* Chip间连接配置 - 折叠面板 */}
+          <ConfigCollapsible defaultOpen title="连接配置">
             <SwitchLevelConfig
               levelKey="inter_chip"
               config={switchConfig.inter_chip}
@@ -1201,7 +1067,7 @@ export const ConfigPanel: React.FC<ConfigPanelProps> = ({
               onChange={(newConfig) => setSwitchConfig(prev => ({ ...prev, inter_chip: newConfig }))}
               configRowStyle={configRowStyle}
             />
-          </div>
+          </ConfigCollapsible>
           {/* 连接编辑（当前层级或聚焦层级时显示） */}
           {(currentLevel === 'board' || focusedLevel === 'board') && (
             <div className="mt-3">
@@ -1225,6 +1091,436 @@ export const ConfigPanel: React.FC<ConfigPanelProps> = ({
             </div>
           )}
         </div>
+      </TabsContent>
+
+      <TabsContent value="chip">
+        <TooltipProvider>
+        <div>
+          {/* 显示所有 Board 层配置的芯片 */}
+          {rackConfig.boards.length === 0 ? (
+            <div className="text-center py-8 text-gray-400 text-sm">
+              请先在 Board 层配置芯片
+            </div>
+          ) : (
+            rackConfig.boards.map((board, boardIndex) => (
+              <div key={board.id}>
+                {board.chips.map((chip, chipIndex) => {
+                  // 芯片面板的唯一 ID
+                  const chipPanelId = `${board.id}-${chipIndex}`
+
+                  return (
+                    <div
+                      key={chipPanelId}
+                      ref={(el) => {
+                        if (el) {
+                          chipPanelRefs.current.set(chipPanelId, el)
+                        } else {
+                          chipPanelRefs.current.delete(chipPanelId)
+                        }
+                      }}
+                    >
+                      <ConfigCollapsible
+                        defaultOpen={boardIndex === 0 && chipIndex === 0}
+                        title={
+                          <>
+                            {board.name} - {chip.name} <span className="text-gray-400 text-xs ml-2">x{chip.count}</span>
+                          </>
+                        }
+                      >
+                      {/* 核心数 + 算力 (3列) */}
+                      <div className="grid grid-cols-3 gap-3 mb-2">
+                        <FormInputField
+                          label="核心数"
+                          tooltip="计算核心数量"
+                          min={1}
+                          max={512}
+                          value={hardwareParams.chip.num_cores}
+                          onChange={(v) => setHardwareParams(prev => ({
+                            ...prev,
+                            chip: { ...prev.chip, num_cores: v ?? 64 }
+                          }))}
+                        />
+                        <FormInputField
+                          label="FP8"
+                          tooltip="FP8 算力 (TFLOPS)"
+                          min={0}
+                          value={hardwareParams.chip.compute_tflops_fp8}
+                          onChange={(v) => setHardwareParams(prev => ({
+                            ...prev,
+                            chip: {
+                              ...prev.chip,
+                              compute_tflops_fp8: v ?? 256,
+                              compute_tflops_bf16: v !== undefined ? v / 2 : 128
+                            }
+                          }))}
+                        />
+                        <FormInputField
+                          label="BF16"
+                          tooltip="BF16 算力 (TFLOPS)"
+                          min={0}
+                          value={hardwareParams.chip.compute_tflops_bf16}
+                          onChange={(v) => setHardwareParams(prev => ({
+                            ...prev,
+                            chip: {
+                              ...prev.chip,
+                              compute_tflops_bf16: v ?? 128,
+                              compute_tflops_fp8: v !== undefined ? v * 2 : 256
+                            }
+                          }))}
+                        />
+                      </div>
+
+                      {/* Memory (3列: 容量、带宽、利用率) */}
+                      <div className="border-t border-dashed my-2 pt-1.5">
+                        <span className="text-xs text-gray-500">Memory</span>
+                      </div>
+                      <div className="grid grid-cols-3 gap-3 mb-2">
+                        <FormInputField
+                          label="容量 (GB)"
+                          tooltip="显存容量"
+                          min={1}
+                          max={512}
+                          value={hardwareParams.chip.memory_capacity_gb}
+                          onChange={(v) => setHardwareParams(prev => ({
+                            ...prev,
+                            chip: { ...prev.chip, memory_capacity_gb: v ?? 32 }
+                          }))}
+                        />
+                        <FormInputField
+                          label="带宽 (TB/s)"
+                          tooltip="显存总带宽 (理论峰值)"
+                          min={0}
+                          max={1000}
+                          step={0.1}
+                          value={Number((hardwareParams.chip.memory_bandwidth_gbps / 1000).toFixed(1))}
+                          onChange={(v) => setHardwareParams(prev => ({
+                            ...prev,
+                            chip: { ...prev.chip, memory_bandwidth_gbps: v !== undefined ? v * 1000 : 800 }
+                          }))}
+                        />
+                        <FormInputField
+                          label="利用率"
+                          tooltip="显存带宽利用率 (0-1)"
+                          min={0}
+                          max={1}
+                          step={0.01}
+                          value={hardwareParams.chip.memory_bandwidth_utilization}
+                          onChange={(v) => setHardwareParams(prev => ({
+                            ...prev,
+                            chip: { ...prev.chip, memory_bandwidth_utilization: v ?? 0.85 }
+                          }))}
+                        />
+                      </div>
+
+                      {/* LMEM (2列) */}
+                      <div className="border-t border-dashed my-2 pt-1.5">
+                        <span className="text-xs text-gray-500">LMEM</span>
+                      </div>
+                      <div className="grid grid-cols-2 gap-3 mb-2">
+                        <FormInputField
+                          label="LMEM (MB)"
+                          tooltip="LMEM 片上缓存容量"
+                          min={0}
+                          value={hardwareParams.chip.lmem_capacity_mb}
+                          onChange={(v) => setHardwareParams(prev => ({
+                            ...prev,
+                            chip: { ...prev.chip, lmem_capacity_mb: v ?? 128 }
+                          }))}
+                        />
+                        <FormInputField
+                          label="L带宽 (GB/s)"
+                          tooltip="LMEM 缓存带宽"
+                          min={0}
+                          max={999999}
+                          value={hardwareParams.chip.lmem_bandwidth_gbps}
+                          onChange={(v) => setHardwareParams(prev => ({
+                            ...prev,
+                            chip: { ...prev.chip, lmem_bandwidth_gbps: v ?? 12000 }
+                          }))}
+                        />
+                      </div>
+
+                      {/* 微架构参数 (4列) */}
+                      <div className="border-t border-dashed my-2 pt-1.5">
+                        <span className="text-xs text-gray-500">微架构 / GEMM</span>
+                      </div>
+                      <div className="grid grid-cols-4 gap-3 mb-1.5">
+                        <FormInputField
+                          label="Cube M"
+                          tooltip="矩阵单元 M 维度"
+                          min={1}
+                          value={hardwareParams.chip.cube_m ?? 0}
+                          onChange={(v) => setHardwareParams(prev => ({
+                            ...prev,
+                            chip: { ...prev.chip, cube_m: v }
+                          }))}
+                          inputClassName="placeholder:text-xs"
+                          placeholder="自动"
+                        />
+                        <FormInputField
+                          label="Cube K"
+                          tooltip="矩阵单元 K 维度"
+                          min={1}
+                          value={hardwareParams.chip.cube_k ?? 0}
+                          onChange={(v) => setHardwareParams(prev => ({
+                            ...prev,
+                            chip: { ...prev.chip, cube_k: v }
+                          }))}
+                          inputClassName="placeholder:text-xs"
+                          placeholder="自动"
+                        />
+                        <FormInputField
+                          label="Cube N"
+                          tooltip="矩阵单元 N 维度"
+                          min={1}
+                          value={hardwareParams.chip.cube_n ?? 0}
+                          onChange={(v) => setHardwareParams(prev => ({
+                            ...prev,
+                            chip: { ...prev.chip, cube_n: v }
+                          }))}
+                          inputClassName="placeholder:text-xs"
+                          placeholder="自动"
+                        />
+                        <FormInputField
+                          label="Lane 数"
+                          tooltip="SIMD lane 数量"
+                          min={1}
+                          value={hardwareParams.chip.lane_num ?? 0}
+                          onChange={(v) => setHardwareParams(prev => ({
+                            ...prev,
+                            chip: { ...prev.chip, lane_num: v }
+                          }))}
+                          inputClassName="placeholder:text-xs"
+                          placeholder="自动"
+                        />
+                      </div>
+                      <div className="grid grid-cols-4 gap-3">
+                        <FormInputField
+                          label="SRAM (KB)"
+                          tooltip="每核 SRAM 大小"
+                          min={0}
+                          value={hardwareParams.chip.sram_size_kb ?? 0}
+                          onChange={(v) => setHardwareParams(prev => ({
+                            ...prev,
+                            chip: { ...prev.chip, sram_size_kb: v }
+                          }))}
+                          inputClassName="placeholder:text-xs"
+                          placeholder="自动"
+                        />
+                        <FormInputField
+                          label="SRAM利用"
+                          tooltip="SRAM 可用比例 (0-1)"
+                          min={0}
+                          max={1}
+                          step={0.01}
+                          value={hardwareParams.chip.sram_utilization ?? 0}
+                          onChange={(v) => setHardwareParams(prev => ({
+                            ...prev,
+                            chip: { ...prev.chip, sram_utilization: v }
+                          }))}
+                          inputClassName="placeholder:text-xs"
+                          placeholder="自动"
+                        />
+                        <FormInputField
+                          label="对齐字节"
+                          tooltip="内存对齐字节数"
+                          min={1}
+                          value={hardwareParams.chip.align_bytes ?? 0}
+                          onChange={(v) => setHardwareParams(prev => ({
+                            ...prev,
+                            chip: { ...prev.chip, align_bytes: v }
+                          }))}
+                          inputClassName="placeholder:text-xs"
+                          placeholder="自动"
+                        />
+                        <FormInputField
+                          label="重叠率"
+                          tooltip="计算-搬运重叠率 (0-1)"
+                          min={0}
+                          max={1}
+                          step={0.01}
+                          value={hardwareParams.chip.compute_dma_overlap_rate ?? 0}
+                          onChange={(v) => setHardwareParams(prev => ({
+                            ...prev,
+                            chip: { ...prev.chip, compute_dma_overlap_rate: v }
+                          }))}
+                          inputClassName="placeholder:text-xs"
+                          placeholder="自动"
+                        />
+                      </div>
+                    </ConfigCollapsible>
+                    </div>
+                  )
+                })}
+              </div>
+            ))
+          )}
+        </div>
+        </TooltipProvider>
+
+        {/* 互联通信参数 - 全局配置 */}
+        <TooltipProvider>
+        <div className="mt-4">
+
+          {/* 互联通信参数 - 全局配置 */}
+          <ConfigCollapsible defaultOpen title="互联通信参数（全局）">
+            {/* 协议参数 */}
+            <div className="grid grid-cols-4 gap-3 mb-3">
+              <TooltipProvider>
+                <FormInputField
+                  label="TP RTT (µs)"
+                  tooltip="Tensor Parallelism Round Trip Time: 张量并行通信的往返延迟"
+                  min={0}
+                  max={10}
+                  step={0.05}
+                  value={commLatencyConfig.rtt_tp_us}
+                  onChange={(v) => setCommLatencyConfig(prev => ({ ...prev, rtt_tp_us: v ?? 0.35 }))}
+                />
+                <FormInputField
+                  label="EP RTT (µs)"
+                  tooltip="Expert Parallelism Round Trip Time: 专家并行通信的往返延迟"
+                  min={0}
+                  max={10}
+                  step={0.05}
+                  value={commLatencyConfig.rtt_ep_us}
+                  onChange={(v) => setCommLatencyConfig(prev => ({ ...prev, rtt_ep_us: v ?? 0.85 }))}
+                />
+                <FormInputField
+                  label="链路带宽利用率"
+                  tooltip="链路带宽利用率: 实际可用带宽与理论峰值带宽的比例 (典型值: 0.85-0.95)"
+                  min={0.5}
+                  max={1.0}
+                  step={0.01}
+                  value={commLatencyConfig.bandwidth_utilization}
+                  onChange={(v) => setCommLatencyConfig(prev => ({ ...prev, bandwidth_utilization: v ?? 0.95 }))}
+                />
+                <FormInputField
+                  label="同步延迟 (µs)"
+                  tooltip="多卡同步操作的固定开销，如 Barrier、AllReduce 初始化延迟"
+                  min={0}
+                  max={10}
+                  step={0.1}
+                  value={commLatencyConfig.sync_latency_us}
+                  onChange={(v) => setCommLatencyConfig(prev => ({ ...prev, sync_latency_us: v ?? 0 }))}
+                />
+              </TooltipProvider>
+            </div>
+
+            {/* 互联相关 */}
+            <div className="border-t border-dashed my-3 pt-2">
+              <span className="text-xs text-gray-500">互联相关</span>
+            </div>
+            <div className="grid grid-cols-2 gap-3 mb-3">
+              <TooltipProvider>
+                <FormInputField
+                  label="switch_delay (µs)"
+                  tooltip="网络交换机的数据包转发延迟 (典型值: 0.5-2 µs)"
+                  min={0}
+                  max={10}
+                  step={0.05}
+                  value={commLatencyConfig.switch_delay_us}
+                  onChange={(v) => setCommLatencyConfig(prev => ({ ...prev, switch_delay_us: v ?? 1.0 }))}
+                />
+                <FormInputField
+                  label="cable_delay (µs)"
+                  tooltip="网络线缆的光/电信号传输延迟，约 5 ns/米 (典型值: 0.01-0.05 µs)"
+                  min={0}
+                  max={1}
+                  step={0.005}
+                  value={commLatencyConfig.cable_delay_us}
+                  onChange={(v) => setCommLatencyConfig(prev => ({ ...prev, cable_delay_us: v ?? 0.025 }))}
+                />
+              </TooltipProvider>
+            </div>
+
+            {/* 芯片延迟参数 */}
+            <div className="border-t border-dashed my-3 pt-2">
+              <span className="text-xs text-gray-500">芯片延迟参数</span>
+            </div>
+            <div className="grid grid-cols-2 gap-3 mb-3">
+              <TooltipProvider>
+                <FormInputField
+                  label="memory_read (µs)"
+                  tooltip="显存读延迟 (DDR/HBM)"
+                  min={0}
+                  max={1}
+                  step={0.01}
+                  value={commLatencyConfig.memory_read_latency_us}
+                  onChange={(v) => setCommLatencyConfig(prev => ({ ...prev, memory_read_latency_us: v ?? 0.15 }))}
+                />
+                <FormInputField
+                  label="memory_write (µs)"
+                  tooltip="显存写延迟 (DDR/HBM)"
+                  min={0}
+                  max={1}
+                  step={0.01}
+                  value={commLatencyConfig.memory_write_latency_us}
+                  onChange={(v) => setCommLatencyConfig(prev => ({ ...prev, memory_write_latency_us: v ?? 0.01 }))}
+                />
+                <FormInputField
+                  label="noc_latency (µs)"
+                  tooltip="片上网络延迟 (NoC)"
+                  min={0}
+                  max={1}
+                  step={0.01}
+                  value={commLatencyConfig.noc_latency_us}
+                  onChange={(v) => setCommLatencyConfig(prev => ({ ...prev, noc_latency_us: v ?? 0.05 }))}
+                />
+                <FormInputField
+                  label="die_to_die (µs)"
+                  tooltip="Die-to-Die 延迟 (多Die芯片)"
+                  min={0}
+                  max={1}
+                  step={0.01}
+                  value={commLatencyConfig.die_to_die_latency_us}
+                  onChange={(v) => setCommLatencyConfig(prev => ({ ...prev, die_to_die_latency_us: v ?? 0.04 }))}
+                />
+              </TooltipProvider>
+            </div>
+
+            {/* 计算结果：通信启动开销 */}
+            <div className="border-t border-dashed my-3 pt-2">
+              <span className="text-xs text-gray-500">通信启动开销 (start_lat)</span>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <div className="p-2 bg-gray-100 rounded border border-gray-300 cursor-help">
+                      <span className="text-xs text-gray-500">AllReduce start_lat</span>
+                      <div className="text-sm font-medium text-blue-500">
+                        {(2 * hardwareParams.interconnect.c2c.latency_us + commLatencyConfig.memory_read_latency_us + commLatencyConfig.memory_write_latency_us + commLatencyConfig.noc_latency_us + 2 * commLatencyConfig.die_to_die_latency_us).toFixed(2)} µs
+                      </div>
+                    </div>
+                  </TooltipTrigger>
+                  <TooltipContent className="max-w-xs">
+                    <div className="text-xs">
+                      <div className="font-medium mb-1">AllReduce start_lat 计算公式:</div>
+                      <div className="font-mono">2×c2c_latency + memory_read + memory_write + noc + 2×die_to_die</div>
+                    </div>
+                  </TooltipContent>
+                </Tooltip>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <div className="p-2 bg-gray-100 rounded border border-gray-300 cursor-help">
+                      <span className="text-xs text-gray-500">Dispatch/Combine start_lat</span>
+                      <div className="text-sm font-medium text-purple-500">
+                        {(2 * hardwareParams.interconnect.c2c.latency_us + commLatencyConfig.memory_read_latency_us + commLatencyConfig.memory_write_latency_us + commLatencyConfig.noc_latency_us + 2 * commLatencyConfig.die_to_die_latency_us + 2 * commLatencyConfig.switch_delay_us + 2 * commLatencyConfig.cable_delay_us).toFixed(2)} µs
+                      </div>
+                    </div>
+                  </TooltipTrigger>
+                  <TooltipContent className="max-w-xs">
+                    <div className="text-xs">
+                      <div className="font-medium mb-1">Dispatch/Combine start_lat 计算公式:</div>
+                      <div className="font-mono">2×c2c_latency + memory_read + memory_write + noc + 2×die_to_die + 2×switch + 2×cable</div>
+                    </div>
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            </div>
+          </ConfigCollapsible>
+        </div>
+        </TooltipProvider>
       </TabsContent>
     </Tabs>
   )

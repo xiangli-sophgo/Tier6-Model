@@ -38,6 +38,9 @@ export const TopologySetup: React.FC = () => {
   const dragStartX = useRef(0)
   const dragStartWidth = useRef(0)
 
+  // 选中的芯片 ID（用于从视图点击芯片时跳转到配置）
+  const [selectedChipId, setSelectedChipId] = useState<string | undefined>()
+
   // 拖拽处理
   const handleMouseDown = useCallback(
     (e: React.MouseEvent) => {
@@ -99,6 +102,11 @@ export const TopologySetup: React.FC = () => {
         })
       }
       ui.setSelectedNode({ id: nodeId, label, type: nodeType, subType, connections })
+
+      // 如果点击的是芯片，设置选中的芯片 ID 并切换到 Chip Tab
+      if (nodeType === 'chip') {
+        setSelectedChipId(nodeId)
+      }
     },
     [topology.topology, ui]
   )
@@ -204,6 +212,11 @@ export const TopologySetup: React.FC = () => {
         } else {
           ui.setFocusedLevel(null)
         }
+
+        // 如果点击的是芯片，设置选中的芯片 ID 并切换到 Chip Tab
+        if (node.type === 'chip') {
+          setSelectedChipId(node.id)
+        }
       } else {
         ui.setFocusedLevel(null)
       }
@@ -233,6 +246,8 @@ export const TopologySetup: React.FC = () => {
             onGenerate={topology.handleGenerate}
             loading={topology.loading}
             currentLevel={getCurrentLevel()}
+            selectedChipId={selectedChipId}
+            onChipTabActivate={() => setSelectedChipId(undefined)}
             manualConnectionConfig={connection.manualConnectionConfig}
             onManualConnectionConfigChange={connection.setManualConnectionConfig}
             connectionMode={connection.connectionMode}

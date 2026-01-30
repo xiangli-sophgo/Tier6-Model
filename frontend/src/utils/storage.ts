@@ -48,11 +48,6 @@ export interface SavedConfig {
   description?: string;
   pod_count: number;
   racks_per_pod: number;
-  board_configs: {
-    u1: { count: number; chips: { npu: number; cpu: number } };
-    u2: { count: number; chips: { npu: number; cpu: number } };
-    u4: { count: number; chips: { npu: number; cpu: number } };
-  };
   rack_config?: {
     total_u: number;
     boards: Array<{
@@ -103,6 +98,38 @@ export interface SavedConfig {
     memory_write_latency_us: number;
     noc_latency_us: number;
     die_to_die_latency_us: number;
+  };
+
+  /** 硬件参数配置 (芯片参数 + 互联参数) */
+  hardware_params?: {
+    chip: {
+      chip_type: string;
+      num_cores: number;
+      compute_tflops_fp8: number;
+      compute_tflops_bf16: number;
+      memory_capacity_gb: number;
+      memory_bandwidth_gbps: number;
+      memory_bandwidth_utilization: number;
+      lmem_capacity_mb: number;
+      lmem_bandwidth_gbps: number;
+      c2c_bandwidth_gbps: number;
+      c2c_latency_us: number;
+      cost_per_hour?: number;
+      cube_m?: number;
+      cube_k?: number;
+      cube_n?: number;
+      sram_size_kb?: number;
+      sram_utilization?: number;
+      lane_num?: number;
+      align_bytes?: number;
+      compute_dma_overlap_rate?: number;
+    };
+    interconnect: {
+      c2c: { bandwidth_gbps: number; latency_us: number };
+      b2b: { bandwidth_gbps: number; latency_us: number };
+      r2r: { bandwidth_gbps: number; latency_us: number };
+      p2p: { bandwidth_gbps: number; latency_us: number };
+    };
   };
 }
 

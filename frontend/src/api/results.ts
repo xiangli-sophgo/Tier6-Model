@@ -61,9 +61,10 @@ export interface EvaluationTask {
   search_constraints?: Record<string, unknown>
   search_stats?: Record<string, unknown>
   config_snapshot?: {
-    model: Record<string, unknown>
-    inference: Record<string, unknown>
-    topology: Record<string, unknown>
+    model?: Record<string, unknown>
+    hardware?: Record<string, unknown>
+    inference?: Record<string, unknown>
+    topology?: Record<string, unknown>
   }
   benchmark_name?: string
   topology_config_name?: string

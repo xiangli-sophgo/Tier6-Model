@@ -45,11 +45,6 @@ export async function getTopology(): Promise<HierarchicalTopology> {
 export async function generateTopology(config: {
   pod_count?: number;
   racks_per_pod?: number;
-  board_configs?: {
-    u1: { count: number; chips: { npu: number; cpu: number } };
-    u2: { count: number; chips: { npu: number; cpu: number } };
-    u4: { count: number; chips: { npu: number; cpu: number } };
-  };
   rack_config?: {
     total_u: number;
     boards: Array<{

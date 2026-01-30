@@ -32,7 +32,7 @@ export const RooflineChart: React.FC<RooflineChartProps> = ({
   simulationStats,
 }) => {
   const option: EChartsOption = useMemo(() => {
-    const peakTflops = hardware.chip.compute_tflops_fp16
+    const peakTflops = hardware.chip.compute_tflops_bf16
     const memoryBandwidthTBps = hardware.chip.memory_bandwidth_gbps / 1000
     const ridgePoint = peakTflops / memoryBandwidthTBps
 

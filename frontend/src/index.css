@@ -62,6 +62,11 @@ body {
   height: 100vh;
 }
 
+/* 修复 Radix UI Select 打开时 body pointer-events: none 导致的 hover 效果消失问题 */
+body[style*="pointer-events: none"] #root {
+  pointer-events: auto;
+}
+
 /* 滚动条 */
 ::-webkit-scrollbar {
   width: 8px;
@@ -98,8 +103,7 @@ button:hover:not(:disabled) {
   transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.3s ease;
 }
 
-.card:hover,
-.card:has(button[data-state="open"]) {
+.card:hover {
   transform: translateY(-4px);
   box-shadow: 0 12px 24px rgba(37, 99, 235, 0.12);
 }

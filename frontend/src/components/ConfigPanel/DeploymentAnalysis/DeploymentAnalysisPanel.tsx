@@ -19,6 +19,7 @@ import {
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { NumberInput } from '@/components/ui/number-input'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import {
@@ -97,33 +98,6 @@ import { ParallelismConfigPanel } from './ParallelismConfigPanel'
 import { AnalysisResultDisplay } from './AnalysisResultDisplay'
 import { useTaskWebSocket, TaskUpdate } from '../../../hooks/useTaskWebSocket'
 
-// 自定义数字输入组件
-const NumberInput: React.FC<{
-  value: number | undefined
-  onChange: (value: number | undefined) => void
-  min?: number
-  max?: number
-  step?: number
-  precision?: number
-  className?: string
-  placeholder?: string
-}> = ({ value, onChange, min = 0, max = 9999, step = 1, className = '', placeholder }) => (
-  <Input
-    type="number"
-    value={value ?? ''}
-    onChange={(e) => {
-      const v = e.target.value === '' ? undefined : parseFloat(e.target.value)
-      if (v === undefined || (!isNaN(v) && v >= min && v <= max)) {
-        onChange(v)
-      }
-    }}
-    min={min}
-    max={max}
-    step={step}
-    className={className}
-    placeholder={placeholder}
-  />
-)
 
 // ============================================
 // 主面板组件
@@ -481,11 +455,6 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
         description: newConfigDesc.trim() || undefined,
         pod_count: localPodCount,
         racks_per_pod: localRacksPerPod,
-        board_configs: baseConfig?.board_configs || {
-          u1: { count: 0, chips: { npu: 0, cpu: 0 } },
-          u2: { count: 0, chips: { npu: 0, cpu: 0 } },
-          u4: { count: 0, chips: { npu: 0, cpu: 0 } },
-        },
         rack_config: localRackConfig ? {
           total_u: localRackConfig.total_u,
           boards: localRackConfig.boards,

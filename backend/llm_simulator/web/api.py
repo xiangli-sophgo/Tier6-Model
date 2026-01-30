@@ -10,6 +10,7 @@ import json
 import logging
 import os
 import uuid
+import yaml
 from pathlib import Path
 from datetime import datetime
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, Depends, UploadFile, File
@@ -393,10 +394,10 @@ async def list_topologies():
     获取所有保存的拓扑配置列表
     """
     topologies = []
-    for file_path in TOPOLOGIES_DIR.glob("*.json"):
+    for file_path in TOPOLOGIES_DIR.glob("*.yaml"):
         try:
             with open(file_path, "r", encoding="utf-8") as f:
-                data = json.load(f)
+                data = yaml.safe_load(f)
 
                 # 从 generated_topology 中统计实际数量
                 total_pods = 0
@@ -445,13 +446,13 @@ async def get_topology_config(name: str):
     """
     获取指定名称的拓扑配置
     """
-    file_path = TOPOLOGIES_DIR / f"{name}.json"
+    file_path = TOPOLOGIES_DIR / f"{name}.yaml"
     if not file_path.exists():
         raise HTTPException(status_code=404, detail=f"拓扑配置不存在: {name}")
 
     try:
         with open(file_path, "r", encoding="utf-8") as f:
-            return json.load(f)
+            return yaml.safe_load(f)
     except Exception as e:
         logger.error(f"读取拓扑配置失败: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -464,20 +465,20 @@ async def create_topology_config(config: TopologyConfigRequest):
     """
     from datetime import datetime
 
-    file_path = TOPOLOGIES_DIR / f"{config.name}.json"
+    file_path = TOPOLOGIES_DIR / f"{config.name}.yaml"
 
     # 检查是否已存在
     if file_path.exists():
         raise HTTPException(status_code=409, detail=f"拓扑配置已存在: {config.name}")
 
     try:
-        data = config.model_dump()
+        data = config.model_dump(exclude_none=True)
         now = datetime.now().isoformat()
         data["created_at"] = now
         data["updated_at"] = now
 
         with open(file_path, "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
+            yaml.dump(data, f, allow_unicode=True, sort_keys=False, default_flow_style=False)
 
         logger.info(f"创建拓扑配置: {config.name}")
         return {"success": True, "name": config.name}
@@ -493,25 +494,25 @@ async def update_topology_config(name: str, config: TopologyConfigRequest):
     """
     from datetime import datetime
 
-    file_path = TOPOLOGIES_DIR / f"{name}.json"
+    file_path = TOPOLOGIES_DIR / f"{name}.yaml"
 
     # 读取现有配置以保留 created_at
     created_at = None
     if file_path.exists():
         try:
             with open(file_path, "r", encoding="utf-8") as f:
-                existing = json.load(f)
+                existing = yaml.safe_load(f)
                 created_at = existing.get("created_at")
         except Exception:
             pass
 
     try:
-        data = config.model_dump()
+        data = config.model_dump(exclude_none=True)
         data["created_at"] = created_at or datetime.now().isoformat()
         data["updated_at"] = datetime.now().isoformat()
 
         with open(file_path, "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
+            yaml.dump(data, f, allow_unicode=True, sort_keys=False, default_flow_style=False)
 
         logger.info(f"更新拓扑配置: {name}")
         return {"success": True, "name": name}
@@ -525,7 +526,7 @@ async def delete_topology_config(name: str):
     """
     删除拓扑配置
     """
-    file_path = TOPOLOGIES_DIR / f"{name}.json"
+    file_path = TOPOLOGIES_DIR / f"{name}.yaml"
     if not file_path.exists():
         raise HTTPException(status_code=404, detail=f"拓扑配置不存在: {name}")
 

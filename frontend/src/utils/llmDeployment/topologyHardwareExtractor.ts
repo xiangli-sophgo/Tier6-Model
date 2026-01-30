@@ -187,7 +187,7 @@ export function extractChipGroupsFromConfig(
       const key = chip.preset_id || chip.name
       const existing = chipGroupMap.get(key)
 
-      // 优先从保存的配置中读取硬件参数
+      // 从预设或默认值获取硬件参数
       let chipConfig: ChipHardwareConfig
 
       // SG2260E 默认微架构参数
@@ -202,55 +202,37 @@ export function extractChipGroupsFromConfig(
         compute_dma_overlap_rate: 0.8,
       }
 
-      // 方案1: 如果配置中已有完整的硬件参数，直接使用（不依赖后端）
-      if (chip.compute_tflops_fp16 && chip.memory_gb && chip.memory_bandwidth_gbps) {
-        chipConfig = {
-          chip_type: chip.name,
-          flops_dtype: 'BF16', // 默认 BF16
-          compute_tflops_fp16: chip.compute_tflops_fp16,
-          compute_tops_int8: chip.compute_tflops_fp16 * 2, // 估算 INT8 为 FP16 的2倍
-          num_cores: 108, // 默认核心数
-          memory_gb: chip.memory_gb,
-          memory_bandwidth_gbps: chip.memory_bandwidth_gbps,
-          memory_bandwidth_utilization: chip.memory_bandwidth_utilization || 0.85,
-          ...defaultMicroArch,
-        }
+      // 默认芯片配置
+      const defaultChipConfig: ChipHardwareConfig = {
+        chip_type: chip.name,
+        num_cores: 256,
+        compute_tflops_fp8: 1600, // 默认 1600 TFLOPs FP8
+        compute_tflops_bf16: 800, // 默认 800 TFLOPs BF16
+        memory_capacity_gb: 64,
+        memory_bandwidth_gbps: 1200,
+        memory_bandwidth_utilization: 0.85,
+        lmem_capacity_mb: 128,
+        lmem_bandwidth_gbps: 12000,
+        c2c_bandwidth_gbps: 900,
+        c2c_latency_us: 1.0,
+        ...defaultMicroArch,
       }
-      // 方案2: 从预设获取（后端预设 + 自定义预设）
-      else if (chip.preset_id) {
+
+      // 方案1: 从预设获取（后端预设 + 自定义预设）
+      if (chip.preset_id) {
         const preset = getChipConfig(chip.preset_id)
         if (preset) {
           chipConfig = preset
         } else {
           // 预设ID找不到，使用合理的默认值并警告
           console.warn(`芯片预设 '${chip.preset_id}' 未找到，使用默认参数`)
-          chipConfig = {
-            chip_type: chip.name,
-            flops_dtype: 'BF16',
-            compute_tflops_fp16: 800, // 默认 800 TFLOPs (接近主流 AI 芯片)
-            compute_tops_int8: 1600,
-            num_cores: 256,
-            memory_gb: 64,
-            memory_bandwidth_gbps: 1200,
-            memory_bandwidth_utilization: 0.85,
-            ...defaultMicroArch,
-          }
+          chipConfig = defaultChipConfig
         }
       }
-      // 方案3: 使用默认值
+      // 方案2: 使用默认值
       else {
-        console.warn(`芯片 '${chip.name}' 缺少硬件参数，请在拓扑设置中完善配置`)
-        chipConfig = {
-          chip_type: chip.name,
-          flops_dtype: 'BF16',
-          compute_tflops_fp16: 800,
-          compute_tops_int8: 1600,
-          num_cores: 256,
-          memory_gb: 64,
-          memory_bandwidth_gbps: 1200,
-          memory_bandwidth_utilization: 0.85,
-          ...defaultMicroArch,
-        }
+        console.warn(`芯片 '${chip.name}' 缺少硬件参数，请在拓扑设置的Chip层中完善配置`)
+        chipConfig = defaultChipConfig
       }
 
       if (existing) {

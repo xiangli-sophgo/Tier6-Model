@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
 import { Checkbox } from '@/components/ui/checkbox'
+import { NumberInput } from '@/components/ui/number-input'
 import {
   Select,
   SelectContent,
@@ -11,6 +12,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { ConfigCollapsible } from '@/components/ui/config-collapsible'
 import {
   Collapsible,
   CollapsibleContent,
@@ -21,29 +23,6 @@ import {
   ManualConnectionConfig, ConnectionMode, SwitchConnectionMode, HierarchyLevel,
   LevelConnectionDefaults,
 } from '../../types'
-
-// 数字输入组件
-const NumberInput: React.FC<{
-  value: number | undefined
-  onChange: (value: number | undefined) => void
-  min?: number
-  max?: number
-  placeholder?: string
-  className?: string
-}> = ({ value, onChange, min = 0, max = 9999, placeholder, className }) => (
-  <Input
-    type="number"
-    value={value ?? ''}
-    onChange={(e) => {
-      const v = e.target.value === '' ? undefined : parseInt(e.target.value, 10)
-      if (v === undefined || (!isNaN(v) && v >= min && v <= max)) onChange(v)
-    }}
-    min={min}
-    max={max}
-    placeholder={placeholder}
-    className={`h-7 ${className || ''}`}
-  />
-)
 
 // ============================================
 // Switch层级配置子组件
@@ -414,12 +393,18 @@ export const ConnectionEditPanel: React.FC<ConnectionEditPanelProps> = ({
     conn => conn.hierarchy_level === currentLevel
   ) || []
 
+  // 连接编辑面板是否展开
+  const [panelExpanded, setPanelExpanded] = React.useState(true)
+
   return (
-    <div className="p-3.5 bg-gray-100 rounded-lg border border-gray-200/50">
-      <span className="block mb-2.5 font-semibold text-gray-800">连接编辑</span>
+    <ConfigCollapsible
+      open={panelExpanded}
+      onOpenChange={setPanelExpanded}
+      title="连接编辑"
+    >
 
       {/* 层级默认带宽/延迟配置 */}
-      <div className="mb-3 p-2.5 bg-white rounded-lg border border-gray-200/50">
+      <div className="mb-3 p-2.5 bg-gray-50 rounded-lg border border-gray-200/50">
         <div className="mb-2">
           <span className="text-xs font-medium text-gray-700">层级默认参数</span>
           <span className="text-[11px] text-gray-400 ml-2">新建连接时自动应用</span>
@@ -740,6 +725,6 @@ export const ConnectionEditPanel: React.FC<ConnectionEditPanelProps> = ({
           </CollapsibleContent>
         </Collapsible>
       </div>
-    </div>
+    </ConfigCollapsible>
   )
 }

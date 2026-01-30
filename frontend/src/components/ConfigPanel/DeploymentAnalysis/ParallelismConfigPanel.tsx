@@ -4,34 +4,13 @@
 
 import React from 'react'
 import { Badge } from '@/components/ui/badge'
-import { Input } from '@/components/ui/input'
+import { NumberInput } from '@/components/ui/number-input'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import {
   ParallelismStrategy,
   LLMModelConfig,
   HardwareConfig,
 } from '../../../utils/llmDeployment/types'
-
-// 数字输入框组件
-const NumberInput: React.FC<{
-  value: number
-  onChange: (value: number) => void
-  min?: number
-  max?: number
-  className?: string
-}> = ({ value, onChange, min = 1, max = 9999, className }) => (
-  <Input
-    type="number"
-    value={value}
-    onChange={(e) => {
-      const v = parseInt(e.target.value, 10)
-      if (!isNaN(v) && v >= min && v <= max) onChange(v)
-    }}
-    min={min}
-    max={max}
-    className={`h-7 text-center ${className || ''}`}
-  />
-)
 
 interface ParallelismConfigPanelProps {
   mode: 'manual' | 'auto'
@@ -95,9 +74,10 @@ export const ParallelismConfigPanel: React.FC<ParallelismConfigPanelProps> = ({
                 <span className="text-[11px] block mb-1">DP</span>
                 <NumberInput
                   value={manualStrategy.dp}
-                  onChange={(v) => onManualStrategyChange({ ...manualStrategy, dp: v })}
+                  onChange={(v) => v !== undefined && onManualStrategyChange({ ...manualStrategy, dp: v })}
                   min={1}
                   max={1024}
+                  className="h-7 text-center"
                 />
               </div>
               {/* TP */}
@@ -110,9 +90,10 @@ export const ParallelismConfigPanel: React.FC<ParallelismConfigPanelProps> = ({
                 </Tooltip>
                 <NumberInput
                   value={manualStrategy.tp}
-                  onChange={(v) => onManualStrategyChange({ ...manualStrategy, tp: v })}
+                  onChange={(v) => v !== undefined && onManualStrategyChange({ ...manualStrategy, tp: v })}
                   min={1}
                   max={128}
+                  className="h-7 text-center"
                 />
               </div>
               {/* EP - 仅 MoE */}
@@ -126,9 +107,10 @@ export const ParallelismConfigPanel: React.FC<ParallelismConfigPanelProps> = ({
                   </Tooltip>
                   <NumberInput
                     value={manualStrategy.ep}
-                    onChange={(v) => onManualStrategyChange({ ...manualStrategy, ep: v })}
+                    onChange={(v) => v !== undefined && onManualStrategyChange({ ...manualStrategy, ep: v })}
                     min={1}
                     max={256}
+                    className="h-7 text-center"
                   />
                 </div>
               )}
@@ -143,9 +125,10 @@ export const ParallelismConfigPanel: React.FC<ParallelismConfigPanelProps> = ({
                   </Tooltip>
                   <NumberInput
                     value={manualStrategy.moe_tp || 1}
-                    onChange={(v) => onManualStrategyChange({ ...manualStrategy, moe_tp: v })}
+                    onChange={(v) => v !== undefined && onManualStrategyChange({ ...manualStrategy, moe_tp: v })}
                     min={1}
                     max={128}
+                    className="h-7 text-center"
                   />
                 </div>
               )}

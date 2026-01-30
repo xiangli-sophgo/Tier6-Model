@@ -75,7 +75,7 @@ const Pagination: React.FC<{
   onPageSizeChange: (size: number) => void
 }> = ({ currentPage, totalPages, pageSize, total, onPageChange, onPageSizeChange }) => {
   return (
-    <div className="flex items-center justify-between px-4 py-6 border-t border-blue-100 bg-gradient-to-r from-blue-50/30 to-white">
+    <div className="flex items-center justify-between px-4 py-6 border-t border-blue-100 bg-white">
       <span className="text-sm text-text-muted">共 {total} 个实验</span>
       <div className="flex items-center gap-3">
         <select

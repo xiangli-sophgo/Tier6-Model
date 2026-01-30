@@ -56,7 +56,6 @@ interface BoardConfigByType {
 export interface TopologyGenerateRequest {
   pod_count?: number;
   racks_per_pod?: number;
-  board_configs?: BoardConfigByType;
   rack_config?: FlexRackConfig;
   switch_config?: GlobalSwitchConfig;
   manual_connections?: ManualConnectionConfig;
@@ -75,10 +74,11 @@ export class HierarchicalTopologyGenerator {
     return this.generate({
       pod_count: 1,
       racks_per_pod: 4,
-      board_configs: {
-        u1: { count: 0, chips: { npu: 2, cpu: 0 } },
-        u2: { count: 8, chips: { npu: 8, cpu: 0 } },
-        u4: { count: 0, chips: { npu: 16, cpu: 2 } },
+      rack_config: {
+        total_u: 42,
+        boards: [
+          { id: 'board_1', name: 'Board', u_height: 2, count: 8, chips: [{ name: 'NPU', count: 8 }] },
+        ],
       },
     });
   }
@@ -90,29 +90,10 @@ export class HierarchicalTopologyGenerator {
     const {
       pod_count = 1,
       racks_per_pod = 4,
-      board_configs,
       rack_config,
       switch_config,
       manual_connections,
     } = request;
-
-    // 判断使用哪种配置模式
-    const useFlexRackConfig = rack_config?.boards && rack_config.boards.length > 0;
-
-    // 构建 board_config_map（传统模式）
-    let boardConfigMap: Record<number, { count: number; chips: { npu: number; cpu: number } }> = {
-      4: { count: 0, chips: { npu: 16, cpu: 2 } },
-      2: { count: 8, chips: { npu: 8, cpu: 0 } },
-      1: { count: 0, chips: { npu: 2, cpu: 0 } },
-    };
-
-    if (!useFlexRackConfig && board_configs) {
-      boardConfigMap = {
-        4: { count: board_configs.u4.count, chips: board_configs.u4.chips },
-        2: { count: board_configs.u2.count, chips: board_configs.u2.chips },
-        1: { count: board_configs.u1.count, chips: board_configs.u1.chips },
-      };
-    }
 
     const pods: PodConfig[] = [];
     let connections: ConnectionConfig[] = [];
@@ -169,8 +150,15 @@ export class HierarchicalTopologyGenerator {
           boardStartU = 1;
         }
 
-        if (useFlexRackConfig && rack_config) {
-          // ===== 灵活Rack配置模式 =====
+        // 使用 rack_config 生成板卡配置
+        if (rack_config && rack_config.boards && rack_config.boards.length > 0) {
+          console.log(`🏗️ [TopologyGen] Rack ${rackIdx}: 使用rack_config配置`, {
+            rackTotalU,
+            boardStartU,
+            switchReservedU,
+            switchPosition,
+            boards: rack_config.boards,
+          })
           let currentU = boardStartU;
           let boardIdxLocal = 0;
 
@@ -180,8 +168,11 @@ export class HierarchicalTopologyGenerator {
             const boardCount = flexBoard.count ?? 1;
             const flexChips = flexBoard.chips ?? [];
 
+            console.log(`  📦 [Board配置] ${boardName}: count=${boardCount}, uHeight=${uHeight}, currentU=${currentU}`)
+
             for (let i = 0; i < boardCount; i++) {
               if (currentU + uHeight - 1 > rackTotalU) {
+                console.warn(`  ⚠️ [跳过Board] 超出容量: currentU=${currentU}, uHeight=${uHeight}, rackTotalU=${rackTotalU}`)
                 break; // 超出机柜容量
               }
 
@@ -195,49 +186,6 @@ export class HierarchicalTopologyGenerator {
                 u_position: currentU,
                 u_height: uHeight,
                 label: `${boardName}-${boardIdxLocal}`,
-                chips,
-              });
-
-              // 生成Chip间连接
-              const interChipCfg = switch_config?.inter_chip;
-              const interChipEnabled = interChipCfg?.enabled ?? false;
-              const interChipTopo = (interChipCfg?.direct_topology ?? 'none') as DirectTopologyType;
-              const keepDirect = interChipCfg?.keep_direct_topology ?? false;
-
-              if (!interChipEnabled || keepDirect) {
-                const chipConnections = this.generateChipConnections(chips, interChipTopo);
-                connections.push(...chipConnections);
-              }
-
-              currentU += uHeight;
-              boardIdxLocal++;
-            }
-          }
-        } else {
-          // ===== 传统配置模式 =====
-          let currentU = boardStartU;
-          let boardIdxLocal = 0;
-
-          for (const uHeight of [4, 2, 1]) {
-            const config = boardConfigMap[uHeight];
-            const count = config.count;
-            const boardChipCounts = config.chips;
-
-            for (let i = 0; i < count; i++) {
-              if (currentU + uHeight - 1 > rackTotalU) {
-                break;
-              }
-
-              const boardId = `board_${boardIdxLocal}`;
-              const boardFullId = `${rackFullId}/${boardId}`;
-
-              const chips = this.generateBoardChips(boardFullId, boardChipCounts);
-
-              boards.push({
-                id: boardFullId,
-                u_position: currentU,
-                u_height: uHeight,
-                label: `Board-${boardIdxLocal}`,
                 chips,
               });
 

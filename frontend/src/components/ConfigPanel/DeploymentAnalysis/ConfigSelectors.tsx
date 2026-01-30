@@ -9,6 +9,7 @@ import { Save, Copy, RefreshCw, ChevronDown, ChevronUp } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { NumberInput } from '@/components/ui/number-input'
 import { Badge } from '@/components/ui/badge'
 import {
   Select,
@@ -23,11 +24,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip'
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from '@/components/ui/collapsible'
+import { ConfigCollapsible } from '@/components/ui/config-collapsible'
 import {
   LLMModelConfig,
   InferenceConfig,
@@ -41,6 +38,7 @@ import {
   createHardwareConfig,
 } from '../../../utils/llmDeployment/presets'
 import { listBenchmarks, createBenchmark } from '../../../api/topology'
+import { configRowStyle as sharedConfigRowStyle } from '../shared'
 
 // ============================================
 // 样式常量
@@ -67,12 +65,8 @@ export const colors = {
   textSecondary: '#666666',
 }
 
-export const configRowStyle: React.CSSProperties = {
-  display: 'flex',
-  justifyContent: 'space-between',
-  alignItems: 'center',
-  marginBottom: 10,
-}
+// 重新导出统一的 configRowStyle
+export const configRowStyle = sharedConfigRowStyle
 
 export const sectionCardStyle: React.CSSProperties = {
   background: '#fff',
@@ -143,28 +137,6 @@ const ConfigLabel: React.FC<ConfigLabelProps> = ({ name, label }) => (
   </TooltipProvider>
 )
 
-// 数字输入组件
-const NumberInput: React.FC<{
-  value: number | undefined
-  onChange: (value: number | undefined) => void
-  min?: number
-  max?: number
-  placeholder?: string
-  className?: string
-}> = ({ value, onChange, min = 0, max = 999999, placeholder, className }) => (
-  <Input
-    type="number"
-    value={value ?? ''}
-    onChange={(e) => {
-      const v = e.target.value === '' ? undefined : parseInt(e.target.value, 10)
-      if (v === undefined || (!isNaN(v) && v >= min && v <= max)) onChange(v)
-    }}
-    min={min}
-    max={max}
-    placeholder={placeholder}
-    className={`h-7 ${className || ''}`}
-  />
-)
 
 // ============================================
 // 自定义模型存储
@@ -712,15 +684,12 @@ export const BenchmarkConfigSelector: React.FC<BenchmarkConfigSelectorProps> = (
         {/* 折叠面板 */}
         <div className="space-y-2 mb-3">
           {/* 基础参数 */}
-          <Collapsible open={openSections.basic} onOpenChange={() => toggleSection('basic')}>
-            <CollapsibleTrigger asChild>
-              <div className="flex items-center justify-between p-2 bg-gray-100 rounded cursor-pointer hover:bg-gray-200">
-                <span className="text-sm font-medium">基础参数</span>
-                {openSections.basic ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-              </div>
-            </CollapsibleTrigger>
-            <CollapsibleContent>
-              <div className="p-2 bg-white border border-t-0 rounded-b">
+          <ConfigCollapsible
+            open={openSections.basic}
+            onOpenChange={() => toggleSection('basic')}
+            title="基础参数"
+            contentClassName="p-2"
+          >
                 <div className="grid grid-cols-2 gap-2">
                   <div><div className="mb-1"><ConfigLabel name="model_name" label="模型选择" /></div>
                     <Select value={modelConfig.model_name} onValueChange={(name) => { const preset = modelList.find(m => m.name === name || m.id === name); if (preset) onModelChange(getModelPreset(preset.id)) }}>
@@ -754,20 +723,15 @@ export const BenchmarkConfigSelector: React.FC<BenchmarkConfigSelectorProps> = (
                     </div>
                   </>
                 )}
-              </div>
-            </CollapsibleContent>
-          </Collapsible>
+          </ConfigCollapsible>
 
           {/* 注意力配置 */}
-          <Collapsible open={openSections.attention} onOpenChange={() => toggleSection('attention')}>
-            <CollapsibleTrigger asChild>
-              <div className="flex items-center justify-between p-2 bg-gray-100 rounded cursor-pointer hover:bg-gray-200">
-                <span className="text-sm font-medium">注意力配置</span>
-                {openSections.attention ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-              </div>
-            </CollapsibleTrigger>
-            <CollapsibleContent>
-              <div className="p-2 bg-white border border-t-0 rounded-b">
+          <ConfigCollapsible
+            open={openSections.attention}
+            onOpenChange={() => toggleSection('attention')}
+            title="注意力配置"
+            contentClassName="p-2"
+          >
                 <div className="grid grid-cols-3 gap-2">
                   <div><div className="mb-1"><ConfigLabel name="num_attention_heads" label="注意力头数" /></div><NumberInput min={1} max={256} value={modelConfig.num_attention_heads} onChange={(v) => updateModelField('num_attention_heads', v || 32)} /></div>
                   <div><div className="mb-1"><ConfigLabel name="num_kv_heads" label="KV头数" /></div><NumberInput min={1} max={256} value={modelConfig.num_kv_heads} onChange={(v) => updateModelField('num_kv_heads', v || 8)} /></div>
@@ -799,57 +763,45 @@ export const BenchmarkConfigSelector: React.FC<BenchmarkConfigSelectorProps> = (
                     </div>
                   </>
                 )}
-              </div>
-            </CollapsibleContent>
-          </Collapsible>
+          </ConfigCollapsible>
 
           {/* 精度配置 */}
-          <Collapsible open={openSections.precision} onOpenChange={() => toggleSection('precision')}>
-            <CollapsibleTrigger asChild>
-              <div className="flex items-center justify-between p-2 bg-gray-100 rounded cursor-pointer hover:bg-gray-200">
-                <span className="text-sm font-medium">精度配置</span>
-                {openSections.precision ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+          <ConfigCollapsible
+            open={openSections.precision}
+            onOpenChange={() => toggleSection('precision')}
+            title="精度配置"
+            contentClassName="p-2"
+          >
+            <div className="grid grid-cols-2 gap-2">
+              <div><div className="mb-1"><ConfigLabel name="weight_dtype" label="权重精度" /></div>
+                <Select value={modelConfig.weight_dtype} onValueChange={(v) => updateModelField('weight_dtype', v as any)}>
+                  <SelectTrigger className="w-full h-7"><SelectValue /></SelectTrigger>
+                  <SelectContent><SelectItem value="fp32">FP32</SelectItem><SelectItem value="bf16">BF16</SelectItem><SelectItem value="fp16">FP16</SelectItem><SelectItem value="fp8">FP8</SelectItem><SelectItem value="int8">INT8</SelectItem><SelectItem value="int4">INT4</SelectItem></SelectContent>
+                </Select>
               </div>
-            </CollapsibleTrigger>
-            <CollapsibleContent>
-              <div className="p-2 bg-white border border-t-0 rounded-b">
-                <div className="grid grid-cols-2 gap-2">
-                  <div><div className="mb-1"><ConfigLabel name="weight_dtype" label="权重精度" /></div>
-                    <Select value={modelConfig.weight_dtype} onValueChange={(v) => updateModelField('weight_dtype', v as any)}>
-                      <SelectTrigger className="w-full h-7"><SelectValue /></SelectTrigger>
-                      <SelectContent><SelectItem value="fp32">FP32</SelectItem><SelectItem value="bf16">BF16</SelectItem><SelectItem value="fp16">FP16</SelectItem><SelectItem value="fp8">FP8</SelectItem><SelectItem value="int8">INT8</SelectItem><SelectItem value="int4">INT4</SelectItem></SelectContent>
-                    </Select>
-                  </div>
-                  <div><div className="mb-1"><ConfigLabel name="activation_dtype" label="激活精度" /></div>
-                    <Select value={modelConfig.activation_dtype} onValueChange={(v) => updateModelField('activation_dtype', v as any)}>
-                      <SelectTrigger className="w-full h-7"><SelectValue /></SelectTrigger>
-                      <SelectContent><SelectItem value="fp32">FP32</SelectItem><SelectItem value="bf16">BF16</SelectItem><SelectItem value="fp16">FP16</SelectItem><SelectItem value="fp8">FP8</SelectItem><SelectItem value="int8">INT8</SelectItem><SelectItem value="int4">INT4</SelectItem></SelectContent>
-                    </Select>
-                  </div>
-                </div>
+              <div><div className="mb-1"><ConfigLabel name="activation_dtype" label="激活精度" /></div>
+                <Select value={modelConfig.activation_dtype} onValueChange={(v) => updateModelField('activation_dtype', v as any)}>
+                  <SelectTrigger className="w-full h-7"><SelectValue /></SelectTrigger>
+                  <SelectContent><SelectItem value="fp32">FP32</SelectItem><SelectItem value="bf16">BF16</SelectItem><SelectItem value="fp16">FP16</SelectItem><SelectItem value="fp8">FP8</SelectItem><SelectItem value="int8">INT8</SelectItem><SelectItem value="int4">INT4</SelectItem></SelectContent>
+                </Select>
               </div>
-            </CollapsibleContent>
-          </Collapsible>
+            </div>
+          </ConfigCollapsible>
 
           {/* 推理参数 */}
-          <Collapsible open={openSections.inference} onOpenChange={() => toggleSection('inference')}>
-            <CollapsibleTrigger asChild>
-              <div className="flex items-center justify-between p-2 bg-gray-100 rounded cursor-pointer hover:bg-gray-200">
-                <span className="text-sm font-medium">推理参数</span>
-                {openSections.inference ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-              </div>
-            </CollapsibleTrigger>
-            <CollapsibleContent>
-              <div className="p-2 bg-white border border-t-0 rounded-b">
+          <ConfigCollapsible
+            open={openSections.inference}
+            onOpenChange={() => toggleSection('inference')}
+            title="推理参数"
+            contentClassName="p-2"
+          >
                 <div className="grid grid-cols-2 gap-2">
                   <div><div className="mb-1"><ConfigLabel name="batch_size" label="Batch Size" /></div><NumberInput min={1} max={512} value={inferenceConfig.batch_size} onChange={(v) => onInferenceChange({ ...inferenceConfig, batch_size: v || 1 })} /></div>
                   <div><div className="mb-1"><ConfigLabel name="input_seq_length" label="输入序列长度" /></div><NumberInput min={1} max={131072} value={inferenceConfig.input_seq_length} onChange={(v) => onInferenceChange({ ...inferenceConfig, input_seq_length: v || 512 })} /></div>
                   <div><div className="mb-1"><ConfigLabel name="output_seq_length" label="输出序列长度" /></div><NumberInput min={1} max={32768} value={inferenceConfig.output_seq_length} onChange={(v) => onInferenceChange({ ...inferenceConfig, output_seq_length: v || 256 })} /></div>
                   <div><div className="mb-1"><ConfigLabel name="max_seq_length" label="最大序列长度" /></div><NumberInput min={inferenceConfig.input_seq_length + inferenceConfig.output_seq_length} max={131072} value={inferenceConfig.max_seq_length} onChange={(v) => onInferenceChange({ ...inferenceConfig, max_seq_length: v || 768 })} /></div>
                 </div>
-              </div>
-            </CollapsibleContent>
-          </Collapsible>
+          </ConfigCollapsible>
         </div>
 
         {/* 估算参数量 */}
@@ -879,24 +831,26 @@ interface HardwareConfigSelectorProps {
 
 export const HardwareConfigSelector: React.FC<HardwareConfigSelectorProps> = ({ value, onChange }) => {
   const [chipId, setChipId] = useState<string>('h100-sxm')
-  const [nodeId, setNodeId] = useState<string>('dgx-h100')
-  const [numNodes, setNumNodes] = useState<number>(1)
+  const [boardId, setBoardId] = useState<string>('dgx-h100')
+  const [rackId, setRackId] = useState<string>('ib-ndr')
+  const [podId, setPodId] = useState<string>('ib-ndr')
 
   const chipList = getChipList()
-  const nodeOptions = [
+  const boardOptions = [
     { value: 'dgx-h100', label: 'DGX H100 (8卡 NVLink)' },
     { value: 'dgx-a100', label: 'DGX A100 (8卡 NVLink)' },
     { value: 'pcie-8gpu', label: '通用 PCIe (8卡)' },
   ]
 
-  const handleConfigChange = useCallback((newChipId: string, newNodeId: string, newNumNodes: number) => {
-    const config = createHardwareConfig(newChipId, newNodeId, newNumNodes, 400)
+  const handleConfigChange = useCallback((newChipId: string, newBoardId: string, newRackId: string, newPodId: string) => {
+    const config = createHardwareConfig(newChipId, newBoardId, newRackId, newPodId)
     onChange(config)
   }, [onChange])
 
-  const handleChipChange = (id: string) => { setChipId(id); handleConfigChange(id, nodeId, numNodes) }
-  const handleNodeChange = (id: string) => { setNodeId(id); handleConfigChange(chipId, id, numNodes) }
-  const handleNumNodesChange = (n: number) => { setNumNodes(n); handleConfigChange(chipId, nodeId, n) }
+  const handleChipChange = (id: string) => { setChipId(id); handleConfigChange(id, boardId, rackId, podId) }
+  const handleBoardChange = (id: string) => { setBoardId(id); handleConfigChange(chipId, id, rackId, podId) }
+  const handleRackChange = (id: string) => { setRackId(id); handleConfigChange(chipId, boardId, id, podId) }
+  const handlePodChange = (id: string) => { setPodId(id); handleConfigChange(chipId, boardId, rackId, id) }
 
   const totalChips = value.board.chips_per_board * value.pod.racks_per_pod * value.rack.boards_per_rack
 
@@ -911,14 +865,10 @@ export const HardwareConfigSelector: React.FC<HardwareConfigSelectorProps> = ({ 
       </div>
       <div style={configRowStyle}>
         <span className="text-sm">Board 类型</span>
-        <Select value={nodeId} onValueChange={handleNodeChange}>
+        <Select value={boardId} onValueChange={handleBoardChange}>
           <SelectTrigger className="w-[160px] h-8"><SelectValue /></SelectTrigger>
-          <SelectContent>{nodeOptions.map(o => (<SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>))}</SelectContent>
+          <SelectContent>{boardOptions.map(o => (<SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>))}</SelectContent>
         </Select>
-      </div>
-      <div style={configRowStyle}>
-        <span className="text-sm">Board 数量</span>
-        <NumberInput min={1} max={64} value={numNodes} onChange={(v) => handleNumNodesChange(v || 1)} className="w-[90px]" />
       </div>
       <div className="p-2 bg-blue-50 rounded-md text-xs mt-2">
         <div className="flex justify-between">

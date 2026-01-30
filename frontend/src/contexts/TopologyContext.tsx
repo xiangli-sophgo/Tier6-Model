@@ -40,11 +40,6 @@ export interface RackConfigForAnalysis {
 export interface GenerateConfig {
   pod_count: number
   racks_per_pod: number
-  board_configs: {
-    u1: { count: number; chips: { npu: number; cpu: number } }
-    u2: { count: number; chips: { npu: number; cpu: number } }
-    u4: { count: number; chips: { npu: number; cpu: number } }
-  }
   rack_config?: {
     total_u: number
     boards: Array<{
@@ -110,7 +105,6 @@ export const TopologyProvider: React.FC<TopologyProviderProps> = ({ children }) 
         const data = await generateTopology({
           pod_count: cached.podCount,
           racks_per_pod: cached.racksPerPod,
-          board_configs: cached.boardConfigs,
           rack_config: cached.rackConfig,
           switch_config: cached.switchConfig,
           manual_connections: cached.manualConnectionConfig,

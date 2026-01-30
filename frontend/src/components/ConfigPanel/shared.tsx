@@ -179,27 +179,17 @@ export interface ChipCounts {
   cpu: number
 }
 
+// 已废弃：BoardTypeConfig 和 BoardConfigs（保留用于类型兼容）
 export interface BoardTypeConfig {
   count: number
   chips: ChipCounts
 }
 
-export interface BoardConfigs {
-  u1: BoardTypeConfig
-  u2: BoardTypeConfig
-  u4: BoardTypeConfig
-}
-
-// 新的灵活板卡配置
+// 灵活板卡配置
 export interface FlexBoardChipConfig {
   name: string                      // Chip名称/型号
   count: number                     // 数量
   preset_id?: string                // 预设ID (如 'h100-sxm')，为空表示自定义
-  // 自定义参数（preset_id为空时使用）
-  compute_tflops_fp16?: number      // FP16算力 (TFLOPs)
-  memory_gb?: number                // 显存容量 (GB)
-  memory_bandwidth_gbps?: number    // 显存带宽 (GB/s)
-  memory_bandwidth_utilization?: number  // 带宽利用率 (0-1)
 }
 
 export interface FlexBoardConfig {
@@ -215,6 +205,48 @@ export interface RackConfig {
   boards: FlexBoardConfig[]    // 板卡配置列表
 }
 
+// 互联参数配置
+export interface InterconnectParams {
+  bandwidth_gbps: number       // 带宽 (GB/s)
+  latency_us: number           // 延迟 (us)
+}
+
+// 芯片硬件参数（完整配置，与 types.ts 中的 ChipHardwareConfig 对齐）
+export interface ChipHardwareParams {
+  chip_type: string            // 芯片类型名称
+  num_cores: number            // 核心数
+  compute_tflops_fp8: number   // FP8 算力 (TFLOPS)
+  compute_tflops_bf16: number  // BF16 算力 (TFLOPS)
+  memory_capacity_gb: number   // 显存容量 (GB)
+  memory_bandwidth_gbps: number // 显存带宽 (GB/s)
+  memory_bandwidth_utilization: number // 带宽利用率 (0-1)
+  lmem_capacity_mb: number     // 片上缓存容量 (MB)
+  lmem_bandwidth_gbps: number  // 片上缓存带宽 (GB/s)
+  c2c_bandwidth_gbps: number   // C2C 互联带宽 (GB/s)
+  c2c_latency_us: number       // C2C 互联延迟 (us)
+  cost_per_hour?: number       // 成本 ($/hour)
+  // 微架构参数
+  cube_m?: number              // 矩阵单元 M 维度
+  cube_k?: number              // 矩阵单元 K 维度
+  cube_n?: number              // 矩阵单元 N 维度
+  sram_size_kb?: number        // 每核 SRAM 大小 (KB)
+  sram_utilization?: number    // SRAM 可用比例 (0-1)
+  lane_num?: number            // SIMD lane 数量
+  align_bytes?: number         // 内存对齐字节数
+  compute_dma_overlap_rate?: number // 计算-搬运重叠率 (0-1)
+}
+
+// 完整硬件配置（用于保存）
+export interface HardwareParams {
+  chip: ChipHardwareParams
+  interconnect: {
+    c2c: InterconnectParams    // Chip间（板内）
+    b2b: InterconnectParams    // Board间（机架内）
+    r2r: InterconnectParams    // Rack间（Pod内）
+    p2p: InterconnectParams    // Pod间
+  }
+}
+
 // Switch 3D显示配置
 export interface SwitchDisplayConfig {
   position: 'top' | 'middle' | 'bottom'
@@ -226,13 +258,15 @@ export interface ConfigPanelProps {
   onGenerate: (config: {
     pod_count: number
     racks_per_pod: number
-    board_configs: BoardConfigs
     rack_config?: RackConfig
     switch_config?: GlobalSwitchConfig
     manual_connections?: ManualConnectionConfig
   }) => void
   loading: boolean
   currentLevel?: 'datacenter' | 'pod' | 'rack' | 'board'
+  // 芯片选择相关
+  selectedChipId?: string  // 选中的芯片 ID（格式：boardId-chipIndex）
+  onChipTabActivate?: () => void  // 切换到 Chip Tab 的回调
   // 编辑连接相关
   manualConnectionConfig?: ManualConnectionConfig
   onManualConnectionConfigChange?: (config: ManualConnectionConfig) => void
@@ -276,13 +310,6 @@ export interface ConfigPanelProps {
 export const CONFIG_CACHE_KEY = 'tier6_topology_config_cache'
 export const ANALYSIS_TASKS_KEY = 'tier6_analysis_tasks'
 
-// 默认配置
-export const DEFAULT_BOARD_CONFIGS: BoardConfigs = {
-  u1: { count: 0, chips: { npu: 2, cpu: 0 } },
-  u2: { count: 8, chips: { npu: 8, cpu: 0 } },
-  u4: { count: 0, chips: { npu: 16, cpu: 2 } },
-}
-
 // 默认Rack配置
 export const DEFAULT_RACK_CONFIG: RackConfig = {
   total_u: 42,
@@ -300,6 +327,43 @@ export const DEFAULT_SWITCH_CONFIG: GlobalSwitchConfig = {
   inter_rack: { enabled: false, layers: [], downlink_redundancy: 1, connect_to_upper_level: true, keep_direct_topology: false },
   inter_board: { enabled: false, layers: [], downlink_redundancy: 1, connect_to_upper_level: true, switch_position: 'top', switch_u_height: 1, keep_direct_topology: false },
   inter_chip: { enabled: false, layers: [], downlink_redundancy: 1, connect_to_upper_level: true, keep_direct_topology: false },
+}
+
+// 默认芯片硬件参数
+export const DEFAULT_CHIP_HARDWARE: ChipHardwareParams = {
+  chip_type: 'SG2262',
+  num_cores: 64,
+  compute_tflops_fp8: 256,
+  compute_tflops_bf16: 128,
+  memory_capacity_gb: 32,
+  memory_bandwidth_gbps: 819,
+  memory_bandwidth_utilization: 0.85,
+  lmem_capacity_mb: 128,
+  lmem_bandwidth_gbps: 12000,
+  c2c_bandwidth_gbps: 900,
+  c2c_latency_us: 1.0,
+  cube_m: 16,
+  cube_k: 32,
+  cube_n: 8,
+  sram_size_kb: 2048,
+  sram_utilization: 0.45,
+  lane_num: 16,
+  align_bytes: 32,
+  compute_dma_overlap_rate: 0.8,
+}
+
+// 默认互联参数
+export const DEFAULT_INTERCONNECT: HardwareParams['interconnect'] = {
+  c2c: { bandwidth_gbps: 900, latency_us: 1.0 },
+  b2b: { bandwidth_gbps: 450, latency_us: 0.35 },
+  r2r: { bandwidth_gbps: 200, latency_us: 2.0 },
+  p2p: { bandwidth_gbps: 100, latency_us: 5.0 },
+}
+
+// 默认完整硬件配置
+export const DEFAULT_HARDWARE_PARAMS: HardwareParams = {
+  chip: DEFAULT_CHIP_HARDWARE,
+  interconnect: DEFAULT_INTERCONNECT,
 }
 
 // ============================================
@@ -323,10 +387,10 @@ export const loadCachedConfig = () => {
 export const saveCachedConfig = (config: {
   podCount: number
   racksPerPod: number
-  boardConfigs: BoardConfigs
   rackConfig?: RackConfig
   switchConfig?: GlobalSwitchConfig
   manualConnectionConfig?: ManualConnectionConfig
+  hardwareParams?: HardwareParams
 }) => {
   try {
     localStorage.setItem(CONFIG_CACHE_KEY, JSON.stringify(config))
@@ -355,6 +419,20 @@ export const saveAnalysisTasks = (tasks: AnalysisTask[]) => {
   } catch (error) {
     console.error('保存分析任务失败:', error)
   }
+}
+
+// ============================================
+// 统一的样式定义
+// ============================================
+
+/**
+ * 配置行样式：用于表单字段的通用布局
+ */
+export const configRowStyle: React.CSSProperties = {
+  display: 'flex',
+  justifyContent: 'space-between',
+  alignItems: 'center',
+  marginBottom: 10,
 }
 
 // 生成唯一ID
