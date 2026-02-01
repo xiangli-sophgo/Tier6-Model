@@ -198,8 +198,8 @@ export type FlopsDtype = 'BF16' | 'FP16' | 'FP8' | 'INT8';
 
 /** 芯片硬件配置 */
 export interface ChipHardwareConfig {
-  /** 芯片型号 */
-  chip_type: string;
+  /** 芯片名称/型号 */
+  name: string;
   /** 计算核心数 */
   num_cores: number;
   /** FP8 算力 (TFLOPs) */
@@ -216,10 +216,6 @@ export interface ChipHardwareConfig {
   lmem_capacity_mb: number;
   /** LMEM 缓存带宽 (GB/s) */
   lmem_bandwidth_gbps: number;
-  /** C2C 互联带宽 (GB/s) - Chip-to-Chip，板内芯片间 */
-  c2c_bandwidth_gbps: number;
-  /** C2C 互联延迟 (us) */
-  c2c_latency_us: number;
   /** 成本 ($/hour) - 云服务商按需实例价格 */
   cost_per_hour?: number;
 

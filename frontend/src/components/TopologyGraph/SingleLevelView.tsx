@@ -3,6 +3,7 @@ import { Node, Edge, LayoutType, ManualConnection, getNodeEdgePoint } from './sh
 import { ManualConnectionLine, renderIndirectEdge, EdgeRendererProps } from './components'
 import { getTorusGridSize, getTorus3DSize } from './layouts'
 import { HierarchyLevel } from '../../types'
+import { formatNumber } from '../../utils/formatters'
 
 // 单层级视图渲染所需的props
 export interface SingleLevelViewProps {
@@ -124,7 +125,7 @@ export const SingleLevelView: React.FC<SingleLevelViewProps> = ({
       const bandwidthStr = edge.bandwidth ? `${edge.bandwidth} GB/s` : ''
       const latencyStr = edge.latency ? `${edge.latency} us` : ''
       const trafficStyle = getTrafficHeatmapStyle(edge.source, edge.target)
-      const trafficStr = trafficStyle ? `流量: ${trafficStyle.trafficMb.toFixed(1)}MB, 利用率: ${(trafficStyle.utilization * 100).toFixed(0)}%` : ''
+      const trafficStr = trafficStyle ? `流量: ${formatNumber(trafficStyle.trafficMb, 1)}MB, 利用率: ${formatNumber(trafficStyle.utilization * 100, 0)}%` : ''
       const propsStr = [bandwidthStr, latencyStr, trafficStr].filter(Boolean).join(', ')
       const tooltipContent = `${sourceNode?.label || edge.source} ↔ ${targetNode?.label || edge.target}${propsStr ? ` (${propsStr})` : ''}`
 

@@ -12,6 +12,7 @@ import 'handsontable/dist/handsontable.full.min.css'
 import type { EvaluationTask } from '@/api/results'
 import { getColumnPresetsByExperiment, addColumnPreset, deleteColumnPreset, type ColumnPreset } from '@/api/results'
 import { classifyTaskFieldsWithHierarchy, extractTaskFields } from '../utils/taskFieldClassifier'
+import { formatNumber } from '@/utils/formatters'
 import {
   DndContext,
   closestCenter,
@@ -33,7 +34,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
+import { InfoTooltip } from '@/components/ui/info-tooltip'
 import {
   Dialog,
   DialogContent,
@@ -820,10 +821,10 @@ export default function TaskTable({
         if (typeof value === 'number') {
           // MFU/MBU 百分比字段
           if (col === 'mfu' || col === 'mbu') {
-            return `${(value * 100).toFixed(2)}%`
+            return `${formatNumber(value * 100, 2)}%`
           }
           // 浮点数保留两位
-          return Number.isInteger(value) ? value : value.toFixed(2)
+          return Number.isInteger(value) ? value : formatNumber(value, 2)
         }
         // 时间字段格式化
         if (col.endsWith('_at') && typeof value === 'string' && value !== '-') {
@@ -1048,34 +1049,28 @@ export default function TaskTable({
                       </div>
                     </div>
                     <div className="flex items-center gap-1 ml-2">
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => handleLoadPreset(preset)}
-                            className="h-7 w-7 p-0"
-                          >
-                            <Download className="h-3.5 w-3.5" />
-                          </Button>
-                        </TooltipTrigger>
-                        <TooltipContent>加载配置</TooltipContent>
-                      </Tooltip>
+                      <InfoTooltip content="加载配置">
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => handleLoadPreset(preset)}
+                          className="h-7 w-7 p-0"
+                        >
+                          <Download className="h-3.5 w-3.5" />
+                        </Button>
+                      </InfoTooltip>
                       <AlertDialog>
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <AlertDialogTrigger asChild>
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                className="h-7 w-7 p-0 text-red-500 hover:text-red-600 hover:bg-red-50"
-                              >
-                                <Trash2 className="h-3.5 w-3.5" />
-                              </Button>
-                            </AlertDialogTrigger>
-                          </TooltipTrigger>
-                          <TooltipContent>删除配置</TooltipContent>
-                        </Tooltip>
+                        <InfoTooltip content="删除配置">
+                          <AlertDialogTrigger asChild>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="h-7 w-7 p-0 text-red-500 hover:text-red-600 hover:bg-red-50"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </Button>
+                          </AlertDialogTrigger>
+                        </InfoTooltip>
                         <AlertDialogContent>
                           <AlertDialogHeader>
                             <AlertDialogTitle>删除配置方案</AlertDialogTitle>
@@ -1106,8 +1101,7 @@ export default function TaskTable({
   )
 
   return (
-    <TooltipProvider>
-      <div>
+    <div>
         <div className="mb-4 flex justify-between items-center">
           <div className="flex items-center gap-2">
             <Popover modal={true}>
@@ -1138,52 +1132,43 @@ export default function TaskTable({
             </span>
           </div>
           <div className="flex items-center gap-2">
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  variant={selectMode ? 'destructive' : 'outline'}
-                  onClick={() => {
-                    setSelectMode(!selectMode)
-                    if (selectMode) {
-                      setSelectedRowIndices(new Set())
-                    }
-                  }}
-                >
-                  <Trash2 className="h-4 w-4 mr-2" />
-                  {selectMode ? '退出选择' : '选择模式'}
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>进入选择模式后单击行可选中，用于批量删除</TooltipContent>
-            </Tooltip>
+            <InfoTooltip content="进入选择模式后单击行可选中，用于批量删除">
+              <Button
+                variant={selectMode ? 'destructive' : 'outline'}
+                onClick={() => {
+                  setSelectMode(!selectMode)
+                  if (selectMode) {
+                    setSelectedRowIndices(new Set())
+                  }
+                }}
+              >
+                <Trash2 className="h-4 w-4 mr-2" />
+                {selectMode ? '退出选择' : '选择模式'}
+              </Button>
+            </InfoTooltip>
             {selectMode && onResultsDelete && (
               <>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <div className="flex items-center gap-2">
-                      <Checkbox
-                        checked={selectedRowIndices.size === sortedTasks.length && sortedTasks.length > 0}
-                        onCheckedChange={toggleSelectAll}
-                      />
-                      <span className="text-sm">全选</span>
-                    </div>
-                  </TooltipTrigger>
-                  <TooltipContent>选中/取消选中所有行</TooltipContent>
-                </Tooltip>
+                <InfoTooltip content="选中/取消选中所有行">
+                  <div className="flex items-center gap-2">
+                    <Checkbox
+                      checked={selectedRowIndices.size === sortedTasks.length && sortedTasks.length > 0}
+                      onCheckedChange={toggleSelectAll}
+                    />
+                    <span className="text-sm">全选</span>
+                  </div>
+                </InfoTooltip>
                 <AlertDialog>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <AlertDialogTrigger asChild>
-                        <Button
-                          variant="destructive"
-                          disabled={selectedRowIndices.size === 0 || batchDeleting}
-                        >
-                          <Trash2 className="h-4 w-4 mr-2" />
-                          删除 ({selectedRowIndices.size})
-                        </Button>
-                      </AlertDialogTrigger>
-                    </TooltipTrigger>
-                    <TooltipContent>删除所有选中的任务</TooltipContent>
-                  </Tooltip>
+                  <InfoTooltip content="删除所有选中的任务">
+                    <AlertDialogTrigger asChild>
+                      <Button
+                        variant="destructive"
+                        disabled={selectedRowIndices.size === 0 || batchDeleting}
+                      >
+                        <Trash2 className="h-4 w-4 mr-2" />
+                        删除 ({selectedRowIndices.size})
+                      </Button>
+                    </AlertDialogTrigger>
+                  </InfoTooltip>
                   <AlertDialogContent>
                     <AlertDialogHeader>
                       <AlertDialogTitle>批量删除</AlertDialogTitle>
@@ -1204,15 +1189,12 @@ export default function TaskTable({
                 </AlertDialog>
               </>
             )}
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button variant="outline" onClick={handleExport} disabled={!sortedTasks.length}>
-                  <Download className="h-4 w-4 mr-2" />
-                  导出CSV
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>将任务数据导出为CSV文件</TooltipContent>
-            </Tooltip>
+            <InfoTooltip content="将任务数据导出为CSV文件">
+              <Button variant="outline" onClick={handleExport} disabled={!sortedTasks.length}>
+                <Download className="h-4 w-4 mr-2" />
+                导出CSV
+              </Button>
+            </InfoTooltip>
           </div>
         </div>
 
@@ -1340,7 +1322,6 @@ export default function TaskTable({
             </DialogFooter>
           </DialogContent>
         </Dialog>
-      </div>
-    </TooltipProvider>
+    </div>
   )
 }

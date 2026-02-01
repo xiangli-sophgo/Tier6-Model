@@ -4,7 +4,7 @@ import { PerspectiveCamera } from '@react-three/drei'
 import { EffectComposer, Bloom } from '@react-three/postprocessing'
 import { RotateCcw, HelpCircle, LayoutGrid, Network } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
+import { InfoTooltip } from '@/components/ui/info-tooltip'
 import {
   Breadcrumb,
   BreadcrumbItem as ShadcnBreadcrumbItem,
@@ -654,34 +654,26 @@ export const Scene3D: React.FC<Scene3DProps> = ({
       />
 
       {/* 右上角按钮组 */}
-      <TooltipProvider>
-        <div className="absolute top-4 right-4 flex gap-2">
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant="outline"
-                size="icon"
-                onClick={() => setShowKeyboardHelp(prev => !prev)}
-              >
-                <HelpCircle className="h-4 w-4" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>快捷键帮助 (?)</TooltipContent>
-          </Tooltip>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant="outline"
-                size="icon"
-                onClick={handleResetView}
-              >
-                <RotateCcw className="h-4 w-4" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>重置视图 (R)</TooltipContent>
-          </Tooltip>
-        </div>
-      </TooltipProvider>
+      <div className="absolute top-4 right-4 flex gap-2">
+        <InfoTooltip content="快捷键帮助 (?)">
+          <Button
+            variant="outline"
+            size="icon"
+            onClick={() => setShowKeyboardHelp(prev => !prev)}
+          >
+            <HelpCircle className="h-4 w-4" />
+          </Button>
+        </InfoTooltip>
+        <InfoTooltip content="重置视图 (R)">
+          <Button
+            variant="outline"
+            size="icon"
+            onClick={handleResetView}
+          >
+            <RotateCcw className="h-4 w-4" />
+          </Button>
+        </InfoTooltip>
+      </div>
 
       {/* 快捷键帮助面板 - 点击空白处关闭 */}
       {showKeyboardHelp && (

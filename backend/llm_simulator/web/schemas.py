@@ -152,19 +152,19 @@ class BenchmarkConfig(BaseModel):
 # ============================================
 
 class EvaluationRequest(BaseModel):
-    """评估请求 - 保持向后兼容（使用 dict 类型）"""
+    """
+    评估请求
+
+    通过配置文件名指定配置，后端自动加载完整配置：
+    - benchmark_name: Benchmark 配置文件（包含 model + inference）
+    - topology_config_name: Topology 配置文件（包含 topology + hardware + interconnect）
+    """
     experiment_name: str
     description: str = ""
 
-    # 配置文件引用（追溯来源）
-    benchmark_name: Optional[str] = None
-    topology_config_name: Optional[str] = None
-
-    # 完整配置数据（保持灵活的 dict 类型，兼容现有前端）
-    topology: dict[str, Any]
-    model: dict[str, Any]  # 暂时保持 dict，避免破坏前端
-    hardware: dict[str, Any]  # 暂时保持 dict
-    inference: dict[str, Any]  # 暂时保持 dict
+    # 配置文件引用（必填）
+    benchmark_name: str           # Benchmark 配置文件名（包含 model + inference）
+    topology_config_name: str     # Topology 配置文件名（包含 topology + hardware）
 
     # 搜索配置
     search_mode: str  # 'manual' or 'auto'

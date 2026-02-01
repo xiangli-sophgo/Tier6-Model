@@ -3,7 +3,7 @@
  * 显示选中节点的定义、相关概念和参考资料
  */
 import React from 'react'
-import { Card, CardHeader, CardContent } from '@/components/ui/card'
+import { Card, CardHeader, CardContent } from "@/components/ui/card"
 import { Badge } from '@/components/ui/badge'
 import { Book, Link2, FileText, X } from 'lucide-react'
 import { ForceKnowledgeNode, CATEGORY_COLORS, CATEGORY_NAMES } from './types'

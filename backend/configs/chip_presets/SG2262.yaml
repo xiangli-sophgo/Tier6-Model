@@ -1,0 +1,17 @@
+name: SG2262
+num_cores: 64
+compute_tflops_fp8: 768
+compute_tflops_bf16: 384
+memory_capacity_gb: 64
+memory_bandwidth_gbps: 12000
+memory_bandwidth_utilization: 0.85
+lmem_capacity_mb: 2
+lmem_bandwidth_gbps: 512
+cube_m: 16
+cube_k: 32
+cube_n: 8
+sram_size_kb: 2048
+sram_utilization: 0.45
+lane_num: 16
+align_bytes: 32
+compute_dma_overlap_rate: 0.8

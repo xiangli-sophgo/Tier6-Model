@@ -5,7 +5,7 @@
  */
 
 import React from 'react'
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
+import { FormulaTooltip, conditionalTooltip } from '@/components/ui/info-tooltip'
 import 'katex/dist/katex.min.css'
 import katex from 'katex'
 
@@ -244,20 +244,11 @@ export const VariableList: React.FC<VariableListProps> = ({
             </span>
           </div>
         )
-        return v.description ? (
-          <TooltipProvider key={i}>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                {card}
-              </TooltipTrigger>
-              <TooltipContent className="max-w-[400px]">
-                {renderTextWithMath(v.description)}
-              </TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
-        ) : (
-          <React.Fragment key={i}>{card}</React.Fragment>
-        )
+        return conditionalTooltip(
+          card,
+          v.description ? renderTextWithMath(v.description) : undefined,
+          { maxWidth: '400px' }
+        ) as React.ReactElement
       })}
     </div>
   </div>

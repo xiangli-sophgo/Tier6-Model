@@ -205,7 +205,7 @@ export function mergeManualConnections(
     ...manualConnections.map(mc => ({
       source: mc.source,
       target: mc.target,
-      type: 'manual' as const,
+      type: 'custom' as const,
       bandwidth: mc.bandwidth,
       latency: mc.latency,
       is_manual: true,

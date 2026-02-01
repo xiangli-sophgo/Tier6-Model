@@ -14,9 +14,9 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
 import { Label } from '@/components/ui/label'
-import { Card, CardContent } from '@/components/ui/card'
+// Card导入已移除 - 使用BaseCard代替
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { ConfigCollapsible } from '@/components/ui/config-collapsible'
+import { BaseCard } from '@/components/common/BaseCard'
 import {
   Select,
   SelectContent,
@@ -24,12 +24,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from '@/components/ui/tooltip'
+import { InfoTooltip } from '@/components/ui/info-tooltip'
 import {
   Dialog,
   DialogContent,
@@ -69,7 +64,6 @@ import {
   configRowStyle,
 } from './shared'
 import { SwitchLevelConfig, ConnectionEditPanel } from './components'
-import { BaseCard } from '../common/BaseCard'
 import { getChipList, getChipConfig, saveCustomChipPreset, deleteCustomChipPreset, getChipInterconnectConfig } from '../../utils/llmDeployment/presets'
 import { ChipHardwareConfig } from '../../utils/llmDeployment/types'
 
@@ -256,11 +250,12 @@ export const ConfigPanel: React.FC<ConfigPanelProps> = ({
         rack_config: rackConfig,
         switch_config: switchConfig,
         manual_connections: manualConnectionConfig,
+        interconnect_config: hardwareParams.interconnect,
       })
     }, 500)
 
     return () => clearTimeout(timer)
-  }, [podCount, racksPerPod, rackConfig, switchConfig, manualConnectionConfig, onGenerate])
+  }, [podCount, racksPerPod, rackConfig, switchConfig, manualConnectionConfig, hardwareParams.interconnect, onGenerate])
 
   // 保存当前配置
   const handleSaveConfig = async () => {
@@ -269,14 +264,14 @@ export const ConfigPanel: React.FC<ConfigPanelProps> = ({
       return
     }
     try {
-      // 清理 rack_config，移除 chips 中的冗余字段
+      // 清理 rack_config，只保存 name 和 count
       const cleanRackConfig = rackConfig ? {
         ...rackConfig,
         boards: rackConfig.boards?.map(board => ({
           ...board,
           chips: board.chips?.map(chip => ({
+            name: chip.name,
             count: chip.count,
-            preset_id: chip.preset_id,
           }))
         }))
       } : undefined
@@ -292,9 +287,22 @@ export const ConfigPanel: React.FC<ConfigPanelProps> = ({
         comm_latency_config: commLatencyConfig,
       }
 
-      // 保存所有连接（不区分手动还是自动生成）
+      // 保存所有连接，清理冗余的 bandwidth/latency（除了 custom 类型）
       if (topology?.connections && topology.connections.length > 0) {
-        configToSave.connections = topology.connections
+        configToSave.connections = topology.connections.map(conn => {
+          // custom 类型或 switch 类型保留 bandwidth/latency
+          if (conn.type === 'custom' || conn.type === 'switch') {
+            return conn
+          }
+          // 其他类型（c2c/b2b/r2r/p2p）只保留 source/target/type
+          return {
+            source: conn.source,
+            target: conn.target,
+            type: conn.type,
+            ...(conn.connection_role && { connection_role: conn.connection_role }),
+            ...(conn.is_manual && { is_manual: conn.is_manual }),
+          }
+        })
       }
 
       // 保存手动连接配置（用于重新生成）
@@ -526,12 +534,13 @@ export const ConfigPanel: React.FC<ConfigPanelProps> = ({
       </TabsList>
 
       <TabsContent value="datacenter">
-        <div>
+        <div className="space-y-3">
           {/* 节点配置 + 互联参数 - 合并的折叠面板 */}
-          <TooltipProvider>
-          <ConfigCollapsible
-            defaultOpen
-            title={<>节点配置</>}
+          <BaseCard
+            title="节点配置"
+            collapsible
+            defaultExpanded
+            gradient
           >
             {/* 节点配置 */}
             <div className="grid grid-cols-3 gap-3">
@@ -567,10 +576,9 @@ export const ConfigPanel: React.FC<ConfigPanelProps> = ({
                 }))}
               />
             </div>
-          </ConfigCollapsible>
-          </TooltipProvider>
+          </BaseCard>
           {/* Pod间连接配置 - 折叠面板 */}
-          <ConfigCollapsible defaultOpen title="连接配置">
+          <BaseCard title="连接配置" collapsible defaultExpanded gradient>
             <SwitchLevelConfig
               levelKey="inter_pod"
               config={switchConfig.inter_pod}
@@ -578,7 +586,7 @@ export const ConfigPanel: React.FC<ConfigPanelProps> = ({
               onChange={(newConfig) => setSwitchConfig(prev => ({ ...prev, inter_pod: newConfig }))}
               configRowStyle={configRowStyle}
             />
-          </ConfigCollapsible>
+          </BaseCard>
           {/* 连接编辑（当前层级或聚焦层级时显示） */}
           {(currentLevel === 'datacenter' || focusedLevel === 'datacenter') && (
             <div className="mt-3">
@@ -605,12 +613,13 @@ export const ConfigPanel: React.FC<ConfigPanelProps> = ({
       </TabsContent>
 
       <TabsContent value="pod">
-        <div>
+        <div className="space-y-3">
           {/* 节点配置 + 互联参数 - 合并的折叠面板 */}
-          <TooltipProvider>
-          <ConfigCollapsible
-            defaultOpen
-            title={<>节点配置</>}
+          <BaseCard
+            title="节点配置"
+            collapsible
+            defaultExpanded
+            gradient
           >
             <div className="grid grid-cols-3 gap-3">
               <FormInputField
@@ -645,10 +654,9 @@ export const ConfigPanel: React.FC<ConfigPanelProps> = ({
                 }))}
               />
             </div>
-          </ConfigCollapsible>
-          </TooltipProvider>
+          </BaseCard>
           {/* Rack间连接配置 - 折叠面板 */}
-          <ConfigCollapsible defaultOpen title="连接配置">
+          <BaseCard title="连接配置" collapsible defaultExpanded gradient>
             <SwitchLevelConfig
               levelKey="inter_rack"
               config={switchConfig.inter_rack}
@@ -656,7 +664,7 @@ export const ConfigPanel: React.FC<ConfigPanelProps> = ({
               onChange={(newConfig) => setSwitchConfig(prev => ({ ...prev, inter_rack: newConfig }))}
               configRowStyle={configRowStyle}
             />
-          </ConfigCollapsible>
+          </BaseCard>
           {/* 连接编辑（当前层级或聚焦层级时显示） */}
           {(currentLevel === 'pod' || focusedLevel === 'pod') && (
             <div className="mt-3">
@@ -683,18 +691,19 @@ export const ConfigPanel: React.FC<ConfigPanelProps> = ({
       </TabsContent>
 
       <TabsContent value="rack">
-        <div>
+        <div className="space-y-3">
           {/* 节点配置 + 互联参数 - 合并的折叠面板 */}
-          <TooltipProvider>
           {(() => {
             const usedU = rackConfig.boards.reduce((sum, b) => sum + b.u_height * (b.count || 1), 0)
             const totalBoards = rackConfig.boards.reduce((sum, b) => sum + (b.count || 1), 0)
             const totalChips = rackConfig.boards.reduce((sum, b) => sum + (b.count || 1) * b.chips.reduce((s, c) => s + c.count, 0), 0)
             const isOverflow = usedU > rackConfig.total_u
             return (
-              <ConfigCollapsible
-                defaultOpen
-                title={<>节点配置</>}
+              <BaseCard
+                title="节点配置"
+                collapsible
+                defaultExpanded
+                gradient
               >
                     {/* B2B 互联参数 */}
                     <div className="grid grid-cols-2 gap-3 mb-3 pb-3 border-b border-dashed">
@@ -856,13 +865,12 @@ export const ConfigPanel: React.FC<ConfigPanelProps> = ({
                         添加板卡类型
                       </Button>
                     )}
-              </ConfigCollapsible>
+              </BaseCard>
             )
           })()}
-          </TooltipProvider>
 
           {/* Board间连接配置 - 折叠面板 */}
-          <ConfigCollapsible defaultOpen title="连接配置">
+          <BaseCard title="连接配置" collapsible defaultExpanded gradient>
             <SwitchLevelConfig
               levelKey="inter_board"
               config={switchConfig.inter_board}
@@ -871,7 +879,7 @@ export const ConfigPanel: React.FC<ConfigPanelProps> = ({
               configRowStyle={configRowStyle}
               viewMode={viewMode}
             />
-          </ConfigCollapsible>
+          </BaseCard>
           {/* 连接编辑（当前层级或聚焦层级时显示） */}
           {(currentLevel === 'rack' || focusedLevel === 'rack') && (
             <div className="mt-3">
@@ -898,12 +906,13 @@ export const ConfigPanel: React.FC<ConfigPanelProps> = ({
       </TabsContent>
 
       <TabsContent value="board">
-        <div>
+        <div className="space-y-3">
           {/* 芯片配置 + 互联参数 - 合并的折叠面板 */}
-          <TooltipProvider>
-          <ConfigCollapsible
-            defaultOpen
-            title={<>节点配置</>}
+          <BaseCard
+            title="节点配置"
+            collapsible
+            defaultExpanded
+            gradient
           >
                 {/* C2C 互联参数 */}
                 <div className="grid grid-cols-2 gap-3 mb-3 pb-3 border-b border-dashed">
@@ -976,7 +985,7 @@ export const ConfigPanel: React.FC<ConfigPanelProps> = ({
                               if (preset) {
                                 newChips[chipIndex] = {
                                   ...newChips[chipIndex],
-                                  name: preset.chip_type,
+                                  name: preset.name,
                                   preset_id: value,
                                 }
                               }
@@ -1055,11 +1064,10 @@ export const ConfigPanel: React.FC<ConfigPanelProps> = ({
                 })}
               </div>
             ))}
-          </ConfigCollapsible>
-          </TooltipProvider>
+          </BaseCard>
 
           {/* Chip间连接配置 - 折叠面板 */}
-          <ConfigCollapsible defaultOpen title="连接配置">
+          <BaseCard title="连接配置" collapsible defaultExpanded gradient>
             <SwitchLevelConfig
               levelKey="inter_chip"
               config={switchConfig.inter_chip}
@@ -1067,7 +1075,7 @@ export const ConfigPanel: React.FC<ConfigPanelProps> = ({
               onChange={(newConfig) => setSwitchConfig(prev => ({ ...prev, inter_chip: newConfig }))}
               configRowStyle={configRowStyle}
             />
-          </ConfigCollapsible>
+          </BaseCard>
           {/* 连接编辑（当前层级或聚焦层级时显示） */}
           {(currentLevel === 'board' || focusedLevel === 'board') && (
             <div className="mt-3">
@@ -1094,8 +1102,7 @@ export const ConfigPanel: React.FC<ConfigPanelProps> = ({
       </TabsContent>
 
       <TabsContent value="chip">
-        <TooltipProvider>
-        <div>
+        <div className="space-y-3">
           {/* 显示所有 Board 层配置的芯片 */}
           {rackConfig.boards.length === 0 ? (
             <div className="text-center py-8 text-gray-400 text-sm">
@@ -1119,13 +1126,15 @@ export const ConfigPanel: React.FC<ConfigPanelProps> = ({
                         }
                       }}
                     >
-                      <ConfigCollapsible
-                        defaultOpen={boardIndex === 0 && chipIndex === 0}
+                      <BaseCard
                         title={
                           <>
                             {board.name} - {chip.name} <span className="text-gray-400 text-xs ml-2">x{chip.count}</span>
                           </>
                         }
+                        collapsible
+                        defaultExpanded={boardIndex === 0 && chipIndex === 0}
+                        gradient
                       >
                       {/* 核心数 + 算力 (3列) */}
                       <div className="grid grid-cols-3 gap-3 mb-2">
@@ -1348,7 +1357,34 @@ export const ConfigPanel: React.FC<ConfigPanelProps> = ({
                           placeholder="自动"
                         />
                       </div>
-                    </ConfigCollapsible>
+
+                      {/* 保存为预设按钮 */}
+                      <div className="mt-4 pt-3 border-t border-gray-200/50">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="w-full"
+                          onClick={async () => {
+                            const presetName = prompt('输入芯片预设名称（如 SG2262）:')
+                            if (presetName && presetName.trim()) {
+                              try {
+                                await saveCustomChipPreset({
+                                  ...hardwareParams.chip,
+                                  name: presetName.trim(),
+                                })
+                                toast.success(`芯片预设 "${presetName.trim()}" 已保存`)
+                              } catch (error) {
+                                console.error('保存芯片预设失败:', error)
+                                toast.error('保存芯片预设失败')
+                              }
+                            }
+                          }}
+                        >
+                          <Save className="h-3.5 w-3.5 mr-1.5" />
+                          保存为预设
+                        </Button>
+                      </div>
+                    </BaseCard>
                     </div>
                   )
                 })}
@@ -1356,18 +1392,15 @@ export const ConfigPanel: React.FC<ConfigPanelProps> = ({
             ))
           )}
         </div>
-        </TooltipProvider>
 
         {/* 互联通信参数 - 全局配置 */}
-        <TooltipProvider>
         <div className="mt-4">
 
           {/* 互联通信参数 - 全局配置 */}
-          <ConfigCollapsible defaultOpen title="互联通信参数（全局）">
+          <BaseCard title="互联通信参数（全局）" collapsible defaultExpanded gradient>
             {/* 协议参数 */}
             <div className="grid grid-cols-4 gap-3 mb-3">
-              <TooltipProvider>
-                <FormInputField
+              <FormInputField
                   label="TP RTT (µs)"
                   tooltip="Tensor Parallelism Round Trip Time: 张量并行通信的往返延迟"
                   min={0}
@@ -1403,7 +1436,6 @@ export const ConfigPanel: React.FC<ConfigPanelProps> = ({
                   value={commLatencyConfig.sync_latency_us}
                   onChange={(v) => setCommLatencyConfig(prev => ({ ...prev, sync_latency_us: v ?? 0 }))}
                 />
-              </TooltipProvider>
             </div>
 
             {/* 互联相关 */}
@@ -1411,9 +1443,8 @@ export const ConfigPanel: React.FC<ConfigPanelProps> = ({
               <span className="text-xs text-gray-500">互联相关</span>
             </div>
             <div className="grid grid-cols-2 gap-3 mb-3">
-              <TooltipProvider>
-                <FormInputField
-                  label="switch_delay (µs)"
+              <FormInputField
+                label="switch_delay (µs)"
                   tooltip="网络交换机的数据包转发延迟 (典型值: 0.5-2 µs)"
                   min={0}
                   max={10}
@@ -1430,7 +1461,6 @@ export const ConfigPanel: React.FC<ConfigPanelProps> = ({
                   value={commLatencyConfig.cable_delay_us}
                   onChange={(v) => setCommLatencyConfig(prev => ({ ...prev, cable_delay_us: v ?? 0.025 }))}
                 />
-              </TooltipProvider>
             </div>
 
             {/* 芯片延迟参数 */}
@@ -1438,9 +1468,8 @@ export const ConfigPanel: React.FC<ConfigPanelProps> = ({
               <span className="text-xs text-gray-500">芯片延迟参数</span>
             </div>
             <div className="grid grid-cols-2 gap-3 mb-3">
-              <TooltipProvider>
-                <FormInputField
-                  label="memory_read (µs)"
+              <FormInputField
+                label="memory_read (µs)"
                   tooltip="显存读延迟 (DDR/HBM)"
                   min={0}
                   max={1}
@@ -1475,7 +1504,6 @@ export const ConfigPanel: React.FC<ConfigPanelProps> = ({
                   value={commLatencyConfig.die_to_die_latency_us}
                   onChange={(v) => setCommLatencyConfig(prev => ({ ...prev, die_to_die_latency_us: v ?? 0.04 }))}
                 />
-              </TooltipProvider>
             </div>
 
             {/* 计算结果：通信启动开销 */}
@@ -1483,44 +1511,39 @@ export const ConfigPanel: React.FC<ConfigPanelProps> = ({
               <span className="text-xs text-gray-500">通信启动开销 (start_lat)</span>
             </div>
             <div className="grid grid-cols-2 gap-3">
-              <TooltipProvider>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <div className="p-2 bg-gray-100 rounded border border-gray-300 cursor-help">
-                      <span className="text-xs text-gray-500">AllReduce start_lat</span>
-                      <div className="text-sm font-medium text-blue-500">
-                        {(2 * hardwareParams.interconnect.c2c.latency_us + commLatencyConfig.memory_read_latency_us + commLatencyConfig.memory_write_latency_us + commLatencyConfig.noc_latency_us + 2 * commLatencyConfig.die_to_die_latency_us).toFixed(2)} µs
-                      </div>
-                    </div>
-                  </TooltipTrigger>
-                  <TooltipContent className="max-w-xs">
-                    <div className="text-xs">
-                      <div className="font-medium mb-1">AllReduce start_lat 计算公式:</div>
-                      <div className="font-mono">2×c2c_latency + memory_read + memory_write + noc + 2×die_to_die</div>
-                    </div>
-                  </TooltipContent>
-                </Tooltip>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <div className="p-2 bg-gray-100 rounded border border-gray-300 cursor-help">
-                      <span className="text-xs text-gray-500">Dispatch/Combine start_lat</span>
-                      <div className="text-sm font-medium text-purple-500">
-                        {(2 * hardwareParams.interconnect.c2c.latency_us + commLatencyConfig.memory_read_latency_us + commLatencyConfig.memory_write_latency_us + commLatencyConfig.noc_latency_us + 2 * commLatencyConfig.die_to_die_latency_us + 2 * commLatencyConfig.switch_delay_us + 2 * commLatencyConfig.cable_delay_us).toFixed(2)} µs
-                      </div>
-                    </div>
-                  </TooltipTrigger>
-                  <TooltipContent className="max-w-xs">
-                    <div className="text-xs">
-                      <div className="font-medium mb-1">Dispatch/Combine start_lat 计算公式:</div>
-                      <div className="font-mono">2×c2c_latency + memory_read + memory_write + noc + 2×die_to_die + 2×switch + 2×cable</div>
-                    </div>
-                  </TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
+              <InfoTooltip
+                content={
+                  <div className="text-xs">
+                    <div className="font-medium mb-1">AllReduce start_lat 计算公式:</div>
+                    <div className="font-mono">2×c2c_latency + memory_read + memory_write + noc + 2×die_to_die</div>
+                  </div>
+                }
+              >
+                <div className="p-2 bg-gray-100 rounded border border-gray-300 cursor-help">
+                  <span className="text-xs text-gray-500">AllReduce start_lat</span>
+                  <div className="text-sm font-medium text-blue-500">
+                    {(2 * hardwareParams.interconnect.c2c.latency_us + commLatencyConfig.memory_read_latency_us + commLatencyConfig.memory_write_latency_us + commLatencyConfig.noc_latency_us + 2 * commLatencyConfig.die_to_die_latency_us).toFixed(2)} µs
+                  </div>
+                </div>
+              </InfoTooltip>
+              <InfoTooltip
+                content={
+                  <div className="text-xs">
+                    <div className="font-medium mb-1">Dispatch/Combine start_lat 计算公式:</div>
+                    <div className="font-mono">2×c2c_latency + memory_read + memory_write + noc + 2×die_to_die + 2×switch + 2×cable</div>
+                  </div>
+                }
+              >
+                <div className="p-2 bg-gray-100 rounded border border-gray-300 cursor-help">
+                  <span className="text-xs text-gray-500">Dispatch/Combine start_lat</span>
+                  <div className="text-sm font-medium text-purple-500">
+                    {(2 * hardwareParams.interconnect.c2c.latency_us + commLatencyConfig.memory_read_latency_us + commLatencyConfig.memory_write_latency_us + commLatencyConfig.noc_latency_us + 2 * commLatencyConfig.die_to_die_latency_us + 2 * commLatencyConfig.switch_delay_us + 2 * commLatencyConfig.cable_delay_us).toFixed(2)} µs
+                  </div>
+                </div>
+              </InfoTooltip>
             </div>
-          </ConfigCollapsible>
+          </BaseCard>
         </div>
-        </TooltipProvider>
       </TabsContent>
     </Tabs>
   )
@@ -1588,45 +1611,38 @@ export const ConfigPanel: React.FC<ConfigPanelProps> = ({
   )
 
   return (
-    <TooltipProvider>
-      <div className="flex flex-col">
+    <div className="flex flex-col gap-4">
         {/* 拓扑配置内容 */}
         <>
             {/* 拓扑汇总 */}
-            <div className="mb-3">
-              <BaseCard
-                title={<>拓扑汇总 <span className="text-xs font-normal text-gray-400 ml-2">{summaryText}</span></>}
-                accentColor="#5E6AD2"
-                collapsible
-                defaultExpanded={false}
-              >
-                {topologyConfigContent}
-              </BaseCard>
-            </div>
+            <BaseCard
+              title={<>拓扑汇总 <span className="text-xs font-normal text-gray-400 ml-2">{summaryText}</span></>}
+              collapsible
+              defaultExpanded={false}
+              gradient
+            >
+              {topologyConfigContent}
+            </BaseCard>
 
             {/* 层级配置 */}
-            <div className="mb-3">
-              <BaseCard
-                title="层级配置"
-                accentColor="#13c2c2"
-                collapsible
-                defaultExpanded
-              >
-                {layerConfigContent}
-              </BaseCard>
-            </div>
+            <BaseCard
+              title="层级配置"
+              collapsible
+              defaultExpanded
+              gradient
+            >
+              {layerConfigContent}
+            </BaseCard>
 
             {/* Switch配置 */}
-            <div className="mb-3">
-              <BaseCard
-                title="Switch配置"
-                accentColor="#52c41a"
-                collapsible
-                defaultExpanded={false}
-              >
-                {switchConfigContent}
-              </BaseCard>
-            </div>
+            <BaseCard
+              title="Switch配置"
+              collapsible
+              defaultExpanded={false}
+              gradient
+            >
+              {switchConfigContent}
+            </BaseCard>
 
             {/* 保存/加载/清除配置按钮 */}
             <div className="grid grid-cols-3 gap-2 mt-4">
@@ -1744,7 +1760,7 @@ export const ConfigPanel: React.FC<ConfigPanelProps> = ({
                 {savedConfigs.map(config => {
                   // 计算汇总信息
                   const hasExtendedConfig = Boolean(config.rack_config || config.chip_configs)
-                  const chipTypeNames = config.chip_configs?.map(c => c.hardware.chip_type).join(', ') || ''
+                  const chipTypeNames = config.chip_configs?.map(c => c.hardware.name).join(', ') || ''
 
                   // 使用后端统计的数量（如果存在）
                   const totalPods = (config as any).total_pods || 0
@@ -1753,12 +1769,13 @@ export const ConfigPanel: React.FC<ConfigPanelProps> = ({
                   const totalChips = (config as any).total_chips || 0
 
                   return (
-                    <Card
+                    <BaseCard
                       key={config.name}
+                      titleless
                       className="cursor-pointer hover:bg-gray-50"
                       onClick={() => handleLoadConfig(config)}
                     >
-                      <CardContent className="p-3">
+                      <div className="p-3">
                         <div className="flex justify-between items-start">
                           <div className="flex-1">
                             <span className="font-semibold">{config.name}</span>
@@ -1811,15 +1828,14 @@ export const ConfigPanel: React.FC<ConfigPanelProps> = ({
                             </AlertDialogContent>
                           </AlertDialog>
                         </div>
-                      </CardContent>
-                    </Card>
+                      </div>
+                    </BaseCard>
                   )
                 })}
               </div>
             )}
           </DialogContent>
         </Dialog>
-      </div>
-    </TooltipProvider>
+    </div>
   )
 }

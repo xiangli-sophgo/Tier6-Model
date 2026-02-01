@@ -5,7 +5,7 @@
 import React from 'react'
 import { Badge } from '@/components/ui/badge'
 import { NumberInput } from '@/components/ui/number-input'
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
+import { HelpTooltip } from '@/components/ui/info-tooltip'
 import {
   ParallelismStrategy,
   LLMModelConfig,
@@ -41,9 +41,8 @@ export const ParallelismConfigPanel: React.FC<ParallelismConfigPanelProps> = ({
   const maxEP = isMoE && modelConfig.moe_config ? modelConfig.moe_config.num_experts : 1
 
   return (
-    <TooltipProvider>
-      <div>
-        {/* 模式切换按钮组 */}
+    <div>
+      {/* 模式切换按钮组 */}
         <div className="mb-3">
           <div className="flex rounded-md border border-gray-200 overflow-hidden w-fit">
             <button
@@ -82,12 +81,11 @@ export const ParallelismConfigPanel: React.FC<ParallelismConfigPanelProps> = ({
               </div>
               {/* TP */}
               <div className="text-center">
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <span className="text-[11px] block mb-1 cursor-help">TP</span>
-                  </TooltipTrigger>
-                  <TooltipContent>张量并行 (Attention)</TooltipContent>
-                </Tooltip>
+                <HelpTooltip
+                  label="TP"
+                  content="张量并行 (Attention)"
+                  labelClassName="text-[11px] block mb-1 cursor-help"
+                />
                 <NumberInput
                   value={manualStrategy.tp}
                   onChange={(v) => v !== undefined && onManualStrategyChange({ ...manualStrategy, tp: v })}
@@ -99,12 +97,11 @@ export const ParallelismConfigPanel: React.FC<ParallelismConfigPanelProps> = ({
               {/* EP - 仅 MoE */}
               {isMoE && (
                 <div className="text-center">
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <span className="text-[11px] block mb-1 cursor-help">EP</span>
-                    </TooltipTrigger>
-                    <TooltipContent>专家并行</TooltipContent>
-                  </Tooltip>
+                  <HelpTooltip
+                    label="EP"
+                    content="专家并行"
+                    labelClassName="text-[11px] block mb-1 cursor-help"
+                  />
                   <NumberInput
                     value={manualStrategy.ep}
                     onChange={(v) => v !== undefined && onManualStrategyChange({ ...manualStrategy, ep: v })}
@@ -117,12 +114,11 @@ export const ParallelismConfigPanel: React.FC<ParallelismConfigPanelProps> = ({
               {/* moe_tp - 仅 MoE */}
               {isMoE && (
                 <div className="text-center">
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <span className="text-[11px] block mb-1 cursor-help">MoE_TP</span>
-                    </TooltipTrigger>
-                    <TooltipContent>MoE 专家内张量并行</TooltipContent>
-                  </Tooltip>
+                  <HelpTooltip
+                    label="MoE_TP"
+                    content="MoE 专家内张量并行"
+                    labelClassName="text-[11px] block mb-1 cursor-help"
+                  />
                   <NumberInput
                     value={manualStrategy.moe_tp || 1}
                     onChange={(v) => v !== undefined && onManualStrategyChange({ ...manualStrategy, moe_tp: v })}
@@ -254,8 +250,7 @@ export const ParallelismConfigPanel: React.FC<ParallelismConfigPanelProps> = ({
             </div>
           </div>
         )}
-      </div>
-    </TooltipProvider>
+    </div>
   )
 }
 

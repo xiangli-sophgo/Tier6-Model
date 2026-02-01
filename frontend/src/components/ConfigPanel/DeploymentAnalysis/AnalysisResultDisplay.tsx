@@ -27,12 +27,7 @@ import {
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from '@/components/ui/tooltip'
+import { InfoTooltip, conditionalTooltip } from '@/components/ui/info-tooltip'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -57,8 +52,10 @@ import { InfeasibleResult } from '../../../utils/llmDeployment'
 import { generateBenchmarkName } from '../../../utils/llmDeployment/benchmarkNaming'
 import { AnalysisHistoryItem, AnalysisViewMode } from '../shared'
 import { colors } from './ConfigSelectors'
-import { BaseCard } from '../../common/BaseCard'
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { BaseCard } from '@/components/common/BaseCard'
 import { MetricDetailCard } from './components/MetricDetailCard'
+import { formatNumber, formatPercent } from '../../../utils/formatters'
 
 // ============================================
 // 历史记录列表组件
@@ -185,10 +182,10 @@ const HistoryList: React.FC<HistoryListProps> = ({
                   </div>
                 </TableCell>
                 <TableCell className="text-center text-sm">
-                  {record.chips > 0 ? (record.tps / record.chips).toFixed(0) : 0} tok/s
+                  {record.chips > 0 ? formatNumber(record.tps / record.chips, 0) : 0} tok/s
                 </TableCell>
                 <TableCell className="text-center text-sm">
-                  {record.ttft.toFixed(1)} ms
+                  {formatNumber(record.ttft, 1)} ms
                 </TableCell>
                 <TableCell>
                   <AlertDialog>
@@ -334,10 +331,11 @@ export const AnalysisResultDisplay: React.FC<AnalysisResultDisplayProps> = ({
     }
 
     return (
-      <BaseCard
-        title="搜索与评估"
-        style={{ marginBottom: 16 }}
-      >
+      <Card className="mb-4">
+        <CardHeader className="py-2.5 px-3 border-b border-gray-100">
+          <CardTitle className="text-sm font-semibold text-gray-700">搜索与评估</CardTitle>
+        </CardHeader>
+        <CardContent className="p-3">
         {loading ? (
           <div className="flex flex-col gap-3">
             {searchProgress && searchProgress.stage !== 'idle' ? (
@@ -425,7 +423,8 @@ export const AnalysisResultDisplay: React.FC<AnalysisResultDisplayProps> = ({
             </span>
           </div>
         )}
-      </BaseCard>
+        </CardContent>
+      </Card>
     )
   }
 
@@ -442,7 +441,7 @@ export const AnalysisResultDisplay: React.FC<AnalysisResultDisplayProps> = ({
         {searchStats && (
           <div className="mt-3 p-2 bg-gray-100 rounded-md">
             <span className="text-gray-500 text-[11px]">
-              搜索统计: 评估 {searchStats.evaluated} 个方案，{searchStats.feasible} 个可行，耗时 {searchStats.timeMs.toFixed(0)}ms
+              搜索统计: 评估 {searchStats.evaluated} 个方案，{searchStats.feasible} 个可行，耗时 {formatNumber(searchStats.timeMs, 0)}ms
             </span>
           </div>
         )}
@@ -464,15 +463,14 @@ export const AnalysisResultDisplay: React.FC<AnalysisResultDisplayProps> = ({
     })
 
     return (
-      <BaseCard
-        title={
-          <div className="flex items-center gap-2">
+      <Card className="mb-4">
+        <CardHeader className="py-2.5 px-3 border-b border-gray-100">
+          <CardTitle className="text-sm font-semibold text-gray-700 flex items-center gap-2">
             <AlertTriangle className="h-4 w-4 text-amber-500" />
             <span>不可行方案 ({infeasiblePlans.length})</span>
-          </div>
-        }
-        style={{ marginBottom: 16 }}
-      >
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="p-3">
         {/* 错误原因统计 */}
         <div className={expanded ? 'mb-3' : ''}>
           {Object.entries(reasonCounts).map(([reason, count]) => (
@@ -511,16 +509,9 @@ export const AnalysisResultDisplay: React.FC<AnalysisResultDisplayProps> = ({
                       {plan.parallelism.dp * plan.parallelism.tp * plan.parallelism.ep}
                     </TableCell>
                     <TableCell>
-                      <TooltipProvider>
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <span className="text-red-500 text-[11px] truncate block max-w-[200px]">{plan.reason}</span>
-                          </TooltipTrigger>
-                          <TooltipContent>
-                            <p>{plan.reason}</p>
-                          </TooltipContent>
-                        </Tooltip>
-                      </TooltipProvider>
+                      <InfoTooltip content={<p>{plan.reason}</p>}>
+                        <span className="text-red-500 text-[11px] truncate block max-w-[200px]">{plan.reason}</span>
+                      </InfoTooltip>
                     </TableCell>
                   </TableRow>
                 ))}
@@ -528,7 +519,8 @@ export const AnalysisResultDisplay: React.FC<AnalysisResultDisplayProps> = ({
             </Table>
           </div>
         )}
-      </BaseCard>
+        </CardContent>
+      </Card>
     )
   }
 
@@ -589,19 +581,16 @@ export const AnalysisResultDisplay: React.FC<AnalysisResultDisplayProps> = ({
   })
 
   return (
-    <TooltipProvider>
       <div>
         {/* ═══════════════════════════════════════════════════════════════ */}
         {/* 二、性能分析 */}
         {/* ═══════════════════════════════════════════════════════════════ */}
-        <div className="mb-4">
-          <BaseCard
-            title="性能分析"
-            accentColor="#52c41a"
-            collapsible
-            expanded={expandedSections.performance}
-            onExpandChange={(expanded) => setExpandedSections(prev => ({ ...prev, performance: expanded }))}
-          >
+        <BaseCard collapsible
+          title="性能分析"
+          expanded={expandedSections.performance}
+          onExpandChange={(expanded) => setExpandedSections(prev => ({ ...prev, performance: expanded }))}
+          gradient
+        >
           <>
           {/* 延迟指标 */}
           <span className="text-[13px] font-medium block mb-2" style={{ color: colors.text }}>延迟</span>
@@ -610,28 +599,28 @@ export const AnalysisResultDisplay: React.FC<AnalysisResultDisplayProps> = ({
               <Info className="absolute top-2 right-2 h-2.5 w-2.5" style={{ color: selectedMetric === 'ttft' ? colors.interactive : '#d9d9d9' }} />
               <span className="text-[13px]" style={{ color: colors.textSecondary }}>TTFT</span>
               <div className="text-lg font-semibold mt-1" style={{ color: colors.text }}>
-                {latency?.prefill_total_latency_ms?.toFixed(1) || '0.0'} <span className="text-xs font-normal" style={{ color: colors.textSecondary }}>ms</span>
+                {formatNumber(latency?.prefill_total_latency_ms, 1) || '0.0'} <span className="text-xs font-normal" style={{ color: colors.textSecondary }}>ms</span>
               </div>
             </div>
             <div style={{ ...metricCardStyle(selectedMetric === 'tpot'), textAlign: 'center', position: 'relative' }} onClick={() => setSelectedMetric(selectedMetric === 'tpot' ? null : 'tpot')}>
               <Info className="absolute top-2 right-2 h-2.5 w-2.5" style={{ color: selectedMetric === 'tpot' ? colors.interactive : '#d9d9d9' }} />
               <span className="text-[13px]" style={{ color: colors.textSecondary }}>TPOT</span>
               <div className="text-lg font-semibold mt-1" style={{ color: colors.text }}>
-                {latency?.decode_per_token_latency_ms?.toFixed(2) || '0.00'} <span className="text-xs font-normal" style={{ color: colors.textSecondary }}>ms</span>
+                {formatNumber(latency?.decode_per_token_latency_ms, 2) || '0.00'} <span className="text-xs font-normal" style={{ color: colors.textSecondary }}>ms</span>
               </div>
             </div>
             <div style={{ ...metricCardStyle(selectedMetric === 'e2e'), textAlign: 'center', position: 'relative' }} onClick={() => setSelectedMetric(selectedMetric === 'e2e' ? null : 'e2e')}>
               <Info className="absolute top-2 right-2 h-2.5 w-2.5" style={{ color: selectedMetric === 'e2e' ? colors.interactive : '#d9d9d9' }} />
               <span className="text-[13px]" style={{ color: colors.textSecondary }}>E2E</span>
               <div className="text-lg font-semibold mt-1" style={{ color: colors.text }}>
-                {((latency?.end_to_end_latency_ms || 0) / 1000).toFixed(2)} <span className="text-xs font-normal" style={{ color: colors.textSecondary }}>s</span>
+                {formatNumber((latency?.end_to_end_latency_ms || 0) / 1000, 2)} <span className="text-xs font-normal" style={{ color: colors.textSecondary }}>s</span>
               </div>
             </div>
             <div style={{ ...metricCardStyle(selectedMetric === 'percentiles'), textAlign: 'center', position: 'relative' }} onClick={() => setSelectedMetric(selectedMetric === 'percentiles' ? null : 'percentiles')}>
               <Info className="absolute top-2 right-2 h-2.5 w-2.5" style={{ color: selectedMetric === 'percentiles' ? colors.interactive : '#d9d9d9' }} />
               <span className="text-[13px]" style={{ color: colors.textSecondary }}>P99</span>
               <div className="text-lg font-semibold mt-1" style={{ color: latency.ttft_percentiles && latency.ttft_percentiles.p99 > 450 ? colors.error : colors.text }}>
-                {latency.ttft_percentiles ? latency.ttft_percentiles.p99.toFixed(0) : '-'} <span className="text-xs font-normal" style={{ color: colors.textSecondary }}>ms</span>
+                {latency.ttft_percentiles ? formatNumber(latency.ttft_percentiles.p99, 0) : '-'} <span className="text-xs font-normal" style={{ color: colors.textSecondary }}>ms</span>
               </div>
             </div>
           </div>
@@ -639,56 +628,47 @@ export const AnalysisResultDisplay: React.FC<AnalysisResultDisplayProps> = ({
           {/* 吞吐与效率 */}
           <span className="text-[13px] font-medium block mb-2" style={{ color: colors.text }}>吞吐与效率</span>
           <div className="grid grid-cols-3 gap-2 mb-2">
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <div style={{ ...metricCardStyle(selectedMetric === 'throughput'), textAlign: 'center', position: 'relative' }} onClick={() => setSelectedMetric(selectedMetric === 'throughput' ? null : 'throughput')}>
-                  <Info className="absolute top-2 right-2 h-2.5 w-2.5" style={{ color: selectedMetric === 'throughput' ? colors.interactive : '#d9d9d9' }} />
-                  <span className="text-[13px]" style={{ color: colors.textSecondary }}>Total TPS</span>
-                  <div className="text-lg font-semibold mt-1" style={{ color: colors.text }}>
-                    {throughput?.tokens_per_second?.toFixed(0) || '0'} <span className="text-xs font-normal" style={{ color: colors.textSecondary }}>tok/s</span>
-                  </div>
+            <InfoTooltip content="Total TPS = TPS_chip × NumChips，集群总吞吐">
+              <div style={{ ...metricCardStyle(selectedMetric === 'throughput'), textAlign: 'center', position: 'relative' }} onClick={() => setSelectedMetric(selectedMetric === 'throughput' ? null : 'throughput')}>
+                <Info className="absolute top-2 right-2 h-2.5 w-2.5" style={{ color: selectedMetric === 'throughput' ? colors.interactive : '#d9d9d9' }} />
+                <span className="text-[13px]" style={{ color: colors.textSecondary }}>Total TPS</span>
+                <div className="text-lg font-semibold mt-1" style={{ color: colors.text }}>
+                  {formatNumber(throughput?.tokens_per_second, 0) || '0'} <span className="text-xs font-normal" style={{ color: colors.textSecondary }}>tok/s</span>
                 </div>
-              </TooltipTrigger>
-              <TooltipContent>Total TPS = TPS_chip × NumChips，集群总吞吐</TooltipContent>
-            </Tooltip>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <div style={{ ...metricCardStyle(selectedMetric === 'tps_batch'), textAlign: 'center', position: 'relative' }} onClick={() => setSelectedMetric(selectedMetric === 'tps_batch' ? null : 'tps_batch')}>
-                  <Info className="absolute top-2 right-2 h-2.5 w-2.5" style={{ color: selectedMetric === 'tps_batch' ? colors.interactive : '#d9d9d9' }} />
-                  <span className="text-[13px]" style={{ color: colors.textSecondary }}>TPS/Batch</span>
-                  <div className="text-lg font-semibold mt-1" style={{ color: (throughput?.tps_per_batch || 0) >= 10 ? colors.text : colors.error }}>
-                    {throughput?.tps_per_batch?.toFixed(1) || '0.0'} <span className="text-xs font-normal" style={{ color: colors.textSecondary }}>tok/s</span>
-                  </div>
+              </div>
+            </InfoTooltip>
+            <InfoTooltip content="TPS per Batch = 1000 / TPOT(ms)，用户体验指标，SLO约束 ≥10">
+              <div style={{ ...metricCardStyle(selectedMetric === 'tps_batch'), textAlign: 'center', position: 'relative' }} onClick={() => setSelectedMetric(selectedMetric === 'tps_batch' ? null : 'tps_batch')}>
+                <Info className="absolute top-2 right-2 h-2.5 w-2.5" style={{ color: selectedMetric === 'tps_batch' ? colors.interactive : '#d9d9d9' }} />
+                <span className="text-[13px]" style={{ color: colors.textSecondary }}>TPS/Batch</span>
+                <div className="text-lg font-semibold mt-1" style={{ color: (throughput?.tps_per_batch || 0) >= 10 ? colors.text : colors.error }}>
+                  {formatNumber(throughput?.tps_per_batch, 1) || '0.0'} <span className="text-xs font-normal" style={{ color: colors.textSecondary }}>tok/s</span>
                 </div>
-              </TooltipTrigger>
-              <TooltipContent>TPS per Batch = 1000 / TPOT(ms)，用户体验指标，SLO约束 ≥10</TooltipContent>
-            </Tooltip>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <div style={{ ...metricCardStyle(selectedMetric === 'tps_chip'), textAlign: 'center', position: 'relative' }} onClick={() => setSelectedMetric(selectedMetric === 'tps_chip' ? null : 'tps_chip')}>
-                  <Info className="absolute top-2 right-2 h-2.5 w-2.5" style={{ color: selectedMetric === 'tps_chip' ? colors.interactive : '#d9d9d9' }} />
-                  <span className="text-[13px]" style={{ color: colors.textSecondary }}>TPS/Chip</span>
-                  <div className="text-lg font-semibold mt-1" style={{ color: colors.text }}>
-                    {throughput?.tps_per_chip?.toFixed(0) || '0'} <span className="text-xs font-normal" style={{ color: colors.textSecondary }}>tok/s</span>
-                  </div>
+              </div>
+            </InfoTooltip>
+            <InfoTooltip content="TPS per Chip = B × TPS_batch，成本效益优化目标">
+              <div style={{ ...metricCardStyle(selectedMetric === 'tps_chip'), textAlign: 'center', position: 'relative' }} onClick={() => setSelectedMetric(selectedMetric === 'tps_chip' ? null : 'tps_chip')}>
+                <Info className="absolute top-2 right-2 h-2.5 w-2.5" style={{ color: selectedMetric === 'tps_chip' ? colors.interactive : '#d9d9d9' }} />
+                <span className="text-[13px]" style={{ color: colors.textSecondary }}>TPS/Chip</span>
+                <div className="text-lg font-semibold mt-1" style={{ color: colors.text }}>
+                  {formatNumber(throughput?.tps_per_chip, 0) || '0'} <span className="text-xs font-normal" style={{ color: colors.textSecondary }}>tok/s</span>
                 </div>
-              </TooltipTrigger>
-              <TooltipContent>TPS per Chip = B × TPS_batch，成本效益优化目标</TooltipContent>
-            </Tooltip>
+              </div>
+            </InfoTooltip>
           </div>
           <div className="grid grid-cols-2 gap-2 mb-3">
             <div style={{ ...metricCardStyle(selectedMetric === 'mfu'), textAlign: 'center', position: 'relative' }} onClick={() => setSelectedMetric(selectedMetric === 'mfu' ? null : 'mfu')}>
               <Info className="absolute top-2 right-2 h-2.5 w-2.5" style={{ color: selectedMetric === 'mfu' ? colors.interactive : '#d9d9d9' }} />
               <span className="text-[13px]" style={{ color: colors.textSecondary }}>MFU</span>
               <div className="text-lg font-semibold mt-1" style={{ color: colors.text }}>
-                {((throughput?.model_flops_utilization || 0) * 100).toFixed(1)} <span className="text-xs font-normal" style={{ color: colors.textSecondary }}>%</span>
+                {formatNumber((throughput?.model_flops_utilization || 0) * 100, 1)} <span className="text-xs font-normal" style={{ color: colors.textSecondary }}>%</span>
               </div>
             </div>
             <div style={{ ...metricCardStyle(selectedMetric === 'mbu'), textAlign: 'center', position: 'relative' }} onClick={() => setSelectedMetric(selectedMetric === 'mbu' ? null : 'mbu')}>
               <Info className="absolute top-2 right-2 h-2.5 w-2.5" style={{ color: selectedMetric === 'mbu' ? colors.interactive : '#d9d9d9' }} />
               <span className="text-[13px]" style={{ color: colors.textSecondary }}>MBU</span>
               <div className="text-lg font-semibold mt-1" style={{ color: colors.text }}>
-                {((throughput?.memory_bandwidth_utilization || 0) * 100).toFixed(1)} <span className="text-xs font-normal" style={{ color: colors.textSecondary }}>%</span>
+                {formatNumber((throughput?.memory_bandwidth_utilization || 0) * 100, 1)} <span className="text-xs font-normal" style={{ color: colors.textSecondary }}>%</span>
               </div>
             </div>
           </div>
@@ -704,7 +684,7 @@ export const AnalysisResultDisplay: React.FC<AnalysisResultDisplayProps> = ({
               <Info className="absolute top-2 right-2 h-2.5 w-2.5" style={{ color: selectedMetric === 'memory' ? colors.interactive : '#d9d9d9' }} />
               <span className="text-[13px]" style={{ color: colors.textSecondary }}>显存占用</span>
               <div className="text-lg font-semibold mt-1" style={{ color: memory?.is_memory_sufficient ? colors.text : colors.error }}>
-                {memory?.total_per_chip_gb?.toFixed(1) || '0.0'} <span className="text-xs font-normal" style={{ color: colors.textSecondary }}>/ 80G</span>
+                {formatNumber(memory?.total_per_chip_gb, 1) || '0.0'} <span className="text-xs font-normal" style={{ color: colors.textSecondary }}>/ 80G</span>
               </div>
             </div>
             {/* 推理成本 */}
@@ -715,7 +695,7 @@ export const AnalysisResultDisplay: React.FC<AnalysisResultDisplayProps> = ({
               <Info className="absolute top-2 right-2 h-2.5 w-2.5" style={{ color: selectedMetric === 'cost' ? colors.interactive : '#d9d9d9' }} />
               <span className="text-[13px]" style={{ color: colors.textSecondary }}>推理成本</span>
               <div className="text-lg font-semibold mt-1" style={{ color: colors.text }}>
-                ${result.cost ? result.cost.cost_per_million_tokens.toFixed(3) : '-'} <span className="text-xs font-normal" style={{ color: colors.textSecondary }}>/M</span>
+                ${result.cost ? formatNumber(result.cost.cost_per_million_tokens, 3) : '-'} <span className="text-xs font-normal" style={{ color: colors.textSecondary }}>/M</span>
               </div>
             </div>
           </div>
@@ -740,16 +720,13 @@ export const AnalysisResultDisplay: React.FC<AnalysisResultDisplayProps> = ({
               {is_feasible ? (
                 <CheckCircle className="h-[18px] w-[18px]" style={{ color: colors.success }} />
               ) : (
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <AlertTriangle className="h-[18px] w-[18px]" style={{ color: colors.error }} />
-                  </TooltipTrigger>
-                  <TooltipContent>{infeasibility_reason}</TooltipContent>
-                </Tooltip>
+                <InfoTooltip content={infeasibility_reason}>
+                  <AlertTriangle className="h-[18px] w-[18px]" style={{ color: colors.error }} />
+                </InfoTooltip>
               )}
               <div>
                 <span className="text-2xl font-bold leading-none" style={{ color: is_feasible ? colors.success : colors.error }}>
-                  {score?.overall_score?.toFixed(1) || '0.0'}
+                  {formatNumber(score?.overall_score, 1) || '0.0'}
                 </span>
                 <span className="text-[13px] ml-1" style={{ color: colors.textSecondary }}>分</span>
               </div>
@@ -820,9 +797,9 @@ export const AnalysisResultDisplay: React.FC<AnalysisResultDisplayProps> = ({
                         : latency.bottleneck_analysis.decode;
                       return (
                         <>
-                          <span><span className="inline-block w-1.5 h-1.5 rounded-sm mr-0.5 align-middle" style={{ background: '#faad14' }} />计算{(analysis.compute_ratio * 100).toFixed(0)}%</span>
-                          <span><span className="inline-block w-1.5 h-1.5 rounded-sm mr-0.5 align-middle" style={{ background: '#1890ff' }} />访存{(analysis.memory_ratio * 100).toFixed(0)}%</span>
-                          <span><span className="inline-block w-1.5 h-1.5 rounded-sm mr-0.5 align-middle" style={{ background: '#722ed1' }} />通信{(analysis.comm_ratio * 100).toFixed(0)}%</span>
+                          <span><span className="inline-block w-1.5 h-1.5 rounded-sm mr-0.5 align-middle" style={{ background: '#faad14' }} />计算{formatNumber(analysis.compute_ratio * 100, 0)}%</span>
+                          <span><span className="inline-block w-1.5 h-1.5 rounded-sm mr-0.5 align-middle" style={{ background: '#1890ff' }} />访存{formatNumber(analysis.memory_ratio * 100, 0)}%</span>
+                          <span><span className="inline-block w-1.5 h-1.5 rounded-sm mr-0.5 align-middle" style={{ background: '#722ed1' }} />通信{formatNumber(analysis.comm_ratio * 100, 0)}%</span>
                         </>
                       );
                     })()}
@@ -838,27 +815,27 @@ export const AnalysisResultDisplay: React.FC<AnalysisResultDisplayProps> = ({
               <div className="grid grid-cols-4 gap-2 mb-3">
                 <div className="text-center p-2 bg-blue-50 rounded-md">
                   <Clock className="h-3.5 w-3.5 text-blue-500 mx-auto" />
-                  <div className="text-base font-semibold text-blue-500 my-1">{score?.latency_score?.toFixed(0) || '0'}</div>
-                  <div className="text-[10px]" style={{ color: colors.textSecondary }}>延迟 {(DEFAULT_SCORE_WEIGHTS.latency * 100).toFixed(0)}%</div>
+                  <div className="text-base font-semibold text-blue-500 my-1">{formatNumber(score?.latency_score, 0) || '0'}</div>
+                  <div className="text-[10px]" style={{ color: colors.textSecondary }}>延迟 {formatNumber(DEFAULT_SCORE_WEIGHTS.latency * 100, 0)}%</div>
                 </div>
                 <div className="text-center p-2 bg-green-50 rounded-md">
                   <Zap className="h-3.5 w-3.5 text-green-500 mx-auto" />
-                  <div className="text-base font-semibold text-green-500 my-1">{score?.throughput_score?.toFixed(0) || '0'}</div>
-                  <div className="text-[10px]" style={{ color: colors.textSecondary }}>吞吐 {(DEFAULT_SCORE_WEIGHTS.throughput * 100).toFixed(0)}%</div>
+                  <div className="text-base font-semibold text-green-500 my-1">{formatNumber(score?.throughput_score, 0) || '0'}</div>
+                  <div className="text-[10px]" style={{ color: colors.textSecondary }}>吞吐 {formatNumber(DEFAULT_SCORE_WEIGHTS.throughput * 100, 0)}%</div>
                 </div>
                 <div className="text-center p-2 bg-orange-50 rounded-md">
                   <Gauge className="h-3.5 w-3.5 text-orange-500 mx-auto" />
-                  <div className="text-base font-semibold text-orange-500 my-1">{score?.efficiency_score?.toFixed(0) || '0'}</div>
-                  <div className="text-[10px]" style={{ color: colors.textSecondary }}>效率 {(DEFAULT_SCORE_WEIGHTS.efficiency * 100).toFixed(0)}%</div>
+                  <div className="text-base font-semibold text-orange-500 my-1">{formatNumber(score?.efficiency_score, 0) || '0'}</div>
+                  <div className="text-[10px]" style={{ color: colors.textSecondary }}>效率 {formatNumber(DEFAULT_SCORE_WEIGHTS.efficiency * 100, 0)}%</div>
                 </div>
                 <div className="text-center p-2 bg-purple-50 rounded-md">
                   <Target className="h-3.5 w-3.5 text-purple-500 mx-auto" />
-                  <div className="text-base font-semibold text-purple-500 my-1">{score?.balance_score?.toFixed(0) || '0'}</div>
-                  <div className="text-[10px]" style={{ color: colors.textSecondary }}>均衡 {(DEFAULT_SCORE_WEIGHTS.balance * 100).toFixed(0)}%</div>
+                  <div className="text-base font-semibold text-purple-500 my-1">{formatNumber(score?.balance_score, 0) || '0'}</div>
+                  <div className="text-[10px]" style={{ color: colors.textSecondary }}>均衡 {formatNumber(DEFAULT_SCORE_WEIGHTS.balance * 100, 0)}%</div>
                 </div>
               </div>
               <div className="text-[11px] text-center font-mono" style={{ color: colors.textSecondary }}>
-                综合 = {(DEFAULT_SCORE_WEIGHTS.latency * 100).toFixed(0)}%×延迟 + {(DEFAULT_SCORE_WEIGHTS.throughput * 100).toFixed(0)}%×吞吐 + {(DEFAULT_SCORE_WEIGHTS.efficiency * 100).toFixed(0)}%×效率 + {(DEFAULT_SCORE_WEIGHTS.balance * 100).toFixed(0)}%×均衡
+                综合 = {formatNumber(DEFAULT_SCORE_WEIGHTS.latency * 100, 0)}%×延迟 + {formatNumber(DEFAULT_SCORE_WEIGHTS.throughput * 100, 0)}%×吞吐 + {formatNumber(DEFAULT_SCORE_WEIGHTS.efficiency * 100, 0)}%×效率 + {formatNumber(DEFAULT_SCORE_WEIGHTS.balance * 100, 0)}%×均衡
               </div>
             </div>
           )}
@@ -870,19 +847,16 @@ export const AnalysisResultDisplay: React.FC<AnalysisResultDisplayProps> = ({
             </div>
           )}
           </>
-          </BaseCard>
-        </div>
+        </BaseCard>
 
         {/* 优化建议 */}
         {suggestions.length > 0 && (
-          <div className="mb-4">
-            <BaseCard
-              title="优化建议"
-              accentColor="#722ed1"
-              collapsible
-              expanded={expandedSections.suggestions}
-              onExpandChange={(expanded) => setExpandedSections(prev => ({ ...prev, suggestions: expanded }))}
-            >
+          <BaseCard collapsible
+            title="优化建议"
+            expanded={expandedSections.suggestions}
+            onExpandChange={(expanded) => setExpandedSections(prev => ({ ...prev, suggestions: expanded }))}
+            gradient
+          >
               {suggestions.slice(0, 3).map((s, i) => (
                 <div key={i} className="p-2.5 bg-white rounded-lg mb-2 border" style={{
                   borderLeft: `3px solid ${s.priority <= 2 ? colors.error : s.priority <= 3 ? colors.warning : colors.primary}`,
@@ -903,23 +877,19 @@ export const AnalysisResultDisplay: React.FC<AnalysisResultDisplayProps> = ({
                   <span className="text-[10px] mt-1 block" style={{ color: colors.textSecondary }}>预期: {s.expected_improvement}</span>
                 </div>
               ))}
-            </BaseCard>
-          </div>
+          </BaseCard>
         )}
 
         {/* ═══════════════════════════════════════════════════════════════ */}
         {/* 八、候选方案 */}
         {/* ═══════════════════════════════════════════════════════════════ */}
         {topKPlans.length > 1 && (
-          <div className="mb-4">
-            <BaseCard
-              title="候选方案"
-              subtitle={`${topKPlans.length}个`}
-              accentColor="#1890ff"
-              collapsible
-              expanded={expandedSections.candidates}
-              onExpandChange={(expanded) => setExpandedSections(prev => ({ ...prev, candidates: expanded }))}
-            >
+          <BaseCard collapsible
+            title={<>候选方案 <span className="text-xs font-normal text-gray-400 ml-2">({topKPlans.length}个)</span></>}
+            expanded={expandedSections.candidates}
+            onExpandChange={(expanded) => setExpandedSections(prev => ({ ...prev, candidates: expanded }))}
+            gradient
+          >
               <div className="max-h-[400px] overflow-auto">
               {topKPlans.map((p, i) => {
                 const isSelected = p.plan.plan_id === result?.plan.plan_id
@@ -961,24 +931,22 @@ export const AnalysisResultDisplay: React.FC<AnalysisResultDisplayProps> = ({
                         </div>
                       </div>
                       <span className="text-sm font-semibold" style={{ color: isSelected ? colors.interactive : colors.text }}>
-                        {p.score?.overall_score?.toFixed(1) || '0.0'}
+                        {formatNumber(p.score?.overall_score, 1) || '0.0'}
                       </span>
                     </div>
                     <div className="flex justify-between mt-1.5 text-[10px]" style={{ color: colors.textSecondary }}>
-                      <span>{p.latency?.prefill_total_latency_ms?.toFixed(1) || '0.0'}ms</span>
-                      <span>{p.throughput?.tokens_per_second?.toFixed(0) || '0'} tok/s</span>
-                      <span>{((p.throughput?.model_flops_utilization || 0) * 100).toFixed(1)}%</span>
+                      <span>{formatNumber(p.latency?.prefill_total_latency_ms, 1) || '0.0'}ms</span>
+                      <span>{formatNumber(p.throughput?.tokens_per_second, 0) || '0'} tok/s</span>
+                      <span>{formatNumber((p.throughput?.model_flops_utilization || 0) * 100, 1)}%</span>
                     </div>
                   </div>
                 )
               })}
               </div>
-            </BaseCard>
-          </div>
+          </BaseCard>
         )}
 
       </div>
-    </TooltipProvider>
   )
 }
 

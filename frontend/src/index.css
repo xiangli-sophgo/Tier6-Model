@@ -37,6 +37,12 @@
   --shadow-md: 0 6px 16px rgba(37, 99, 235, 0.1), 0 2px 4px rgba(37, 99, 235, 0.04);
   --shadow-focus: 0 0 0 3px rgba(37, 99, 235, 0.15);
 
+  /* 统一间距规范 */
+  --spacing-card-gap-large: 16px;    /* 大卡片之间的间距 (gap-4) */
+  --spacing-card-gap-small: 12px;    /* 小卡片之间的间距 (gap-3) */
+  --spacing-card-padding: 16px;       /* 大卡片的内边距 (p-4) */
+  --spacing-card-padding-compact: 12px; /* 紧凑内边距 (p-3) */
+
   /* 字体 */
   --font-mono: 'JetBrains Mono', 'SF Mono', monospace;
   --font-sans: 'Inter', 'Noto Sans SC', -apple-system, sans-serif;
@@ -98,14 +104,14 @@ button:hover:not(:disabled) {
   transform: translateY(-1px);
 }
 
-/* 卡片悬停效果 - Soft UI */
+/* 卡片悬停效果 - 更微妙的交互反馈 */
 .card {
-  transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.3s ease;
+  transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.2s ease;
 }
 
 .card:hover {
-  transform: translateY(-4px);
-  box-shadow: 0 12px 24px rgba(37, 99, 235, 0.12);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(37, 99, 235, 0.08), 0 2px 4px rgba(37, 99, 235, 0.04);
 }
 
 /* 等宽字体应用 */

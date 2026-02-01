@@ -764,9 +764,9 @@ class LLMInferenceSimulator:
                     chip_id=chip_id,
                     pp_stage=0,
                 )
-                state.compute_idle_at = start_time + pcie_latency
+                state.compute_idle_at = start_time + transfer_latency
 
-        return start_time + pcie_latency
+        return start_time + transfer_latency
 
     def _simulate_data_transfer_d2h(self, start_time: float) -> float:
         """模拟 Device to Host 数据传输"""
@@ -793,7 +793,7 @@ class LLMInferenceSimulator:
                     pp_stage=last_stage,
                 )
 
-        return start_time + pcie_latency
+        return start_time + transfer_latency
 
     def _simulate_prefill(self, start_time: float, report_progress: bool = False) -> float:
         """模拟 Prefill 阶段
@@ -1667,7 +1667,20 @@ def run_simulation(
     # 获取 MoE 相关的 moe_tp 参数（从 parallelism_dict 中获取）
     moe_tp = parallelism_dict.get("moe_tp")
 
+    # 从 hardware_dict 获取芯片参数
     chip_hw = hardware_dict.get("chip", {})
+
+    # ========== 互联参数获取（支持两种格式） ==========
+    # 格式1: topology_dict.hardware_params.interconnect (YAML 配置文件格式)
+    # 格式2: hardware_dict 中的 chip/board/rack/pod (前端传入格式)
+    hardware_params = topology_dict.get("hardware_params", {})
+    interconnect = hardware_params.get("interconnect", {})
+    c2c_config = interconnect.get("c2c", {})
+    b2b_config = interconnect.get("b2b", {})
+    r2r_config = interconnect.get("r2r", {})
+    p2p_config = interconnect.get("p2p", {})
+
+    # 前端传入的硬件配置（备用来源）
     board_hw = hardware_dict.get("board", {})
     rack_hw = hardware_dict.get("rack", {})
     pod_hw = hardware_dict.get("pod", {})
@@ -1685,22 +1698,61 @@ def run_simulation(
             raise ValueError(f"{field_name} 必须为正数，当前值: {value}")
         return value
 
+    def _get_interconnect_param(
+        yaml_config: dict, yaml_field: str,
+        frontend_config: dict, frontend_field: str,
+        param_name: str
+    ) -> float:
+        """
+        从两种格式中获取互联参数（优先 YAML 格式，备用前端格式）
+
+        Args:
+            yaml_config: YAML 格式的配置（如 c2c_config）
+            yaml_field: YAML 格式的字段名（如 "bandwidth_gbps"）
+            frontend_config: 前端格式的配置（如 chip_hw 或 board_hw）
+            frontend_field: 前端格式的字段名（如 "c2c_bandwidth_gbps"）
+            param_name: 参数名称（用于错误信息）
+
+        Returns:
+            参数值
+        """
+        # 优先从 YAML 格式获取
+        if yaml_field in yaml_config:
+            return yaml_config[yaml_field]
+        # 备用：从前端格式获取
+        if frontend_field in frontend_config:
+            return frontend_config[frontend_field]
+        # 都没有则报错
+        raise ValueError(f"互联配置缺少必需字段: {param_name}（支持格式：topology.hardware_params.interconnect.*.{yaml_field} 或 hardware.*.{frontend_field}）")
+
     # 验证芯片必需参数
-    chip_type = _require_field(chip_hw, "chip_type", "芯片配置")
+    chip_type = _require_field(chip_hw, "name", "芯片配置")
     num_cores = _require_positive(_require_field(chip_hw, "num_cores", "芯片配置"), "num_cores")
     compute_tflops_bf16 = _require_positive(_require_field(chip_hw, "compute_tflops_bf16", "芯片配置"), "compute_tflops_bf16")
     memory_capacity_gb = _require_positive(_require_field(chip_hw, "memory_capacity_gb", "芯片配置"), "memory_capacity_gb")
     memory_bandwidth_gbps = _require_positive(_require_field(chip_hw, "memory_bandwidth_gbps", "芯片配置"), "memory_bandwidth_gbps")
-    c2c_bandwidth_gbps = _require_positive(_require_field(chip_hw, "c2c_bandwidth_gbps", "芯片配置"), "c2c_bandwidth_gbps")
-    c2c_latency_us = _require_field(chip_hw, "c2c_latency_us", "芯片配置")  # 延迟可以为 0
 
-    # 验证互联必需参数
-    b2b_bandwidth_gbps = _require_positive(_require_field(board_hw, "b2b_bandwidth_gbps", "Board 配置"), "b2b_bandwidth_gbps")
-    b2b_latency_us = _require_field(board_hw, "b2b_latency_us", "Board 配置")
-    r2r_bandwidth_gbps = _require_positive(_require_field(rack_hw, "r2r_bandwidth_gbps", "Rack 配置"), "r2r_bandwidth_gbps")
-    r2r_latency_us = _require_field(rack_hw, "r2r_latency_us", "Rack 配置")
-    p2p_bandwidth_gbps = _require_positive(_require_field(pod_hw, "p2p_bandwidth_gbps", "Pod 配置"), "p2p_bandwidth_gbps")
-    p2p_latency_us = _require_field(pod_hw, "p2p_latency_us", "Pod 配置")
+    # 验证互联必需参数（支持两种格式）
+    c2c_bandwidth_gbps = _require_positive(
+        _get_interconnect_param(c2c_config, "bandwidth_gbps", chip_hw, "c2c_bandwidth_gbps", "c2c_bandwidth"),
+        "c2c_bandwidth_gbps"
+    )
+    c2c_latency_us = _get_interconnect_param(c2c_config, "latency_us", chip_hw, "c2c_latency_us", "c2c_latency")
+    b2b_bandwidth_gbps = _require_positive(
+        _get_interconnect_param(b2b_config, "bandwidth_gbps", board_hw, "b2b_bandwidth_gbps", "b2b_bandwidth"),
+        "b2b_bandwidth_gbps"
+    )
+    b2b_latency_us = _get_interconnect_param(b2b_config, "latency_us", board_hw, "b2b_latency_us", "b2b_latency")
+    r2r_bandwidth_gbps = _require_positive(
+        _get_interconnect_param(r2r_config, "bandwidth_gbps", rack_hw, "r2r_bandwidth_gbps", "r2r_bandwidth"),
+        "r2r_bandwidth_gbps"
+    )
+    r2r_latency_us = _get_interconnect_param(r2r_config, "latency_us", rack_hw, "r2r_latency_us", "r2r_latency")
+    p2p_bandwidth_gbps = _require_positive(
+        _get_interconnect_param(p2p_config, "bandwidth_gbps", pod_hw, "p2p_bandwidth_gbps", "p2p_bandwidth"),
+        "p2p_bandwidth_gbps"
+    )
+    p2p_latency_us = _get_interconnect_param(p2p_config, "latency_us", pod_hw, "p2p_latency_us", "p2p_latency")
 
     # 构建运行时硬件参数（所有必需参数已验证）
     hardware = RuntimeHardwareParams(

@@ -1,5 +1,5 @@
 import React from 'react'
-import { Trash2, Plus, MinusCircle, Undo } from 'lucide-react'
+import { Trash2, Plus, MinusCircle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
@@ -12,16 +12,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { ConfigCollapsible } from '@/components/ui/config-collapsible'
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from '@/components/ui/collapsible'
+import { BaseCard } from '@/components/common/BaseCard'
 import {
   HierarchyLevelSwitchConfig, SwitchTypeConfig, SwitchLayerConfig,
   ManualConnectionConfig, ConnectionMode, SwitchConnectionMode, HierarchyLevel,
-  LevelConnectionDefaults,
 } from '../../types'
 
 // ============================================
@@ -356,23 +350,6 @@ export const ConnectionEditPanel: React.FC<ConnectionEditPanelProps> = ({
       default: return 'datacenter'
     }
   }
-  // 获取当前层级的默认参数
-  const levelKey = currentLevel as 'datacenter' | 'pod' | 'rack' | 'board'
-  const currentDefaults = manualConnectionConfig?.level_defaults?.[levelKey] || {}
-
-  // 更新层级默认参数
-  const updateLevelDefaults = (defaults: LevelConnectionDefaults) => {
-    if (!onManualConnectionConfigChange) return
-    const newConfig: ManualConnectionConfig = {
-      ...(manualConnectionConfig || { enabled: true, mode: 'append', connections: [] }),
-      level_defaults: {
-        ...(manualConnectionConfig?.level_defaults || {}),
-        [levelKey]: defaults,
-      },
-    }
-    onManualConnectionConfigChange(newConfig)
-  }
-
   // 更新手动连接的参数
   const updateManualConnectionParams = (connId: string, bandwidth?: number, latency?: number) => {
     if (!onManualConnectionConfigChange || !manualConnectionConfig) return
@@ -397,43 +374,13 @@ export const ConnectionEditPanel: React.FC<ConnectionEditPanelProps> = ({
   const [panelExpanded, setPanelExpanded] = React.useState(true)
 
   return (
-    <ConfigCollapsible
-      open={panelExpanded}
-      onOpenChange={setPanelExpanded}
+    <BaseCard
       title="连接编辑"
+      collapsible
+      expanded={panelExpanded}
+      onExpandChange={setPanelExpanded}
+      gradient
     >
-
-      {/* 层级默认带宽/延迟配置 */}
-      <div className="mb-3 p-2.5 bg-gray-50 rounded-lg border border-gray-200/50">
-        <div className="mb-2">
-          <span className="text-xs font-medium text-gray-700">层级默认参数</span>
-          <span className="text-[11px] text-gray-400 ml-2">新建连接时自动应用</span>
-        </div>
-        <div className="flex gap-4 items-center">
-          <div className="flex items-center gap-1">
-            <span className="text-xs">带宽:</span>
-            <NumberInput
-              min={0}
-              value={currentDefaults.bandwidth}
-              onChange={(v) => updateLevelDefaults({ ...currentDefaults, bandwidth: v })}
-              className="w-20"
-              placeholder="未设置"
-            />
-            <span className="text-[11px] text-gray-400">GB/s</span>
-          </div>
-          <div className="flex items-center gap-1">
-            <span className="text-xs">延迟:</span>
-            <NumberInput
-              min={0}
-              value={currentDefaults.latency}
-              onChange={(v) => updateLevelDefaults({ ...currentDefaults, latency: v })}
-              className="w-20"
-              placeholder="未设置"
-            />
-            <span className="text-[11px] text-gray-400">us</span>
-          </div>
-        </div>
-      </div>
 
       {/* 编辑模式按钮 */}
       <div className="mb-3">
@@ -551,23 +498,19 @@ export const ConnectionEditPanel: React.FC<ConnectionEditPanelProps> = ({
 
       {/* 手动添加的连接列表 */}
       <div className="mt-2 space-y-2">
-        <Collapsible open={manualExpanded} onOpenChange={setManualExpanded}>
-          <CollapsibleTrigger asChild>
-            <div className="flex items-center justify-between p-2 bg-white rounded-lg border border-gray-200/50 cursor-pointer hover:bg-gray-50">
-              <span className="text-sm">手动连接 ({currentLevelConnections.length})</span>
-              <span className="text-xs text-gray-400">{manualExpanded ? '▲' : '▼'}</span>
-            </div>
-          </CollapsibleTrigger>
-          <CollapsibleContent>
-            <div className="mt-2 max-h-60 overflow-auto">
-              {currentLevelConnections.map((conn) => {
-                // 判断是否使用默认值（值为空）
-                const useDefaultBandwidth = conn.bandwidth === undefined || conn.bandwidth === null
-                const useDefaultLatency = conn.latency === undefined || conn.latency === null
-                const hasCustom = !useDefaultBandwidth || !useDefaultLatency
-                // 显示值：空值时显示默认值
-                const displayBandwidth = useDefaultBandwidth ? currentDefaults.bandwidth : conn.bandwidth
-                const displayLatency = useDefaultLatency ? currentDefaults.latency : conn.latency
+        <BaseCard
+          title="手动连接"
+          collapsible
+          expanded={manualExpanded}
+          onExpandChange={setManualExpanded}
+          collapsibleCount={currentLevelConnections.length}
+          contentClassName="max-h-60 overflow-auto"
+          gradient
+        >
+          {currentLevelConnections.map((conn) => {
+                // 显示连接的带宽和延迟
+                const displayBandwidth = conn.bandwidth
+                const displayLatency = conn.latency
                 return (
                   <div
                     key={conn.id}
@@ -585,17 +528,6 @@ export const ConnectionEditPanel: React.FC<ConnectionEditPanelProps> = ({
                         </div>
                       </div>
                       <div className="flex items-center gap-1 shrink-0 ml-2">
-                        {hasCustom && (
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="h-7 w-7 p-0 text-gray-400"
-                            title="重置为默认"
-                            onClick={() => updateManualConnectionParams(conn.id, undefined, undefined)}
-                          >
-                            <Undo className="h-3.5 w-3.5" />
-                          </Button>
-                        )}
                         <Button
                           variant="ghost"
                           size="sm"
@@ -608,22 +540,22 @@ export const ConnectionEditPanel: React.FC<ConnectionEditPanelProps> = ({
                     </div>
                     <div className="mt-2 flex gap-3 items-center">
                       <div className="flex items-center gap-1">
-                        <span className={`text-[11px] ${useDefaultBandwidth ? 'text-gray-400' : 'text-gray-700'}`}>带宽:</span>
+                        <span className="text-[11px] text-gray-700">带宽:</span>
                         <NumberInput
                           min={0}
                           value={displayBandwidth}
                           onChange={(v) => updateManualConnectionParams(conn.id, v, conn.latency)}
-                          className={`w-20 ${useDefaultBandwidth ? 'text-gray-400' : ''}`}
+                          className="w-20"
                           placeholder="GB/s"
                         />
                       </div>
                       <div className="flex items-center gap-1">
-                        <span className={`text-[11px] ${useDefaultLatency ? 'text-gray-400' : 'text-gray-700'}`}>延迟:</span>
+                        <span className="text-[11px] text-gray-700">延迟:</span>
                         <NumberInput
                           min={0}
                           value={displayLatency}
                           onChange={(v) => updateManualConnectionParams(conn.id, conn.bandwidth, v)}
-                          className={`w-20 ${useDefaultLatency ? 'text-gray-400' : ''}`}
+                          className="w-20"
                           placeholder="us"
                         />
                       </div>
@@ -634,27 +566,18 @@ export const ConnectionEditPanel: React.FC<ConnectionEditPanelProps> = ({
               {currentLevelConnections.length === 0 && (
                 <span className="text-gray-400 text-[13px]">暂无手动连接</span>
               )}
-            </div>
-          </CollapsibleContent>
-        </Collapsible>
+        </BaseCard>
 
-        <Collapsible open={currentExpanded} onOpenChange={setCurrentExpanded}>
-          <CollapsibleTrigger asChild>
-            <div className="flex items-center justify-between p-2 bg-white rounded-lg border border-gray-200/50 cursor-pointer hover:bg-gray-50">
-              <span className="text-sm">当前连接 ({currentViewConnections.length})</span>
-              <span className="text-xs text-gray-400">{currentExpanded ? '▲' : '▼'}</span>
-            </div>
-          </CollapsibleTrigger>
-          <CollapsibleContent>
-            <div className="mt-2 max-h-60 overflow-auto">
-              {currentViewConnections.map((conn, idx) => {
-                // 判断是否使用默认值（值为空）
-                const useDefaultBandwidth = conn.bandwidth === undefined || conn.bandwidth === null
-                const useDefaultLatency = conn.latency === undefined || conn.latency === null
-                const hasCustom = !useDefaultBandwidth || !useDefaultLatency
-                // 显示值：空值时显示默认值
-                const displayBandwidth = useDefaultBandwidth ? currentDefaults.bandwidth : conn.bandwidth
-                const displayLatency = useDefaultLatency ? currentDefaults.latency : conn.latency
+        <BaseCard
+          title="当前连接"
+          collapsible
+          expanded={currentExpanded}
+          onExpandChange={setCurrentExpanded}
+          collapsibleCount={currentViewConnections.length}
+          contentClassName="max-h-60 overflow-auto"
+          gradient
+        >
+          {currentViewConnections.map((conn, idx) => {
                 return (
                   <div
                     key={`auto-${idx}`}
@@ -672,17 +595,6 @@ export const ConnectionEditPanel: React.FC<ConnectionEditPanelProps> = ({
                         </div>
                       </div>
                       <div className="flex items-center gap-1 shrink-0 ml-2">
-                        {hasCustom && (
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="h-7 w-7 p-0 text-gray-400"
-                            title="重置为默认"
-                            onClick={() => onUpdateConnectionParams?.(conn.source, conn.target, undefined, undefined)}
-                          >
-                            <Undo className="h-3.5 w-3.5" />
-                          </Button>
-                        )}
                         <Button
                           variant="ghost"
                           size="sm"
@@ -695,22 +607,22 @@ export const ConnectionEditPanel: React.FC<ConnectionEditPanelProps> = ({
                     </div>
                     <div className="mt-2 flex gap-3 items-center">
                       <div className="flex items-center gap-1">
-                        <span className={`text-[11px] ${useDefaultBandwidth ? 'text-gray-400' : 'text-gray-700'}`}>带宽:</span>
+                        <span className="text-[11px] text-gray-700">带宽:</span>
                         <NumberInput
                           min={0}
-                          value={displayBandwidth}
+                          value={conn.bandwidth}
                           onChange={(v) => onUpdateConnectionParams?.(conn.source, conn.target, v, conn.latency)}
-                          className={`w-20 ${useDefaultBandwidth ? 'text-gray-400' : ''}`}
+                          className="w-20"
                           placeholder="GB/s"
                         />
                       </div>
                       <div className="flex items-center gap-1">
-                        <span className={`text-[11px] ${useDefaultLatency ? 'text-gray-400' : 'text-gray-700'}`}>延迟:</span>
+                        <span className="text-[11px] text-gray-700">延迟:</span>
                         <NumberInput
                           min={0}
-                          value={displayLatency}
+                          value={conn.latency}
                           onChange={(v) => onUpdateConnectionParams?.(conn.source, conn.target, conn.bandwidth, v)}
-                          className={`w-20 ${useDefaultLatency ? 'text-gray-400' : ''}`}
+                          className="w-20"
                           placeholder="us"
                         />
                       </div>
@@ -721,10 +633,8 @@ export const ConnectionEditPanel: React.FC<ConnectionEditPanelProps> = ({
               {currentViewConnections.length === 0 && (
                 <span className="text-gray-400 text-[13px]">暂无连接</span>
               )}
-            </div>
-          </CollapsibleContent>
-        </Collapsible>
+        </BaseCard>
       </div>
-    </ConfigCollapsible>
+    </BaseCard>
   )
 }

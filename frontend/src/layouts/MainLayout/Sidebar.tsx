@@ -6,7 +6,7 @@
 
 import React from 'react'
 import { useWorkbench } from '@/contexts/WorkbenchContext'
-import { LayoutDashboard, Network, Zap, Database, GitBranch, ChevronLeft, ChevronRight } from 'lucide-react'
+import { LayoutDashboard, Network, Zap, Database, GitBranch, ChevronLeft, ChevronRight, Palette } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import {
   Tooltip,
@@ -15,7 +15,7 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip'
 
-type ViewMode = 'dashboard' | 'topology' | 'deployment' | 'results' | 'knowledge' | '3d'
+type ViewMode = 'dashboard' | 'topology' | 'deployment' | 'results' | 'knowledge' | '3d' | 'playground'
 
 interface MenuItem {
   key: ViewMode
@@ -49,6 +49,11 @@ const menuItems: MenuItem[] = [
     key: 'knowledge',
     icon: <GitBranch className="h-5 w-5" />,
     label: '知识网络',
+  },
+  {
+    key: 'playground',
+    icon: <Palette className="h-5 w-5" />,
+    label: 'Card展示',
   },
 ]
 

@@ -50,7 +50,13 @@ export interface PodConfig {
 export interface ConnectionConfig {
   source: string;
   target: string;
-  type: 'intra' | 'inter' | 'switch' | 'manual';
+  type: 'c2c' | 'b2b' | 'r2r' | 'p2p' | 'custom' | 'switch';
+  // 'c2c': Chip-to-Chip (引用 interconnect.c2c)
+  // 'b2b': Board-to-Board (引用 interconnect.b2b)
+  // 'r2r': Rack-to-Rack (引用 interconnect.r2r)
+  // 'p2p': Pod-to-Pod (引用 interconnect.p2p)
+  // 'custom': 自定义连接 (必须提供 bandwidth/latency)
+  // 'switch': 交换机连接
   bandwidth?: number;
   latency?: number;  // 延迟 (ns)
   connection_role?: 'uplink' | 'downlink' | 'inter';  // Switch连接角色
@@ -221,25 +227,8 @@ export const CHIP_TYPE_NAMES: Record<ChipType, string> = {
   chip: 'Chip',
 };
 
-// 层级颜色
-export const LEVEL_COLORS: Record<ViewLevel, string> = {
-  pod: '#fa8c16',      // 橙色
-  rack: '#1890ff',     // 蓝色
-  board: '#52c41a',    // 绿色
-  chip: '#722ed1',     // 紫色
-};
-
-// Chip类型颜色
-export const CHIP_TYPE_COLORS: Record<ChipType, string> = {
-  chip: '#d97706',     // 琥珀色
-};
-
-// Switch层级颜色
-export const SWITCH_LAYER_COLORS: Record<string, string> = {
-  leaf: '#13c2c2',     // 青色
-  spine: '#faad14',    // 金色
-  core: '#f5222d',     // 红色
-};
+// 层级颜色 - 从设计令牌导入
+export { LEVEL_COLORS, CHIP_TYPE_COLORS, SWITCH_LAYER_COLORS } from './utils/design-tokens'
 
 // Switch层级显示名称
 export const SWITCH_LAYER_NAMES: Record<string, string> = {

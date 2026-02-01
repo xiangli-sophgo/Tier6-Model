@@ -3,7 +3,7 @@
  * 包含: ManualConnectionLine, ControlPanel, EdgeRenderer, LevelPairSelector
  */
 import React from 'react'
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
+import { InfoTooltip } from '@/components/ui/info-tooltip'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Button } from '@/components/ui/button'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -234,24 +234,17 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
         </Tabs>
 
         {isForceMode && (
-          <TooltipProvider>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <span className="flex items-center gap-1 text-[11px]" style={{
-                  color: isForceSimulating ? '#52c41a' : '#8c8c8c',
-                }}>
-                  <span className="h-1.5 w-1.5 rounded-full" style={{
-                    backgroundColor: isForceSimulating ? '#52c41a' : '#d9d9d9',
-                    animation: isForceSimulating ? 'pulse 1s infinite' : 'none',
-                  }} />
-                  {isForceSimulating ? '模拟中' : '已稳定'}
-                </span>
-              </TooltipTrigger>
-              <TooltipContent>
-                {isForceSimulating ? '物理模拟进行中，可直接拖拽节点' : '物理模拟已稳定'}
-              </TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
+          <InfoTooltip content={isForceSimulating ? '物理模拟进行中，可直接拖拽节点' : '物理模拟已稳定'}>
+            <span className="flex items-center gap-1 text-[11px]" style={{
+              color: isForceSimulating ? '#52c41a' : '#8c8c8c',
+            }}>
+              <span className="h-1.5 w-1.5 rounded-full" style={{
+                backgroundColor: isForceSimulating ? '#52c41a' : '#d9d9d9',
+                animation: isForceSimulating ? 'pulse 1s infinite' : 'none',
+              }} />
+              {isForceSimulating ? '模拟中' : '已稳定'}
+            </span>
+          </InfoTooltip>
         )}
 
         <div className="h-5 w-px bg-border" />
@@ -269,55 +262,44 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
         </div>
 
         {isManualMode && (
-          <TooltipProvider>
-            <>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={onUndo}
-                    disabled={historyIndex < 0}
-                    className="h-8 w-8 p-0"
-                  >
-                    <Undo className="h-4 w-4" />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>撤销 (Ctrl+Z)</TooltipContent>
-              </Tooltip>
+          <>
+            <InfoTooltip content="撤销 (Ctrl+Z)">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={onUndo}
+                disabled={historyIndex < 0}
+                className="h-8 w-8 p-0"
+              >
+                <Undo className="h-4 w-4" />
+              </Button>
+            </InfoTooltip>
 
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={onRedo}
-                    disabled={historyIndex >= historyLength - 1}
-                    className="h-8 w-8 p-0"
-                  >
-                    <Redo className="h-4 w-4" />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>重做 (Ctrl+Y)</TooltipContent>
-              </Tooltip>
+            <InfoTooltip content="重做 (Ctrl+Y)">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={onRedo}
+                disabled={historyIndex >= historyLength - 1}
+                className="h-8 w-8 p-0"
+              >
+                <Redo className="h-4 w-4" />
+              </Button>
+            </InfoTooltip>
 
-              {Object.keys(manualPositions).length > 0 && (
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={onReset}
-                      className="h-8 w-8 p-0"
-                    >
-                      <RotateCw className="h-4 w-4" />
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent>重置布局</TooltipContent>
-                </Tooltip>
-              )}
-            </>
-          </TooltipProvider>
+            {Object.keys(manualPositions).length > 0 && (
+              <InfoTooltip content="重置布局">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={onReset}
+                  className="h-8 w-8 p-0"
+                >
+                  <RotateCw className="h-4 w-4" />
+                </Button>
+              </InfoTooltip>
+            )}
+          </>
         )}
       </div>
 

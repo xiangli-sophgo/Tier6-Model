@@ -22,7 +22,7 @@ import { GanttChart } from './GanttChart'
 import { LayerWaterfallChart } from './LayerWaterfallChart'
 import { CommunicationBreakdownChart } from './CommunicationBreakdownChart'
 import { TaskDetailDrawer } from '../TaskDetailDrawer'
-import { BaseCard } from '../../../common/BaseCard'
+import { BaseCard } from "@/components/common/BaseCard"
 import {
   PlanAnalysisResult,
   HardwareConfig,
@@ -52,6 +52,10 @@ interface ChartsPanelProps {
   model: LLMModelConfig
   inference?: InferenceConfig
   topology?: HierarchicalTopology | null
+  /** 外部提供的甘特图数据（从后端评估结果中获取），优先使用 */
+  externalGanttData?: GanttChartData | null
+  /** 外部提供的统计数据（从后端评估结果中获取），优先使用 */
+  externalStats?: SimulationStats | null
 }
 
 type MetricType = 'score' | 'ttft' | 'tpot' | 'throughput' | 'tps_per_batch' | 'tps_per_chip' | 'mfu' | 'mbu' | 'cost' | 'p99_ttft' | 'p99_tpot'
@@ -82,10 +86,15 @@ export const ChartsPanel: React.FC<ChartsPanelProps> = ({
   model,
   inference,
   topology,
+  externalGanttData,
+  externalStats,
 }) => {
   const [selectedMetric, setSelectedMetric] = useState<MetricType>('score')
   const [simulationResult, setSimulationResult] = useState<SimulationResult | null>(null)
   const [isSimulating, setIsSimulating] = useState(false)
+
+  // 判断是否有外部数据（来自后端评估结果）
+  const hasExternalData = !!(externalGanttData || externalStats)
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
     charts: true,
     simulation: true,
@@ -172,8 +181,13 @@ export const ChartsPanel: React.FC<ChartsPanelProps> = ({
     await runBackendSimulation()
   }, [result, inference, topology, runBackendSimulation])
 
-  // 当分析结果变化时自动运行模拟
+  // 当分析结果变化时自动运行模拟（仅在没有外部数据时）
   useEffect(() => {
+    // 如果有外部数据，不需要运行模拟
+    if (hasExternalData) {
+      return
+    }
+
     if (!result || !inference) {
       setSimulationResult(null)
       lastResultIdRef.current = null
@@ -188,7 +202,7 @@ export const ChartsPanel: React.FC<ChartsPanelProps> = ({
     lastResultIdRef.current = resultId
 
     runSimulation()
-  }, [result, inference, runSimulation])
+  }, [result, inference, runSimulation, hasExternalData])
 
   if (!result) {
     return (
@@ -217,14 +231,12 @@ export const ChartsPanel: React.FC<ChartsPanelProps> = ({
       {/* ═══════════════════════════════════════════════════════════════ */}
       {/* 四、图表可视化 */}
       {/* ═══════════════════════════════════════════════════════════════ */}
-      <div style={{ marginBottom: 16 }}>
-        <BaseCard
-          title="图表可视化"
-          accentColor="#eb2f96"
-          collapsible
-          expanded={expandedSections.charts}
-          onExpandChange={(expanded) => setExpandedSections(prev => ({ ...prev, charts: expanded }))}
-        >
+      <BaseCard collapsible
+        title="图表可视化"
+        open={expandedSections.charts}
+        onOpenChange={(expanded) => setExpandedSections(prev => ({ ...prev, charts: expanded }))}
+        className="mb-4"
+      >
           <div
           style={{
             display: 'grid',
@@ -322,8 +334,7 @@ export const ChartsPanel: React.FC<ChartsPanelProps> = ({
             />
           </div>
         </div>
-        </BaseCard>
-      </div>
+      </BaseCard>
 
       {/* ═══════════════════════════════════════════════════════════════ */}
       {/* 五、推理时序模拟 */}
@@ -339,23 +350,26 @@ export const ChartsPanel: React.FC<ChartsPanelProps> = ({
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               {isSimulating ? (
                 <span className="text-[11px] text-gray-500">模拟中...</span>
-              ) : simulationResult ? (
+              ) : (externalStats || simulationResult?.stats) ? (
                 <span className="text-[11px] text-gray-500">
-                  TTFT: {simulationResult.stats.ttft.toFixed(2)}ms |
-                  Avg TPOT: {simulationResult.stats.avgTpot.toFixed(2)}ms |
-                  动态MFU: {(simulationResult.stats.dynamicMfu * 100).toFixed(1)}%
+                  TTFT: {(externalStats?.ttft ?? simulationResult?.stats.ttft ?? 0).toFixed(2)}ms |
+                  Avg TPOT: {(externalStats?.avgTpot ?? simulationResult?.stats.avgTpot ?? 0).toFixed(2)}ms |
+                  动态MFU: {((externalStats?.dynamicMfu ?? simulationResult?.stats.dynamicMfu ?? 0) * 100).toFixed(1)}%
                 </span>
               ) : null}
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-7 w-7"
-                disabled={!inference || isSimulating}
-                onClick={runSimulation}
-                title="重新运行模拟"
-              >
-                <RefreshCw className={`h-4 w-4 ${isSimulating ? 'animate-spin' : ''}`} />
-              </Button>
+              {/* 只有在没有外部数据时才显示刷新按钮 */}
+              {!hasExternalData && (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-7 w-7"
+                  disabled={!inference || isSimulating}
+                  onClick={runSimulation}
+                  title="重新运行模拟"
+                >
+                  <RefreshCw className={`h-4 w-4 ${isSimulating ? 'animate-spin' : ''}`} />
+                </Button>
+              )}
             </div>
           }
         >
@@ -373,7 +387,7 @@ export const ChartsPanel: React.FC<ChartsPanelProps> = ({
                   <span className="text-[11px] text-gray-500">点击任务查看详情</span>
                 </div>
                 <GanttChart
-                  data={simulationResult?.ganttChart ?? null}
+                  data={externalGanttData ?? simulationResult?.ganttChart ?? null}
                   showLegend
                   onTaskClick={(task) => {
                     setSelectedTask(task)
@@ -390,8 +404,8 @@ export const ChartsPanel: React.FC<ChartsPanelProps> = ({
                   <span className="text-[11px] text-gray-500">每层的计算/访存/通信占比</span>
                 </div>
                 <LayerWaterfallChart
-                  data={simulationResult?.ganttChart ?? null}
-                  height={Math.max(300, (simulationResult?.ganttChart?.tasks?.length ?? 0) > 100 ? 500 : 350)}
+                  data={externalGanttData ?? simulationResult?.ganttChart ?? null}
+                  height={Math.max(300, ((externalGanttData ?? simulationResult?.ganttChart)?.tasks?.length ?? 0) > 100 ? 500 : 350)}
                 />
               </div>
             </TabsContent>
@@ -403,7 +417,7 @@ export const ChartsPanel: React.FC<ChartsPanelProps> = ({
                   <span className="text-[11px] text-gray-500">TP/PP/EP/SP 通信分解</span>
                 </div>
                 <CommunicationBreakdownChart
-                  data={simulationResult?.ganttChart ?? null}
+                  data={externalGanttData ?? simulationResult?.ganttChart ?? null}
                   height={400}
                 />
               </div>

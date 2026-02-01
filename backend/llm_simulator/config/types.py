@@ -688,7 +688,7 @@ def validate_hardware_config(hardware_dict: dict) -> None:
     chip_hw = hardware_dict["chip"]
 
     required_fields = {
-        "chip_type": "芯片型号",
+        "name": "芯片型号",
         "num_cores": "核心数",
         "compute_tflops_bf16": "BF16 算力",
         "memory_capacity_gb": "显存容量",

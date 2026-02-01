@@ -12,6 +12,7 @@ import { TopologySetup } from '@/pages/TopologySetup'
 import { DeploymentAnalysis } from '@/pages/DeploymentAnalysis'
 import { Results } from '@/pages/Results'
 import { Knowledge } from '@/pages/Knowledge'
+import CardPlayground from '@/pages/CardPlayground'
 
 export const MainLayout: React.FC = () => {
   const { ui } = useWorkbench()
@@ -50,6 +51,11 @@ export const MainLayout: React.FC = () => {
           {/* Knowledge Network */}
           <div className={`${ui.viewMode === 'knowledge' ? 'flex' : 'hidden'} absolute inset-0 overflow-auto`}>
             <Knowledge />
+          </div>
+
+          {/* Card Playground (临时调试用) */}
+          <div className={`${ui.viewMode === 'playground' ? 'flex' : 'hidden'} absolute inset-0 overflow-auto`}>
+            <CardPlayground />
           </div>
         </main>
       </div>

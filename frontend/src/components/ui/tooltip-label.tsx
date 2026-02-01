@@ -38,7 +38,7 @@ export const TooltipLabel: React.FC<TooltipLabelProps> = ({
   tooltip,
   required,
   className = 'text-xs text-gray-500 cursor-help',
-  withProvider = false,
+  withProvider = true,
 }) => {
   const labelElement = (
     <Label className={cn(className)}>

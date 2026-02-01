@@ -9,10 +9,12 @@ import { Badge } from '@/components/ui/badge'
 import { Progress } from '@/components/ui/progress'
 import type { GanttChartData, CommTypeBreakdown } from '../../../../utils/llmDeployment/types'
 import {
-  aggregateCommByType,
   formatBytes,
   formatTime,
   formatPercent,
+} from '../../../../utils/formatters'
+import {
+  aggregateCommByType,
   TIME_BREAKDOWN_COLORS,
 } from '../../../../utils/llmDeployment/ganttDataUtils'
 

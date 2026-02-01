@@ -3,8 +3,10 @@
  */
 
 import React from 'react'
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
+import { InfoTooltip } from '@/components/ui/info-tooltip'
 import { FormulaVsSimComparison } from '../../../../utils/llmDeployment/types'
+import { tableStyle, thStyle, tdStyle } from '../../../ui/common-styles'
+import { COLORS } from '../../../../utils/design-tokens'
 
 // 格式化偏差显示
 const formatDeviation = (pct: number): string => {
@@ -71,31 +73,12 @@ const TABLE_ROWS = [
   },
 ]
 
-const tableStyle: React.CSSProperties = {
-  width: '100%',
-  borderCollapse: 'collapse',
-  fontSize: 12,
-}
-
-const thStyle: React.CSSProperties = {
-  padding: '8px 12px',
-  textAlign: 'left',
-  fontWeight: 600,
-  borderBottom: '2px solid #e8e8e8',
-  background: '#fafafa',
-}
-
-const tdStyle: React.CSSProperties = {
-  padding: '8px 12px',
-  borderBottom: '1px solid #f0f0f0',
-}
-
 const getDeviationStyle = (pct: number): React.CSSProperties => {
   const isSignificant = isSignificantDeviation(pct)
   return {
     ...tdStyle,
     textAlign: 'right',
-    color: isSignificant ? (pct > 0 ? '#cf1322' : '#389e0d') : '#666',
+    color: isSignificant ? (pct > 0 ? COLORS.semantic.error.main : COLORS.semantic.success.main) : COLORS.text.secondary,
     fontWeight: isSignificant ? 600 : 400,
   }
 }
@@ -107,8 +90,8 @@ export const ComparisonTable: React.FC<ComparisonTableProps> = ({ comparison }) 
         <thead>
           <tr>
             <th style={thStyle}>指标</th>
-            <th style={{ ...thStyle, textAlign: 'right', color: '#1890ff' }}>公式估算</th>
-            <th style={{ ...thStyle, textAlign: 'right', color: '#52c41a' }}>仿真结果</th>
+            <th style={{ ...thStyle, textAlign: 'right', color: COLORS.palette.blue.main }}>公式估算</th>
+            <th style={{ ...thStyle, textAlign: 'right', color: COLORS.palette.green.main }}>仿真结果</th>
             <th style={{ ...thStyle, textAlign: 'right' }}>偏差</th>
           </tr>
         </thead>
@@ -121,22 +104,17 @@ export const ComparisonTable: React.FC<ComparisonTableProps> = ({ comparison }) 
             return (
               <tr
                 key={row.key}
-                style={row.isHighlight ? { background: '#fffbe6' } : undefined}
+                style={row.isHighlight ? { background: COLORS.palette.gold.light } : undefined}
               >
                 <td style={tdStyle}>
-                  <TooltipProvider>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <span className={row.isHighlight ? 'font-semibold' : ''}>{row.label}</span>
-                      </TooltipTrigger>
-                      <TooltipContent>{row.tooltip}</TooltipContent>
-                    </Tooltip>
-                  </TooltipProvider>
+                  <InfoTooltip content={row.tooltip}>
+                    <span className={row.isHighlight ? 'font-semibold' : ''}>{row.label}</span>
+                  </InfoTooltip>
                 </td>
-                <td style={{ ...tdStyle, textAlign: 'right', color: '#1890ff' }}>
+                <td style={{ ...tdStyle, textAlign: 'right', color: COLORS.palette.blue.main }}>
                   {row.formatValue(formulaValue)}
                 </td>
-                <td style={{ ...tdStyle, textAlign: 'right', color: '#52c41a' }}>
+                <td style={{ ...tdStyle, textAlign: 'right', color: COLORS.palette.green.main }}>
                   {row.formatValue(simValue)}
                 </td>
                 <td style={getDeviationStyle(deviation)}>
@@ -147,13 +125,13 @@ export const ComparisonTable: React.FC<ComparisonTableProps> = ({ comparison }) 
           })}
         </tbody>
       </table>
-      <div style={{ marginTop: 12, fontSize: 11, color: '#666', lineHeight: 1.6 }}>
-        <div style={{ marginBottom: 4, fontWeight: 500, color: '#333' }}>偏差说明:</div>
-        <div>• 偏差 = (仿真 - 公式) / 公式 × 100%，<span style={{ color: '#cf1322' }}>红色</span>表示仿真值偏高，<span style={{ color: '#389e0d' }}>绿色</span>表示仿真值偏低</div>
+      <div style={{ marginTop: 12, fontSize: 11, color: COLORS.text.secondary, lineHeight: 1.6 }}>
+        <div style={{ marginBottom: 4, fontWeight: 500, color: COLORS.text.primary }}>偏差说明:</div>
+        <div>• 偏差 = (仿真 - 公式) / 公式 × 100%，<span style={{ color: COLORS.semantic.error.main }}>红色</span>表示仿真值偏高，<span style={{ color: COLORS.semantic.success.main }}>绿色</span>表示仿真值偏低</div>
         <div>• <b>TTFT/TPOT 偏差原因</b>: 公式使用简化模型估算，仿真考虑了细粒度操作(13个子操作/层)和实际内存访问延迟</div>
         <div>• <b>MFU 偏差原因</b>: 公式基于 Roofline 理论估算(考虑 HBM 效率 85%)，仿真动态计算实际利用率</div>
         <div>• <b>MBU 偏差原因</b>: 仿真包含 KV Cache 读取开销，公式采用简化模型</div>
-        <div style={{ marginTop: 4, color: '#999' }}>注: 偏差 ±10% 以内属于合理范围，超过 20% 需检查配置参数</div>
+        <div style={{ marginTop: 4, color: COLORS.text.muted }}>注: 偏差 ±10% 以内属于合理范围，超过 20% 需检查配置参数</div>
       </div>
     </div>
   )

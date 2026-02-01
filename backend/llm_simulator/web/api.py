@@ -75,11 +75,182 @@ logger = logging.getLogger(__name__)
 CONFIGS_DIR = Path(__file__).parent.parent.parent / "configs"
 BENCHMARKS_DIR = CONFIGS_DIR / "benchmarks"
 TOPOLOGIES_DIR = CONFIGS_DIR / "topologies"
+CHIP_PRESETS_DIR = CONFIGS_DIR / "chip_presets"
+MODEL_PRESETS_DIR = CONFIGS_DIR / "model_presets"
 
 # 确保目录存在
 CONFIGS_DIR.mkdir(exist_ok=True)
 BENCHMARKS_DIR.mkdir(exist_ok=True)
 TOPOLOGIES_DIR.mkdir(exist_ok=True)
+CHIP_PRESETS_DIR.mkdir(exist_ok=True)
+MODEL_PRESETS_DIR.mkdir(exist_ok=True)
+
+
+# ============================================
+# 配置文件加载函数
+# ============================================
+
+def load_benchmark_config(benchmark_name: str) -> dict:
+    """
+    加载 Benchmark 配置文件
+
+    Args:
+        benchmark_name: Benchmark 配置文件名（不含扩展名）
+
+    Returns:
+        包含 model 和 inference 配置的字典
+
+    Raises:
+        FileNotFoundError: 配置文件不存在
+    """
+    file_path = BENCHMARKS_DIR / f"{benchmark_name}.json"
+    if not file_path.exists():
+        raise FileNotFoundError(f"Benchmark 配置不存在: {benchmark_name}")
+
+    with open(file_path, "r", encoding="utf-8") as f:
+        config = json.load(f)
+
+    logger.info(f"加载 Benchmark 配置: {benchmark_name}")
+    return config
+
+
+def load_topology_config(topology_name: str) -> dict:
+    """
+    加载 Topology 配置文件并转换为后端期望的格式
+
+    Args:
+        topology_name: Topology 配置文件名（不含扩展名）
+
+    Returns:
+        包含拓扑结构、硬件参数、互联配置等的完整字典
+        如果配置使用 rack_config 格式，会自动转换为 pods 格式
+
+    Raises:
+        FileNotFoundError: 配置文件不存在
+    """
+    file_path = TOPOLOGIES_DIR / f"{topology_name}.yaml"
+    if not file_path.exists():
+        raise FileNotFoundError(f"Topology 配置不存在: {topology_name}")
+
+    with open(file_path, "r", encoding="utf-8") as f:
+        config = yaml.safe_load(f)
+
+    # 如果配置使用 rack_config 格式，转换为 pods 格式
+    if "rack_config" in config and "pods" not in config:
+        config = _convert_rack_config_to_pods(config)
+
+    logger.info(f"加载 Topology 配置: {topology_name}")
+    return config
+
+
+def _convert_rack_config_to_pods(config: dict) -> dict:
+    """
+    将 rack_config 格式转换为 pods 格式
+
+    rack_config 格式:
+        pod_count: 1
+        racks_per_pod: 1
+        rack_config:
+            boards:
+            - id: board_1
+              count: 2
+              chips:
+              - name: SG2262
+                count: 8
+
+    pods 格式:
+        pods:
+        - id: pod_0
+          racks:
+          - id: rack_0
+            boards:
+            - id: board_0
+              chips:
+              - id: chip_0
+                ...
+    """
+    pod_count = config.get("pod_count", 1)
+    racks_per_pod = config.get("racks_per_pod", 1)
+    rack_config = config.get("rack_config", {})
+    hardware_params = config.get("hardware_params", {})
+    chip_params = hardware_params.get("chip", {})
+
+    pods = []
+    for pod_idx in range(pod_count):
+        racks = []
+        for rack_idx in range(racks_per_pod):
+            boards = []
+            global_board_idx = 0
+            for board_template in rack_config.get("boards", []):
+                board_count = board_template.get("count", 1)
+                for _ in range(board_count):
+                    chips = []
+                    global_chip_idx = 0
+                    for chip_template in board_template.get("chips", []):
+                        chip_count = chip_template.get("count", 1)
+                        for _ in range(chip_count):
+                            chip_id = f"pod_{pod_idx}/rack_{rack_idx}/board_{global_board_idx}/chip_{global_chip_idx}"
+                            chips.append({
+                                "id": chip_id,
+                                "type": "chip",
+                                "name": chip_template.get("name", chip_params.get("name", "SG2260E")),
+                                "position": [global_chip_idx % 4, global_chip_idx // 4],
+                                # 硬件参数从 chip_params 获取
+                                "num_cores": chip_params.get("num_cores", 64),
+                                "compute_tflops_fp8": chip_params.get("compute_tflops_fp8", 0),
+                                "compute_tflops_bf16": chip_params.get("compute_tflops_bf16", 0),
+                                "memory_capacity_gb": chip_params.get("memory_capacity_gb", 0),
+                                "memory_bandwidth_gbps": chip_params.get("memory_bandwidth_gbps", 0),
+                                "memory_bandwidth_utilization": chip_params.get("memory_bandwidth_utilization", 0.85),
+                                "lmem_capacity_mb": chip_params.get("lmem_capacity_mb", 0),
+                                "lmem_bandwidth_gbps": chip_params.get("lmem_bandwidth_gbps", 0),
+                                # 微架构参数
+                                "cube_m": chip_params.get("cube_m"),
+                                "cube_k": chip_params.get("cube_k"),
+                                "cube_n": chip_params.get("cube_n"),
+                                "sram_size_kb": chip_params.get("sram_size_kb"),
+                                "sram_utilization": chip_params.get("sram_utilization"),
+                                "lane_num": chip_params.get("lane_num"),
+                                "align_bytes": chip_params.get("align_bytes"),
+                                "compute_dma_overlap_rate": chip_params.get("compute_dma_overlap_rate"),
+                            })
+                            global_chip_idx += 1
+
+                    board_id = f"pod_{pod_idx}/rack_{rack_idx}/board_{global_board_idx}"
+                    boards.append({
+                        "id": board_id,
+                        "u_position": board_template.get("u_position", 1),
+                        "u_height": board_template.get("u_height", 2),
+                        "label": board_template.get("name", "Board"),
+                        "chips": chips,
+                    })
+                    global_board_idx += 1
+
+            rack_id = f"pod_{pod_idx}/rack_{rack_idx}"
+            racks.append({
+                "id": rack_id,
+                "position": [rack_idx % 4, rack_idx // 4],
+                "label": f"Rack {rack_idx}",
+                "total_u": rack_config.get("total_u", 42),
+                "boards": boards,
+            })
+
+        pods.append({
+            "id": f"pod_{pod_idx}",
+            "label": f"Pod {pod_idx}",
+            "grid_size": [racks_per_pod, 1],
+            "racks": racks,
+        })
+
+    # 构建转换后的配置
+    converted = {
+        "pods": pods,
+        "connections": config.get("connections", []),
+        "hardware_params": hardware_params,
+        "comm_latency_config": config.get("comm_latency_config", {}),
+    }
+
+    return converted
 
 
 # ============================================
@@ -664,20 +835,46 @@ async def submit_evaluation(request: EvaluationRequest):
     """
     提交评估任务到后台执行
 
+    通过配置文件名指定配置，后端自动加载完整配置：
+    - benchmark_name: Benchmark 配置文件（包含 model + inference）
+    - topology_config_name: Topology 配置文件（包含 topology + hardware + interconnect）
+
     Args:
-        request: 评估请求，包含实验名称、拓扑、模型、硬件、推理配置等
+        request: 评估请求
 
     Returns:
         任务 ID 和提示消息
     """
     try:
-        # EvaluationRequest 使用 dict 类型（向后兼容），直接传递
+        # ============================================
+        # 1. 从配置文件加载完整配置
+        # ============================================
+
+        # 加载 Topology 配置
+        try:
+            topology_config = load_topology_config(request.topology_config_name)
+            logger.info(f"加载 Topology 配置: {request.topology_config_name}")
+        except FileNotFoundError as e:
+            raise HTTPException(status_code=404, detail=str(e))
+
+        # 加载 Benchmark 配置
+        try:
+            benchmark_config = load_benchmark_config(request.benchmark_name)
+            model_config = benchmark_config.get("model", {})
+            inference_config = benchmark_config.get("inference", {})
+            logger.info(f"加载 Benchmark 配置: {request.benchmark_name}")
+        except FileNotFoundError as e:
+            raise HTTPException(status_code=404, detail=str(e))
+
+        # ============================================
+        # 2. 提交任务
+        # ============================================
         task_id = task_manager.create_and_submit_task(
             experiment_name=request.experiment_name,
             description=request.description,
-            topology=request.topology,
-            model_config=request.model,
-            inference_config=request.inference,
+            topology=topology_config,
+            model_config=model_config,
+            inference_config=inference_config,
             search_mode=request.search_mode,
             max_workers=request.max_workers,
             benchmark_name=request.benchmark_name,
@@ -693,6 +890,8 @@ async def submit_evaluation(request: EvaluationRequest):
             task_id=task_id,
             message=f"评估任务已提交（使用 {request.max_workers} workers），正在后台运行"
         )
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"提交评估任务失败: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"提交评估任务失败: {str(e)}")
@@ -1330,6 +1529,224 @@ async def websocket_endpoint(websocket: WebSocket):
         logger.error(f"WebSocket error: {e}")
     finally:
         task_manager.unsubscribe_global(queue)
+
+
+# ============================================
+# 芯片预设管理 API
+# ============================================
+
+@app.get("/api/chip-presets")
+async def list_chip_presets():
+    """
+    获取所有芯片预设（YAML 文件）
+    """
+    try:
+        presets = []
+        for file_path in CHIP_PRESETS_DIR.glob("*.yaml"):
+            with open(file_path, 'r', encoding='utf-8') as f:
+                data = yaml.safe_load(f)
+                presets.append({
+                    "name": data.get("name", file_path.stem),
+                    "description": data.get("description"),
+                    "chip_type": data.get("chip_type"),
+                    "compute_tflops_bf16": data.get("compute_tflops_bf16"),
+                    "memory_capacity_gb": data.get("memory_capacity_gb"),
+                    "created_at": data.get("created_at"),
+                })
+        return {"presets": presets}
+    except Exception as e:
+        logger.error(f"加载芯片预设失败: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/chip-presets/{name}")
+async def get_chip_preset(name: str):
+    """
+    获取指定芯片预设
+    """
+    file_path = CHIP_PRESETS_DIR / f"{name}.yaml"
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail=f"芯片预设 '{name}' 不存在")
+
+    try:
+        with open(file_path, 'r', encoding='utf-8') as f:
+            data = yaml.safe_load(f)
+        return data
+    except Exception as e:
+        logger.error(f"读取芯片预设失败: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/chip-presets")
+async def save_chip_preset(config: dict):
+    """
+    保存芯片预设到 YAML 文件
+    """
+    name = config.get("name")
+    if not name:
+        raise HTTPException(status_code=400, detail="缺少 name 字段")
+
+    # 添加时间戳
+    now = datetime.now().isoformat()
+    config["created_at"] = config.get("created_at", now)
+    config["updated_at"] = now
+
+    file_path = CHIP_PRESETS_DIR / f"{name}.yaml"
+    try:
+        with open(file_path, 'w', encoding='utf-8') as f:
+            yaml.dump(config, f, allow_unicode=True, sort_keys=False, default_flow_style=False)
+        return {"message": f"芯片预设 '{name}' 保存成功", "path": str(file_path)}
+    except Exception as e:
+        logger.error(f"保存芯片预设失败: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.delete("/api/chip-presets/{name}")
+async def delete_chip_preset(name: str):
+    """
+    删除芯片预设
+    """
+    file_path = CHIP_PRESETS_DIR / f"{name}.yaml"
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail=f"芯片预设 '{name}' 不存在")
+
+    try:
+        file_path.unlink()
+        return {"message": f"芯片预设 '{name}' 已删除"}
+    except Exception as e:
+        logger.error(f"删除芯片预设失败: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ============================================
+# 模型预设管理 API
+# ============================================
+
+@app.get("/api/presets/models")
+async def get_model_presets():
+    """
+    获取所有模型预设配置
+
+    返回后端定义的所有 LLM 模型配置，包括：
+    - 模型名称
+    - 模型类型 (dense/moe)
+    - 架构参数 (hidden_size, num_layers 等)
+    - 注意力配置 (GQA/MLA)
+    - MoE 配置（如适用）
+    """
+    try:
+        models = []
+        for file_path in MODEL_PRESETS_DIR.glob("*.yaml"):
+            with open(file_path, 'r', encoding='utf-8') as f:
+                data = yaml.safe_load(f)
+                models.append({
+                    "id": file_path.stem,  # 文件名作为ID (如 deepseek-v3)
+                    "model_name": data.get("model_name"),
+                    "model_type": data.get("model_type"),
+                    "hidden_size": data.get("hidden_size"),
+                    "num_layers": data.get("num_layers"),
+                    "num_attention_heads": data.get("num_attention_heads"),
+                    "num_kv_heads": data.get("num_kv_heads"),
+                    "intermediate_size": data.get("intermediate_size"),
+                    "vocab_size": data.get("vocab_size"),
+                    "weight_dtype": data.get("weight_dtype"),
+                    "activation_dtype": data.get("activation_dtype"),
+                    "max_seq_length": data.get("max_seq_length"),
+                    "norm_type": data.get("norm_type"),
+                    "attention_type": data.get("attention_type"),
+                    "moe_config": data.get("moe_config"),
+                    "mla_config": data.get("mla_config"),
+                })
+        return {"models": models}
+    except Exception as e:
+        logger.error(f"加载模型预设失败: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/model-presets")
+async def list_model_presets():
+    """
+    获取所有模型预设（YAML 文件）- 简化版，仅返回基本信息
+    """
+    try:
+        presets = []
+        for file_path in MODEL_PRESETS_DIR.glob("*.yaml"):
+            with open(file_path, 'r', encoding='utf-8') as f:
+                data = yaml.safe_load(f)
+                presets.append({
+                    "id": file_path.stem,
+                    "name": data.get("model_name", file_path.stem),
+                    "model_type": data.get("model_type"),
+                    "num_layers": data.get("num_layers"),
+                    "hidden_size": data.get("hidden_size"),
+                    "created_at": data.get("created_at"),
+                })
+        return {"presets": presets}
+    except Exception as e:
+        logger.error(f"加载模型预设失败: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/model-presets/{name}")
+async def get_model_preset(name: str):
+    """
+    获取指定模型预设
+    """
+    file_path = MODEL_PRESETS_DIR / f"{name}.yaml"
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail=f"模型预设 '{name}' 不存在")
+
+    try:
+        with open(file_path, 'r', encoding='utf-8') as f:
+            data = yaml.safe_load(f)
+        return data
+    except Exception as e:
+        logger.error(f"读取模型预设失败: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/model-presets")
+async def save_model_preset(config: dict):
+    """
+    保存模型预设到 YAML 文件
+    """
+    model_name = config.get("model_name")
+    if not model_name:
+        raise HTTPException(status_code=400, detail="缺少 model_name 字段")
+
+    # 使用 model_name 生成文件名（转小写并替换空格）
+    file_name = model_name.lower().replace(" ", "-").replace("_", "-")
+
+    # 添加时间戳
+    now = datetime.now().isoformat()
+    config["created_at"] = config.get("created_at", now)
+    config["updated_at"] = now
+
+    file_path = MODEL_PRESETS_DIR / f"{file_name}.yaml"
+    try:
+        with open(file_path, 'w', encoding='utf-8') as f:
+            yaml.dump(config, f, allow_unicode=True, sort_keys=False, default_flow_style=False)
+        return {"message": f"模型预设 '{model_name}' 保存成功", "path": str(file_path), "id": file_name}
+    except Exception as e:
+        logger.error(f"保存模型预设失败: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.delete("/api/model-presets/{name}")
+async def delete_model_preset(name: str):
+    """
+    删除模型预设
+    """
+    file_path = MODEL_PRESETS_DIR / f"{name}.yaml"
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail=f"模型预设 '{name}' 不存在")
+
+    try:
+        file_path.unlink()
+        return {"message": f"模型预设 '{name}' 已删除"}
+    except Exception as e:
+        logger.error(f"删除模型预设失败: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 if __name__ == "__main__":

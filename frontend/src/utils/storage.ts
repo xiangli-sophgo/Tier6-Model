@@ -103,7 +103,7 @@ export interface SavedConfig {
   /** 硬件参数配置 (芯片参数 + 互联参数) */
   hardware_params?: {
     chip: {
-      chip_type: string;
+      name: string;
       num_cores: number;
       compute_tflops_fp8: number;
       compute_tflops_bf16: number;
@@ -112,8 +112,6 @@ export interface SavedConfig {
       memory_bandwidth_utilization: number;
       lmem_capacity_mb: number;
       lmem_bandwidth_gbps: number;
-      c2c_bandwidth_gbps: number;
-      c2c_latency_us: number;
       cost_per_hour?: number;
       cube_m?: number;
       cube_k?: number;

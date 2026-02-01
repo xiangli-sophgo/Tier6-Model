@@ -1,7 +1,7 @@
 /**
  * Gantt 数据处理工具函数
  *
- * 提供任务聚合、格式化等功能
+ * 提供任务聚合、分析等功能
  */
 
 import type {
@@ -11,6 +11,16 @@ import type {
   CommTypeBreakdown,
   CommTypeDetail,
 } from './types'
+
+// 导入统一的格式化工具
+export {
+  formatBytes,
+  formatTime,
+  formatTimeMs,
+  formatFlops,
+  formatPercent,
+  formatGemmShape,
+} from '../formatters'
 
 // ============================================
 // 任务类型分类
@@ -228,112 +238,10 @@ export function aggregateCommByType(tasks: GanttTask[]): CommTypeBreakdown {
 }
 
 // ============================================
-// 格式化工具函数
+// 颜色常量 - 从设计令牌导入
 // ============================================
 
-/**
- * 格式化字节数
- * @param bytes 字节数
- * @returns 格式化后的字符串
- */
-export function formatBytes(bytes: number): string {
-  if (bytes === 0) return '0 B'
-  if (bytes < 0) return '-' + formatBytes(-bytes)
-
-  const units = ['B', 'KB', 'MB', 'GB', 'TB', 'PB']
-  const k = 1024
-  const i = Math.floor(Math.log(bytes) / Math.log(k))
-  const value = bytes / Math.pow(k, i)
-
-  return `${value.toFixed(i > 0 ? 2 : 0)} ${units[i]}`
-}
-
-/**
- * 格式化时间 (微秒)
- * @param us 微秒数
- * @returns 格式化后的字符串
- */
-export function formatTime(us: number): string {
-  if (us < 0) return '-' + formatTime(-us)
-  if (us < 1) return `${(us * 1000).toFixed(0)} ns`
-  if (us < 1000) return `${us.toFixed(2)} µs`
-  if (us < 1000000) return `${(us / 1000).toFixed(2)} ms`
-  return `${(us / 1000000).toFixed(2)} s`
-}
-
-/**
- * 格式化时间 (毫秒)
- * @param ms 毫秒数
- * @returns 格式化后的字符串
- */
-export function formatTimeMs(ms: number): string {
-  if (ms < 0) return '-' + formatTimeMs(-ms)
-  if (ms < 0.001) return `${(ms * 1000000).toFixed(0)} ns`
-  if (ms < 1) return `${(ms * 1000).toFixed(2)} µs`
-  if (ms < 1000) return `${ms.toFixed(2)} ms`
-  return `${(ms / 1000).toFixed(2)} s`
-}
-
-/**
- * 格式化 FLOPs
- * @param flops FLOPs 数
- * @returns 格式化后的字符串
- */
-export function formatFlops(flops: number): string {
-  if (flops === 0) return '0 FLOPs'
-  if (flops < 0) return '-' + formatFlops(-flops)
-
-  const units = ['', 'K', 'M', 'G', 'T', 'P', 'E']
-  const k = 1000
-  const i = Math.floor(Math.log(flops) / Math.log(k))
-  const value = flops / Math.pow(k, i)
-
-  return `${value.toFixed(2)} ${units[i]}FLOPs`
-}
-
-/**
- * 格式化百分比
- * @param ratio 比例 (0-1)
- * @param decimals 小数位数
- * @returns 格式化后的字符串
- */
-export function formatPercent(ratio: number, decimals: number = 1): string {
-  return `${(ratio * 100).toFixed(decimals)}%`
-}
-
-/**
- * 格式化 GEMM 形状
- * @param shape [M, N, K] 数组
- * @returns 格式化后的字符串
- */
-export function formatGemmShape(shape: [number, number, number]): string {
-  const [m, n, k] = shape
-  return `M=${m}, N=${n}, K=${k}`
-}
-
-// ============================================
-// 颜色常量
-// ============================================
-
-/** 时间分解颜色映射 */
-export const TIME_BREAKDOWN_COLORS = {
-  compute: '#52c41a',  // 绿色
-  memory: '#1890ff',   // 蓝色
-  tp: '#722ed1',       // 紫色
-  pp: '#eb2f96',       // 品红
-  ep: '#f759ab',       // 粉色
-  sp: '#2f54eb',       // 深蓝
-} as const
-
-/** 时间分解标签映射 */
-export const TIME_BREAKDOWN_LABELS = {
-  compute: '计算',
-  memory: '访存',
-  tp: 'TP通信',
-  pp: 'PP通信',
-  ep: 'EP通信',
-  sp: 'SP通信',
-} as const
+export { TIME_BREAKDOWN_COLORS, TIME_BREAKDOWN_LABELS } from '../design-tokens'
 
 // ============================================
 // 统计计算函数

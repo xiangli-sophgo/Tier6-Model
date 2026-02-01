@@ -57,6 +57,12 @@ export async function generateTopology(config: {
   };
   switch_config?: GlobalSwitchConfig;
   manual_connections?: ManualConnectionConfig;
+  interconnect_config?: {
+    c2c?: { bandwidth_gbps: number; latency_us: number };
+    b2b?: { bandwidth_gbps: number; latency_us: number };
+    r2r?: { bandwidth_gbps: number; latency_us: number };
+    p2p?: { bandwidth_gbps: number; latency_us: number };
+  };
 }): Promise<HierarchicalTopology> {
   return topologyGenerator.generate(config as TopologyGenerateRequest);
 }

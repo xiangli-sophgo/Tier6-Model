@@ -30,7 +30,9 @@ class TaskCancelledException(Exception):
 def count_topology_chips(topology: dict) -> int:
     """统计拓扑中的芯片总数
 
-    遍历 pods/racks/boards/chips 结构统计芯片数量。
+    支持两种拓扑格式：
+    1. 展开格式：pods[].racks[].boards[].chips[]
+    2. 配置文件格式：pod_count, racks_per_pod, rack_config.boards[].count/chips[].count
 
     Args:
         topology: 拓扑配置字典
@@ -38,12 +40,31 @@ def count_topology_chips(topology: dict) -> int:
     Returns:
         芯片总数
     """
-    total = 0
-    for pod in topology.get("pods", []):
-        for rack in pod.get("racks", []):
-            for board in rack.get("boards", []):
-                total += len(board.get("chips", []))
-    return total
+    # 格式1：展开后的 pods/racks/boards/chips 结构
+    if "pods" in topology:
+        total = 0
+        for pod in topology.get("pods", []):
+            for rack in pod.get("racks", []):
+                for board in rack.get("boards", []):
+                    total += len(board.get("chips", []))
+        return total
+
+    # 格式2：配置文件格式 (pod_count, racks_per_pod, rack_config)
+    if "rack_config" in topology:
+        pod_count = topology.get("pod_count", 1)
+        racks_per_pod = topology.get("racks_per_pod", 1)
+        rack_config = topology.get("rack_config", {})
+
+        chips_per_rack = 0
+        for board in rack_config.get("boards", []):
+            board_count = board.get("count", 1)
+            for chip in board.get("chips", []):
+                chip_count = chip.get("count", 1)
+                chips_per_rack += board_count * chip_count
+
+        return pod_count * racks_per_pod * chips_per_rack
+
+    return 0
 
 
 def calculate_required_chips(parallelism: dict, model_config: dict) -> int:
@@ -932,11 +953,18 @@ def _transform_to_ds_tpu_format(
         "score": score,
         "layers": layers_info,  # 添加详细的 layers 信息
         "cost": cost_result,  # 成本评估结果
+        "stats": stats,  # 完整的统计数据（用于前端展示）
+        "gantt_chart": sim_result.get("ganttChart"),  # 甘特图数据（用于前端可视化）
     }
 
 
 def _extract_hardware_config(topology: dict) -> dict:
     """从拓扑配置中提取硬件配置
+
+    支持多种配置格式：
+    1. hardware_config: 直接嵌入的硬件配置
+    2. hardware_params.chip: 配置文件格式的芯片参数
+    3. pods/racks/boards/chips: 展开后的拓扑结构
 
     Args:
         topology: 完整拓扑配置
@@ -947,19 +975,48 @@ def _extract_hardware_config(topology: dict) -> dict:
     Raises:
         ValueError: 如果无法从拓扑中提取芯片配置
     """
-    # 如果拓扑配置中直接包含硬件配置，直接返回
+    # 格式1：直接包含 hardware_config
     if "hardware_config" in topology:
         return topology["hardware_config"]
 
-    # 否则从拓扑结构中提取第一个芯片的配置
-    # 假设所有芯片配置相同（同构集群）
+    # 格式2：配置文件格式 hardware_params.chip
+    if "hardware_params" in topology:
+        hardware_params = topology["hardware_params"]
+        chip_params = hardware_params.get("chip", {})
+        if chip_params:
+            return {
+                "chip": {
+                    # 必需字段（与 validate_hardware_config 期望的字段名一致）
+                    "name": chip_params.get("name", "SG2260E"),
+                    "num_cores": chip_params.get("num_cores", 64),
+                    "compute_tflops_bf16": chip_params.get("compute_tflops_bf16", 2000),
+                    "compute_tflops_fp8": chip_params.get("compute_tflops_fp8", 4000),
+                    "memory_capacity_gb": chip_params.get("memory_capacity_gb", 80),
+                    "memory_bandwidth_gbps": chip_params.get("memory_bandwidth_gbps", 3000),
+                    "memory_bandwidth_utilization": chip_params.get("memory_bandwidth_utilization", 0.85),
+                    # 微架构参数
+                    "cube_m": chip_params.get("cube_m", 16),
+                    "cube_k": chip_params.get("cube_k", 32),
+                    "cube_n": chip_params.get("cube_n", 8),
+                    "sram_size_kb": chip_params.get("sram_size_kb", 2048),
+                    "sram_utilization": chip_params.get("sram_utilization", 0.45),
+                    "lane_num": chip_params.get("lane_num", 16),
+                    "align_bytes": chip_params.get("align_bytes", 32),
+                    "compute_dma_overlap_rate": chip_params.get("compute_dma_overlap_rate", 0.8),
+                    "lmem_capacity_mb": chip_params.get("lmem_capacity_mb", 0),
+                    "lmem_bandwidth_gbps": chip_params.get("lmem_bandwidth_gbps", 0),
+                },
+                "node": {},
+                "cluster": {}
+            }
+
+    # 格式3：展开后的 pods/racks/boards/chips 结构
     hardware_config = {
         "chip": {},
         "node": {},
         "cluster": {}
     }
 
-    # 从拓扑中提取第一个芯片的配置
     pods = topology.get("pods", [])
     if pods:
         for pod in pods:
@@ -972,7 +1029,6 @@ def _extract_hardware_config(topology: dict) -> dict:
                             chips = board.get("chips", [])
                             if chips:
                                 chip = chips[0]
-                                # 提取芯片配置
                                 hardware_config["chip"] = {
                                     "chip_type": chip.get("name", "SG2260E"),
                                     "compute_tflops_fp16": chip.get("compute_tflops_fp16", 2000),

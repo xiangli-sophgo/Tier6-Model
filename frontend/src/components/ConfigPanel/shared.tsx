@@ -213,7 +213,7 @@ export interface InterconnectParams {
 
 // 芯片硬件参数（完整配置，与 types.ts 中的 ChipHardwareConfig 对齐）
 export interface ChipHardwareParams {
-  chip_type: string            // 芯片类型名称
+  name: string                 // 芯片名称/型号
   num_cores: number            // 核心数
   compute_tflops_fp8: number   // FP8 算力 (TFLOPS)
   compute_tflops_bf16: number  // BF16 算力 (TFLOPS)
@@ -222,8 +222,6 @@ export interface ChipHardwareParams {
   memory_bandwidth_utilization: number // 带宽利用率 (0-1)
   lmem_capacity_mb: number     // 片上缓存容量 (MB)
   lmem_bandwidth_gbps: number  // 片上缓存带宽 (GB/s)
-  c2c_bandwidth_gbps: number   // C2C 互联带宽 (GB/s)
-  c2c_latency_us: number       // C2C 互联延迟 (us)
   cost_per_hour?: number       // 成本 ($/hour)
   // 微架构参数
   cube_m?: number              // 矩阵单元 M 维度
@@ -261,6 +259,12 @@ export interface ConfigPanelProps {
     rack_config?: RackConfig
     switch_config?: GlobalSwitchConfig
     manual_connections?: ManualConnectionConfig
+    interconnect_config?: {
+      c2c?: InterconnectParams  // Chip-to-Chip
+      b2b?: InterconnectParams  // Board-to-Board
+      r2r?: InterconnectParams  // Rack-to-Rack
+      p2p?: InterconnectParams  // Pod-to-Pod
+    }
   }) => void
   loading: boolean
   currentLevel?: 'datacenter' | 'pod' | 'rack' | 'board'
@@ -331,7 +335,7 @@ export const DEFAULT_SWITCH_CONFIG: GlobalSwitchConfig = {
 
 // 默认芯片硬件参数
 export const DEFAULT_CHIP_HARDWARE: ChipHardwareParams = {
-  chip_type: 'SG2262',
+  name: 'SG2262',
   num_cores: 64,
   compute_tflops_fp8: 256,
   compute_tflops_bf16: 128,
@@ -340,8 +344,6 @@ export const DEFAULT_CHIP_HARDWARE: ChipHardwareParams = {
   memory_bandwidth_utilization: 0.85,
   lmem_capacity_mb: 128,
   lmem_bandwidth_gbps: 12000,
-  c2c_bandwidth_gbps: 900,
-  c2c_latency_us: 1.0,
   cube_m: 16,
   cube_k: 32,
   cube_n: 8,

@@ -9,7 +9,7 @@ import { Loader2, CheckCircle, XCircle, StopCircle, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Progress } from '@/components/ui/progress'
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
+import { InfoTooltip } from '@/components/ui/info-tooltip'
 
 export interface TaskStatus {
   task_id: string
@@ -124,11 +124,10 @@ export const TaskStatusCard: React.FC<TaskStatusCardProps> = ({
   const timeEstimate = estimateTotalTime()
 
   return (
-    <TooltipProvider>
-      <div
-        className={`mb-3 rounded-lg border p-3 ${task.status === 'failed' ? 'bg-red-50' : 'bg-white'}`}
-        style={{ borderLeft: `4px solid ${getStatusColor(task.status)}` }}
-      >
+    <div
+      className={`mb-3 rounded-lg border p-3 ${task.status === 'failed' ? 'bg-red-50' : 'bg-white'}`}
+      style={{ borderLeft: `4px solid ${getStatusColor(task.status)}` }}
+    >
         {/* 头部：标题 + 操作按钮 */}
         <div className="flex items-center justify-between mb-2">
           <div className="flex items-center gap-2">
@@ -146,24 +145,18 @@ export const TaskStatusCard: React.FC<TaskStatusCardProps> = ({
           </div>
           <div className="flex items-center gap-1">
             {onCancel && task.status === 'running' && (
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button variant="ghost" size="icon" className="h-6 w-6 text-red-500" onClick={onCancel}>
-                    <StopCircle className="h-4 w-4" />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>取消任务</TooltipContent>
-              </Tooltip>
+              <InfoTooltip content="取消任务">
+                <Button variant="ghost" size="icon" className="h-6 w-6 text-red-500" onClick={onCancel}>
+                  <StopCircle className="h-4 w-4" />
+                </Button>
+              </InfoTooltip>
             )}
             {onClose && task.status === 'failed' && (
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button variant="ghost" size="icon" className="h-6 w-6" onClick={onClose}>
-                    <X className="h-4 w-4" />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>关闭</TooltipContent>
-              </Tooltip>
+              <InfoTooltip content="关闭">
+                <Button variant="ghost" size="icon" className="h-6 w-6" onClick={onClose}>
+                  <X className="h-4 w-4" />
+                </Button>
+              </InfoTooltip>
             )}
           </div>
         </div>
@@ -171,26 +164,17 @@ export const TaskStatusCard: React.FC<TaskStatusCardProps> = ({
         {/* 时间信息 */}
         {startTime && (task.status === 'running' || task.status === 'pending') && (
           <div className="flex items-center gap-3 mb-2 text-[11px]">
-            <Tooltip>
-              <TooltipTrigger>
-                <span className="text-gray-500 font-medium">⏱️ {formatTime(elapsedTime)}</span>
-              </TooltipTrigger>
-              <TooltipContent>已用时间</TooltipContent>
-            </Tooltip>
+            <InfoTooltip content="已用时间">
+              <span className="text-gray-500 font-medium">⏱️ {formatTime(elapsedTime)}</span>
+            </InfoTooltip>
             {timeEstimate && (
               <>
-                <Tooltip>
-                  <TooltipTrigger>
-                    <span className="text-gray-400">/ {formatTime(timeEstimate.totalTime)}</span>
-                  </TooltipTrigger>
-                  <TooltipContent>预计总时间</TooltipContent>
-                </Tooltip>
-                <Tooltip>
-                  <TooltipTrigger>
-                    <span className="text-yellow-600 font-medium">剩余: {formatTime(timeEstimate.remainingTime)}</span>
-                  </TooltipTrigger>
-                  <TooltipContent>剩余时间</TooltipContent>
-                </Tooltip>
+                <InfoTooltip content="预计总时间">
+                  <span className="text-gray-400">/ {formatTime(timeEstimate.totalTime)}</span>
+                </InfoTooltip>
+                <InfoTooltip content="剩余时间">
+                  <span className="text-yellow-600 font-medium">剩余: {formatTime(timeEstimate.remainingTime)}</span>
+                </InfoTooltip>
               </>
             )}
           </div>
@@ -272,7 +256,6 @@ export const TaskStatusCard: React.FC<TaskStatusCardProps> = ({
             </span>
           </div>
         )}
-      </div>
-    </TooltipProvider>
+    </div>
   )
 }

@@ -8,7 +8,7 @@ import { NodeDetail, LinkDetail } from '../components/TopologyGraph'
 // ============================================
 // 类型定义
 // ============================================
-export type ViewMode = 'dashboard' | 'topology' | 'deployment' | 'results' | 'knowledge' | '3d'
+export type ViewMode = 'dashboard' | 'topology' | 'deployment' | 'results' | 'knowledge' | '3d' | 'playground'
 
 export interface UIStateContextType {
   viewMode: ViewMode

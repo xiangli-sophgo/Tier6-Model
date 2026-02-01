@@ -10,7 +10,7 @@ import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Alert, AlertDescription } from '@/components/ui/alert'
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
+import { InfoTooltip } from '@/components/ui/info-tooltip'
 import { BaseCard } from '@/components/common/BaseCard'
 import { getExecutorConfig, updateExecutorConfig, ExecutorConfig } from '../../../api/tasks'
 
@@ -100,7 +100,6 @@ export const ExecutorConfigPanel: React.FC<ExecutorConfigPanelProps> = ({ compac
 
   // 完整模式：显示详细卡片
   return (
-    <TooltipProvider>
       <BaseCard
         title={
           <div className="flex items-center gap-2">
@@ -153,12 +152,9 @@ export const ExecutorConfigPanel: React.FC<ExecutorConfigPanelProps> = ({ compac
               className="w-24 h-8"
             />
             <span className="ml-2 text-sm text-gray-500">个任务</span>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Info className="h-4 w-4 ml-2 text-gray-400 cursor-help" />
-              </TooltipTrigger>
-              <TooltipContent>建议根据服务器 CPU 核心数设置，通常为 2-8</TooltipContent>
-            </Tooltip>
+            <InfoTooltip content="建议根据服务器 CPU 核心数设置，通常为 2-8">
+              <Info className="h-4 w-4 ml-2 text-gray-400 cursor-help" />
+            </InfoTooltip>
           </div>
 
           <Alert className="mt-2">
@@ -166,6 +162,5 @@ export const ExecutorConfigPanel: React.FC<ExecutorConfigPanelProps> = ({ compac
           </Alert>
         </div>
       </BaseCard>
-    </TooltipProvider>
   )
 }

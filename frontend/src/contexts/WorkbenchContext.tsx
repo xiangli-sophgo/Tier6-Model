@@ -6,7 +6,7 @@
 import React, { createContext, useContext, useCallback, useMemo, ReactNode } from 'react'
 import { HierarchicalTopology } from '../types'
 import { useViewNavigation } from '../hooks/useViewNavigation'
-import { loadBackendChipPresets } from '../utils/llmDeployment/presets'
+import { loadBackendChipPresets, loadBackendModelPresets } from '../utils/llmDeployment/presets'
 
 // 导入拆分的 Context
 import { TopologyProvider, useTopology, TopologyContextType } from './TopologyContext'
@@ -155,10 +155,13 @@ interface WorkbenchProviderProps {
 }
 
 export const WorkbenchProvider: React.FC<WorkbenchProviderProps> = ({ children }) => {
-  // 初始化时加载后端芯片预设
+  // 初始化时加载后端预设（芯片和模型）
   React.useEffect(() => {
-    loadBackendChipPresets().then(() => {
-      console.log('后端芯片预设加载完成')
+    Promise.all([
+      loadBackendChipPresets(),
+      loadBackendModelPresets(),
+    ]).then(() => {
+      console.log('后端预设加载完成')
     })
   }, [])
 

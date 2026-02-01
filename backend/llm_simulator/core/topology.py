@@ -30,6 +30,10 @@ class TopologyParser:
         Args:
             topology_dict: 前端传入的拓扑配置字典（包含硬件参数）
         """
+        # 提取 hardware_params.interconnect 配置
+        self.hardware_params = topology_dict.get("hardware_params", {})
+        self.interconnect_params = self.hardware_params.get("interconnect", {})
+
         self.topology = self._parse_topology(topology_dict)
         self.interconnect: InterconnectGraph | None = None
         # 缓存芯片位置信息，用于快速查找
@@ -37,6 +41,13 @@ class TopologyParser:
 
     def _parse_topology(self, data: dict[str, Any]) -> HierarchicalTopology:
         """解析拓扑配置（包含嵌入的硬件参数）"""
+        # 从 hardware_params 中获取芯片和互联参数
+        chip_params = self.hardware_params.get("chip", {})
+        c2c_params = self.interconnect_params.get("c2c", {})
+        b2b_params = self.interconnect_params.get("b2b", {})
+        r2r_params = self.interconnect_params.get("r2r", {})
+        p2p_params = self.interconnect_params.get("p2p", {})
+
         pods = []
         for pod_data in data.get("pods", []):
             racks = []
@@ -51,26 +62,26 @@ class TopologyParser:
                             type=chip_data.get("type", "chip"),
                             position=tuple(pos) if isinstance(pos, list) else pos,
                             label=chip_data.get("label", ""),
-                            # 硬件参数
-                            num_cores=chip_data.get("num_cores", 0),
-                            compute_tflops_fp8=chip_data.get("compute_tflops_fp8", 0.0),
-                            compute_tflops_bf16=chip_data.get("compute_tflops_bf16", 0.0),
-                            memory_capacity_gb=chip_data.get("memory_capacity_gb", 0.0),
-                            memory_bandwidth_gbps=chip_data.get("memory_bandwidth_gbps", 0.0),
-                            memory_bandwidth_utilization=chip_data.get("memory_bandwidth_utilization", 0.85),
-                            lmem_capacity_mb=chip_data.get("lmem_capacity_mb", 0.0),
-                            lmem_bandwidth_gbps=chip_data.get("lmem_bandwidth_gbps", 0.0),
-                            c2c_bandwidth_gbps=chip_data.get("c2c_bandwidth_gbps", 0.0),
-                            c2c_latency_us=chip_data.get("c2c_latency_us", 0.0),
+                            # 硬件参数（优先使用 chip_data，否则从 chip_params 获取）
+                            num_cores=chip_data.get("num_cores") or chip_params.get("num_cores", 0),
+                            compute_tflops_fp8=chip_data.get("compute_tflops_fp8") or chip_params.get("compute_tflops_fp8", 0.0),
+                            compute_tflops_bf16=chip_data.get("compute_tflops_bf16") or chip_params.get("compute_tflops_bf16", 0.0),
+                            memory_capacity_gb=chip_data.get("memory_capacity_gb") or chip_params.get("memory_capacity_gb", 0.0),
+                            memory_bandwidth_gbps=chip_data.get("memory_bandwidth_gbps") or chip_params.get("memory_bandwidth_gbps", 0.0),
+                            memory_bandwidth_utilization=chip_data.get("memory_bandwidth_utilization") or chip_params.get("memory_bandwidth_utilization", 0.85),
+                            lmem_capacity_mb=chip_data.get("lmem_capacity_mb") or chip_params.get("lmem_capacity_mb", 0.0),
+                            lmem_bandwidth_gbps=chip_data.get("lmem_bandwidth_gbps") or chip_params.get("lmem_bandwidth_gbps", 0.0),
+                            c2c_bandwidth_gbps=chip_data.get("c2c_bandwidth_gbps") or c2c_params.get("bandwidth_gbps", 0.0),
+                            c2c_latency_us=chip_data.get("c2c_latency_us") or c2c_params.get("latency_us", 0.0),
                             # 微架构参数（可选）
-                            cube_m=chip_data.get("cube_m"),
-                            cube_k=chip_data.get("cube_k"),
-                            cube_n=chip_data.get("cube_n"),
-                            sram_size_kb=chip_data.get("sram_size_kb"),
-                            sram_utilization=chip_data.get("sram_utilization"),
-                            lane_num=chip_data.get("lane_num"),
-                            align_bytes=chip_data.get("align_bytes"),
-                            compute_dma_overlap_rate=chip_data.get("compute_dma_overlap_rate"),
+                            cube_m=chip_data.get("cube_m") or chip_params.get("cube_m"),
+                            cube_k=chip_data.get("cube_k") or chip_params.get("cube_k"),
+                            cube_n=chip_data.get("cube_n") or chip_params.get("cube_n"),
+                            sram_size_kb=chip_data.get("sram_size_kb") or chip_params.get("sram_size_kb"),
+                            sram_utilization=chip_data.get("sram_utilization") or chip_params.get("sram_utilization"),
+                            lane_num=chip_data.get("lane_num") or chip_params.get("lane_num"),
+                            align_bytes=chip_data.get("align_bytes") or chip_params.get("align_bytes"),
+                            compute_dma_overlap_rate=chip_data.get("compute_dma_overlap_rate") or chip_params.get("compute_dma_overlap_rate"),
                         )
                         chips.append(chip)
                     boards.append(BoardConfig(
@@ -79,9 +90,9 @@ class TopologyParser:
                         u_height=board_data.get("u_height", 1),
                         label=board_data.get("label", ""),
                         chips=chips,
-                        # 互联参数
-                        b2b_bandwidth_gbps=board_data.get("b2b_bandwidth_gbps", 0.0),
-                        b2b_latency_us=board_data.get("b2b_latency_us", 0.0),
+                        # 互联参数（优先使用 board_data，否则从 b2b_params 获取）
+                        b2b_bandwidth_gbps=board_data.get("b2b_bandwidth_gbps") or b2b_params.get("bandwidth_gbps", 0.0),
+                        b2b_latency_us=board_data.get("b2b_latency_us") or b2b_params.get("latency_us", 0.0),
                     ))
                 pos = rack_data.get("position", [0, 0])
                 racks.append(RackConfig(
@@ -90,9 +101,9 @@ class TopologyParser:
                     label=rack_data.get("label", ""),
                     total_u=rack_data.get("total_u", 42),
                     boards=boards,
-                    # 互联参数
-                    r2r_bandwidth_gbps=rack_data.get("r2r_bandwidth_gbps", 0.0),
-                    r2r_latency_us=rack_data.get("r2r_latency_us", 0.0),
+                    # 互联参数（优先使用 rack_data，否则从 r2r_params 获取）
+                    r2r_bandwidth_gbps=rack_data.get("r2r_bandwidth_gbps") or r2r_params.get("bandwidth_gbps", 0.0),
+                    r2r_latency_us=rack_data.get("r2r_latency_us") or r2r_params.get("latency_us", 0.0),
                 ))
             grid = pod_data.get("grid_size", [1, 1])
             pods.append(PodConfig(
@@ -100,19 +111,39 @@ class TopologyParser:
                 label=pod_data.get("label", ""),
                 grid_size=tuple(grid) if isinstance(grid, list) else grid,
                 racks=racks,
-                # 互联参数
-                p2p_bandwidth_gbps=pod_data.get("p2p_bandwidth_gbps", 0.0),
-                p2p_latency_us=pod_data.get("p2p_latency_us", 0.0),
+                # 互联参数（优先使用 pod_data，否则从 p2p_params 获取）
+                p2p_bandwidth_gbps=pod_data.get("p2p_bandwidth_gbps") or p2p_params.get("bandwidth_gbps", 0.0),
+                p2p_latency_us=pod_data.get("p2p_latency_us") or p2p_params.get("latency_us", 0.0),
             ))
 
+        # 解析连接：根据 type 动态查找参数
         connections = []
         for conn_data in data.get("connections", []):
+            conn_type = conn_data.get("type", "c2c")
+            bandwidth = conn_data.get("bandwidth", 0)
+            latency = conn_data.get("latency", 0)
+
+            # 如果连接没有指定 bandwidth/latency，根据 type 从 interconnect_params 查找
+            if bandwidth == 0 or latency == 0:
+                if conn_type == "c2c":
+                    bandwidth = bandwidth or c2c_params.get("bandwidth_gbps", 0.0)
+                    latency = latency or (c2c_params.get("latency_us", 0.0) * 1000)  # us -> ns
+                elif conn_type == "b2b":
+                    bandwidth = bandwidth or b2b_params.get("bandwidth_gbps", 0.0)
+                    latency = latency or (b2b_params.get("latency_us", 0.0) * 1000)  # us -> ns
+                elif conn_type == "r2r":
+                    bandwidth = bandwidth or r2r_params.get("bandwidth_gbps", 0.0)
+                    latency = latency or (r2r_params.get("latency_us", 0.0) * 1000)  # us -> ns
+                elif conn_type == "p2p":
+                    bandwidth = bandwidth or p2p_params.get("bandwidth_gbps", 0.0)
+                    latency = latency or (p2p_params.get("latency_us", 0.0) * 1000)  # us -> ns
+
             connections.append(ConnectionConfig(
                 source=conn_data["source"],
                 target=conn_data["target"],
-                type=conn_data.get("type", "intra"),
-                bandwidth=conn_data.get("bandwidth", 0),
-                latency=conn_data.get("latency", 0),
+                type=conn_type,
+                bandwidth=bandwidth,
+                latency=latency,
             ))
 
         return HierarchicalTopology(pods=pods, connections=connections)

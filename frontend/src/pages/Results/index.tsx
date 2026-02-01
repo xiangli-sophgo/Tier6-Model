@@ -56,7 +56,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { listExperiments, deleteExperiment, deleteExperimentsBatch, deleteResultsBatch, getExperimentDetail, getTaskResults, updateExperiment, downloadExperimentJSON, checkImportFile, executeImport, Experiment, EvaluationTask, TaskResultsResponse } from '@/api/results'
 import { AnalysisResultDisplay } from '@/components/ConfigPanel/DeploymentAnalysis/AnalysisResultDisplay'
 import { ChartsPanel } from '@/components/ConfigPanel/DeploymentAnalysis/charts'
@@ -376,42 +376,87 @@ export const Results: React.FC = () => {
   // 将 API 返回的 top_k_plans 转换为 PlanAnalysisResult[]
   const convertToAnalysisResults = (results: TaskResultsResponse | null): PlanAnalysisResult[] => {
     if (!results || !results.top_k_plans) return []
-    return results.top_k_plans.map(plan => ({
-      is_feasible: plan.is_feasible,
-      plan: {
-        plan_id: `plan_${plan.chips}_${plan.parallelism.tp}_${plan.parallelism.ep}`,
-        total_chips: plan.chips,
-        parallelism: plan.parallelism,
-      },
-      latency: {
-        prefill_total_latency_ms: plan.ttft,
-        decode_per_token_latency_ms: plan.tpot,
-        end_to_end_latency_ms: plan.ttft + plan.tpot * 100,
-        bottleneck_type: 'balanced' as const,
-      },
-      throughput: {
-        tokens_per_second: plan.tps,
-        tps_per_chip: plan.tps_per_chip,
-        tps_per_batch: plan.tps_per_batch,
-        model_flops_utilization: plan.mfu,
-        memory_bandwidth_utilization: plan.mbu,
-      },
-      memory: {
-        total_per_chip_gb: plan.dram_occupy ? plan.dram_occupy / (1024 * 1024 * 1024) : 0,  // 字节转 GB
-        is_memory_sufficient: true,
-      },
-      cost: plan.cost || undefined,
-      communication: {},
-      utilization: {},
-      score: {
-        overall_score: plan.score,
-        latency_score: 0,
-        throughput_score: 0,
-        efficiency_score: 0,
-        balance_score: 0,
-      },
-      suggestions: [],
-    } as unknown as PlanAnalysisResult))
+    return results.top_k_plans.map(plan => {
+      // 从 stats 中提取更多数据
+      const stats = plan.stats as Record<string, any> || {}
+      const prefillStats = stats.prefill || {}
+      const decodeStats = stats.decode || {}
+
+      // 计算各维度评分（基于性能指标，0-100分）
+      // 延迟评分：TTFT < 50ms 满分，> 500ms 0分
+      const latencyScore = Math.max(0, Math.min(100, 100 - (plan.ttft - 50) / 4.5))
+      // 吞吐评分：基于 MFU，MFU > 0.5 满分
+      const throughputScore = Math.min(100, plan.mfu * 200)
+      // 效率评分：综合 MFU 和 MBU
+      const efficiencyScore = Math.min(100, (plan.mfu + plan.mbu) * 100)
+      // 平衡评分：MFU 和 MBU 越接近越好
+      const balanceScore = Math.max(0, 100 - Math.abs(plan.mfu - plan.mbu) * 200)
+
+      // 估算显存分解（如果后端没有提供详细数据）
+      const totalMemoryGB = plan.dram_occupy ? plan.dram_occupy / (1024 * 1024 * 1024) : 0
+      // 粗略估算：参数占 60%，KV Cache 占 30%，激活占 10%
+      const paramsMemoryGB = totalMemoryGB * 0.6
+      const kvCacheMemoryGB = totalMemoryGB * 0.3
+      const activationMemoryGB = totalMemoryGB * 0.1
+
+      // 从 stats 提取通信数据
+      const commTime = decodeStats.commTime || 0
+      const computeTime = decodeStats.computeTime || 0
+      const totalTime = decodeStats.totalTime || (commTime + computeTime) || 1
+
+      return {
+        is_feasible: plan.is_feasible,
+        plan: {
+          plan_id: `plan_${plan.chips}_${plan.parallelism.tp}_${plan.parallelism.ep}`,
+          total_chips: plan.chips,
+          parallelism: plan.parallelism,
+        },
+        latency: {
+          prefill_total_latency_ms: plan.ttft,
+          decode_per_token_latency_ms: plan.tpot,
+          end_to_end_latency_ms: plan.ttft + plan.tpot * 100,
+          bottleneck_type: (plan.mfu > plan.mbu ? 'memory' : 'compute') as 'memory' | 'compute' | 'balanced',
+          prefill_compute_latency_ms: prefillStats.computeTime ? prefillStats.computeTime / 1000 : 0,
+          prefill_memory_latency_ms: prefillStats.memoryTime ? prefillStats.memoryTime / 1000 : 0,
+          prefill_communication_latency_ms: prefillStats.commTime ? prefillStats.commTime / 1000 : 0,
+          decode_compute_latency_ms: decodeStats.computeTime ? decodeStats.computeTime / 1000 : 0,
+          decode_memory_latency_ms: decodeStats.memoryTime ? decodeStats.memoryTime / 1000 : 0,
+          decode_communication_latency_ms: decodeStats.commTime ? decodeStats.commTime / 1000 : 0,
+        },
+        throughput: {
+          tokens_per_second: plan.tps,
+          tps_per_chip: plan.tps_per_chip,
+          tps_per_batch: plan.tps_per_batch,
+          model_flops_utilization: plan.mfu,
+          memory_bandwidth_utilization: plan.mbu,
+        },
+        memory: {
+          total_per_chip_gb: totalMemoryGB,
+          params_memory_gb: paramsMemoryGB,
+          kv_cache_memory_gb: kvCacheMemoryGB,
+          activation_memory_gb: activationMemoryGB,
+          is_memory_sufficient: true,
+        },
+        cost: plan.cost || undefined,
+        communication: {
+          total_communication_time_ms: commTime / 1000,
+          communication_ratio: totalTime > 0 ? commTime / totalTime : 0,
+        },
+        utilization: {
+          compute_utilization: plan.mfu,
+          memory_utilization: plan.mbu,
+          bubble_ratio: stats.bubbleRatio || 0,
+        },
+        score: {
+          overall_score: plan.score || (latencyScore + throughputScore + efficiencyScore + balanceScore) / 4,
+          latency_score: latencyScore,
+          throughput_score: throughputScore,
+          efficiency_score: efficiencyScore,
+          balance_score: balanceScore,
+        },
+        suggestions: [],
+      } as unknown as PlanAnalysisResult
+    })
   }
 
   // 处理全选
@@ -455,7 +500,7 @@ export const Results: React.FC = () => {
           const chip = pods[0].racks[0].boards[0].chips[0]
           return {
             chip: {
-              chip_type: chip.name,
+              name: chip.name,
               num_cores: (chip as any).num_cores,
               compute_tflops_fp8: (chip as any).compute_tflops_fp8,
               compute_tflops_bf16: (chip as any).compute_tflops_bf16,
@@ -464,8 +509,6 @@ export const Results: React.FC = () => {
               memory_bandwidth_utilization: chip.memory_bandwidth_utilization,
               lmem_capacity_mb: (chip as any).lmem_capacity_mb,
               lmem_bandwidth_gbps: (chip as any).lmem_bandwidth_gbps,
-              c2c_bandwidth_gbps: (chip as any).c2c_bandwidth_gbps,
-              c2c_latency_us: (chip as any).c2c_latency_us,
             },
             board: {
               chips_per_board: 8,
@@ -552,6 +595,8 @@ export const Results: React.FC = () => {
                       hardware={hardwareConfig!}
                       model={modelConfig as unknown as LLMModelConfig}
                       inference={inferenceConfig as unknown as InferenceConfig}
+                      externalGanttData={taskResults?.top_k_plans?.[0]?.gantt_chart as any}
+                      externalStats={taskResults?.top_k_plans?.[0]?.stats as any}
                     />
                   </div>
                 )}

@@ -21,7 +21,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Progress } from '@/components/ui/progress'
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
+import { InfoTooltip } from '@/components/ui/info-tooltip'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -343,7 +343,6 @@ interface HistoryTaskItemProps {
 
 const HistoryTaskItem: React.FC<HistoryTaskItemProps> = ({ task, onView, onDelete }) => {
   return (
-    <TooltipProvider>
       <div className="flex items-center justify-between p-2 bg-gray-50 mb-1 rounded border border-gray-100">
         <div className="flex-1 min-w-0">
           {/* 标题行 */}
@@ -363,14 +362,11 @@ const HistoryTaskItem: React.FC<HistoryTaskItemProps> = ({ task, onView, onDelet
                 TTFT: {task.ttft?.toFixed(1)}ms · TPOT: {task.tpot?.toFixed(2)}ms · {formatDuration(task.startTime, task.endTime)}
               </span>
             ) : task.status === 'failed' ? (
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <span className="text-red-500 cursor-help">
-                    {task.error?.slice(0, 50)}{task.error && task.error.length > 50 ? '...' : ''}
-                  </span>
-                </TooltipTrigger>
-                <TooltipContent>{task.error}</TooltipContent>
-              </Tooltip>
+              <InfoTooltip content={task.error || ''}>
+                <span className="text-red-500 cursor-help">
+                  {task.error?.slice(0, 50)}{task.error && task.error.length > 50 ? '...' : ''}
+                </span>
+              </InfoTooltip>
             ) : (
               <span className="text-gray-500">已取消 · {formatDuration(task.startTime, task.endTime)}</span>
             )}
@@ -380,31 +376,24 @@ const HistoryTaskItem: React.FC<HistoryTaskItemProps> = ({ task, onView, onDelet
         {/* 操作按钮 */}
         <div className="flex items-center gap-1 ml-2">
           {task.status === 'completed' && (
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={onView}>
-                  <Eye className="h-3.5 w-3.5" />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>查看结果</TooltipContent>
-            </Tooltip>
-          )}
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-7 w-7 p-0 text-red-500 hover:text-red-600"
-                onClick={onDelete}
-              >
-                <Trash2 className="h-3.5 w-3.5" />
+            <InfoTooltip content="查看结果">
+              <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={onView}>
+                <Eye className="h-3.5 w-3.5" />
               </Button>
-            </TooltipTrigger>
-            <TooltipContent>删除</TooltipContent>
-          </Tooltip>
+            </InfoTooltip>
+          )}
+          <InfoTooltip content="删除">
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 w-7 p-0 text-red-500 hover:text-red-600"
+              onClick={onDelete}
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+            </Button>
+          </InfoTooltip>
         </div>
       </div>
-    </TooltipProvider>
   )
 }
 

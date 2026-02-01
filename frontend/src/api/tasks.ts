@@ -19,22 +19,31 @@ const api = axios.create({
 // 类型定义
 // ============================================
 
+/**
+ * 评估请求
+ *
+ * 通过配置文件名指定配置，后端自动加载完整配置：
+ * - benchmark_name: Benchmark 配置文件（包含 model + inference）
+ * - topology_config_name: Topology 配置文件（包含 topology + hardware + interconnect）
+ */
 export interface EvaluationRequest {
   experiment_name: string
   description?: string
-  topology: Record<string, unknown>
-  model: Record<string, unknown>
-  hardware: Record<string, unknown>
-  inference: Record<string, unknown>
+
+  // 配置文件引用（必填）
+  benchmark_name: string           // Benchmark 配置文件名
+  topology_config_name: string     // Topology 配置文件名
+
+  // 搜索配置
   search_mode: 'manual' | 'auto'
   manual_parallelism?: Record<string, unknown>
   search_constraints?: Record<string, unknown>
-  max_workers?: number // 本任务的最大并发数（默认 4）
-  enable_tile_search?: boolean // 是否启用 Tile 搜索（默认 true）
+
+  // 任务配置
+  max_workers?: number             // 本任务的最大并发数（默认 4）
+  enable_tile_search?: boolean     // 是否启用 Tile 搜索（默认 true）
   enable_partition_search?: boolean // 是否启用分区搜索（默认 true）
-  max_simulated_tokens?: number // 最大模拟 token 数（默认 4）
-  benchmark_name?: string // Benchmark 名称
-  topology_config_name?: string // 拓扑配置名称
+  max_simulated_tokens?: number    // 最大模拟 token 数（默认 4）
 }
 
 export interface TaskSubmitResponse {

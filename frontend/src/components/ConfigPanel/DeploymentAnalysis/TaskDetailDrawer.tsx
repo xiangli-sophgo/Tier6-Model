@@ -23,6 +23,9 @@ import {
   formatPercent,
   formatGemmShape,
   formatTimeMs,
+  formatPercentValue,
+} from '../../../utils/formatters'
+import {
   getTaskCategory,
   TIME_BREAKDOWN_COLORS,
 } from '../../../utils/llmDeployment/ganttDataUtils'
@@ -127,36 +130,36 @@ const TimeBar: React.FC<{
           <div
             className="h-full transition-all"
             style={{ width: `${computePercent}%`, backgroundColor: TIME_BREAKDOWN_COLORS.compute }}
-            title={`计算: ${computePercent.toFixed(1)}%`}
+            title={`计算: ${formatPercentValue(computePercent, 1)}`}
           />
         )}
         {memoryPercent > 0 && (
           <div
             className="h-full transition-all"
             style={{ width: `${memoryPercent}%`, backgroundColor: TIME_BREAKDOWN_COLORS.memory }}
-            title={`访存: ${memoryPercent.toFixed(1)}%`}
+            title={`访存: ${formatPercentValue(memoryPercent, 1)}`}
           />
         )}
         {commPercent > 0 && (
           <div
             className="h-full transition-all"
             style={{ width: `${commPercent}%`, backgroundColor: TIME_BREAKDOWN_COLORS.tp }}
-            title={`通信: ${commPercent.toFixed(1)}%`}
+            title={`通信: ${formatPercentValue(commPercent, 1)}`}
           />
         )}
       </div>
       <div className="flex gap-4 text-xs text-text-muted">
         <span className="flex items-center gap-1">
           <span className="h-2 w-2 rounded-full" style={{ backgroundColor: TIME_BREAKDOWN_COLORS.compute }} />
-          计算 {computePercent.toFixed(1)}%
+          计算 {formatPercentValue(computePercent, 1)}
         </span>
         <span className="flex items-center gap-1">
           <span className="h-2 w-2 rounded-full" style={{ backgroundColor: TIME_BREAKDOWN_COLORS.memory }} />
-          访存 {memoryPercent.toFixed(1)}%
+          访存 {formatPercentValue(memoryPercent, 1)}
         </span>
         <span className="flex items-center gap-1">
           <span className="h-2 w-2 rounded-full" style={{ backgroundColor: TIME_BREAKDOWN_COLORS.tp }} />
-          通信 {commPercent.toFixed(1)}%
+          通信 {formatPercentValue(commPercent, 1)}
         </span>
       </div>
     </div>

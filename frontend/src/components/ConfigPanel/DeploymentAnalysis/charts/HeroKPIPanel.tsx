@@ -4,8 +4,10 @@
 
 import React from 'react'
 import { Clock, Zap, Gauge, Rocket } from 'lucide-react'
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
+import { conditionalTooltip } from '@/components/ui/info-tooltip'
 import { PlanAnalysisResult } from '../../../../utils/llmDeployment/types'
+import { COLORS } from '../../../../utils/design-tokens'
+import { formatNumber } from '../../../../utils/formatters'
 
 interface HeroKPIPanelProps {
   result: PlanAnalysisResult
@@ -14,13 +16,13 @@ interface HeroKPIPanelProps {
 }
 
 const colors = {
-  primary: '#4F6BED',
-  primaryLight: 'rgba(79, 107, 237, 0.08)',
-  success: '#52c41a',
-  warning: '#faad14',
-  border: '#E5E5E5',
-  text: '#1A1A1A',
-  textSecondary: '#666666',
+  primary: COLORS.brand.primary.main,
+  primaryLight: COLORS.brand.primary.light,
+  success: COLORS.semantic.success.main,
+  warning: COLORS.semantic.warning.main,
+  border: COLORS.border.light,
+  text: COLORS.text.primary,
+  textSecondary: COLORS.text.secondary,
 }
 
 interface KPICardProps {
@@ -50,7 +52,7 @@ const KPICard: React.FC<KPICardProps> = ({
   const statusColors = {
     good: colors.success,
     warning: colors.warning,
-    bad: '#ff4d4f',
+    bad: COLORS.semantic.error.main,
   }
 
   const card = (
@@ -115,14 +117,7 @@ const KPICard: React.FC<KPICardProps> = ({
     </div>
   )
 
-  return tooltip ? (
-    <TooltipProvider>
-      <Tooltip>
-        <TooltipTrigger asChild>{card}</TooltipTrigger>
-        <TooltipContent>{tooltip}</TooltipContent>
-      </Tooltip>
-    </TooltipProvider>
-  ) : card
+  return conditionalTooltip(card, tooltip) as React.ReactElement
 }
 
 export const HeroKPIPanel: React.FC<HeroKPIPanelProps> = ({

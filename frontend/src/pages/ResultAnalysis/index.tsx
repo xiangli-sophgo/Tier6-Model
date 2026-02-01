@@ -9,9 +9,10 @@ import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
+import { InfoTooltip } from '@/components/ui/info-tooltip'
 import { BaseCard } from '@/components/common/BaseCard'
 import { getExperimentDetail, Experiment } from '@/api/results'
+import { formatNumber, formatPercentValue } from '@/utils/formatters'
 
 // 统计项组件
 interface StatItemProps {
@@ -24,7 +25,7 @@ const StatItem: React.FC<StatItemProps> = ({ label, value, precision = 2 }) => (
   <div className="p-4 bg-gray-50 rounded">
     <div className="text-gray-400 text-xs mb-1">{label}</div>
     <div className="text-lg font-semibold text-gray-900">
-      {typeof value === 'number' ? value.toFixed(precision) : value}
+      {typeof value === 'number' ? formatNumber(value, precision) : value}
     </div>
   </div>
 )
@@ -94,7 +95,6 @@ export const ResultAnalysis: React.FC<ResultAnalysisProps> = ({ experimentId, on
       : 0
 
   return (
-    <TooltipProvider>
       <div className="h-full flex flex-col">
         {/* 标题栏 */}
         <div className="px-6 py-4 border-b border-gray-100 bg-white flex justify-between items-center">
@@ -113,14 +113,11 @@ export const ResultAnalysis: React.FC<ResultAnalysisProps> = ({ experimentId, on
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button variant="outline" size="icon" onClick={loadExperiment}>
-                  <RefreshCw className="h-4 w-4" />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>刷新</TooltipContent>
-            </Tooltip>
+            <InfoTooltip content="刷新">
+              <Button variant="outline" size="icon" onClick={loadExperiment}>
+                <RefreshCw className="h-4 w-4" />
+              </Button>
+            </InfoTooltip>
             <Button variant="outline" onClick={handleExport}>
               <Download className="h-4 w-4 mr-2" />
               导出
@@ -216,7 +213,7 @@ export const ResultAnalysis: React.FC<ResultAnalysisProps> = ({ experimentId, on
                       </div>
                       <div className="mb-1 text-xs">
                         <span className="text-gray-500">进度:</span>
-                        <span className="ml-2">{task.progress.toFixed(1)}%</span>
+                        <span className="ml-2">{formatPercentValue(task.progress, 1)}</span>
                       </div>
                       <div className="mb-1 text-xs">
                         <span className="text-gray-500">创建时间:</span>
@@ -249,6 +246,5 @@ export const ResultAnalysis: React.FC<ResultAnalysisProps> = ({ experimentId, on
           </Tabs>
         </div>
       </div>
-    </TooltipProvider>
   )
 }

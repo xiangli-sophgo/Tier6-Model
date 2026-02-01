@@ -145,9 +145,12 @@ export const ConnectionProvider: React.FC<ConnectionProviderProps> = ({ children
       return {
         ...prev,
         connections: prev.connections.map(conn => {
+          // 根据连接类型映射到层级
           let level: 'datacenter' | 'pod' | 'rack' | 'board' | undefined
-          if (conn.type === 'intra') level = 'board'
-          else if (conn.type === 'inter') level = 'rack'
+          if (conn.type === 'c2c') level = 'board'      // Chip间连接 -> board级别
+          else if (conn.type === 'b2b') level = 'rack'  // Board间连接 -> rack级别
+          else if (conn.type === 'r2r') level = 'pod'   // Rack间连接 -> pod级别
+          else if (conn.type === 'p2p') level = 'datacenter'  // Pod间连接 -> datacenter级别
           const defaults = level ? levelDefaults[level] : undefined
           if (defaults) {
             return {

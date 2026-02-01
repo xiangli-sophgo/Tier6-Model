@@ -11,6 +11,8 @@ import {
   CalculationSteps,
 } from './FormulaDisplay'
 import { PlanAnalysisResult } from '../../../../utils/llmDeployment/types'
+import { detailWrapperStyle, sectionTitleStyle } from '../../../ui/common-styles'
+import { COLORS } from '../../../../utils/design-tokens'
 
 export type MetricType = 'ttft' | 'tpot' | 'throughput' | 'tps_batch' | 'tps_chip' | 'mfu' | 'mbu' | 'cost' | 'percentiles' | 'bottleneck' | 'e2e' | 'chips' | 'memory'
 
@@ -19,25 +21,10 @@ interface MetricDetailCardProps {
   result: PlanAnalysisResult
 }
 
-// 内嵌详情区域样式
-const detailWrapperStyle: React.CSSProperties = {
-  background: '#fafafa',
-  borderRadius: 8,
-  padding: 16,
-}
-
-// 小节标题样式
-const sectionTitleStyle: React.CSSProperties = {
-  fontSize: 13,
-  fontWeight: 600,
-  color: '#374151',
-  marginBottom: 10,
-}
-
 // 说明文字样式
 const descStyle: React.CSSProperties = {
   fontSize: 12,
-  color: '#6b7280',
+  color: COLORS.text.secondary,
   lineHeight: 1.6,
 }
 

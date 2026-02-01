@@ -36,6 +36,12 @@ export interface RackConfigForAnalysis {
   }>
 }
 
+// 互联参数配置
+interface InterconnectParams {
+  bandwidth_gbps: number
+  latency_us: number
+}
+
 // 生成配置类型
 export interface GenerateConfig {
   pod_count: number
@@ -52,6 +58,12 @@ export interface GenerateConfig {
   }
   switch_config?: any
   manual_connections?: ManualConnectionConfig
+  interconnect_config?: {
+    c2c?: InterconnectParams  // Chip-to-Chip
+    b2b?: InterconnectParams  // Board-to-Board
+    r2r?: InterconnectParams  // Rack-to-Rack
+    p2p?: InterconnectParams  // Pod-to-Pod
+  }
 }
 
 // 拓扑状态接口
@@ -108,6 +120,7 @@ export const TopologyProvider: React.FC<TopologyProviderProps> = ({ children }) 
           rack_config: cached.rackConfig,
           switch_config: cached.switchConfig,
           manual_connections: cached.manualConnectionConfig,
+          interconnect_config: cached.hardwareParams?.interconnect,
         })
         setTopology(data)
         // 保存用于部署分析的配置数据

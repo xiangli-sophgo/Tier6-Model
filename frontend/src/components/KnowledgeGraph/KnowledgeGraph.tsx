@@ -397,7 +397,7 @@ export const KnowledgeGraph: React.FC<KnowledgeGraphProps> = ({ renderMode }) =>
       setVisibleCategories(newVisible)
       console.log(`🎯 搜索自动启用分类: ${categoriesToEnable.join(', ')}`)
     }
-  }, [searchQuery, matchedNodeIds, allNodes, visibleCategories, setVisibleCategories])
+  }, [searchQuery, matchedNodeIds, allNodes, visibleCategories])
 
   // 监听容器尺寸变化
   useEffect(() => {

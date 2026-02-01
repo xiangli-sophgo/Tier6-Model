@@ -230,6 +230,8 @@ export interface TaskResultsResponse {
       cost_per_million_tokens: number  // 每百万 tokens 成本 ($/M tokens)
       model_size_gb: number         // 模型大小 (GB)
     }
+    stats?: Record<string, unknown>      // 完整的统计数据
+    gantt_chart?: Record<string, unknown>  // 甘特图数据（用于可视化）
   }>
   infeasible_plans: unknown[]
   search_stats: Record<string, unknown>

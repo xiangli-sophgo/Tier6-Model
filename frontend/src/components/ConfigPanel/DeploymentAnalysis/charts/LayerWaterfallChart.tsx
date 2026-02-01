@@ -12,12 +12,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import type { GanttChartData, LayerBreakdown } from '../../../../utils/llmDeployment/types'
 import {
-  aggregateTasksByLayer,
   formatTime,
   formatPercent,
+} from '../../../../utils/formatters'
+import {
+  aggregateTasksByLayer,
   TIME_BREAKDOWN_COLORS,
   TIME_BREAKDOWN_LABELS,
 } from '../../../../utils/llmDeployment/ganttDataUtils'

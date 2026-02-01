@@ -10,7 +10,7 @@
 import React, { useMemo, useState, useCallback, useRef, useEffect } from 'react'
 import { ZoomIn, ZoomOut, RotateCcw } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
+import { InfoTooltip } from '@/components/ui/info-tooltip'
 import type { GanttChartData, GanttTask } from '../../../../utils/llmDeployment/types'
 
 interface GanttChartProps {
@@ -558,36 +558,21 @@ export const GanttChart: React.FC<GanttChartProps> = ({
           <span className="text-[11px] text-gray-500 mr-1">
             {zoom.toFixed(1)}x
           </span>
-          <TooltipProvider>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button variant="outline" size="icon" className="h-7 w-7" onClick={handleZoomIn}>
-                  <ZoomIn className="h-4 w-4" />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>放大 (Ctrl+滚轮↑)</TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
-          <TooltipProvider>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button variant="outline" size="icon" className="h-7 w-7" onClick={handleZoomOut} disabled={zoom <= 1}>
-                  <ZoomOut className="h-4 w-4" />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>缩小 (Ctrl+滚轮↓)</TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
-          <TooltipProvider>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button variant="outline" size="icon" className="h-7 w-7" onClick={handleReset} disabled={zoom === 1}>
-                  <RotateCcw className="h-4 w-4" />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>重置视图</TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
+          <InfoTooltip content="放大 (Ctrl+滚轮↑)">
+            <Button variant="outline" size="icon" className="h-7 w-7" onClick={handleZoomIn}>
+              <ZoomIn className="h-4 w-4" />
+            </Button>
+          </InfoTooltip>
+          <InfoTooltip content="缩小 (Ctrl+滚轮↓)">
+            <Button variant="outline" size="icon" className="h-7 w-7" onClick={handleZoomOut} disabled={zoom <= 1}>
+              <ZoomOut className="h-4 w-4" />
+            </Button>
+          </InfoTooltip>
+          <InfoTooltip content="重置视图">
+            <Button variant="outline" size="icon" className="h-7 w-7" onClick={handleReset} disabled={zoom === 1}>
+              <RotateCcw className="h-4 w-4" />
+            </Button>
+          </InfoTooltip>
         </div>
       </div>
 

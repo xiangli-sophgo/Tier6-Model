@@ -1,0 +1,58 @@
+name: P1-R4-B4-C32
+pod_count: 1
+racks_per_pod: 4
+rack_config:
+  total_u: 42
+  boards:
+  - id: board_1
+    name: Board
+    u_height: 2
+    count: 1
+    chips:
+    - name: SG2262
+      count: 8
+hardware_params:
+  chip:
+    name: SG2262
+    num_cores: 64
+    compute_tflops_fp8: 256
+    compute_tflops_bf16: 128
+    memory_capacity_gb: 32
+    memory_bandwidth_gbps: 819
+    memory_bandwidth_utilization: 0.85
+    lmem_capacity_mb: 128
+    lmem_bandwidth_gbps: 12000
+    cube_m: 16
+    cube_k: 32
+    cube_n: 8
+    sram_size_kb: 2048
+    sram_utilization: 0.45
+    lane_num: 16
+    align_bytes: 32
+    compute_dma_overlap_rate: 0.8
+  interconnect:
+    c2c:
+      bandwidth_gbps: 900
+      latency_us: 1
+    b2b:
+      bandwidth_gbps: 450
+      latency_us: 0.35
+    r2r:
+      bandwidth_gbps: 200
+      latency_us: 2
+    p2p:
+      bandwidth_gbps: 100
+      latency_us: 5
+comm_latency_config:
+  rtt_tp_us: 0.35
+  rtt_ep_us: 0.85
+  bandwidth_utilization: 0.95
+  sync_latency_us: 0
+  switch_delay_us: 1
+  cable_delay_us: 0.025
+  memory_read_latency_us: 0.15
+  memory_write_latency_us: 0.01
+  noc_latency_us: 0.05
+  die_to_die_latency_us: 0.04
+created_at: '2026-01-31T22:29:01.344540'
+updated_at: '2026-01-31T22:29:01.344546'

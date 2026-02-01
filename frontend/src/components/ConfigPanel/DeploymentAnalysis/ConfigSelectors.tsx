@@ -18,13 +18,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from '@/components/ui/tooltip'
-import { ConfigCollapsible } from '@/components/ui/config-collapsible'
+import { InfoTooltip, HelpTooltip } from '@/components/ui/info-tooltip'
+import { BaseCard } from '@/components/common/BaseCard'
 import {
   LLMModelConfig,
   InferenceConfig,
@@ -38,54 +33,17 @@ import {
   createHardwareConfig,
 } from '../../../utils/llmDeployment/presets'
 import { listBenchmarks, createBenchmark } from '../../../api/topology'
-import { configRowStyle as sharedConfigRowStyle } from '../shared'
-
 // ============================================
-// 样式常量
+// 样式常量 - 从设计令牌和公共样式导入
 // ============================================
 
-export const colors = {
-  primary: '#5E6AD2',
-  primaryLight: '#E8EAFC',
-  interactive: '#1890ff',
-  interactiveLight: '#e6f7ff',
-  interactiveShadow: 'rgba(24, 144, 255, 0.15)',
-  success: '#52c41a',
-  successLight: '#f6ffed',
-  warning: '#faad14',
-  warningLight: '#fffbe6',
-  error: '#ff4d4f',
-  errorLight: '#fff2f0',
-  border: '#e8e8e8',
-  borderLight: '#F0F0F0',
-  background: '#FAFAFA',
-  backgroundDark: '#F5F5F5',
-  cardBg: '#fff',
-  text: '#1A1A1A',
-  textSecondary: '#666666',
-}
+import { colors as designColors } from '../../../utils/design-tokens'
+import { sectionCardStyle as commonSectionCardStyle, sectionTitleStyle as commonSectionTitleStyle, configRowStyle as commonConfigRowStyle } from '../../ui/common-styles'
 
-// 重新导出统一的 configRowStyle
-export const configRowStyle = sharedConfigRowStyle
-
-export const sectionCardStyle: React.CSSProperties = {
-  background: '#fff',
-  borderRadius: 10,
-  padding: 16,
-  marginBottom: 12,
-  boxShadow: '0 1px 3px rgba(0, 0, 0, 0.06)',
-  border: `1px solid ${colors.borderLight}`,
-}
-
-export const sectionTitleStyle: React.CSSProperties = {
-  fontSize: 13,
-  fontWeight: 600,
-  color: colors.text,
-  marginBottom: 12,
-  display: 'flex',
-  alignItems: 'center',
-  gap: 6,
-}
+export const colors = designColors
+export const configRowStyle = commonConfigRowStyle
+export const sectionCardStyle = commonSectionCardStyle
+export const sectionTitleStyle = commonSectionTitleStyle
 
 // ============================================
 // Benchmark 参数提示
@@ -120,21 +78,17 @@ const BENCHMARK_TOOLTIPS: Record<string, string> = {
   max_seq_length: 'KV Cache 最大长度',
 }
 
-// ConfigLabel 组件
+// ConfigLabel 组件 - 使用统一的 HelpTooltip
 interface ConfigLabelProps {
   name: string
   label?: string
 }
 
 const ConfigLabel: React.FC<ConfigLabelProps> = ({ name, label }) => (
-  <TooltipProvider>
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <span className="text-gray-500 text-xs cursor-help">{label || name}</span>
-      </TooltipTrigger>
-      <TooltipContent>{BENCHMARK_TOOLTIPS[name] || name}</TooltipContent>
-    </Tooltip>
-  </TooltipProvider>
+  <HelpTooltip
+    label={label || name}
+    content={BENCHMARK_TOOLTIPS[name] || name}
+  />
 )
 
 
@@ -258,8 +212,7 @@ export const ModelConfigSelector: React.FC<ModelConfigSelectorProps> = ({ value,
   const estimateParams = () => ({ value: paramsStr, breakdown: `总参数量: ${paramsStr}` })
 
   return (
-    <TooltipProvider>
-      <div>
+    <div>
         <div style={configRowStyle}>
           <span className="text-sm">模型选择</span>
           <Select value={presetId} onValueChange={handlePresetChange}>
@@ -294,11 +247,11 @@ export const ModelConfigSelector: React.FC<ModelConfigSelectorProps> = ({ value,
         {editMode ? (
           <div className="p-2 bg-gray-100 rounded-md text-xs">
             <div className="flex justify-between items-center mb-1">
-              <Tooltip><TooltipTrigger asChild><span className="text-[13px] cursor-help">模型名称</span></TooltipTrigger><TooltipContent>自定义模型显示名称</TooltipContent></Tooltip>
+              <HelpTooltip label="模型名称" content="自定义模型显示名称" labelClassName="text-[13px] cursor-help" />
               <Input value={value.model_name} onChange={(e) => updateField('model_name', e.target.value)} className="w-[180px] h-7" />
             </div>
             <div className="flex justify-between items-center mb-1">
-              <Tooltip><TooltipTrigger asChild><span className="text-[13px] cursor-help">模型类型</span></TooltipTrigger><TooltipContent>Dense: 标准密集模型; MoE: 混合专家稀疏模型</TooltipContent></Tooltip>
+              <HelpTooltip label="模型类型" content="Dense: 标准密集模型; MoE: 混合专家稀疏模型" labelClassName="text-[13px] cursor-help" />
               <Select value={value.model_type} onValueChange={(v) => {
                 if (v === 'moe' && !value.moe_config) {
                   onChange({ ...value, model_type: v, moe_config: { num_experts: 8, num_experts_per_tok: 2, expert_capacity_factor: 1.25 } })
@@ -314,31 +267,31 @@ export const ModelConfigSelector: React.FC<ModelConfigSelectorProps> = ({ value,
               </Select>
             </div>
             <div className="flex justify-between items-center mb-1">
-              <Tooltip><TooltipTrigger asChild><span className="text-[13px] cursor-help">隐藏层维度</span></TooltipTrigger><TooltipContent>Hidden Size</TooltipContent></Tooltip>
+              <HelpTooltip label="隐藏层维度" content="Hidden Size" labelClassName="text-[13px] cursor-help" />
               <NumberInput min={64} max={65536} value={value.hidden_size} onChange={(v) => updateField('hidden_size', v || 4096)} className="w-20" />
             </div>
             <div className="flex justify-between items-center mb-1">
-              <Tooltip><TooltipTrigger asChild><span className="text-[13px] cursor-help">层数</span></TooltipTrigger><TooltipContent>Num Layers</TooltipContent></Tooltip>
+              <HelpTooltip label="层数" content="Num Layers" labelClassName="text-[13px] cursor-help" />
               <NumberInput min={1} max={256} value={value.num_layers} onChange={(v) => updateField('num_layers', v || 32)} className="w-20" />
             </div>
             <div className="flex justify-between items-center mb-1">
-              <Tooltip><TooltipTrigger asChild><span className="text-[13px] cursor-help">注意力头数</span></TooltipTrigger><TooltipContent>Num Attention Heads</TooltipContent></Tooltip>
+              <HelpTooltip label="注意力头数" content="Num Attention Heads" labelClassName="text-[13px] cursor-help" />
               <NumberInput min={1} max={256} value={value.num_attention_heads} onChange={(v) => updateField('num_attention_heads', v || 32)} className="w-20" />
             </div>
             <div className="flex justify-between items-center mb-1">
-              <Tooltip><TooltipTrigger asChild><span className="text-[13px] cursor-help">KV头数</span></TooltipTrigger><TooltipContent>Num KV Heads</TooltipContent></Tooltip>
+              <HelpTooltip label="KV头数" content="Num KV Heads" labelClassName="text-[13px] cursor-help" />
               <NumberInput min={1} max={256} value={value.num_kv_heads} onChange={(v) => updateField('num_kv_heads', v || 8)} className="w-20" />
             </div>
             <div className="flex justify-between items-center mb-1">
-              <Tooltip><TooltipTrigger asChild><span className="text-[13px] cursor-help">FFN维度</span></TooltipTrigger><TooltipContent>Intermediate Size</TooltipContent></Tooltip>
+              <HelpTooltip label="FFN维度" content="Intermediate Size" labelClassName="text-[13px] cursor-help" />
               <NumberInput min={64} max={131072} value={value.intermediate_size} onChange={(v) => updateField('intermediate_size', v || 11008)} className="w-20" />
             </div>
             <div className="flex justify-between items-center mb-1">
-              <Tooltip><TooltipTrigger asChild><span className="text-[13px] cursor-help">词表大小</span></TooltipTrigger><TooltipContent>Vocab Size</TooltipContent></Tooltip>
+              <HelpTooltip label="词表大小" content="Vocab Size" labelClassName="text-[13px] cursor-help" />
               <NumberInput min={1000} max={500000} value={value.vocab_size} onChange={(v) => updateField('vocab_size', v || 32000)} className="w-20" />
             </div>
             <div className="flex justify-between items-center mb-1">
-              <Tooltip><TooltipTrigger asChild><span className="text-[13px] cursor-help">权重精度</span></TooltipTrigger><TooltipContent>权重精度</TooltipContent></Tooltip>
+              <HelpTooltip label="权重精度" content="权重精度" labelClassName="text-[13px] cursor-help" />
               <Select value={value.weight_dtype} onValueChange={(v) => updateField('weight_dtype', v as any)}>
                 <SelectTrigger className="w-[90px] h-7"><SelectValue /></SelectTrigger>
                 <SelectContent>
@@ -352,7 +305,7 @@ export const ModelConfigSelector: React.FC<ModelConfigSelectorProps> = ({ value,
               </Select>
             </div>
             <div className="flex justify-between items-center mb-1">
-              <Tooltip><TooltipTrigger asChild><span className="text-[13px] cursor-help">激活精度</span></TooltipTrigger><TooltipContent>激活精度</TooltipContent></Tooltip>
+              <HelpTooltip label="激活精度" content="激活精度" labelClassName="text-[13px] cursor-help" />
               <Select value={value.activation_dtype} onValueChange={(v) => updateField('activation_dtype', v as any)}>
                 <SelectTrigger className="w-[90px] h-7"><SelectValue /></SelectTrigger>
                 <SelectContent>
@@ -366,7 +319,7 @@ export const ModelConfigSelector: React.FC<ModelConfigSelectorProps> = ({ value,
               </Select>
             </div>
             <div className="flex justify-between items-center mb-1">
-              <Tooltip><TooltipTrigger asChild><span className="text-[13px] cursor-help">最大序列长度</span></TooltipTrigger><TooltipContent>Max Sequence Length</TooltipContent></Tooltip>
+              <HelpTooltip label="最大序列长度" content="Max Sequence Length" labelClassName="text-[13px] cursor-help" />
               <NumberInput min={128} max={1048576} value={value.max_seq_length} onChange={(v) => updateField('max_seq_length', v || 4096)} className="w-20" />
             </div>
 
@@ -374,23 +327,23 @@ export const ModelConfigSelector: React.FC<ModelConfigSelectorProps> = ({ value,
               <div className="mt-2 pt-2 border-t border-gray-200">
                 <Badge variant="outline" className="mb-1.5 bg-purple-50 text-purple-700 border-purple-200">MoE 参数</Badge>
                 <div className="flex justify-between items-center mb-1">
-                  <Tooltip><TooltipTrigger asChild><span className="text-[13px] cursor-help">专家数量</span></TooltipTrigger><TooltipContent>Num Experts</TooltipContent></Tooltip>
+                  <HelpTooltip label="专家数量" content="Num Experts" labelClassName="text-[13px] cursor-help" />
                   <NumberInput min={2} max={1024} value={value.moe_config.num_experts} onChange={(v) => updateMoeField('num_experts', v || 8)} className="w-20" />
                 </div>
                 <div className="flex justify-between items-center mb-1">
-                  <Tooltip><TooltipTrigger asChild><span className="text-[13px] cursor-help">激活专家数</span></TooltipTrigger><TooltipContent>Top-K</TooltipContent></Tooltip>
+                  <HelpTooltip label="激活专家数" content="Top-K" labelClassName="text-[13px] cursor-help" />
                   <NumberInput min={1} max={64} value={value.moe_config.num_experts_per_tok} onChange={(v) => updateMoeField('num_experts_per_tok', v || 2)} className="w-20" />
                 </div>
                 <div className="flex justify-between items-center mb-1">
-                  <Tooltip><TooltipTrigger asChild><span className="text-[13px] cursor-help">共享专家数</span></TooltipTrigger><TooltipContent>Shared Experts</TooltipContent></Tooltip>
+                  <HelpTooltip label="共享专家数" content="Shared Experts" labelClassName="text-[13px] cursor-help" />
                   <NumberInput min={0} max={16} value={value.moe_config.num_shared_experts || 0} onChange={(v) => updateMoeField('num_shared_experts', v || 0)} className="w-20" />
                 </div>
                 <div className="flex justify-between items-center mb-1">
-                  <Tooltip><TooltipTrigger asChild><span className="text-[13px] cursor-help">专家FFN维度</span></TooltipTrigger><TooltipContent>Expert FFN Size</TooltipContent></Tooltip>
+                  <HelpTooltip label="专家FFN维度" content="Expert FFN Size" labelClassName="text-[13px] cursor-help" />
                   <NumberInput min={64} max={65536} value={value.moe_config.expert_intermediate_size} onChange={(v) => updateMoeField('expert_intermediate_size', v)} className="w-20" placeholder="同FFN" />
                 </div>
                 <div className="flex justify-between items-center mb-1">
-                  <Tooltip><TooltipTrigger asChild><span className="text-[13px] cursor-help">前K层Dense</span></TooltipTrigger><TooltipContent>First K Dense</TooltipContent></Tooltip>
+                  <HelpTooltip label="前K层Dense" content="First K Dense" labelClassName="text-[13px] cursor-help" />
                   <NumberInput min={0} max={100} value={value.moe_config.first_k_dense_replace || 0} onChange={(v) => updateMoeField('first_k_dense_replace', v || 0)} className="w-20" />
                 </div>
               </div>
@@ -400,38 +353,38 @@ export const ModelConfigSelector: React.FC<ModelConfigSelectorProps> = ({ value,
               <div className="mt-2 pt-2 border-t border-gray-200">
                 <Badge variant="outline" className="mb-1.5 bg-cyan-50 text-cyan-700 border-cyan-200">MLA 并行度</Badge>
                 <div className="flex justify-between items-center mb-1">
-                  <Tooltip><TooltipTrigger asChild><span className="text-[13px] cursor-help">MLA TP</span></TooltipTrigger><TooltipContent>MLA TP</TooltipContent></Tooltip>
+                  <HelpTooltip label="MLA TP" content="MLA TP" labelClassName="text-[13px] cursor-help" />
                   <NumberInput min={1} max={64} value={value.mla_config.mla_tp} onChange={(v) => updateMlaField('mla_tp', v)} className="w-20" placeholder="同TP" />
                 </div>
                 <div className="flex justify-between items-center mb-1">
-                  <Tooltip><TooltipTrigger asChild><span className="text-[13px] cursor-help">MLA DP</span></TooltipTrigger><TooltipContent>MLA DP</TooltipContent></Tooltip>
+                  <HelpTooltip label="MLA DP" content="MLA DP" labelClassName="text-[13px] cursor-help" />
                   <NumberInput min={1} max={64} value={value.mla_config.mla_dp} onChange={(v) => updateMlaField('mla_dp', v)} className="w-20" placeholder="同DP" />
                 </div>
                 <span className="text-gray-400 text-[10px]">约束: MLA_TP × MLA_DP = TP × DP</span>
               </div>
             )}
             <div className="mt-2 pt-2 border-t border-gray-200">
-              <Tooltip><TooltipTrigger asChild><span className="text-gray-500 cursor-help">估算参数量: <b>{estimateParams().value}</b></span></TooltipTrigger><TooltipContent><pre className="whitespace-pre-wrap m-0 text-[13px]">{estimateParams().breakdown}</pre></TooltipContent></Tooltip>
+              <InfoTooltip content={<pre className="whitespace-pre-wrap m-0 text-[13px]">{estimateParams().breakdown}</pre>}><span className="text-gray-500 cursor-help">估算参数量: <b>{estimateParams().value}</b></span></InfoTooltip>
             </div>
           </div>
         ) : (
           <div className="p-2 bg-gray-100 rounded-md text-xs">
             <div className="grid grid-cols-2 gap-1">
-              <Tooltip><TooltipTrigger asChild><span className="text-gray-500 cursor-help">隐藏层: {value.hidden_size}</span></TooltipTrigger><TooltipContent>Hidden Size</TooltipContent></Tooltip>
-              <Tooltip><TooltipTrigger asChild><span className="text-gray-500 cursor-help">层数: {value.num_layers}</span></TooltipTrigger><TooltipContent>Num Layers</TooltipContent></Tooltip>
-              <Tooltip><TooltipTrigger asChild><span className="text-gray-500 cursor-help">注意力头: {value.num_attention_heads}</span></TooltipTrigger><TooltipContent>Num Attention Heads</TooltipContent></Tooltip>
-              <Tooltip><TooltipTrigger asChild><span className="text-gray-500 cursor-help">KV头: {value.num_kv_heads}</span></TooltipTrigger><TooltipContent>Num KV Heads</TooltipContent></Tooltip>
-              <Tooltip><TooltipTrigger asChild><span className="text-gray-500 cursor-help">FFN: {value.intermediate_size}</span></TooltipTrigger><TooltipContent>Intermediate Size</TooltipContent></Tooltip>
-              <Tooltip><TooltipTrigger asChild><span className="text-gray-500 cursor-help">精度: W{getDtypeBits(value.weight_dtype)}A{getDtypeBits(value.activation_dtype)}</span></TooltipTrigger><TooltipContent>W=权重精度, A=激活精度</TooltipContent></Tooltip>
+              <InfoTooltip content="Hidden Size"><span className="text-gray-500 cursor-help">隐藏层: {value.hidden_size}</span></InfoTooltip>
+              <InfoTooltip content="Num Layers"><span className="text-gray-500 cursor-help">层数: {value.num_layers}</span></InfoTooltip>
+              <InfoTooltip content="Num Attention Heads"><span className="text-gray-500 cursor-help">注意力头: {value.num_attention_heads}</span></InfoTooltip>
+              <InfoTooltip content="Num KV Heads"><span className="text-gray-500 cursor-help">KV头: {value.num_kv_heads}</span></InfoTooltip>
+              <InfoTooltip content="Intermediate Size"><span className="text-gray-500 cursor-help">FFN: {value.intermediate_size}</span></InfoTooltip>
+              <InfoTooltip content="W=权重精度, A=激活精度"><span className="text-gray-500 cursor-help">精度: W{getDtypeBits(value.weight_dtype)}A{getDtypeBits(value.activation_dtype)}</span></InfoTooltip>
             </div>
             {value.model_type === 'moe' && value.moe_config && (
               <div className="mt-1 pt-1 border-t border-gray-200">
-                <Tooltip><TooltipTrigger asChild><Badge variant="outline" className="cursor-help bg-purple-50 text-purple-700 border-purple-200">MoE</Badge></TooltipTrigger><TooltipContent>Mixture of Experts</TooltipContent></Tooltip>
-                <Tooltip><TooltipTrigger asChild><span className="text-gray-500 text-[13px] ml-1 cursor-help">{value.moe_config.num_experts}专家 × {value.moe_config.num_experts_per_tok}激活{value.moe_config.num_shared_experts ? ` + ${value.moe_config.num_shared_experts}共享` : ''}</span></TooltipTrigger><TooltipContent>总共{value.moe_config.num_experts}个专家，每个token激活{value.moe_config.num_experts_per_tok}个</TooltipContent></Tooltip>
+                <InfoTooltip content="Mixture of Experts"><Badge variant="outline" className="cursor-help bg-purple-50 text-purple-700 border-purple-200">MoE</Badge></InfoTooltip>
+                <InfoTooltip content={`总共${value.moe_config.num_experts}个专家，每个token激活${value.moe_config.num_experts_per_tok}个`}><span className="text-gray-500 text-[13px] ml-1 cursor-help">{value.moe_config.num_experts}专家 × {value.moe_config.num_experts_per_tok}激活{value.moe_config.num_shared_experts ? ` + ${value.moe_config.num_shared_experts}共享` : ''}</span></InfoTooltip>
               </div>
             )}
             <div className="mt-1.5 pt-1.5 border-t border-gray-200 flex justify-between items-center">
-              <Tooltip><TooltipTrigger asChild><span className="text-gray-500 cursor-help">估算参数量: <b>{estimateParams().value}</b></span></TooltipTrigger><TooltipContent><pre className="whitespace-pre-wrap m-0 text-[13px]">{estimateParams().breakdown}</pre></TooltipContent></Tooltip>
+              <InfoTooltip content={<pre className="whitespace-pre-wrap m-0 text-[13px]">{estimateParams().breakdown}</pre>}><span className="text-gray-500 cursor-help">估算参数量: <b>{estimateParams().value}</b></span></InfoTooltip>
             </div>
           </div>
         )}
@@ -477,7 +430,6 @@ export const ModelConfigSelector: React.FC<ModelConfigSelectorProps> = ({ value,
           </div>
         )}
       </div>
-    </TooltipProvider>
   )
 }
 
@@ -490,6 +442,8 @@ interface BenchmarkConfigSelectorProps {
   onModelChange: (config: LLMModelConfig) => void
   inferenceConfig: InferenceConfig
   onInferenceChange: (config: InferenceConfig) => void
+  // 通知父组件当前选中的 Benchmark 配置文件名
+  onBenchmarkSelect?: (benchmarkName: string | undefined) => void
 }
 
 const LAST_BENCHMARK_KEY = 'llm_last_benchmark_id'
@@ -536,6 +490,7 @@ export const BenchmarkConfigSelector: React.FC<BenchmarkConfigSelectorProps> = (
   onModelChange,
   inferenceConfig,
   onInferenceChange,
+  onBenchmarkSelect,
 }) => {
   const [presetId, setPresetId] = useState<string>('')
   const [customBenchmarks, setCustomBenchmarks] = useState<CustomBenchmark[]>([])
@@ -565,6 +520,8 @@ export const BenchmarkConfigSelector: React.FC<BenchmarkConfigSelectorProps> = (
         const lastBenchmarkId = localStorage.getItem(LAST_BENCHMARK_KEY)
         const initialId = (lastBenchmarkId && mapped.find(b => b.id === lastBenchmarkId)) ? lastBenchmarkId : mapped[0].id
         setPresetId(initialId)
+        // 通知父组件选中的 Benchmark
+        onBenchmarkSelect?.(initialId)
         const initialBenchmark = mapped.find(b => b.id === initialId)
         if (initialBenchmark) {
           onModelChange(initialBenchmark.model)
@@ -585,6 +542,8 @@ export const BenchmarkConfigSelector: React.FC<BenchmarkConfigSelectorProps> = (
   const handlePresetChange = (id: string) => {
     setPresetId(id)
     localStorage.setItem(LAST_BENCHMARK_KEY, id)
+    // 通知父组件选中的 Benchmark
+    onBenchmarkSelect?.(id)
     const match = customBenchmarks.find(c => c.id === id)
     if (match) {
       onModelChange(match.model)
@@ -607,6 +566,8 @@ export const BenchmarkConfigSelector: React.FC<BenchmarkConfigSelectorProps> = (
         }
         setPresetId(currentBenchmarkName)
         localStorage.setItem(LAST_BENCHMARK_KEY, currentBenchmarkName)
+        // 通知父组件选中的 Benchmark
+        onBenchmarkSelect?.(currentBenchmarkName)
         toast.success(`已保存: ${currentBenchmarkName}`)
       } else {
         toast.error('保存失败')
@@ -637,6 +598,8 @@ export const BenchmarkConfigSelector: React.FC<BenchmarkConfigSelectorProps> = (
       }
       setPresetId(currentBenchmarkName)
       localStorage.setItem(LAST_BENCHMARK_KEY, currentBenchmarkName)
+      // 通知父组件选中的 Benchmark
+      onBenchmarkSelect?.(currentBenchmarkName)
       toast.success(`已保存: ${currentBenchmarkName}`)
     } else {
       toast.error('保存失败')
@@ -659,8 +622,7 @@ export const BenchmarkConfigSelector: React.FC<BenchmarkConfigSelectorProps> = (
   ]
 
   return (
-    <TooltipProvider>
-      <div>
+    <div>
         <div className="mb-3">
           <div className="mb-1 flex justify-between items-center">
             <span className="text-gray-500 text-xs"><span className="text-red-500">*</span> Benchmark 配置文件</span>
@@ -684,11 +646,13 @@ export const BenchmarkConfigSelector: React.FC<BenchmarkConfigSelectorProps> = (
         {/* 折叠面板 */}
         <div className="space-y-2 mb-3">
           {/* 基础参数 */}
-          <ConfigCollapsible
-            open={openSections.basic}
-            onOpenChange={() => toggleSection('basic')}
+          <BaseCard
             title="基础参数"
+            collapsible
+            expanded={openSections.basic}
+            onExpandChange={() => toggleSection('basic')}
             contentClassName="p-2"
+            gradient
           >
                 <div className="grid grid-cols-2 gap-2">
                   <div><div className="mb-1"><ConfigLabel name="model_name" label="模型选择" /></div>
@@ -723,14 +687,16 @@ export const BenchmarkConfigSelector: React.FC<BenchmarkConfigSelectorProps> = (
                     </div>
                   </>
                 )}
-          </ConfigCollapsible>
+          </BaseCard>
 
           {/* 注意力配置 */}
-          <ConfigCollapsible
-            open={openSections.attention}
-            onOpenChange={() => toggleSection('attention')}
+          <BaseCard
             title="注意力配置"
+            collapsible
+            expanded={openSections.attention}
+            onExpandChange={() => toggleSection('attention')}
             contentClassName="p-2"
+            gradient
           >
                 <div className="grid grid-cols-3 gap-2">
                   <div><div className="mb-1"><ConfigLabel name="num_attention_heads" label="注意力头数" /></div><NumberInput min={1} max={256} value={modelConfig.num_attention_heads} onChange={(v) => updateModelField('num_attention_heads', v || 32)} /></div>
@@ -763,14 +729,16 @@ export const BenchmarkConfigSelector: React.FC<BenchmarkConfigSelectorProps> = (
                     </div>
                   </>
                 )}
-          </ConfigCollapsible>
+          </BaseCard>
 
           {/* 精度配置 */}
-          <ConfigCollapsible
-            open={openSections.precision}
-            onOpenChange={() => toggleSection('precision')}
+          <BaseCard
             title="精度配置"
+            collapsible
+            expanded={openSections.precision}
+            onExpandChange={() => toggleSection('precision')}
             contentClassName="p-2"
+            gradient
           >
             <div className="grid grid-cols-2 gap-2">
               <div><div className="mb-1"><ConfigLabel name="weight_dtype" label="权重精度" /></div>
@@ -786,14 +754,16 @@ export const BenchmarkConfigSelector: React.FC<BenchmarkConfigSelectorProps> = (
                 </Select>
               </div>
             </div>
-          </ConfigCollapsible>
+          </BaseCard>
 
           {/* 推理参数 */}
-          <ConfigCollapsible
-            open={openSections.inference}
-            onOpenChange={() => toggleSection('inference')}
+          <BaseCard
             title="推理参数"
+            collapsible
+            expanded={openSections.inference}
+            onExpandChange={() => toggleSection('inference')}
             contentClassName="p-2"
+            gradient
           >
                 <div className="grid grid-cols-2 gap-2">
                   <div><div className="mb-1"><ConfigLabel name="batch_size" label="Batch Size" /></div><NumberInput min={1} max={512} value={inferenceConfig.batch_size} onChange={(v) => onInferenceChange({ ...inferenceConfig, batch_size: v || 1 })} /></div>
@@ -801,7 +771,7 @@ export const BenchmarkConfigSelector: React.FC<BenchmarkConfigSelectorProps> = (
                   <div><div className="mb-1"><ConfigLabel name="output_seq_length" label="输出序列长度" /></div><NumberInput min={1} max={32768} value={inferenceConfig.output_seq_length} onChange={(v) => onInferenceChange({ ...inferenceConfig, output_seq_length: v || 256 })} /></div>
                   <div><div className="mb-1"><ConfigLabel name="max_seq_length" label="最大序列长度" /></div><NumberInput min={inferenceConfig.input_seq_length + inferenceConfig.output_seq_length} max={131072} value={inferenceConfig.max_seq_length} onChange={(v) => onInferenceChange({ ...inferenceConfig, max_seq_length: v || 768 })} /></div>
                 </div>
-          </ConfigCollapsible>
+          </BaseCard>
         </div>
 
         {/* 估算参数量 */}
@@ -816,7 +786,6 @@ export const BenchmarkConfigSelector: React.FC<BenchmarkConfigSelectorProps> = (
           <Button variant="outline" size="sm" onClick={handleReset}><RefreshCw className="h-3.5 w-3.5 mr-1" />重置</Button>
         </div>
       </div>
-    </TooltipProvider>
   )
 }
 

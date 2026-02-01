@@ -5,10 +5,11 @@
 
 import React from 'react'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from '@/components/ui/badge'
 import { BarChart3, ChevronDown, ChevronRight } from 'lucide-react'
 import type { EvaluationTask } from '@/api/results'
+import { formatPercent } from '@/utils/formatters'
 
 interface TaskDetailPanelProps {
   task: EvaluationTask
@@ -104,12 +105,6 @@ const formatNumber = (value: any, decimals = 2): string => {
   }
   if (Number.isInteger(value)) return String(value)
   return value.toFixed(decimals)
-}
-
-// 格式化百分比
-const formatPercent = (value: number | undefined, decimals = 2): string => {
-  if (value === undefined || value === null) return '-'
-  return `${(value * 100).toFixed(decimals)}%`
 }
 
 // 格式化日期
@@ -346,7 +341,7 @@ export const TaskDetailPanel: React.FC<TaskDetailPanelProps> = ({ task, onAnalyz
                   ]
 
                   const chipItems = chip ? [
-                    { label: '芯片类型', value: chip.chip_type || chip.name || '-' },
+                    { label: '芯片类型', value: chip.name || '-' },
                     { label: '算力 (FP16)', value: chip.compute_tflops_fp16 ? `${chip.compute_tflops_fp16} TFLOPs` : '-' },
                     { label: '显存', value: chip.memory_gb ? `${chip.memory_gb} GB` : '-' },
                     { label: 'HBM带宽', value: chip.memory_bandwidth_gbps ? `${chip.memory_bandwidth_gbps} GB/s` : (chip.memory_bandwidth_tbps ? `${chip.memory_bandwidth_tbps * 1000} GB/s` : '-') },

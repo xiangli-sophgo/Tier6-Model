@@ -6,8 +6,9 @@ import React from 'react'
 import { Clock, Zap, Gauge, Target, Calculator, Info } from 'lucide-react'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import { Badge } from '@/components/ui/badge'
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
+import { InfoTooltip } from '@/components/ui/info-tooltip'
 import { ScoreWeights, DEFAULT_SCORE_WEIGHTS } from '../../../../utils/llmDeployment/types'
+import { COLORS } from '../../../../utils/design-tokens'
 
 interface ScoringRulesCardProps {
   weights?: ScoreWeights
@@ -15,7 +16,7 @@ interface ScoringRulesCardProps {
 
 const ruleItemStyle: React.CSSProperties = {
   padding: '8px 0',
-  borderBottom: '1px solid #f0f0f0',
+  borderBottom: `1px solid ${COLORS.border.light}`,
 }
 
 const ruleHeaderStyle: React.CSSProperties = {
@@ -27,9 +28,9 @@ const ruleHeaderStyle: React.CSSProperties = {
 
 const formulaStyle: React.CSSProperties = {
   fontSize: 13,
-  color: '#666',
+  color: COLORS.text.secondary,
   fontFamily: 'monospace',
-  background: '#f5f5f5',
+  background: COLORS.background.tertiary,
   padding: '6px 10px',
   borderRadius: 4,
   marginTop: 6,
@@ -110,14 +111,9 @@ export const ScoringRulesCard: React.FC<ScoringRulesCardProps> = ({
         <div className="flex items-center gap-2">
           <Calculator className="h-4 w-4" />
           <span className="font-semibold text-[15px]">评分规则说明</span>
-          <TooltipProvider>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Info className="h-3.5 w-3.5 text-gray-400" />
-              </TooltipTrigger>
-              <TooltipContent>点击展开查看详细评分规则</TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
+          <InfoTooltip content="点击展开查看详细评分规则">
+            <Info className="h-3.5 w-3.5 text-gray-400" />
+          </InfoTooltip>
         </div>
       </CollapsibleTrigger>
       <CollapsibleContent className="px-3 pb-3">
@@ -141,7 +137,7 @@ export const ScoringRulesCard: React.FC<ScoringRulesCardProps> = ({
               <div style={formulaStyle}>{rule.formula}</div>
               <div style={{ marginTop: 6, paddingLeft: 24 }}>
                 {rule.details.map((detail, i) => (
-                  <div key={i} style={{ fontSize: 12, color: '#666' }}>• {detail}</div>
+                  <div key={i} style={{ fontSize: 12, color: COLORS.text.secondary }}>• {detail}</div>
                 ))}
               </div>
             </div>

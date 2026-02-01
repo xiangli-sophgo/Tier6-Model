@@ -52,6 +52,20 @@ interface BoardConfigByType {
   u4: { count: number; chips: { npu: number; cpu: number } };
 }
 
+// 互联参数配置
+export interface InterconnectParams {
+  bandwidth_gbps: number;
+  latency_us: number;
+}
+
+// 层级互联配置
+export interface InterconnectConfig {
+  c2c?: InterconnectParams;  // Chip-to-Chip (板内)
+  b2b?: InterconnectParams;  // Board-to-Board (机架内)
+  r2r?: InterconnectParams;  // Rack-to-Rack (Pod内)
+  p2p?: InterconnectParams;  // Pod-to-Pod (数据中心内)
+}
+
 // 生成请求参数
 export interface TopologyGenerateRequest {
   pod_count?: number;
@@ -59,6 +73,29 @@ export interface TopologyGenerateRequest {
   rack_config?: FlexRackConfig;
   switch_config?: GlobalSwitchConfig;
   manual_connections?: ManualConnectionConfig;
+  interconnect_config?: InterconnectConfig;  // 互联参数配置
+}
+
+/**
+ * 根据节点 ID 自动推断连接类型
+ */
+function inferConnectionType(source: string, target: string): 'c2c' | 'b2b' | 'r2r' | 'p2p' {
+  // 判断最深层级
+  if (source.includes('/chip_') && target.includes('/chip_')) {
+    return 'c2c';  // Chip-to-Chip
+  } else if (source.includes('/board_') && target.includes('/board_')
+             && !source.includes('/chip_') && !target.includes('/chip_')) {
+    return 'b2b';  // Board-to-Board
+  } else if (source.includes('/rack_') && target.includes('/rack_')
+             && !source.includes('/board_')) {
+    return 'r2r';  // Rack-to-Rack
+  } else if (source.startsWith('pod_') && target.startsWith('pod_')
+             && source.split('/').length === 1 && target.split('/').length === 1) {
+    return 'p2p';  // Pod-to-Pod
+  }
+
+  // 默认返回 c2c（后备方案）
+  return 'c2c';
 }
 
 /**
@@ -93,7 +130,19 @@ export class HierarchicalTopologyGenerator {
       rack_config,
       switch_config,
       manual_connections,
+      interconnect_config,
     } = request;
+
+    // 合并用户配置与默认值，统一转换为 { bandwidth, latency } 格式
+    const toConnParams = (cfg: InterconnectParams | undefined, defaults: { bandwidth: number; latency: number }) =>
+      cfg ? { bandwidth: cfg.bandwidth_gbps, latency: cfg.latency_us } : defaults;
+
+    const effectiveInterconnect = {
+      c2c: toConnParams(interconnect_config?.c2c, LEVEL_CONNECTION_DEFAULTS.board),
+      b2b: toConnParams(interconnect_config?.b2b, LEVEL_CONNECTION_DEFAULTS.rack),
+      r2r: toConnParams(interconnect_config?.r2r, LEVEL_CONNECTION_DEFAULTS.pod),
+      p2p: toConnParams(interconnect_config?.p2p, LEVEL_CONNECTION_DEFAULTS.datacenter),
+    };
 
     const pods: PodConfig[] = [];
     let connections: ConnectionConfig[] = [];
@@ -196,7 +245,7 @@ export class HierarchicalTopologyGenerator {
               const keepDirect = interChipCfg?.keep_direct_topology ?? false;
 
               if (!interChipEnabled || keepDirect) {
-                const chipConnections = this.generateChipConnections(chips, interChipTopo);
+                const chipConnections = this.generateChipConnections(chips, interChipTopo, effectiveInterconnect.c2c);
                 connections.push(...chipConnections);
               }
 
@@ -423,14 +472,28 @@ export class HierarchicalTopologyGenerator {
       }
 
       for (const mc of manualConnList) {
-        connections.push({
-          source: mc.source,
-          target: mc.target,
-          type: 'manual',
-          bandwidth: mc.bandwidth,
-          latency: mc.latency,
-          is_manual: true,
-        });
+        // 判断是否为自定义连接（手动指定了带宽/延迟）
+        const hasCustomParams = mc.bandwidth !== undefined && mc.latency !== undefined;
+
+        if (hasCustomParams) {
+          // 手动指定了参数，使用 custom 类型
+          connections.push({
+            source: mc.source,
+            target: mc.target,
+            type: 'custom',
+            bandwidth: mc.bandwidth,
+            latency: mc.latency,
+            is_manual: true,
+          });
+        } else {
+          // 没有指定参数，自动推断类型（引用 interconnect 配置）
+          connections.push({
+            source: mc.source,
+            target: mc.target,
+            type: inferConnectionType(mc.source, mc.target),
+            is_manual: true,
+          });
+        }
       }
     }
 
@@ -576,6 +639,8 @@ export class HierarchicalTopologyGenerator {
 
   /**
    * 生成芯片间的连接
+   * @param chips 芯片配置列表
+   * @param topologyType 拓扑类型
    */
   private generateChipConnections(
     chips: ChipConfig[],
@@ -586,14 +651,7 @@ export class HierarchicalTopologyGenerator {
     // 根据拓扑类型生成芯片间连接
     if (topologyType !== 'none' && chips.length > 1) {
       const chipIds = chips.map(c => c.id);
-      const boardDefaults = LEVEL_CONNECTION_DEFAULTS.board;
-      const chipConnections = this.generateDirectConnections(
-        chipIds,
-        topologyType,
-        'intra',
-        boardDefaults.bandwidth,
-        boardDefaults.latency
-      );
+      const chipConnections = this.generateDirectConnections(chipIds, topologyType);
       connections.push(...chipConnections);
     }
 
@@ -602,31 +660,25 @@ export class HierarchicalTopologyGenerator {
 
   /**
    * 生成Board间的连接
+   * @param boards Board配置列表
+   * @param topologyType 拓扑类型
    */
   private generateBoardConnections(
     boards: BoardConfig[],
     topologyType: DirectTopologyType = 'full_mesh'
   ): ConnectionConfig[] {
     const boardIds = boards.map(b => b.id);
-    const rackDefaults = LEVEL_CONNECTION_DEFAULTS.rack;
-    return this.generateDirectConnections(
-      boardIds,
-      topologyType,
-      'intra',
-      rackDefaults.bandwidth,
-      rackDefaults.latency
-    );
+    return this.generateDirectConnections(boardIds, topologyType);
   }
 
   /**
    * 根据拓扑类型生成直连
+   * @param nodeIds 节点ID列表
+   * @param topologyType 拓扑类型
    */
   private generateDirectConnections(
     nodeIds: string[],
-    topologyType: DirectTopologyType,
-    connType: 'intra' | 'inter',
-    bandwidth: number,
-    latency: number
+    topologyType: DirectTopologyType
   ): ConnectionConfig[] {
     const connections: ConnectionConfig[] = [];
     const n = nodeIds.length;
@@ -641,9 +693,7 @@ export class HierarchicalTopologyGenerator {
           connections.push({
             source: nodeIds[i],
             target: nodeIds[j],
-            type: connType,
-            bandwidth,
-            latency,
+            type: inferConnectionType(nodeIds[i], nodeIds[j]),
           });
         }
       }
@@ -653,9 +703,7 @@ export class HierarchicalTopologyGenerator {
         connections.push({
           source: nodeIds[i],
           target: nodeIds[j],
-          type: connType,
-          bandwidth,
-          latency,
+          type: inferConnectionType(nodeIds[i], nodeIds[j]),
         });
       }
     } else if (topologyType === 'torus_2d') {
@@ -670,9 +718,7 @@ export class HierarchicalTopologyGenerator {
           connections.push({
             source: nodeIds[i],
             target: nodeIds[right],
-            type: connType,
-            bandwidth,
-            latency,
+            type: inferConnectionType(nodeIds[i], nodeIds[right]),
           });
         }
         // 下邻居（环绕）
@@ -681,9 +727,7 @@ export class HierarchicalTopologyGenerator {
           connections.push({
             source: nodeIds[i],
             target: nodeIds[down],
-            type: connType,
-            bandwidth,
-            latency,
+            type: inferConnectionType(nodeIds[i], nodeIds[down]),
           });
         }
       }
@@ -699,9 +743,7 @@ export class HierarchicalTopologyGenerator {
           connections.push({
             source: nodeIds[i],
             target: nodeIds[nx],
-            type: connType,
-            bandwidth,
-            latency,
+            type: inferConnectionType(nodeIds[i], nodeIds[nx]),
           });
         }
         // Y方向邻居
@@ -710,9 +752,7 @@ export class HierarchicalTopologyGenerator {
           connections.push({
             source: nodeIds[i],
             target: nodeIds[ny],
-            type: connType,
-            bandwidth,
-            latency,
+            type: inferConnectionType(nodeIds[i], nodeIds[ny]),
           });
         }
         // Z方向邻居
@@ -721,9 +761,7 @@ export class HierarchicalTopologyGenerator {
           connections.push({
             source: nodeIds[i],
             target: nodeIds[nz],
-            type: connType,
-            bandwidth,
-            latency,
+            type: inferConnectionType(nodeIds[i], nodeIds[nz]),
           });
         }
       }
@@ -741,9 +779,7 @@ export class HierarchicalTopologyGenerator {
             connections.push({
               source: nodeIds[rowNodes[i]],
               target: nodeIds[rowNodes[j]],
-              type: connType,
-              bandwidth,
-              latency,
+              type: inferConnectionType(nodeIds[rowNodes[i]], nodeIds[rowNodes[j]]),
             });
           }
         }
@@ -762,9 +798,7 @@ export class HierarchicalTopologyGenerator {
             connections.push({
               source: nodeIds[colNodes[i]],
               target: nodeIds[colNodes[j]],
-              type: connType,
-              bandwidth,
-              latency,
+              type: inferConnectionType(nodeIds[colNodes[i]], nodeIds[colNodes[j]]),
             });
           }
         }

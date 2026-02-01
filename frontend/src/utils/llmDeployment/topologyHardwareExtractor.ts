@@ -135,12 +135,14 @@ function extractBandwidthFromConnections(connections: ConnectionConfig[]): {
   for (const conn of connections) {
     if (conn.bandwidth) {
       // 根据连接类型分类
-      if (conn.type === 'intra') {
-        // 节点内连接 (Board内或Chip间)
+      // c2c/b2b: 节点内连接 (Chip间、Board间)
+      // r2r/p2p: 节点间连接 (Rack间、Pod间)
+      if (conn.type === 'c2c' || conn.type === 'b2b') {
+        // 节点内连接
         intraBandwidths.push(conn.bandwidth)
         if (conn.latency) intraLatencies.push(conn.latency) // us
-      } else if (conn.type === 'inter') {
-        // 节点间连接 (Rack间或Pod间)
+      } else if (conn.type === 'r2r' || conn.type === 'p2p') {
+        // 节点间连接
         interBandwidths.push(conn.bandwidth)
         if (conn.latency) interLatencies.push(conn.latency) // us
       }
@@ -204,7 +206,7 @@ export function extractChipGroupsFromConfig(
 
       // 默认芯片配置
       const defaultChipConfig: ChipHardwareConfig = {
-        chip_type: chip.name,
+        name: chip.name,
         num_cores: 256,
         compute_tflops_fp8: 1600, // 默认 1600 TFLOPs FP8
         compute_tflops_bf16: 800, // 默认 800 TFLOPs BF16
@@ -213,8 +215,6 @@ export function extractChipGroupsFromConfig(
         memory_bandwidth_utilization: 0.85,
         lmem_capacity_mb: 128,
         lmem_bandwidth_gbps: 12000,
-        c2c_bandwidth_gbps: 900,
-        c2c_latency_us: 1.0,
         ...defaultMicroArch,
       }
 
