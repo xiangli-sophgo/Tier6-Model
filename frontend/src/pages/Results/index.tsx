@@ -508,7 +508,10 @@ export const Results: React.FC = () => {
       const hardwareConfig: HardwareConfig | undefined = (() => {
         const pods = (topology.pods as any[]) || []
         if (pods.length > 0 && pods[0].racks && pods[0].racks[0].boards && pods[0].racks[0].boards[0].chips) {
-          const chip = pods[0].racks[0].boards[0].chips[0]
+          const board = pods[0].racks[0].boards[0]
+          const chip = board.chips[0]
+          // 从拓扑中计算每个 board 的芯片数量
+          const chipsPerBoard = board.chips ? board.chips.length : 8
           return {
             chip: {
               name: chip.name,
@@ -522,7 +525,7 @@ export const Results: React.FC = () => {
               lmem_bandwidth_gbps: (chip as any).lmem_bandwidth_gbps,
             },
             board: {
-              chips_per_board: 8,
+              chips_per_board: chipsPerBoard,
               b2b_bandwidth_gbps: 900,
               b2b_latency_us: 1,
             },
@@ -536,7 +539,7 @@ export const Results: React.FC = () => {
               p2p_bandwidth_gbps: 400,
               p2p_latency_us: 2,
             },
-          } as HardwareConfig
+          } as unknown as HardwareConfig
         }
         return undefined
       })()

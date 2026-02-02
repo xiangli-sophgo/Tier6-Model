@@ -83,7 +83,6 @@ import { ParallelismConfigPanel } from './ParallelismConfigPanel'
 import { AnalysisResultDisplay } from './AnalysisResultDisplay'
 import { useTaskWebSocket, TaskUpdate } from '../../../hooks/useTaskWebSocket'
 import { TopologyInfoCard } from './TopologyInfoCard'
-import { ModifiedFieldDemo } from './ModifiedFieldDemo'
 import { SweepConfigPanel } from './ParameterSweep/SweepConfigPanel'
 import { extractSweepableParameters } from './ParameterSweep/parameterExtractors'
 import {
@@ -203,9 +202,6 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
 
   // 最大模拟 token 数（默认 4）
   const [maxSimulatedTokens, setMaxSimulatedTokens] = useState<number>(4)
-
-  // 显示修改字段视觉方案演示（临时）
-  const [showModifiedFieldDemo, setShowModifiedFieldDemo] = useState<boolean>(false)
 
   // 原始配置快照（用于修改追踪）
   const [originalBenchmarkConfig, setOriginalBenchmarkConfig] = useState<{
@@ -378,7 +374,7 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
   React.useEffect(() => {
     // 从拓扑配置提取硬件参数
     if (localRackConfig && localRackConfig.boards.length > 0 && topology?.connections) {
-      const groups = extractChipGroupsFromConfig(localRackConfig.boards)
+      const groups = extractChipGroupsFromConfig(localRackConfig.boards, localHardwareParams || undefined)
       if (groups.length > 0) {
         const firstChipType = groups[0].presetId || groups[0].chipType
         const config = generateHardwareConfigFromPanelConfig(
@@ -386,7 +382,8 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
           localRacksPerPod,
           localRackConfig.boards.map(b => ({ chips: b.chips, count: b.count })),
           topology.connections,
-          firstChipType
+          firstChipType,
+          localHardwareParams || undefined
         )
         if (config) {
           setHardwareConfig(config)
@@ -396,6 +393,7 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
       // 如果没有拓扑配置，使用默认值（SG2260E 参数）
       console.warn('未找到拓扑配置，使用默认硬件配置')
       const defaultConfig: HardwareConfig = {
+        hardware_params: { chips: {}, interconnect: { c2c: { bandwidth_gbps: 0, latency_us: 0 }, b2b: { bandwidth_gbps: 0, latency_us: 0 }, r2r: { bandwidth_gbps: 0, latency_us: 0 }, p2p: { bandwidth_gbps: 0, latency_us: 0 } } },
         chip: {
           name: 'SG2262',
           num_cores: 64,
@@ -434,7 +432,7 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
       }
       setHardwareConfig(defaultConfig)
     }
-  }, [localRackConfig, topology, localPodCount, localRacksPerPod])
+  }, [localRackConfig, topology, localPodCount, localRacksPerPod, localHardwareParams])
 
   // 序列化 localRackConfig 用于深度比较
   const rackConfigJson = React.useMemo(() =>
@@ -463,7 +461,7 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
       }))
     } else {
       // 否则从 rack_config.boards 提取
-      groups = extractChipGroupsFromConfig(localRackConfig.boards)
+      groups = extractChipGroupsFromConfig(localRackConfig.boards, localHardwareParams || undefined)
     }
     setChipGroups(groups)
 
@@ -482,7 +480,8 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
         localRacksPerPod,
         localRackConfig.boards.map(b => ({ chips: b.chips, count: b.count })),
         connections,
-        currentSelectedType
+        currentSelectedType,
+        localHardwareParams || undefined
       )
       if (config) {
         setHardwareConfig(config)
@@ -500,13 +499,14 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
         localRacksPerPod,
         localRackConfig.boards.map(b => ({ chips: b.chips, count: b.count })),
         connections,
-        selectedChipType
+        selectedChipType,
+        localHardwareParams || undefined
       )
       if (config) {
         setHardwareConfig(config)
       }
     }
-  }, [selectedChipType, localRackConfig, chipGroups, localPodCount, localRacksPerPod, topology?.connections])
+  }, [selectedChipType, localRackConfig, chipGroups, localPodCount, localRacksPerPod, topology?.connections, localHardwareParams])
 
   // 并行策略状态
   const [parallelismMode, setParallelismMode] = useState<'manual' | 'auto' | 'sweep'>('auto')
@@ -517,12 +517,19 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
   // 参数遍历状态
   const [sweepParams, setSweepParams] = useState<SweepParam[]>([])
 
+  // 计算最大可用芯片数（从拓扑配置中提取实际芯片总数）
+  const maxChips = React.useMemo(() => {
+    if (!topology) return 0
+    const summary = extractHardwareSummary(topology)
+    return summary.totalChips
+  }, [topology])
+
   // 当模型配置或硬件配置变化时，更新手动策略为满足约束的默认值
   React.useEffect(() => {
     if (!hardwareConfig) return
 
     const isMoE = modelConfig.model_type === 'moe' && modelConfig.moe_config
-    const maxTP = Math.min(128, modelConfig.num_attention_heads, hardwareConfig.board.chips_per_board)
+    const maxTP = Math.min(128, modelConfig.num_attention_heads, maxChips)
 
     // 找一个能整除头数的 TP 值
     let validTP = 1
@@ -551,7 +558,7 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
         tp: validTP,
       }))
     }
-  }, [modelConfig, hardwareConfig])
+  }, [modelConfig, hardwareConfig, maxChips])
 
   // 通信延迟配置 (统一配置：协议、网络基础设施、芯片延迟)
   const [commLatencyConfig, setCommLatencyConfig] = useState<CommLatencyConfig>({ ...DEFAULT_COMM_LATENCY_CONFIG })
@@ -1019,13 +1026,6 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
     }
   }, [analysisResult, topKPlans, infeasiblePlans, hardwareConfig, displayModelConfig, displayInferenceConfig, modelConfig, inferenceConfig, loading, errorMsg, searchStats, searchProgress, onAnalysisDataChange, handleMapToTopology, handleCancelAnalysis, topology, onTrafficResultChange, viewMode, history, handleLoadFromHistory, handleDeleteHistory, handleClearHistory])
 
-  // 计算最大可用芯片数（从拓扑配置中提取实际芯片总数）
-  const maxChips = React.useMemo(() => {
-    if (!topology) return 0
-    const summary = extractHardwareSummary(topology)
-    return summary.totalChips
-  }, [topology])
-
   // 运行分析（提交到后端执行）
   const handleRunAnalysis = useCallback(async () => {
     // 验证：必须选择配置文件
@@ -1247,24 +1247,6 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
   return (
     <>
       <div>
-        {/* 临时演示切换按钮 */}
-        <div className="mb-4 flex justify-end">
-          <Button
-            variant={showModifiedFieldDemo ? 'default' : 'outline'}
-            size="sm"
-            onClick={() => setShowModifiedFieldDemo(!showModifiedFieldDemo)}
-          >
-            {showModifiedFieldDemo ? '隐藏视觉方案演示' : '查看修改字段视觉方案'}
-          </Button>
-        </div>
-
-        {/* 修改字段视觉方案演示 */}
-        {showModifiedFieldDemo && (
-          <div className="mb-6">
-            <ModifiedFieldDemo />
-          </div>
-        )}
-
         {/* 上方：Benchmark 设置和部署设置（左右两列） */}
         <div className="grid grid-cols-2 gap-8 mb-4">
           {/* 左列：Benchmark 设置 + 并行策略 */}

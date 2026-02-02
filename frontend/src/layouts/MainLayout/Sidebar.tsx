@@ -50,11 +50,12 @@ const menuItems: MenuItem[] = [
     icon: <GitBranch className="h-5 w-5" />,
     label: '知识网络',
   },
-  {
-    key: 'playground',
-    icon: <Palette className="h-5 w-5" />,
-    label: 'Card展示',
-  },
+  // 临时隐藏 Card展示 页面
+  // {
+  //   key: 'playground',
+  //   icon: <Palette className="h-5 w-5" />,
+  //   label: 'Card展示',
+  // },
 ]
 
 export const Sidebar: React.FC = () => {

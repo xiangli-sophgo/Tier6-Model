@@ -172,8 +172,11 @@ function extractBandwidthFromConnections(connections: ConnectionConfig[]): {
  * 优先从保存的配置中读取硬件参数，不依赖后端 API
  */
 export function extractChipGroupsFromConfig(
-  boards: Array<{ chips: FlexBoardChipConfig[], count: number }>
+  boards: Array<{ chips: FlexBoardChipConfig[], count: number }>,
+  hardwareParams?: { chips?: Record<string, any> }
 ): ChipGroupInfo[] {
+  console.log('[DEBUG] extractChipGroupsFromConfig: hardwareParams =', hardwareParams)
+  console.log('[DEBUG] extractChipGroupsFromConfig: hardwareParams.chips =', hardwareParams?.chips)
   const chipGroupMap = new Map<string, {
     chipType: string
     presetId?: string
@@ -219,8 +222,14 @@ export function extractChipGroupsFromConfig(
         ...defaultMicroArch,
       }
 
-      // 方案1: 从预设获取（后端预设 + 自定义预设）
-      if (chip.preset_id) {
+      // 方案1: 从拓扑配置的 hardware_params.chips 直接获取（优先级最高）
+      if (hardwareParams?.chips?.[chip.name]) {
+        chipConfig = hardwareParams.chips[chip.name] as ChipHardwareConfig
+        console.log(`[DEBUG] extractChipGroupsFromConfig: 从hardwareParams获取芯片'${chip.name}'配置:`, chipConfig)
+      }
+      // 方案2: 从预设获取（后端预设 + 自定义预设）
+      else if (chip.preset_id) {
+        console.log(`[DEBUG] extractChipGroupsFromConfig: hardwareParams中没有'${chip.name}',尝试从preset获取`)
         const preset = getChipConfig(chip.preset_id)
         if (preset) {
           chipConfig = preset
@@ -230,7 +239,7 @@ export function extractChipGroupsFromConfig(
           chipConfig = defaultChipConfig
         }
       }
-      // 方案2: 使用默认值
+      // 方案3: 使用默认值
       else {
         console.warn(`芯片 '${chip.name}' 缺少硬件参数，请在拓扑设置的Chip层中完善配置`)
         chipConfig = defaultChipConfig
@@ -296,31 +305,54 @@ export function generateHardwareConfig(
     return null
   }
 
-  // 芯片配置（暂时使用旧的chipConfig，后续会在UI层修正）
-  const chip: ChipHardwareConfig = chipGroup.chipConfig as any
-
-  // Board配置
-  const board: BoardConfig = {
-    chips_per_board: chipGroup.chipsPerBoard,
-    b2b_bandwidth_gbps: summary.interNodeBandwidthGbps,
-    b2b_latency_us: summary.interNodeLatencyUs,
+  // 构建新格式配置
+  const chips: Record<string, ChipHardwareConfig> = {
+    [chipGroup.chipType]: chipGroup.chipConfig
   }
 
-  // Rack配置
-  const rack: RackConfig = {
-    boards_per_rack: Math.ceil(chipGroup.boardCount / summary.totalRacks),
-    r2r_bandwidth_gbps: summary.interNodeBandwidthGbps,
-    r2r_latency_us: summary.interNodeLatencyUs,
+  console.log(`[DEBUG] generateHardwareConfig: 构建chips字典, 主芯片='${chipGroup.chipType}'`, chipGroup.chipConfig)
+
+  // 如果有多种芯片类型，都添加进去
+  if (summary.chipGroups.length > 1) {
+    summary.chipGroups.forEach(group => {
+      if (group.chipType !== chipGroup!.chipType) {
+        chips[group.chipType] = group.chipConfig
+      }
+    })
   }
 
-  // Pod配置
-  const pod: PodConfig = {
-    racks_per_pod: Math.ceil(summary.totalRacks / summary.totalPods),
-    p2p_bandwidth_gbps: summary.interNodeBandwidthGbps,
-    p2p_latency_us: summary.interNodeLatencyUs,
+  console.log('[DEBUG] generateHardwareConfig: 最终chips字典 =', chips)
+
+  // 构建互联配置
+  const interconnect = {
+    c2c: {
+      bandwidth_gbps: summary.intraNodeBandwidthGbps,
+      latency_us: summary.intraNodeLatencyUs
+    },
+    b2b: {
+      bandwidth_gbps: summary.intraNodeBandwidthGbps,
+      latency_us: summary.intraNodeLatencyUs
+    },
+    r2r: {
+      bandwidth_gbps: summary.interNodeBandwidthGbps,
+      latency_us: summary.interNodeLatencyUs
+    },
+    p2p: {
+      bandwidth_gbps: summary.interNodeBandwidthGbps,
+      latency_us: summary.interNodeLatencyUs
+    }
   }
 
-  return { chip, board, rack, pod }
+  const result = {
+    hardware_params: {
+      chips,
+      interconnect
+    }
+  }
+
+  console.log('[DEBUG] generateHardwareConfig: 返回结果 =', result)
+
+  return result
 }
 
 /**
@@ -333,10 +365,11 @@ export function generateHardwareConfigFromPanelConfig(
   racksPerPod: number,
   boards: Array<{ chips: FlexBoardChipConfig[], count: number }>,
   connections: ConnectionConfig[],
-  selectedChipType?: string
+  selectedChipType?: string,
+  hardwareParams?: { chips?: Record<string, any> }
 ): HardwareConfig | null {
   // 提取芯片组
-  const chipGroups = extractChipGroupsFromConfig(boards)
+  const chipGroups = extractChipGroupsFromConfig(boards, hardwareParams)
 
   // 计算总 Board 数
   const totalBoards = podCount * racksPerPod * boards.reduce((sum, b) => sum + (b.count || 1), 0)

@@ -238,46 +238,90 @@ export interface ChipHardwareConfig {
   compute_dma_overlap_rate?: number;
 }
 
-/** Board配置（原Node） */
+/** 互联参数 */
+export interface InterconnectParams {
+  /** 带宽 (GB/s) */
+  bandwidth_gbps: number;
+  /** 延迟 (us) */
+  latency_us: number;
+}
+
+/** 硬件参数配置（新格式 v2.1.0+） */
+export interface HardwareParams {
+  /** 芯片配置字典，key为芯片名称 */
+  chips: Record<string, ChipHardwareConfig>;
+  /** 互联配置 */
+  interconnect?: {
+    /** Chip-to-Chip (Die间，板内) */
+    c2c?: InterconnectParams;
+    /** Board-to-Board (板间，机架内) */
+    b2b?: InterconnectParams;
+    /** Rack-to-Rack (机架间，Pod内) */
+    r2r?: InterconnectParams;
+    /** Pod-to-Pod (Pod间，跨Pod) */
+    p2p?: InterconnectParams;
+  };
+  /** 通信配置 */
+  comm_latency_config?: {
+    /** AllReduce算法 */
+    allreduce_algorithm?: AllReduceAlgorithm;
+    /** AllToAll算法 */
+    alltoall_algorithm?: AllToAllAlgorithm;
+    /** 计算通信重叠 */
+    enable_compute_comm_overlap?: boolean;
+    /** 网络效率 (0-1) */
+    network_efficiency?: number;
+  };
+}
+
+// ============================================
+// 旧格式硬件配置接口（向后兼容，已废弃）
+// ============================================
+
+/** Board 层级配置（已废弃，仅用于向后兼容） */
 export interface BoardConfig {
-  /** Board内芯片数量 */
+  /** 每个 Board 的芯片数量 */
   chips_per_board: number;
-  /** B2B 互联带宽 (GB/s) - Board-to-Board，机架内板间 */
+  /** Board 间互联带宽 (GB/s) */
   b2b_bandwidth_gbps: number;
-  /** B2B 互联延迟 (us) */
+  /** Board 间延迟 (us) */
   b2b_latency_us: number;
 }
 
-/** Rack配置 */
+/** Rack 层级配置（已废弃，仅用于向后兼容） */
 export interface RackConfig {
-  /** Rack内Board数量 */
+  /** 每个 Rack 的 Board 数量 */
   boards_per_rack: number;
-  /** R2R 互联带宽 (GB/s) - Rack-to-Rack，Pod内机架间 */
+  /** Rack 间互联带宽 (GB/s) */
   r2r_bandwidth_gbps: number;
-  /** R2R 互联延迟 (us) */
+  /** Rack 间延迟 (us) */
   r2r_latency_us: number;
 }
 
-/** Pod配置 */
+/** Pod 层级配置（已废弃，仅用于向后兼容） */
 export interface PodConfig {
-  /** Pod内Rack数量 */
+  /** 每个 Pod 的 Rack 数量 */
   racks_per_pod: number;
-  /** P2P 互联带宽 (GB/s) - Pod-to-Pod，跨Pod */
+  /** Pod 间互联带宽 (GB/s) */
   p2p_bandwidth_gbps: number;
-  /** P2P 互联延迟 (us) */
+  /** Pod 间延迟 (us) */
   p2p_latency_us: number;
 }
 
-/** 完整硬件配置 */
+// ============================================
+// 硬件配置（v2.1.0+ 格式）
+// ============================================
+
+/** 完整硬件配置（新格式 v2.1.0+） */
 export interface HardwareConfig {
-  /** 芯片配置 */
-  chip: ChipHardwareConfig;
-  /** Board配置 */
-  board: BoardConfig;
-  /** Rack配置 */
-  rack: RackConfig;
-  /** Pod配置 */
-  pod: PodConfig;
+  /** 硬件参数配置 */
+  hardware_params: HardwareParams;
+
+  // 以下字段仅用于向后兼容旧代码（已废弃）
+  chip?: ChipHardwareConfig;
+  board?: BoardConfig;
+  rack?: RackConfig;
+  pod?: PodConfig;
 }
 
 // ============================================

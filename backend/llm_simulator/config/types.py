@@ -12,6 +12,9 @@ LLM 推理模拟器 - 类型定义
 from dataclasses import dataclass, field
 from typing import Optional, Literal
 from enum import Enum
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 # ============================================
@@ -672,7 +675,7 @@ def validate_model_config(model_dict: dict) -> None:
 
 def validate_hardware_config(hardware_dict: dict) -> None:
     """
-    验证硬件配置的有效性（严格模式：不使用默认值）
+    验证硬件配置的有效性（仅支持新格式 v2.1.0+）
 
     Args:
         hardware_dict: 硬件配置字典
@@ -680,11 +683,46 @@ def validate_hardware_config(hardware_dict: dict) -> None:
     Raises:
         ValueError: 配置无效或缺少必需字段时抛出
     """
-    if "chip" not in hardware_dict:
-        raise ValueError("硬件配置缺少 'chip' 字段")
+    logger.warning(f"[DEBUG] validate_hardware_config: hardware_dict keys = {hardware_dict.keys()}")
+    logger.warning(f"[DEBUG] validate_hardware_config: hardware_dict content = {hardware_dict}")
 
-    chip_hw = hardware_dict["chip"]
+    # 检查新格式: hardware_params.chips
+    if "hardware_params" not in hardware_dict:
+        logger.error("[DEBUG] hardware_dict缺少hardware_params字段!")
+        raise ValueError("硬件配置缺少 'hardware_params' 字段")
 
+    hardware_params = hardware_dict["hardware_params"]
+    logger.warning(f"[DEBUG] validate_hardware_config: hardware_params keys = {hardware_params.keys()}")
+
+    if "chips" not in hardware_params:
+        logger.error("[DEBUG] hardware_params缺少chips字段!")
+        raise ValueError("硬件配置中 'hardware_params' 缺少 'chips' 字段")
+
+    chips_dict = hardware_params["chips"]
+    logger.warning(f"[DEBUG] validate_hardware_config: chips_dict = {chips_dict}")
+
+    # 验证至少有一个芯片配置
+    if not chips_dict:
+        logger.error("[DEBUG] chips_dict为空!")
+        raise ValueError("硬件配置中 'chips' 字典为空，至少需要一个芯片配置")
+
+    # 验证每个芯片的必需字段
+    for chip_name, chip_config in chips_dict.items():
+        logger.warning(f"[DEBUG] validate_hardware_config: validating chip '{chip_name}', config keys = {chip_config.keys() if isinstance(chip_config, dict) else type(chip_config)}")
+        _validate_chip_fields(chip_config, chip_name)
+
+
+def _validate_chip_fields(chip_config: dict, chip_name: str) -> None:
+    """
+    验证单个芯片配置的必需字段
+
+    Args:
+        chip_config: 芯片配置字典
+        chip_name: 芯片名称（用于错误消息）
+
+    Raises:
+        ValueError: 缺少必需字段或字段值无效时抛出
+    """
     required_fields = {
         "name": "芯片型号",
         "num_cores": "核心数",
@@ -695,22 +733,25 @@ def validate_hardware_config(hardware_dict: dict) -> None:
 
     missing_fields = []
     for field, description in required_fields.items():
-        if field not in chip_hw:
+        if field not in chip_config or chip_config[field] is None:
             missing_fields.append(f"{description} ({field})")
 
     if missing_fields:
-        raise ValueError(f"芯片硬件配置缺少必需字段: {', '.join(missing_fields)}")
+        raise ValueError(
+            f"芯片配置 '{chip_name}' 缺少必需字段: {', '.join(missing_fields)}"
+        )
 
-    compute_tflops = chip_hw["compute_tflops_bf16"]
-    memory_gb = chip_hw["memory_capacity_gb"]
-    memory_bw = chip_hw["memory_bandwidth_gbps"]
+    # 验证数值有效性
+    compute_tflops = chip_config["compute_tflops_bf16"]
+    memory_gb = chip_config["memory_capacity_gb"]
+    memory_bw = chip_config["memory_bandwidth_gbps"]
 
     if compute_tflops <= 0:
-        raise ValueError(f"compute_tflops_bf16 必须为正数，当前值: {compute_tflops}")
+        raise ValueError(f"芯片 '{chip_name}' 的 compute_tflops_bf16 必须为正数，当前值: {compute_tflops}")
     if memory_gb <= 0:
-        raise ValueError(f"memory_capacity_gb 必须为正数，当前值: {memory_gb}")
+        raise ValueError(f"芯片 '{chip_name}' 的 memory_capacity_gb 必须为正数，当前值: {memory_gb}")
     if memory_bw <= 0:
-        raise ValueError(f"memory_bandwidth_gbps 必须为正数，当前值: {memory_bw}")
+        raise ValueError(f"芯片 '{chip_name}' 的 memory_bandwidth_gbps 必须为正数，当前值: {memory_bw}")
 
 
 def validate_parallelism_config(parallelism_dict: dict, model_dict: Optional[dict] = None) -> None:

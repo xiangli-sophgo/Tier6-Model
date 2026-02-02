@@ -36,33 +36,28 @@ class ChipHardwareConfigRequest(BaseModel):
     compute_dma_overlap_rate: Optional[float] = Field(None, description="计算-搬运重叠率（0-1）")
 
 
-class BoardConfigRequest(BaseModel):
-    """Board 配置请求 (板级互联)"""
-    chips_per_board: int = Field(..., gt=0, description="每板芯片数")
-    b2b_bandwidth_gbps: float = Field(..., gt=0, description="Board-to-Board 互联带宽（GB/s）")
-    b2b_latency_us: float = Field(..., gt=0, description="Board-to-Board 互联延迟（微秒）")
-
-
-class RackConfigRequest(BaseModel):
-    """Rack 配置请求 (机架互联)"""
-    boards_per_rack: int = Field(..., gt=0, description="每 Rack 的 Board 数量")
-    r2r_bandwidth_gbps: float = Field(..., gt=0, description="Rack-to-Rack 互联带宽（GB/s）")
-    r2r_latency_us: float = Field(..., gt=0, description="Rack-to-Rack 互联延迟（微秒）")
-
-
-class PodConfigRequest(BaseModel):
-    """Pod 配置请求 (集群互联)"""
-    racks_per_pod: int = Field(..., gt=0, description="每 Pod 的 Rack 数量")
-    p2p_bandwidth_gbps: float = Field(..., gt=0, description="Pod-to-Pod 互联带宽（GB/s）")
-    p2p_latency_us: float = Field(..., gt=0, description="Pod-to-Pod 互联延迟（微秒）")
+class HardwareParamsRequest(BaseModel):
+    """硬件参数配置（新格式 v2.1.0+）"""
+    chips: dict[str, Any] = Field(
+        ...,
+        description="芯片配置字典，key为芯片名称，value为芯片配置"
+    )
+    interconnect: Optional[dict[str, Any]] = Field(
+        None,
+        description="互联配置 (c2c, b2b, r2r, p2p)"
+    )
+    comm_latency_config: Optional[dict[str, Any]] = Field(
+        None,
+        description="通信配置 (allreduce算法等)"
+    )
 
 
 class HardwareConfigRequest(BaseModel):
-    """硬件配置请求 (四层结构: Chip → Board → Rack → Pod)"""
-    chip: ChipHardwareConfigRequest = Field(..., description="芯片配置")
-    board: Optional[BoardConfigRequest] = Field(None, description="Board 配置")
-    rack: Optional[RackConfigRequest] = Field(None, description="Rack 配置")
-    pod: Optional[PodConfigRequest] = Field(None, description="Pod 配置")
+    """硬件配置请求（新格式 v2.1.0+）"""
+    hardware_params: HardwareParamsRequest = Field(
+        ...,
+        description="硬件参数配置"
+    )
 
 
 # ============================================

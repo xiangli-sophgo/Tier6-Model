@@ -979,36 +979,27 @@ def _extract_hardware_config(topology: dict) -> dict:
     if "hardware_config" in topology:
         return topology["hardware_config"]
 
-    # 格式2：配置文件格式 hardware_params.chip
+    # 格式2：配置文件格式 hardware_params.chips (新格式)
     if "hardware_params" in topology:
         hardware_params = topology["hardware_params"]
-        chip_params = hardware_params.get("chip", {})
-        if chip_params:
-            return {
-                "chip": {
-                    # 必需字段（与 validate_hardware_config 期望的字段名一致）
-                    "name": chip_params.get("name", "SG2260E"),
-                    "num_cores": chip_params.get("num_cores", 64),
-                    "compute_tflops_bf16": chip_params.get("compute_tflops_bf16", 2000),
-                    "compute_tflops_fp8": chip_params.get("compute_tflops_fp8", 4000),
-                    "memory_capacity_gb": chip_params.get("memory_capacity_gb", 80),
-                    "memory_bandwidth_gbps": chip_params.get("memory_bandwidth_gbps", 3000),
-                    "memory_bandwidth_utilization": chip_params.get("memory_bandwidth_utilization", 0.85),
-                    # 微架构参数
-                    "cube_m": chip_params.get("cube_m", 16),
-                    "cube_k": chip_params.get("cube_k", 32),
-                    "cube_n": chip_params.get("cube_n", 8),
-                    "sram_size_kb": chip_params.get("sram_size_kb", 2048),
-                    "sram_utilization": chip_params.get("sram_utilization", 0.45),
-                    "lane_num": chip_params.get("lane_num", 16),
-                    "align_bytes": chip_params.get("align_bytes", 32),
-                    "compute_dma_overlap_rate": chip_params.get("compute_dma_overlap_rate", 0.8),
-                    "lmem_capacity_mb": chip_params.get("lmem_capacity_mb", 0),
-                    "lmem_bandwidth_gbps": chip_params.get("lmem_bandwidth_gbps", 0),
-                },
-                "node": {},
-                "cluster": {}
+        chips_dict = hardware_params.get("chips", {})
+
+        logger.warning(f"[DEBUG] _extract_hardware_config: hardware_params keys = {hardware_params.keys()}")
+        logger.warning(f"[DEBUG] _extract_hardware_config: chips_dict keys = {chips_dict.keys() if chips_dict else 'EMPTY'}")
+        if chips_dict:
+            first_chip_name = next(iter(chips_dict))
+            logger.warning(f"[DEBUG] _extract_hardware_config: first chip '{first_chip_name}' = {chips_dict[first_chip_name]}")
+
+        if chips_dict:
+            result = {
+                "hardware_params": {
+                    "chips": chips_dict,
+                    "interconnect": hardware_params.get("interconnect", {}),
+                    "comm_latency_config": hardware_params.get("comm_latency_config", {}),
+                }
             }
+            logger.warning(f"[DEBUG] _extract_hardware_config: returning result with keys = {result.keys()}")
+            return result
 
     # 格式3：展开后的 pods/racks/boards/chips 结构
     hardware_config = {

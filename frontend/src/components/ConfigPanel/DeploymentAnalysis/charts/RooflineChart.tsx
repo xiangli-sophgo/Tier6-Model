@@ -32,8 +32,10 @@ export const RooflineChart: React.FC<RooflineChartProps> = ({
   simulationStats,
 }) => {
   const option: EChartsOption = useMemo(() => {
-    const peakTflops = hardware.chip.compute_tflops_bf16
-    const memoryBandwidthTBps = hardware.chip.memory_bandwidth_gbps / 1000
+    // 从新格式中获取第一个芯片配置
+    const firstChip = Object.values(hardware.hardware_params.chips)[0]
+    const peakTflops = firstChip.compute_tflops_bf16
+    const memoryBandwidthTBps = firstChip.memory_bandwidth_gbps / 1000
     const ridgePoint = peakTflops / memoryBandwidthTBps
 
     // 生成 Roofline 边界线数据点

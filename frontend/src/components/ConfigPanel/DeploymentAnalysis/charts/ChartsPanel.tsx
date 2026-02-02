@@ -139,12 +139,7 @@ export const ChartsPanel: React.FC<ChartsPanelProps> = ({
           max_seq_length: inference.max_seq_length,
         },
         parallelism: result.plan.parallelism,
-        hardware: {
-          chip: hardware.chip,
-          board: hardware.board,
-          rack: hardware.rack,
-          pod: hardware.pod,
-        },
+        hardware: hardware,
         config: {
           maxSimulatedTokens: 1,
           enableDataTransferSimulation: true,

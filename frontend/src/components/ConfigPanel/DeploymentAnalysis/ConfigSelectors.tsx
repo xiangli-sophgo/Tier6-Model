@@ -1067,7 +1067,7 @@ export const HardwareConfigSelector: React.FC<HardwareConfigSelectorProps> = ({ 
   const handleRackChange = (id: string) => { setRackId(id); handleConfigChange(chipId, boardId, id, podId) }
   const handlePodChange = (id: string) => { setPodId(id); handleConfigChange(chipId, boardId, rackId, id) }
 
-  const totalChips = value.board.chips_per_board * value.pod.racks_per_pod * value.rack.boards_per_rack
+  const totalChips = (value.board?.chips_per_board || 8) * (value.pod?.racks_per_pod || 1) * (value.rack?.boards_per_rack || 4)
 
   return (
     <div>
@@ -1088,11 +1088,11 @@ export const HardwareConfigSelector: React.FC<HardwareConfigSelectorProps> = ({ 
       <div className="p-2 bg-blue-50 rounded-md text-xs mt-2">
         <div className="flex justify-between">
           <span className="text-gray-500">总芯片数: <b>{totalChips}</b></span>
-          <span className="text-gray-500">显存: <b>{value.chip.memory_capacity_gb}GB</b>/卡</span>
+          <span className="text-gray-500">显存: <b>{value.chip?.memory_capacity_gb || 64}GB</b>/卡</span>
         </div>
         <div className="flex justify-between mt-1">
-          <span className="text-gray-500">算力: {value.chip.compute_tflops_bf16} TFLOPs</span>
-          <span className="text-gray-500">Board内: {value.board.b2b_bandwidth_gbps} GB/s</span>
+          <span className="text-gray-500">算力: {value.chip?.compute_tflops_bf16 || 768} TFLOPs</span>
+          <span className="text-gray-500">Board内: {value.board?.b2b_bandwidth_gbps || 900} GB/s</span>
         </div>
       </div>
     </div>
