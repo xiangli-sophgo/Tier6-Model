@@ -216,7 +216,7 @@ export const ModelConfigSelector: React.FC<ModelConfigSelectorProps> = ({ value,
         <div style={configRowStyle}>
           <span className="text-sm">模型选择</span>
           <Select value={presetId} onValueChange={handlePresetChange}>
-            <SelectTrigger className="w-[280px] h-8">
+            <SelectTrigger className="w-[280px] h-7">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -268,27 +268,27 @@ export const ModelConfigSelector: React.FC<ModelConfigSelectorProps> = ({ value,
             </div>
             <div className="flex justify-between items-center mb-1">
               <HelpTooltip label="隐藏层维度" content="Hidden Size" labelClassName="text-[13px] cursor-help" />
-              <NumberInput min={64} max={65536} value={value.hidden_size} onChange={(v) => updateField('hidden_size', v || 4096)} className="w-20" />
+              <NumberInput min={64} value={value.hidden_size} onChange={(v) => updateField('hidden_size', v || 4096)} className="w-20 h-7" />
             </div>
             <div className="flex justify-between items-center mb-1">
               <HelpTooltip label="层数" content="Num Layers" labelClassName="text-[13px] cursor-help" />
-              <NumberInput min={1} max={256} value={value.num_layers} onChange={(v) => updateField('num_layers', v || 32)} className="w-20" />
+              <NumberInput min={1} value={value.num_layers} onChange={(v) => updateField('num_layers', v || 32)} className="w-20 h-7" />
             </div>
             <div className="flex justify-between items-center mb-1">
               <HelpTooltip label="注意力头数" content="Num Attention Heads" labelClassName="text-[13px] cursor-help" />
-              <NumberInput min={1} max={256} value={value.num_attention_heads} onChange={(v) => updateField('num_attention_heads', v || 32)} className="w-20" />
+              <NumberInput min={1} value={value.num_attention_heads} onChange={(v) => updateField('num_attention_heads', v || 32)} className="w-20 h-7" />
             </div>
             <div className="flex justify-between items-center mb-1">
               <HelpTooltip label="KV头数" content="Num KV Heads" labelClassName="text-[13px] cursor-help" />
-              <NumberInput min={1} max={256} value={value.num_kv_heads} onChange={(v) => updateField('num_kv_heads', v || 8)} className="w-20" />
+              <NumberInput min={1} value={value.num_kv_heads} onChange={(v) => updateField('num_kv_heads', v || 8)} className="w-20 h-7" />
             </div>
             <div className="flex justify-between items-center mb-1">
               <HelpTooltip label="FFN维度" content="Intermediate Size" labelClassName="text-[13px] cursor-help" />
-              <NumberInput min={64} max={131072} value={value.intermediate_size} onChange={(v) => updateField('intermediate_size', v || 11008)} className="w-20" />
+              <NumberInput min={64} value={value.intermediate_size} onChange={(v) => updateField('intermediate_size', v || 11008)} className="w-20 h-7" />
             </div>
             <div className="flex justify-between items-center mb-1">
               <HelpTooltip label="词表大小" content="Vocab Size" labelClassName="text-[13px] cursor-help" />
-              <NumberInput min={1000} max={500000} value={value.vocab_size} onChange={(v) => updateField('vocab_size', v || 32000)} className="w-20" />
+              <NumberInput min={1000} value={value.vocab_size} onChange={(v) => updateField('vocab_size', v || 32000)} className="w-20 h-7" />
             </div>
             <div className="flex justify-between items-center mb-1">
               <HelpTooltip label="权重精度" content="权重精度" labelClassName="text-[13px] cursor-help" />
@@ -320,7 +320,7 @@ export const ModelConfigSelector: React.FC<ModelConfigSelectorProps> = ({ value,
             </div>
             <div className="flex justify-between items-center mb-1">
               <HelpTooltip label="最大序列长度" content="Max Sequence Length" labelClassName="text-[13px] cursor-help" />
-              <NumberInput min={128} max={1048576} value={value.max_seq_length} onChange={(v) => updateField('max_seq_length', v || 4096)} className="w-20" />
+              <NumberInput min={128} value={value.max_seq_length} onChange={(v) => updateField('max_seq_length', v || 4096)} className="w-20 h-7" />
             </div>
 
             {value.model_type === 'moe' && value.moe_config && (
@@ -328,23 +328,23 @@ export const ModelConfigSelector: React.FC<ModelConfigSelectorProps> = ({ value,
                 <Badge variant="outline" className="mb-1.5 bg-purple-50 text-purple-700 border-purple-200">MoE 参数</Badge>
                 <div className="flex justify-between items-center mb-1">
                   <HelpTooltip label="专家数量" content="Num Experts" labelClassName="text-[13px] cursor-help" />
-                  <NumberInput min={2} max={1024} value={value.moe_config.num_experts} onChange={(v) => updateMoeField('num_experts', v || 8)} className="w-20" />
+                  <NumberInput min={2} value={value.moe_config.num_experts} onChange={(v) => updateMoeField('num_experts', v || 8)} className="w-20 h-7" />
                 </div>
                 <div className="flex justify-between items-center mb-1">
                   <HelpTooltip label="激活专家数" content="Top-K" labelClassName="text-[13px] cursor-help" />
-                  <NumberInput min={1} max={64} value={value.moe_config.num_experts_per_tok} onChange={(v) => updateMoeField('num_experts_per_tok', v || 2)} className="w-20" />
+                  <NumberInput min={1} value={value.moe_config.num_experts_per_tok} onChange={(v) => updateMoeField('num_experts_per_tok', v || 2)} className="w-20 h-7" />
                 </div>
                 <div className="flex justify-between items-center mb-1">
                   <HelpTooltip label="共享专家数" content="Shared Experts" labelClassName="text-[13px] cursor-help" />
-                  <NumberInput min={0} max={16} value={value.moe_config.num_shared_experts || 0} onChange={(v) => updateMoeField('num_shared_experts', v || 0)} className="w-20" />
+                  <NumberInput min={0} value={value.moe_config.num_shared_experts || 0} onChange={(v) => updateMoeField('num_shared_experts', v || 0)} className="w-20 h-7" />
                 </div>
                 <div className="flex justify-between items-center mb-1">
                   <HelpTooltip label="专家FFN维度" content="Expert FFN Size" labelClassName="text-[13px] cursor-help" />
-                  <NumberInput min={64} max={65536} value={value.moe_config.expert_intermediate_size} onChange={(v) => updateMoeField('expert_intermediate_size', v)} className="w-20" placeholder="同FFN" />
+                  <NumberInput min={64} value={value.moe_config.expert_intermediate_size} onChange={(v) => updateMoeField('expert_intermediate_size', v)} className="w-20 h-7" placeholder="同FFN" />
                 </div>
                 <div className="flex justify-between items-center mb-1">
                   <HelpTooltip label="前K层Dense" content="First K Dense" labelClassName="text-[13px] cursor-help" />
-                  <NumberInput min={0} max={100} value={value.moe_config.first_k_dense_replace || 0} onChange={(v) => updateMoeField('first_k_dense_replace', v || 0)} className="w-20" />
+                  <NumberInput min={0} value={value.moe_config.first_k_dense_replace || 0} onChange={(v) => updateMoeField('first_k_dense_replace', v || 0)} className="w-20 h-7" />
                 </div>
               </div>
             )}
@@ -354,11 +354,11 @@ export const ModelConfigSelector: React.FC<ModelConfigSelectorProps> = ({ value,
                 <Badge variant="outline" className="mb-1.5 bg-cyan-50 text-cyan-700 border-cyan-200">MLA 并行度</Badge>
                 <div className="flex justify-between items-center mb-1">
                   <HelpTooltip label="MLA TP" content="MLA TP" labelClassName="text-[13px] cursor-help" />
-                  <NumberInput min={1} max={64} value={value.mla_config.mla_tp} onChange={(v) => updateMlaField('mla_tp', v)} className="w-20" placeholder="同TP" />
+                  <NumberInput min={1} value={value.mla_config.mla_tp} onChange={(v) => updateMlaField('mla_tp', v)} className="w-20 h-7" placeholder="同TP" />
                 </div>
                 <div className="flex justify-between items-center mb-1">
                   <HelpTooltip label="MLA DP" content="MLA DP" labelClassName="text-[13px] cursor-help" />
-                  <NumberInput min={1} max={64} value={value.mla_config.mla_dp} onChange={(v) => updateMlaField('mla_dp', v)} className="w-20" placeholder="同DP" />
+                  <NumberInput min={1} value={value.mla_config.mla_dp} onChange={(v) => updateMlaField('mla_dp', v)} className="w-20 h-7" placeholder="同DP" />
                 </div>
                 <span className="text-gray-400 text-[10px]">约束: MLA_TP × MLA_DP = TP × DP</span>
               </div>
@@ -494,8 +494,20 @@ export const BenchmarkConfigSelector: React.FC<BenchmarkConfigSelectorProps> = (
 }) => {
   const [presetId, setPresetId] = useState<string>('')
   const [customBenchmarks, setCustomBenchmarks] = useState<CustomBenchmark[]>([])
-  const [openSections, setOpenSections] = useState<Record<string, boolean>>({ basic: false })
+  const [openSections, setOpenSections] = useState<Record<string, boolean>>({
+    basic: false,
+    attention: false,
+    precision: false,
+    inference: false,
+    moe: false,
+  })
   const [paramsStr, setParamsStr] = useState<string>('--')
+
+  // 原始配置快照（用于修改追踪）
+  const [originalConfig, setOriginalConfig] = useState<{
+    model: LLMModelConfig | null
+    inference: InferenceConfig | null
+  }>({ model: null, inference: null })
 
   const modelList = getModelList()
 
@@ -526,6 +538,11 @@ export const BenchmarkConfigSelector: React.FC<BenchmarkConfigSelectorProps> = (
         if (initialBenchmark) {
           onModelChange(initialBenchmark.model)
           onInferenceChange(initialBenchmark.inference)
+          // 保存原始配置快照（用于修改追踪）
+          setOriginalConfig({
+            model: { ...initialBenchmark.model },
+            inference: { ...initialBenchmark.inference },
+          })
         }
       }
     })
@@ -548,6 +565,11 @@ export const BenchmarkConfigSelector: React.FC<BenchmarkConfigSelectorProps> = (
     if (match) {
       onModelChange(match.model)
       onInferenceChange(match.inference)
+      // 保存原始配置快照（用于修改追踪）
+      setOriginalConfig({
+        model: { ...match.model },
+        inference: { ...match.inference },
+      })
     }
   }
 
@@ -614,6 +636,30 @@ export const BenchmarkConfigSelector: React.FC<BenchmarkConfigSelectorProps> = (
 
   const toggleSection = (key: string) => { setOpenSections(prev => ({ ...prev, [key]: !prev[key] })) }
 
+  // 检测模型字段是否被修改
+  const isModelFieldModified = (fieldName: keyof LLMModelConfig): boolean => {
+    if (!originalConfig.model) return false
+    return modelConfig[fieldName] !== originalConfig.model[fieldName]
+  }
+
+  // 检测推理字段是否被修改
+  const isInferenceFieldModified = (fieldName: keyof InferenceConfig): boolean => {
+    if (!originalConfig.inference) return false
+    return inferenceConfig[fieldName] !== originalConfig.inference[fieldName]
+  }
+
+  // 检测MoE字段是否被修改
+  const isMoeFieldModified = (fieldName: string): boolean => {
+    if (!originalConfig.model || !originalConfig.model.moe_config || !modelConfig.moe_config) return false
+    return (modelConfig.moe_config as any)[fieldName] !== (originalConfig.model.moe_config as any)[fieldName]
+  }
+
+  // 检测MLA字段是否被修改
+  const isMlaFieldModified = (fieldName: string): boolean => {
+    if (!originalConfig.model || !originalConfig.model.mla_config || !modelConfig.mla_config) return false
+    return (modelConfig.mla_config as any)[fieldName] !== (originalConfig.model.mla_config as any)[fieldName]
+  }
+
   const sections = [
     { key: 'basic', label: '基础参数' },
     { key: 'attention', label: '注意力配置' },
@@ -636,7 +682,7 @@ export const BenchmarkConfigSelector: React.FC<BenchmarkConfigSelectorProps> = (
             </Button>
           </div>
           <Select value={presetId} onValueChange={handlePresetChange}>
-            <SelectTrigger className="w-full h-8"><SelectValue /></SelectTrigger>
+            <SelectTrigger className="w-full h-7"><SelectValue /></SelectTrigger>
             <SelectContent>
               {dropdownOptions.map((opt) => (<SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>))}
             </SelectContent>
@@ -655,13 +701,29 @@ export const BenchmarkConfigSelector: React.FC<BenchmarkConfigSelectorProps> = (
             gradient
           >
                 <div className="grid grid-cols-2 gap-2">
-                  <div><div className="mb-1"><ConfigLabel name="model_name" label="模型选择" /></div>
+                  <div className={`p-2 rounded -m-2 mb-0 ${isModelFieldModified('model_name') ? 'bg-blue-50/50' : ''}`}>
+                    <div className="mb-1 flex items-center gap-1.5">
+                      <ConfigLabel name="model_name" label="模型选择" />
+                      {isModelFieldModified('model_name') && (
+                        <Badge variant="outline" className="text-[9px] px-1 py-0 h-3.5 bg-blue-100 text-blue-700 border-blue-300">
+                          已修改
+                        </Badge>
+                      )}
+                    </div>
                     <Select value={modelConfig.model_name} onValueChange={(name) => { const preset = modelList.find(m => m.name === name || m.id === name); if (preset) onModelChange(getModelPreset(preset.id)) }}>
                       <SelectTrigger className="w-full h-7"><SelectValue /></SelectTrigger>
                       <SelectContent>{modelList.map(m => (<SelectItem key={m.id} value={m.name}>{m.params ? `${m.name} (${m.params})` : m.name}</SelectItem>))}</SelectContent>
                     </Select>
                   </div>
-                  <div><div className="mb-1"><ConfigLabel name="model_type" label="模型类型" /></div>
+                  <div className={`p-2 rounded -m-2 mb-0 ${isModelFieldModified('model_type') ? 'bg-blue-50/50' : ''}`}>
+                    <div className="mb-1 flex items-center gap-1.5">
+                      <ConfigLabel name="model_type" label="模型类型" />
+                      {isModelFieldModified('model_type') && (
+                        <Badge variant="outline" className="text-[9px] px-1 py-0 h-3.5 bg-blue-100 text-blue-700 border-blue-300">
+                          已修改
+                        </Badge>
+                      )}
+                    </div>
                     <Select value={modelConfig.model_type} onValueChange={(v) => {
                       if (v === 'moe' && !modelConfig.moe_config) onModelChange({ ...modelConfig, model_type: v, moe_config: { num_experts: 8, num_experts_per_tok: 2, expert_capacity_factor: 1.25 } })
                       else updateModelField('model_type', v as any)
@@ -670,20 +732,92 @@ export const BenchmarkConfigSelector: React.FC<BenchmarkConfigSelectorProps> = (
                       <SelectContent><SelectItem value="dense">Dense</SelectItem><SelectItem value="moe">MoE</SelectItem></SelectContent>
                     </Select>
                   </div>
-                  <div><div className="mb-1"><ConfigLabel name="hidden_size" label="隐藏层维度" /></div><NumberInput min={64} max={65536} value={modelConfig.hidden_size} onChange={(v) => updateModelField('hidden_size', v || 4096)} /></div>
-                  <div><div className="mb-1"><ConfigLabel name="num_layers" label="层数" /></div><NumberInput min={1} max={256} value={modelConfig.num_layers} onChange={(v) => updateModelField('num_layers', v || 32)} /></div>
-                  <div><div className="mb-1"><ConfigLabel name="intermediate_size" label="FFN维度" /></div><NumberInput min={64} max={131072} value={modelConfig.intermediate_size} onChange={(v) => updateModelField('intermediate_size', v || 11008)} /></div>
-                  <div><div className="mb-1"><ConfigLabel name="vocab_size" label="词表大小" /></div><NumberInput min={1000} max={500000} value={modelConfig.vocab_size} onChange={(v) => updateModelField('vocab_size', v || 32000)} /></div>
+                  <div className={`p-2 rounded -m-2 mb-0 ${isModelFieldModified('hidden_size') ? 'bg-blue-50/50' : ''}`}>
+                    <div className="mb-1 flex items-center gap-1.5">
+                      <ConfigLabel name="hidden_size" label="隐藏层维度" />
+                      {isModelFieldModified('hidden_size') && (
+                        <Badge variant="outline" className="text-[9px] px-1 py-0 h-3.5 bg-blue-100 text-blue-700 border-blue-300">已修改</Badge>
+                      )}
+                    </div>
+                    <NumberInput min={64} value={modelConfig.hidden_size} onChange={(v) => updateModelField('hidden_size', v || 4096)} />
+                  </div>
+                  <div className={`p-2 rounded -m-2 mb-0 ${isModelFieldModified('num_layers') ? 'bg-blue-50/50' : ''}`}>
+                    <div className="mb-1 flex items-center gap-1.5">
+                      <ConfigLabel name="num_layers" label="层数" />
+                      {isModelFieldModified('num_layers') && (
+                        <Badge variant="outline" className="text-[9px] px-1 py-0 h-3.5 bg-blue-100 text-blue-700 border-blue-300">已修改</Badge>
+                      )}
+                    </div>
+                    <NumberInput min={1} value={modelConfig.num_layers} onChange={(v) => updateModelField('num_layers', v || 32)} />
+                  </div>
+                  <div className={`p-2 rounded -m-2 mb-0 ${isModelFieldModified('intermediate_size') ? 'bg-blue-50/50' : ''}`}>
+                    <div className="mb-1 flex items-center gap-1.5">
+                      <ConfigLabel name="intermediate_size" label="FFN维度" />
+                      {isModelFieldModified('intermediate_size') && (
+                        <Badge variant="outline" className="text-[9px] px-1 py-0 h-3.5 bg-blue-100 text-blue-700 border-blue-300">已修改</Badge>
+                      )}
+                    </div>
+                    <NumberInput min={64} value={modelConfig.intermediate_size} onChange={(v) => updateModelField('intermediate_size', v || 11008)} />
+                  </div>
+                  <div className={`p-2 rounded -m-2 mb-0 ${isModelFieldModified('vocab_size') ? 'bg-blue-50/50' : ''}`}>
+                    <div className="mb-1 flex items-center gap-1.5">
+                      <ConfigLabel name="vocab_size" label="词表大小" />
+                      {isModelFieldModified('vocab_size') && (
+                        <Badge variant="outline" className="text-[9px] px-1 py-0 h-3.5 bg-blue-100 text-blue-700 border-blue-300">已修改</Badge>
+                      )}
+                    </div>
+                    <NumberInput min={1000} value={modelConfig.vocab_size} onChange={(v) => updateModelField('vocab_size', v || 32000)} />
+                  </div>
                 </div>
                 {modelConfig.model_type === 'moe' && modelConfig.moe_config && (
                   <>
                     <div className="my-2 border-t border-dashed border-gray-200 pt-2"><span className="text-xs text-gray-500">MoE 参数</span></div>
                     <div className="grid grid-cols-3 gap-2">
-                      <div><div className="mb-1"><ConfigLabel name="num_experts" label="专家数量" /></div><NumberInput min={2} max={1024} value={modelConfig.moe_config.num_experts} onChange={(v) => updateMoeField('num_experts', v || 8)} /></div>
-                      <div><div className="mb-1"><ConfigLabel name="num_experts_per_tok" label="激活专家数" /></div><NumberInput min={1} max={64} value={modelConfig.moe_config.num_experts_per_tok} onChange={(v) => updateMoeField('num_experts_per_tok', v || 2)} /></div>
-                      <div><div className="mb-1"><ConfigLabel name="num_shared_experts" label="共享专家数" /></div><NumberInput min={0} max={16} value={modelConfig.moe_config.num_shared_experts || 0} onChange={(v) => updateMoeField('num_shared_experts', v || 0)} /></div>
-                      <div><div className="mb-1"><ConfigLabel name="expert_intermediate_size" label="专家FFN维度" /></div><NumberInput min={64} max={65536} value={modelConfig.moe_config.expert_intermediate_size} onChange={(v) => updateMoeField('expert_intermediate_size', v)} placeholder="同FFN" /></div>
-                      <div><div className="mb-1"><ConfigLabel name="first_k_dense_replace" label="前K层Dense" /></div><NumberInput min={0} max={100} value={modelConfig.moe_config.first_k_dense_replace || 0} onChange={(v) => updateMoeField('first_k_dense_replace', v || 0)} /></div>
+                      <div className={`p-2 rounded -m-2 mb-0 ${isMoeFieldModified('num_experts') ? 'bg-blue-50/50' : ''}`}>
+                        <div className="mb-1 flex items-center gap-1.5">
+                          <ConfigLabel name="num_experts" label="专家数量" />
+                          {isMoeFieldModified('num_experts') && (
+                            <Badge variant="outline" className="text-[9px] px-1 py-0 h-3.5 bg-blue-100 text-blue-700 border-blue-300">已修改</Badge>
+                          )}
+                        </div>
+                        <NumberInput min={2} value={modelConfig.moe_config.num_experts} onChange={(v) => updateMoeField('num_experts', v || 8)} />
+                      </div>
+                      <div className={`p-2 rounded -m-2 mb-0 ${isMoeFieldModified('num_experts_per_tok') ? 'bg-blue-50/50' : ''}`}>
+                        <div className="mb-1 flex items-center gap-1.5">
+                          <ConfigLabel name="num_experts_per_tok" label="激活专家数" />
+                          {isMoeFieldModified('num_experts_per_tok') && (
+                            <Badge variant="outline" className="text-[9px] px-1 py-0 h-3.5 bg-blue-100 text-blue-700 border-blue-300">已修改</Badge>
+                          )}
+                        </div>
+                        <NumberInput min={1} value={modelConfig.moe_config.num_experts_per_tok} onChange={(v) => updateMoeField('num_experts_per_tok', v || 2)} />
+                      </div>
+                      <div className={`p-2 rounded -m-2 mb-0 ${isMoeFieldModified('num_shared_experts') ? 'bg-blue-50/50' : ''}`}>
+                        <div className="mb-1 flex items-center gap-1.5">
+                          <ConfigLabel name="num_shared_experts" label="共享专家数" />
+                          {isMoeFieldModified('num_shared_experts') && (
+                            <Badge variant="outline" className="text-[9px] px-1 py-0 h-3.5 bg-blue-100 text-blue-700 border-blue-300">已修改</Badge>
+                          )}
+                        </div>
+                        <NumberInput min={0} value={modelConfig.moe_config.num_shared_experts || 0} onChange={(v) => updateMoeField('num_shared_experts', v || 0)} />
+                      </div>
+                      <div className={`p-2 rounded -m-2 mb-0 ${isMoeFieldModified('expert_intermediate_size') ? 'bg-blue-50/50' : ''}`}>
+                        <div className="mb-1 flex items-center gap-1.5">
+                          <ConfigLabel name="expert_intermediate_size" label="专家FFN维度" />
+                          {isMoeFieldModified('expert_intermediate_size') && (
+                            <Badge variant="outline" className="text-[9px] px-1 py-0 h-3.5 bg-blue-100 text-blue-700 border-blue-300">已修改</Badge>
+                          )}
+                        </div>
+                        <NumberInput min={64} value={modelConfig.moe_config.expert_intermediate_size} onChange={(v) => updateMoeField('expert_intermediate_size', v)} placeholder="同FFN" />
+                      </div>
+                      <div className={`p-2 rounded -m-2 mb-0 ${isMoeFieldModified('first_k_dense_replace') ? 'bg-blue-50/50' : ''}`}>
+                        <div className="mb-1 flex items-center gap-1.5">
+                          <ConfigLabel name="first_k_dense_replace" label="前K层Dense" />
+                          {isMoeFieldModified('first_k_dense_replace') && (
+                            <Badge variant="outline" className="text-[9px] px-1 py-0 h-3.5 bg-blue-100 text-blue-700 border-blue-300">已修改</Badge>
+                          )}
+                        </div>
+                        <NumberInput min={0} value={modelConfig.moe_config.first_k_dense_replace || 0} onChange={(v) => updateMoeField('first_k_dense_replace', v || 0)} />
+                      </div>
                     </div>
                   </>
                 )}
@@ -699,9 +833,31 @@ export const BenchmarkConfigSelector: React.FC<BenchmarkConfigSelectorProps> = (
             gradient
           >
                 <div className="grid grid-cols-3 gap-2">
-                  <div><div className="mb-1"><ConfigLabel name="num_attention_heads" label="注意力头数" /></div><NumberInput min={1} max={256} value={modelConfig.num_attention_heads} onChange={(v) => updateModelField('num_attention_heads', v || 32)} /></div>
-                  <div><div className="mb-1"><ConfigLabel name="num_kv_heads" label="KV头数" /></div><NumberInput min={1} max={256} value={modelConfig.num_kv_heads} onChange={(v) => updateModelField('num_kv_heads', v || 8)} /></div>
-                  <div><div className="mb-1"><ConfigLabel name="attention_type" label="Attention类型" /></div>
+                  <div className={`p-2 rounded -m-2 mb-0 ${isModelFieldModified('num_attention_heads') ? 'bg-blue-50/50' : ''}`}>
+                    <div className="mb-1 flex items-center gap-1.5">
+                      <ConfigLabel name="num_attention_heads" label="注意力头数" />
+                      {isModelFieldModified('num_attention_heads') && (
+                        <Badge variant="outline" className="text-[9px] px-1 py-0 h-3.5 bg-blue-100 text-blue-700 border-blue-300">已修改</Badge>
+                      )}
+                    </div>
+                    <NumberInput min={1} value={modelConfig.num_attention_heads} onChange={(v) => updateModelField('num_attention_heads', v || 32)} />
+                  </div>
+                  <div className={`p-2 rounded -m-2 mb-0 ${isModelFieldModified('num_kv_heads') ? 'bg-blue-50/50' : ''}`}>
+                    <div className="mb-1 flex items-center gap-1.5">
+                      <ConfigLabel name="num_kv_heads" label="KV头数" />
+                      {isModelFieldModified('num_kv_heads') && (
+                        <Badge variant="outline" className="text-[9px] px-1 py-0 h-3.5 bg-blue-100 text-blue-700 border-blue-300">已修改</Badge>
+                      )}
+                    </div>
+                    <NumberInput min={1} value={modelConfig.num_kv_heads} onChange={(v) => updateModelField('num_kv_heads', v || 8)} />
+                  </div>
+                  <div className={`p-2 rounded -m-2 mb-0 ${isModelFieldModified('attention_type') ? 'bg-blue-50/50' : ''}`}>
+                    <div className="mb-1 flex items-center gap-1.5">
+                      <ConfigLabel name="attention_type" label="Attention类型" />
+                      {isModelFieldModified('attention_type') && (
+                        <Badge variant="outline" className="text-[9px] px-1 py-0 h-3.5 bg-blue-100 text-blue-700 border-blue-300">已修改</Badge>
+                      )}
+                    </div>
                     <Select value={modelConfig.attention_type || 'mha'} onValueChange={(v) => {
                       if (v === 'mla' && !modelConfig.mla_config) onModelChange({ ...modelConfig, attention_type: v, mla_config: { kv_lora_rank: 512, q_lora_rank: 1536, qk_nope_head_dim: 128, qk_rope_head_dim: 64, v_head_dim: 128, variant: 'mla' } })
                       else updateModelField('attention_type', v as any)
@@ -715,17 +871,63 @@ export const BenchmarkConfigSelector: React.FC<BenchmarkConfigSelectorProps> = (
                   <>
                     <div className="my-2 border-t border-dashed border-gray-200 pt-2"><span className="text-xs text-gray-500">MLA 参数</span></div>
                     <div className="grid grid-cols-3 gap-2">
-                      <div><div className="mb-1"><ConfigLabel name="mla_variant" label="MLA 变体" /></div>
+                      <div className={`p-2 rounded -m-2 mb-0 ${isMlaFieldModified('variant') ? 'bg-blue-50/50' : ''}`}>
+                        <div className="mb-1 flex items-center gap-1.5">
+                          <ConfigLabel name="mla_variant" label="MLA 变体" />
+                          {isMlaFieldModified('variant') && (
+                            <Badge variant="outline" className="text-[9px] px-1 py-0 h-3.5 bg-blue-100 text-blue-700 border-blue-300">已修改</Badge>
+                          )}
+                        </div>
                         <Select value={modelConfig.mla_config.variant || 'mla'} onValueChange={(v) => onModelChange({ ...modelConfig, mla_config: { ...modelConfig.mla_config!, variant: v as any } })}>
                           <SelectTrigger className="w-full h-7"><SelectValue /></SelectTrigger>
                           <SelectContent><SelectItem value="mla">MLA</SelectItem><SelectItem value="mla_v32">MLA V3.2</SelectItem><SelectItem value="mla_absorb">MLA Absorb</SelectItem><SelectItem value="mla_absorb_v32">MLA Absorb V3.2</SelectItem></SelectContent>
                         </Select>
                       </div>
-                      <div><div className="mb-1"><ConfigLabel name="kv_lora_rank" label="KV LoRA Rank" /></div><NumberInput min={64} max={4096} value={modelConfig.mla_config.kv_lora_rank} onChange={(v) => onModelChange({ ...modelConfig, mla_config: { ...modelConfig.mla_config!, kv_lora_rank: v || 512 } })} /></div>
-                      <div><div className="mb-1"><ConfigLabel name="q_lora_rank" label="Q LoRA Rank" /></div><NumberInput min={64} max={4096} value={modelConfig.mla_config.q_lora_rank} onChange={(v) => onModelChange({ ...modelConfig, mla_config: { ...modelConfig.mla_config!, q_lora_rank: v || 1536 } })} /></div>
-                      <div><div className="mb-1"><ConfigLabel name="qk_nope_head_dim" label="QK Nope维度" /></div><NumberInput min={32} max={512} value={modelConfig.mla_config.qk_nope_head_dim} onChange={(v) => onModelChange({ ...modelConfig, mla_config: { ...modelConfig.mla_config!, qk_nope_head_dim: v || 128 } })} /></div>
-                      <div><div className="mb-1"><ConfigLabel name="qk_rope_head_dim" label="QK RoPE维度" /></div><NumberInput min={32} max={512} value={modelConfig.mla_config.qk_rope_head_dim} onChange={(v) => onModelChange({ ...modelConfig, mla_config: { ...modelConfig.mla_config!, qk_rope_head_dim: v || 64 } })} /></div>
-                      <div><div className="mb-1"><ConfigLabel name="v_head_dim" label="V 头维度" /></div><NumberInput min={32} max={512} value={modelConfig.mla_config.v_head_dim} onChange={(v) => onModelChange({ ...modelConfig, mla_config: { ...modelConfig.mla_config!, v_head_dim: v || 128 } })} /></div>
+                      <div className={`p-2 rounded -m-2 mb-0 ${isMlaFieldModified('kv_lora_rank') ? 'bg-blue-50/50' : ''}`}>
+                        <div className="mb-1 flex items-center gap-1.5">
+                          <ConfigLabel name="kv_lora_rank" label="KV LoRA Rank" />
+                          {isMlaFieldModified('kv_lora_rank') && (
+                            <Badge variant="outline" className="text-[9px] px-1 py-0 h-3.5 bg-blue-100 text-blue-700 border-blue-300">已修改</Badge>
+                          )}
+                        </div>
+                        <NumberInput min={64} value={modelConfig.mla_config.kv_lora_rank} onChange={(v) => onModelChange({ ...modelConfig, mla_config: { ...modelConfig.mla_config!, kv_lora_rank: v || 512 } })} />
+                      </div>
+                      <div className={`p-2 rounded -m-2 mb-0 ${isMlaFieldModified('q_lora_rank') ? 'bg-blue-50/50' : ''}`}>
+                        <div className="mb-1 flex items-center gap-1.5">
+                          <ConfigLabel name="q_lora_rank" label="Q LoRA Rank" />
+                          {isMlaFieldModified('q_lora_rank') && (
+                            <Badge variant="outline" className="text-[9px] px-1 py-0 h-3.5 bg-blue-100 text-blue-700 border-blue-300">已修改</Badge>
+                          )}
+                        </div>
+                        <NumberInput min={64} value={modelConfig.mla_config.q_lora_rank} onChange={(v) => onModelChange({ ...modelConfig, mla_config: { ...modelConfig.mla_config!, q_lora_rank: v || 1536 } })} />
+                      </div>
+                      <div className={`p-2 rounded -m-2 mb-0 ${isMlaFieldModified('qk_nope_head_dim') ? 'bg-blue-50/50' : ''}`}>
+                        <div className="mb-1 flex items-center gap-1.5">
+                          <ConfigLabel name="qk_nope_head_dim" label="QK Nope维度" />
+                          {isMlaFieldModified('qk_nope_head_dim') && (
+                            <Badge variant="outline" className="text-[9px] px-1 py-0 h-3.5 bg-blue-100 text-blue-700 border-blue-300">已修改</Badge>
+                          )}
+                        </div>
+                        <NumberInput min={32} value={modelConfig.mla_config.qk_nope_head_dim} onChange={(v) => onModelChange({ ...modelConfig, mla_config: { ...modelConfig.mla_config!, qk_nope_head_dim: v || 128 } })} />
+                      </div>
+                      <div className={`p-2 rounded -m-2 mb-0 ${isMlaFieldModified('qk_rope_head_dim') ? 'bg-blue-50/50' : ''}`}>
+                        <div className="mb-1 flex items-center gap-1.5">
+                          <ConfigLabel name="qk_rope_head_dim" label="QK RoPE维度" />
+                          {isMlaFieldModified('qk_rope_head_dim') && (
+                            <Badge variant="outline" className="text-[9px] px-1 py-0 h-3.5 bg-blue-100 text-blue-700 border-blue-300">已修改</Badge>
+                          )}
+                        </div>
+                        <NumberInput min={32} value={modelConfig.mla_config.qk_rope_head_dim} onChange={(v) => onModelChange({ ...modelConfig, mla_config: { ...modelConfig.mla_config!, qk_rope_head_dim: v || 64 } })} />
+                      </div>
+                      <div className={`p-2 rounded -m-2 mb-0 ${isMlaFieldModified('v_head_dim') ? 'bg-blue-50/50' : ''}`}>
+                        <div className="mb-1 flex items-center gap-1.5">
+                          <ConfigLabel name="v_head_dim" label="V 头维度" />
+                          {isMlaFieldModified('v_head_dim') && (
+                            <Badge variant="outline" className="text-[9px] px-1 py-0 h-3.5 bg-blue-100 text-blue-700 border-blue-300">已修改</Badge>
+                          )}
+                        </div>
+                        <NumberInput min={32} value={modelConfig.mla_config.v_head_dim} onChange={(v) => onModelChange({ ...modelConfig, mla_config: { ...modelConfig.mla_config!, v_head_dim: v || 128 } })} />
+                      </div>
                     </div>
                   </>
                 )}
@@ -741,13 +943,25 @@ export const BenchmarkConfigSelector: React.FC<BenchmarkConfigSelectorProps> = (
             gradient
           >
             <div className="grid grid-cols-2 gap-2">
-              <div><div className="mb-1"><ConfigLabel name="weight_dtype" label="权重精度" /></div>
+              <div className={`p-2 rounded -m-2 mb-0 ${isModelFieldModified('weight_dtype') ? 'bg-blue-50/50' : ''}`}>
+                <div className="mb-1 flex items-center gap-1.5">
+                  <ConfigLabel name="weight_dtype" label="权重精度" />
+                  {isModelFieldModified('weight_dtype') && (
+                    <Badge variant="outline" className="text-[9px] px-1 py-0 h-3.5 bg-blue-100 text-blue-700 border-blue-300">已修改</Badge>
+                  )}
+                </div>
                 <Select value={modelConfig.weight_dtype} onValueChange={(v) => updateModelField('weight_dtype', v as any)}>
                   <SelectTrigger className="w-full h-7"><SelectValue /></SelectTrigger>
                   <SelectContent><SelectItem value="fp32">FP32</SelectItem><SelectItem value="bf16">BF16</SelectItem><SelectItem value="fp16">FP16</SelectItem><SelectItem value="fp8">FP8</SelectItem><SelectItem value="int8">INT8</SelectItem><SelectItem value="int4">INT4</SelectItem></SelectContent>
                 </Select>
               </div>
-              <div><div className="mb-1"><ConfigLabel name="activation_dtype" label="激活精度" /></div>
+              <div className={`p-2 rounded -m-2 mb-0 ${isModelFieldModified('activation_dtype') ? 'bg-blue-50/50' : ''}`}>
+                <div className="mb-1 flex items-center gap-1.5">
+                  <ConfigLabel name="activation_dtype" label="激活精度" />
+                  {isModelFieldModified('activation_dtype') && (
+                    <Badge variant="outline" className="text-[9px] px-1 py-0 h-3.5 bg-blue-100 text-blue-700 border-blue-300">已修改</Badge>
+                  )}
+                </div>
                 <Select value={modelConfig.activation_dtype} onValueChange={(v) => updateModelField('activation_dtype', v as any)}>
                   <SelectTrigger className="w-full h-7"><SelectValue /></SelectTrigger>
                   <SelectContent><SelectItem value="fp32">FP32</SelectItem><SelectItem value="bf16">BF16</SelectItem><SelectItem value="fp16">FP16</SelectItem><SelectItem value="fp8">FP8</SelectItem><SelectItem value="int8">INT8</SelectItem><SelectItem value="int4">INT4</SelectItem></SelectContent>
@@ -766,10 +980,42 @@ export const BenchmarkConfigSelector: React.FC<BenchmarkConfigSelectorProps> = (
             gradient
           >
                 <div className="grid grid-cols-2 gap-2">
-                  <div><div className="mb-1"><ConfigLabel name="batch_size" label="Batch Size" /></div><NumberInput min={1} max={512} value={inferenceConfig.batch_size} onChange={(v) => onInferenceChange({ ...inferenceConfig, batch_size: v || 1 })} /></div>
-                  <div><div className="mb-1"><ConfigLabel name="input_seq_length" label="输入序列长度" /></div><NumberInput min={1} max={131072} value={inferenceConfig.input_seq_length} onChange={(v) => onInferenceChange({ ...inferenceConfig, input_seq_length: v || 512 })} /></div>
-                  <div><div className="mb-1"><ConfigLabel name="output_seq_length" label="输出序列长度" /></div><NumberInput min={1} max={32768} value={inferenceConfig.output_seq_length} onChange={(v) => onInferenceChange({ ...inferenceConfig, output_seq_length: v || 256 })} /></div>
-                  <div><div className="mb-1"><ConfigLabel name="max_seq_length" label="最大序列长度" /></div><NumberInput min={inferenceConfig.input_seq_length + inferenceConfig.output_seq_length} max={131072} value={inferenceConfig.max_seq_length} onChange={(v) => onInferenceChange({ ...inferenceConfig, max_seq_length: v || 768 })} /></div>
+                  <div className={`p-2 rounded -m-2 mb-0 ${isInferenceFieldModified('batch_size') ? 'bg-blue-50/50' : ''}`}>
+                    <div className="mb-1 flex items-center gap-1.5">
+                      <ConfigLabel name="batch_size" label="Batch Size" />
+                      {isInferenceFieldModified('batch_size') && (
+                        <Badge variant="outline" className="text-[9px] px-1 py-0 h-3.5 bg-blue-100 text-blue-700 border-blue-300">已修改</Badge>
+                      )}
+                    </div>
+                    <NumberInput min={1} value={inferenceConfig.batch_size} onChange={(v) => onInferenceChange({ ...inferenceConfig, batch_size: v || 1 })} />
+                  </div>
+                  <div className={`p-2 rounded -m-2 mb-0 ${isInferenceFieldModified('input_seq_length') ? 'bg-blue-50/50' : ''}`}>
+                    <div className="mb-1 flex items-center gap-1.5">
+                      <ConfigLabel name="input_seq_length" label="输入序列长度" />
+                      {isInferenceFieldModified('input_seq_length') && (
+                        <Badge variant="outline" className="text-[9px] px-1 py-0 h-3.5 bg-blue-100 text-blue-700 border-blue-300">已修改</Badge>
+                      )}
+                    </div>
+                    <NumberInput min={1} value={inferenceConfig.input_seq_length} onChange={(v) => onInferenceChange({ ...inferenceConfig, input_seq_length: v || 512 })} />
+                  </div>
+                  <div className={`p-2 rounded -m-2 mb-0 ${isInferenceFieldModified('output_seq_length') ? 'bg-blue-50/50' : ''}`}>
+                    <div className="mb-1 flex items-center gap-1.5">
+                      <ConfigLabel name="output_seq_length" label="输出序列长度" />
+                      {isInferenceFieldModified('output_seq_length') && (
+                        <Badge variant="outline" className="text-[9px] px-1 py-0 h-3.5 bg-blue-100 text-blue-700 border-blue-300">已修改</Badge>
+                      )}
+                    </div>
+                    <NumberInput min={1} value={inferenceConfig.output_seq_length} onChange={(v) => onInferenceChange({ ...inferenceConfig, output_seq_length: v || 256 })} />
+                  </div>
+                  <div className={`p-2 rounded -m-2 mb-0 ${isInferenceFieldModified('max_seq_length') ? 'bg-blue-50/50' : ''}`}>
+                    <div className="mb-1 flex items-center gap-1.5">
+                      <ConfigLabel name="max_seq_length" label="最大序列长度" />
+                      {isInferenceFieldModified('max_seq_length') && (
+                        <Badge variant="outline" className="text-[9px] px-1 py-0 h-3.5 bg-blue-100 text-blue-700 border-blue-300">已修改</Badge>
+                      )}
+                    </div>
+                    <NumberInput min={inferenceConfig.input_seq_length + inferenceConfig.output_seq_length} value={inferenceConfig.max_seq_length} onChange={(v) => onInferenceChange({ ...inferenceConfig, max_seq_length: v || 768 })} />
+                  </div>
                 </div>
           </BaseCard>
         </div>
@@ -828,14 +1074,14 @@ export const HardwareConfigSelector: React.FC<HardwareConfigSelectorProps> = ({ 
       <div style={configRowStyle}>
         <span className="text-sm">芯片类型</span>
         <Select value={chipId} onValueChange={handleChipChange}>
-          <SelectTrigger className="w-[140px] h-8"><SelectValue /></SelectTrigger>
+          <SelectTrigger className="w-[140px] h-7"><SelectValue /></SelectTrigger>
           <SelectContent>{chipList.map(c => (<SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>))}</SelectContent>
         </Select>
       </div>
       <div style={configRowStyle}>
         <span className="text-sm">Board 类型</span>
         <Select value={boardId} onValueChange={handleBoardChange}>
-          <SelectTrigger className="w-[160px] h-8"><SelectValue /></SelectTrigger>
+          <SelectTrigger className="w-[160px] h-7"><SelectValue /></SelectTrigger>
           <SelectContent>{boardOptions.map(o => (<SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>))}</SelectContent>
         </Select>
       </div>

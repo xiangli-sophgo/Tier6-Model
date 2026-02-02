@@ -67,9 +67,12 @@ import {
   AnalysisTask,
   loadAnalysisTasks,
   saveAnalysisTasks,
+  HardwareParams,
+  DEFAULT_HARDWARE_PARAMS,
+  DEFAULT_CHIP_HARDWARE,
 } from '../shared'
 import { AnalysisTaskList } from './AnalysisTaskList'
-import { listConfigs, saveConfig, SavedConfig } from '../../../api/topology'
+import { listConfigs, getConfig, saveConfig, SavedConfig } from '../../../api/topology'
 import {
   BenchmarkConfigSelector,
   colors,
@@ -80,6 +83,15 @@ import { ParallelismConfigPanel } from './ParallelismConfigPanel'
 import { AnalysisResultDisplay } from './AnalysisResultDisplay'
 import { useTaskWebSocket, TaskUpdate } from '../../../hooks/useTaskWebSocket'
 import { TopologyInfoCard } from './TopologyInfoCard'
+import { ModifiedFieldDemo } from './ModifiedFieldDemo'
+import { SweepConfigPanel } from './ParameterSweep/SweepConfigPanel'
+import { extractSweepableParameters } from './ParameterSweep/parameterExtractors'
+import {
+  generateCombinationsWithBinding,
+  applyParameterCombination
+} from './ParameterSweep/sweepHelpers'
+import type { SweepParam } from './ParameterSweep/sweepTypes'
+import { createBenchmark } from '../../../api/benchmark'
 
 
 // ============================================
@@ -174,6 +186,9 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
   // 硬件配置状态（从保存的拓扑配置中提取）
   const [hardwareConfig, setHardwareConfig] = useState<HardwareConfig | null>(null)
 
+  // 本地硬件参数（多芯片独立配置 - 可编辑）
+  const [localHardwareParams, setLocalHardwareParams] = useState<HardwareParams | null>(null)
+
   // 实验名称（用户自定义，留空则使用 Benchmark 名称）
   const [experimentName, setExperimentName] = useState<string>('')
 
@@ -189,12 +204,75 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
   // 最大模拟 token 数（默认 4）
   const [maxSimulatedTokens, setMaxSimulatedTokens] = useState<number>(4)
 
-  // 加载拓扑配置列表
+  // 显示修改字段视觉方案演示（临时）
+  const [showModifiedFieldDemo, setShowModifiedFieldDemo] = useState<boolean>(false)
+
+  // 原始配置快照（用于修改追踪）
+  const [originalBenchmarkConfig, setOriginalBenchmarkConfig] = useState<{
+    model: LLMModelConfig | null
+    inference: InferenceConfig | null
+  }>({ model: null, inference: null })
+
+  const [originalTopologyConfig, setOriginalTopologyConfig] = useState<{
+    hardwareParams: HardwareParams | null
+    commLatency: CommLatencyConfig | null
+  }>({ hardwareParams: null, commLatency: null })
+
+  // 加载拓扑配置列表，并自动选择第一个配置
   React.useEffect(() => {
     const loadTopologyConfigs = async () => {
       try {
         const configs = await listConfigs()
         setTopologyConfigs(configs)
+
+        // 自动加载第一个配置
+        if (configs.length > 0 && !selectedTopologyConfig) {
+          const firstConfigName = configs[0].name
+          setSelectedTopologyConfig(firstConfigName)
+
+          // 获取完整配置并应用
+          try {
+            const fullConfig = await getConfig(firstConfigName)
+            if (fullConfig) {
+              if (fullConfig.rack_config) {
+                setLocalRackConfig(fullConfig.rack_config as RackConfig)
+              }
+              setLocalPodCount(fullConfig.pod_count || 1)
+              setLocalRacksPerPod(fullConfig.racks_per_pod || 1)
+              if (fullConfig.comm_latency_config) {
+                setCommLatencyConfig(fullConfig.comm_latency_config)
+              }
+              // 恢复硬件参数
+              if (fullConfig.hardware_params) {
+                const hw = fullConfig.hardware_params as any
+                if (hw.chips) {
+                  setLocalHardwareParams({
+                    chips: { ...DEFAULT_HARDWARE_PARAMS.chips, ...hw.chips },
+                    interconnect: {
+                      c2c: { ...DEFAULT_HARDWARE_PARAMS.interconnect.c2c, ...hw.interconnect?.c2c },
+                      b2b: { ...DEFAULT_HARDWARE_PARAMS.interconnect.b2b, ...hw.interconnect?.b2b },
+                      r2r: { ...DEFAULT_HARDWARE_PARAMS.interconnect.r2r, ...hw.interconnect?.r2r },
+                      p2p: { ...DEFAULT_HARDWARE_PARAMS.interconnect.p2p, ...hw.interconnect?.p2p },
+                    },
+                  })
+                } else if (hw.chip) {
+                  const chipName = hw.chip.name || 'SG2262'
+                  setLocalHardwareParams({
+                    chips: { [chipName]: { ...DEFAULT_CHIP_HARDWARE, ...hw.chip } },
+                    interconnect: {
+                      c2c: { ...DEFAULT_HARDWARE_PARAMS.interconnect.c2c, ...hw.interconnect?.c2c },
+                      b2b: { ...DEFAULT_HARDWARE_PARAMS.interconnect.b2b, ...hw.interconnect?.b2b },
+                      r2r: { ...DEFAULT_HARDWARE_PARAMS.interconnect.r2r, ...hw.interconnect?.r2r },
+                      p2p: { ...DEFAULT_HARDWARE_PARAMS.interconnect.p2p, ...hw.interconnect?.p2p },
+                    },
+                  })
+                }
+              }
+            }
+          } catch (error) {
+            console.error('加载默认配置失败:', error)
+          }
+        }
       } catch (error) {
         console.error('加载拓扑配置列表失败:', error)
       }
@@ -212,7 +290,7 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
   }, [rackConfig, podCount, racksPerPod, selectedTopologyConfig])
 
   // 选择拓扑配置文件
-  const handleSelectTopologyConfig = useCallback((configName: string | undefined) => {
+  const handleSelectTopologyConfig = useCallback(async (configName: string | undefined) => {
     setSelectedTopologyConfig(configName)
     if (!configName) {
       // 清除选择，使用 props 传入的配置
@@ -221,23 +299,80 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
       setLocalRacksPerPod(racksPerPod)
       // 重置延迟设置为默认值
       setCommLatencyConfig({ ...DEFAULT_COMM_LATENCY_CONFIG })
+      // 重置硬件参数
+      setLocalHardwareParams(null)
       return
     }
-    const config = topologyConfigs.find(c => c.name === configName)
-    if (config) {
-      // 使用保存的配置
-      if (config.rack_config) {
-        setLocalRackConfig(config.rack_config as RackConfig)
+
+    // 从后端获取完整配置（列表API只返回摘要信息）
+    try {
+      const config = await getConfig(configName)
+      if (config) {
+        // 使用保存的配置
+        if (config.rack_config) {
+          setLocalRackConfig(config.rack_config as RackConfig)
+        }
+        setLocalPodCount(config.pod_count || 1)
+        setLocalRacksPerPod(config.racks_per_pod || 1)
+        // 恢复延迟设置
+        if (config.comm_latency_config) {
+          setCommLatencyConfig(config.comm_latency_config)
+        }
+        // 恢复硬件参数（支持新格式 chips 和旧格式 chip）
+        if (config.hardware_params) {
+          const hw = config.hardware_params as any
+          if (hw.chips) {
+            // 新格式
+            setLocalHardwareParams({
+              chips: { ...DEFAULT_HARDWARE_PARAMS.chips, ...hw.chips },
+              interconnect: {
+                c2c: { ...DEFAULT_HARDWARE_PARAMS.interconnect.c2c, ...hw.interconnect?.c2c },
+                b2b: { ...DEFAULT_HARDWARE_PARAMS.interconnect.b2b, ...hw.interconnect?.b2b },
+                r2r: { ...DEFAULT_HARDWARE_PARAMS.interconnect.r2r, ...hw.interconnect?.r2r },
+                p2p: { ...DEFAULT_HARDWARE_PARAMS.interconnect.p2p, ...hw.interconnect?.p2p },
+              },
+            })
+          } else if (hw.chip) {
+            // 旧格式兼容
+            const chipName = hw.chip.name || 'SG2262'
+            setLocalHardwareParams({
+              chips: { [chipName]: { ...DEFAULT_CHIP_HARDWARE, ...hw.chip } },
+              interconnect: {
+                c2c: { ...DEFAULT_HARDWARE_PARAMS.interconnect.c2c, ...hw.interconnect?.c2c },
+                b2b: { ...DEFAULT_HARDWARE_PARAMS.interconnect.b2b, ...hw.interconnect?.b2b },
+                r2r: { ...DEFAULT_HARDWARE_PARAMS.interconnect.r2r, ...hw.interconnect?.r2r },
+                p2p: { ...DEFAULT_HARDWARE_PARAMS.interconnect.p2p, ...hw.interconnect?.p2p },
+              },
+            })
+          }
+        } else {
+          setLocalHardwareParams(null)
+        }
+
+        // 保存原始拓扑配置快照（用于修改追踪）
+        const hwParams = config.hardware_params as any
+        const originalHwParams: HardwareParams | null = hwParams ? {
+          chips: hwParams.chips ? { ...hwParams.chips } : (hwParams.chip ? { [hwParams.chip.name || 'SG2262']: { ...hwParams.chip } } : {}),
+          interconnect: {
+            c2c: { ...DEFAULT_HARDWARE_PARAMS.interconnect.c2c, ...hwParams.interconnect?.c2c },
+            b2b: { ...DEFAULT_HARDWARE_PARAMS.interconnect.b2b, ...hwParams.interconnect?.b2b },
+            r2r: { ...DEFAULT_HARDWARE_PARAMS.interconnect.r2r, ...hwParams.interconnect?.r2r },
+            p2p: { ...DEFAULT_HARDWARE_PARAMS.interconnect.p2p, ...hwParams.interconnect?.p2p },
+          },
+        } : null
+
+        setOriginalTopologyConfig({
+          hardwareParams: originalHwParams,
+          commLatency: config.comm_latency_config ? { ...config.comm_latency_config } : null,
+        })
+
+        toast.success(`已加载拓扑配置: ${config.name}`)
       }
-      setLocalPodCount(config.pod_count || 1)
-      setLocalRacksPerPod(config.racks_per_pod || 1)
-      // 恢复延迟设置
-      if (config.comm_latency_config) {
-        setCommLatencyConfig(config.comm_latency_config)
-      }
-      toast.success(`已加载拓扑配置: ${config.name}`)
+    } catch (error) {
+      console.error('获取拓扑配置失败:', error)
+      toast.error('加载配置失败')
     }
-  }, [topologyConfigs, rackConfig, podCount, racksPerPod])
+  }, [rackConfig, podCount, racksPerPod])
 
   // 从拓扑配置中提取硬件配置（不依赖后端）
   React.useEffect(() => {
@@ -314,7 +449,22 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
       return
     }
 
-    const groups = extractChipGroupsFromConfig(localRackConfig.boards)
+    // 如果有保存的硬件参数，优先使用保存的芯片配置
+    let groups: ChipGroupInfo[]
+    if (localHardwareParams?.chips && Object.keys(localHardwareParams.chips).length > 0) {
+      // 从保存的 hardware_params.chips 构建 chipGroups
+      groups = Object.entries(localHardwareParams.chips).map(([chipName, chipConfig]) => ({
+        chipType: chipName,
+        presetId: chipConfig.name === chipName ? undefined : chipConfig.name,
+        chipConfig: chipConfig,
+        totalCount: 0, // 这里不需要准确的数量，只用于显示配置
+        boardCount: 0,
+        chipsPerBoard: 0,
+      }))
+    } else {
+      // 否则从 rack_config.boards 提取
+      groups = extractChipGroupsFromConfig(localRackConfig.boards)
+    }
     setChipGroups(groups)
 
     // 默认选择第一个芯片类型
@@ -338,7 +488,7 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
         setHardwareConfig(config)
       }
     }
-  }, [rackConfigJson, localPodCount, localRacksPerPod, topology?.connections])
+  }, [rackConfigJson, localPodCount, localRacksPerPod, topology?.connections, localHardwareParams])
 
   // 当选择的芯片类型变化时，更新硬件配置
   React.useEffect(() => {
@@ -359,10 +509,13 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
   }, [selectedChipType, localRackConfig, chipGroups, localPodCount, localRacksPerPod, topology?.connections])
 
   // 并行策略状态
-  const [parallelismMode, setParallelismMode] = useState<'manual' | 'auto'>('auto')
+  const [parallelismMode, setParallelismMode] = useState<'manual' | 'auto' | 'sweep'>('auto')
   const [manualStrategy, setManualStrategy] = useState<ParallelismStrategy>({
     dp: 1, tp: 1, pp: 1, ep: 1, sp: 1, moe_tp: 1,
   })
+
+  // 参数遍历状态
+  const [sweepParams, setSweepParams] = useState<SweepParam[]>([])
 
   // 当模型配置或硬件配置变化时，更新手动策略为满足约束的默认值
   React.useEffect(() => {
@@ -419,6 +572,35 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
     }
   }, [localPodCount, localRacksPerPod, localRackConfig])
 
+  // 获取选中的拓扑配置对象（用于参数提取）
+  const selectedTopologyConfigObj = React.useMemo(() => {
+    return selectedTopologyConfig
+      ? topologyConfigs.find(c => c.name === selectedTopologyConfig)
+      : null
+  }, [selectedTopologyConfig, topologyConfigs])
+
+  // 可遍历参数列表（动态计算 - 现在包含拓扑配置参数）
+  const sweepableParams = React.useMemo(
+    () => extractSweepableParameters(
+      modelConfig,
+      inferenceConfig,
+      localHardwareParams,
+      manualStrategy,
+      selectedTopologyConfigObj
+    ),
+    [modelConfig, inferenceConfig, localHardwareParams, manualStrategy, selectedTopologyConfigObj]
+  )
+
+  // 总组合数（参数遍历）
+  const totalCombinations = React.useMemo(() => {
+    if (sweepParams.length === 0) return 0
+    let total = 1
+    for (const param of sweepParams) {
+      total *= param.values.length
+    }
+    return total
+  }, [sweepParams])
+
   // 获取互联参数（从选中的配置或使用默认值）
   const interconnectParams = React.useMemo(() => {
     const selectedConfig = selectedTopologyConfig
@@ -474,6 +656,11 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
           boards: localRackConfig.boards,
         } : undefined,
         comm_latency_config: { ...commLatencyConfig },
+        // 保存硬件参数（如果有本地修改）
+        hardware_params: localHardwareParams ? {
+          chips: localHardwareParams.chips,
+          interconnect: localHardwareParams.interconnect,
+        } as any : undefined,
       }
       await saveConfig(newConfig)
       await refreshTopologyConfigs()
@@ -488,7 +675,67 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
     } finally {
       setSaveLoading(false)
     }
-  }, [newConfigName, newConfigDesc, topologyConfigs, selectedTopologyConfig, localPodCount, localRacksPerPod, localRackConfig, commLatencyConfig, refreshTopologyConfigs])
+  }, [newConfigName, newConfigDesc, topologyConfigs, selectedTopologyConfig, localPodCount, localRacksPerPod, localRackConfig, commLatencyConfig, localHardwareParams, refreshTopologyConfigs])
+
+  // 保存拓扑配置（更新现有配置）
+  const handleSaveTopologyConfig = useCallback(async () => {
+    if (!selectedTopologyConfig) {
+      toast.warning('请先选择一个配置文件')
+      return
+    }
+    try {
+      const updatedConfig: SavedConfig = {
+        name: selectedTopologyConfig,
+        description: topologyConfigs.find(c => c.name === selectedTopologyConfig)?.description,
+        pod_count: localPodCount,
+        racks_per_pod: localRacksPerPod,
+        rack_config: localRackConfig ? {
+          total_u: localRackConfig.total_u,
+          boards: localRackConfig.boards,
+        } : undefined,
+        comm_latency_config: { ...commLatencyConfig },
+        hardware_params: localHardwareParams ? {
+          chips: localHardwareParams.chips,
+          interconnect: localHardwareParams.interconnect,
+        } as any : undefined,
+      }
+      await saveConfig(updatedConfig)
+      await refreshTopologyConfigs()
+      toast.success(`已保存配置: ${selectedTopologyConfig}`)
+    } catch (error) {
+      console.error('保存配置失败:', error)
+      toast.error('保存配置失败')
+    }
+  }, [selectedTopologyConfig, topologyConfigs, localPodCount, localRacksPerPod, localRackConfig, commLatencyConfig, localHardwareParams, refreshTopologyConfigs])
+
+  // 拓扑配置另存为
+  const handleSaveAsTopologyConfig = useCallback(async (name: string, description?: string) => {
+    try {
+      const newConfig: SavedConfig = {
+        name,
+        description,
+        pod_count: localPodCount,
+        racks_per_pod: localRacksPerPod,
+        rack_config: localRackConfig ? {
+          total_u: localRackConfig.total_u,
+          boards: localRackConfig.boards,
+        } : undefined,
+        comm_latency_config: { ...commLatencyConfig },
+        hardware_params: localHardwareParams ? {
+          chips: localHardwareParams.chips,
+          interconnect: localHardwareParams.interconnect,
+        } as any : undefined,
+      }
+      await saveConfig(newConfig)
+      await refreshTopologyConfigs()
+      setSelectedTopologyConfig(name)
+      toast.success(`已创建新配置: ${name}`)
+    } catch (error) {
+      console.error('另存为配置失败:', error)
+      toast.error('另存为配置失败')
+      throw error
+    }
+  }, [localPodCount, localRacksPerPod, localRackConfig, commLatencyConfig, localHardwareParams, refreshTopologyConfigs])
 
   // 分析结果状态
   const [analysisResult, setAnalysisResult] = useState<PlanAnalysisResult | null>(null)
@@ -861,6 +1108,127 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
     enablePartitionSearch, maxSimulatedTokens, selectedTopologyConfig, selectedBenchmark
   ])
 
+  // 运行参数遍历（批量提交任务）
+  const handleRunSweep = useCallback(async () => {
+    // 验证：必须选择配置文件
+    if (!selectedTopologyConfig) {
+      toast.error('请先选择拓扑配置文件')
+      return
+    }
+    if (!selectedBenchmark) {
+      toast.error('请先选择 Benchmark 配置')
+      return
+    }
+    if (sweepParams.length === 0) {
+      toast.error('请至少添加一个遍历参数')
+      return
+    }
+
+    // 生成参数组合（支持绑定）
+    const combinations = generateCombinationsWithBinding(sweepParams)
+    if (combinations.length === 0) {
+      toast.error('没有生成任何参数组合')
+      return
+    }
+    if (combinations.length > 500) {
+      toast.error(`组合数过多 (${combinations.length})，请减少参数或值的数量（最大500）`)
+      return
+    }
+
+    // 时间戳用于生成唯一的临时配置文件名
+    const timestamp = Date.now()
+    const baseExperimentName = experimentName.trim() || selectedBenchmark
+
+    toast.info(`开始批量提交 ${combinations.length} 个任务...`)
+
+    // 批量提交任务
+    for (const [idx, combo] of combinations.entries()) {
+      try {
+        // 1. 应用参数覆盖，生成新的配置对象
+        const overriddenConfig = applyParameterCombination(
+          {
+            model: modelConfig,
+            inference: inferenceConfig,
+            hardware: localHardwareParams || { chips: {}, interconnect: { c2c: { bandwidth_gbps: 0, latency_us: 0 }, b2b: { bandwidth_gbps: 0, latency_us: 0 }, r2r: { bandwidth_gbps: 0, latency_us: 0 }, p2p: { bandwidth_gbps: 0, latency_us: 0 } } },
+            parallelism: manualStrategy,
+          },
+          combo
+        )
+
+        // 2. 创建临时 Benchmark 配置文件
+        const tempBenchmarkName = `${selectedBenchmark}_sweep_${timestamp}_${idx}`
+        await createBenchmark({
+          id: tempBenchmarkName,
+          name: tempBenchmarkName,
+          model: overriddenConfig.model,
+          inference: overriddenConfig.inference,
+        })
+
+        // 3. 提交任务（引用临时配置文件名）
+        const comboDesc = Object.entries(combo)
+          .map(([key, value]) => `${key}=${value}`)
+          .join(', ')
+        const taskExperimentName = `${baseExperimentName}_sweep_${idx + 1}`
+
+        // 先创建本地任务记录
+        const tempTaskId = `temp-${Date.now()}-${idx}`
+        const newTask: AnalysisTask = {
+          id: tempTaskId,
+          status: 'running',
+          startTime: Date.now(),
+          experimentName: taskExperimentName,
+          modelName: modelConfig.model_name,
+          benchmarkName: tempBenchmarkName,
+          parallelism: overriddenConfig.parallelism,
+          mode: 'manual',
+          chips: overriddenConfig.parallelism.dp * overriddenConfig.parallelism.tp,
+        }
+        addTask(newTask)
+
+        const response = await submitEvaluation({
+          experiment_name: taskExperimentName,
+          description: `[Sweep ${idx + 1}/${combinations.length}] ${comboDesc}`,
+          benchmark_name: tempBenchmarkName,
+          topology_config_name: selectedTopologyConfig!,
+          search_mode: 'manual',
+          manual_parallelism: overriddenConfig.parallelism as unknown as Record<string, unknown>,
+          max_workers: taskMaxWorkers,
+          enable_tile_search: enableTileSearch,
+          enable_partition_search: enablePartitionSearch,
+          max_simulated_tokens: maxSimulatedTokens,
+        })
+
+        // 更新任务 ID 为后端返回的真实 ID
+        setAnalysisTasks(prev => prev.map(t =>
+          t.id === tempTaskId ? { ...t, id: response.task_id } : t
+        ))
+
+        toast.success(`已提交任务 ${idx + 1}/${combinations.length}`)
+      } catch (error) {
+        console.error(`提交任务 ${idx + 1} 失败:`, error)
+        const msg = error instanceof Error ? error.message : '未知错误'
+        toast.error(`任务 ${idx + 1} 提交失败: ${msg}`)
+      }
+    }
+
+    toast.success(`批量提交完成！共 ${combinations.length} 个任务`)
+  }, [
+    selectedTopologyConfig,
+    selectedBenchmark,
+    sweepParams,
+    experimentName,
+    modelConfig,
+    inferenceConfig,
+    localHardwareParams,
+    manualStrategy,
+    taskMaxWorkers,
+    enableTileSearch,
+    enablePartitionSearch,
+    maxSimulatedTokens,
+    addTask,
+    setAnalysisTasks,
+  ])
+
 
   // 如果硬件配置未加载，显示提示（不再是加载中）
   if (!hardwareConfig) {
@@ -879,11 +1247,29 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
   return (
     <>
       <div>
+        {/* 临时演示切换按钮 */}
+        <div className="mb-4 flex justify-end">
+          <Button
+            variant={showModifiedFieldDemo ? 'default' : 'outline'}
+            size="sm"
+            onClick={() => setShowModifiedFieldDemo(!showModifiedFieldDemo)}
+          >
+            {showModifiedFieldDemo ? '隐藏视觉方案演示' : '查看修改字段视觉方案'}
+          </Button>
+        </div>
+
+        {/* 修改字段视觉方案演示 */}
+        {showModifiedFieldDemo && (
+          <div className="mb-6">
+            <ModifiedFieldDemo />
+          </div>
+        )}
+
         {/* 上方：Benchmark 设置和部署设置（左右两列） */}
         <div className="grid grid-cols-2 gap-8 mb-4">
           {/* 左列：Benchmark 设置 + 并行策略 */}
           <div>
-            <BaseCard title="Benchmark 设置" collapsible defaultExpanded gradient>
+            <BaseCard title="Benchmark 设置" collapsible gradient>
               <BenchmarkConfigSelector
                 modelConfig={modelConfig}
                 onModelChange={setModelConfig}
@@ -894,7 +1280,7 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
             </BaseCard>
 
             {/* 部署策略卡片 */}
-            <BaseCard collapsible title="部署策略" defaultExpanded gradient className="mt-4">
+            <BaseCard collapsible title="部署策略" gradient className="mt-4">
               <ParallelismConfigPanel
                 mode={parallelismMode}
                 onModeChange={setParallelismMode}
@@ -905,64 +1291,84 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
                 hardwareConfig={hardwareConfig}
               />
 
-              {/* Tile 搜索开关 */}
-              <div className="mt-4 mb-2 flex items-center justify-between">
-                <div className="flex items-center">
-                  <span className="text-[13px] text-gray-600 mr-2">启用 Tile 搜索</span>
-                  <TooltipProvider>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Info className="h-3.5 w-3.5 text-gray-400 cursor-help" />
-                      </TooltipTrigger>
-                      <TooltipContent>开启时使用最优tile搜索以获得最高精度，关闭时使用固定tile大小以显著提升评估速度</TooltipContent>
-                    </Tooltip>
-                  </TooltipProvider>
-                </div>
-                <Switch
-                  checked={enableTileSearch}
-                  onCheckedChange={setEnableTileSearch}
-                />
-              </div>
+              {/* 参数遍历面板（仅在 sweep 模式下显示） */}
+              {parallelismMode === 'sweep' && (
+                <>
+                  <div className="mt-4">
+                    <SweepConfigPanel
+                      sweepableParams={sweepableParams}
+                      sweepParams={sweepParams}
+                      onSweepParamsChange={setSweepParams}
+                      benchmarkName={selectedBenchmark}
+                      topologyName={selectedTopologyConfig}
+                    />
+                  </div>
+                  {/* 分割线 */}
+                  <div className="my-6 border-t border-gray-200" />
+                </>
+              )}
 
-              {/* 分区搜索开关 */}
-              <div className="mt-3 mb-2 flex items-center justify-between">
-                <div className="flex items-center">
-                  <span className="text-[13px] text-gray-600 mr-2">启用分区搜索</span>
-                  <TooltipProvider>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Info className="h-3.5 w-3.5 text-gray-400 cursor-help" />
-                      </TooltipTrigger>
-                      <TooltipContent>开启时搜索最优分区策略（极慢，单个GEMM需100+秒），关闭时使用固定分区（推荐，速度提升100倍）</TooltipContent>
-                    </Tooltip>
-                  </TooltipProvider>
+              {/* Tile 搜索、分区搜索、最大模拟 Token 数 - 横向排列 */}
+              <div className="grid grid-cols-3 gap-4 mt-4">
+                {/* Tile 搜索开关 */}
+                <div>
+                  <div className="mb-1.5 text-[13px] text-gray-600 flex items-center">
+                    启用 Tile 搜索
+                    <TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Info className="h-3.5 w-3.5 ml-1 text-gray-400 cursor-help" />
+                        </TooltipTrigger>
+                        <TooltipContent>开启时使用最优tile搜索以获得最高精度，关闭时使用固定tile大小以显著提升评估速度</TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                  </div>
+                  <Switch
+                    checked={enableTileSearch}
+                    onCheckedChange={setEnableTileSearch}
+                  />
                 </div>
-                <Switch
-                  checked={enablePartitionSearch}
-                  onCheckedChange={setEnablePartitionSearch}
-                />
-              </div>
 
-              {/* 最大模拟 token 数 */}
-              <div className="mt-3 mb-2 flex items-center justify-between">
-                <div className="flex items-center">
-                  <span className="text-[13px] text-gray-600 mr-2">最大模拟 Token 数</span>
-                  <TooltipProvider>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Info className="h-3.5 w-3.5 text-gray-400 cursor-help" />
-                      </TooltipTrigger>
-                      <TooltipContent>Decode 阶段模拟的 token 数量，值越小评估越快但精度略降。推荐：快速评估用 1-2，精确评估用 4-8</TooltipContent>
-                    </Tooltip>
-                  </TooltipProvider>
+                {/* 分区搜索开关 */}
+                <div>
+                  <div className="mb-1.5 text-[13px] text-gray-600 flex items-center">
+                    启用分区搜索
+                    <TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Info className="h-3.5 w-3.5 ml-1 text-gray-400 cursor-help" />
+                        </TooltipTrigger>
+                        <TooltipContent>开启时搜索最优分区策略（极慢，单个GEMM需100+秒），关闭时使用固定分区（推荐，速度提升100倍）</TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                  </div>
+                  <Switch
+                    checked={enablePartitionSearch}
+                    onCheckedChange={setEnablePartitionSearch}
+                  />
                 </div>
-                <NumberInput
-                  min={1}
-                  max={16}
-                  value={maxSimulatedTokens}
-                  onChange={(value) => setMaxSimulatedTokens(value || 4)}
-                  className="w-20"
-                />
+
+                {/* 最大模拟 Token 数 */}
+                <div>
+                  <div className="mb-1.5 text-[13px] text-gray-600 flex items-center">
+                    最大模拟 Token 数
+                    <TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Info className="h-3.5 w-3.5 ml-1 text-gray-400 cursor-help" />
+                        </TooltipTrigger>
+                        <TooltipContent>Decode 阶段模拟的 token 数量，值越小评估越快但精度略降。推荐：快速评估用 1-2，精确评估用 4-8</TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                  </div>
+                  <NumberInput
+                    min={1}
+                    max={16}
+                    value={maxSimulatedTokens}
+                    onChange={(value) => setMaxSimulatedTokens(value || 4)}
+                    className="w-full"
+                  />
+                </div>
               </div>
 
               {/* 实验名称和任务并发数 */}
@@ -999,7 +1405,12 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
 
               {/* 运行按钮 */}
               <Button
-                onClick={handleRunAnalysis}
+                onClick={
+                  parallelismMode === 'sweep'
+                    ? handleRunSweep
+                    : handleRunAnalysis
+                }
+                disabled={parallelismMode === 'sweep' && (sweepParams.length === 0 || totalCombinations > 500)}
                 className="w-full mt-4 h-11 rounded-lg"
                 style={{
                   background: colors.primary,
@@ -1011,17 +1422,22 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
                     <Search className="h-4 w-4 mr-2" />
                     开始方案评估
                   </>
-                ) : (
+                ) : parallelismMode === 'manual' ? (
                   <>
                     <PlayCircle className="h-4 w-4 mr-2" />
                     运行分析
+                  </>
+                ) : (
+                  <>
+                    <PlayCircle className="h-4 w-4 mr-2" />
+                    批量评估 ({totalCombinations} 组)
                   </>
                 )}
               </Button>
             </BaseCard>
           </div>
 
-          {/* 右列：拓扑配置（只读展示） */}
+          {/* 右列：拓扑配置（可编辑） */}
           <div>
             <TopologyInfoCard
               topologyConfigs={topologyConfigs}
@@ -1033,8 +1449,15 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
               onSelectChipType={setSelectedChipType}
               hardwareConfig={hardwareConfig}
               topologyStats={topologyStats}
-              interconnectParams={interconnectParams}
+              interconnectParams={localHardwareParams?.interconnect || interconnectParams}
               commLatencyConfig={commLatencyConfig}
+              // 可编辑模式 props
+              hardwareParams={localHardwareParams || undefined}
+              onHardwareParamsChange={setLocalHardwareParams}
+              onCommLatencyChange={setCommLatencyConfig}
+              onSaveConfig={handleSaveTopologyConfig}
+              onSaveAsConfig={handleSaveAsTopologyConfig}
+              allConfigs={topologyConfigs}
             />
           </div>
         </div>
@@ -1080,7 +1503,7 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
         </Dialog>
 
         {/* 分析任务列表 */}
-        <BaseCard collapsible title="分析任务" defaultExpanded gradient className="mt-4">
+        <BaseCard collapsible title="分析任务" gradient className="mt-4">
           <AnalysisTaskList
             tasks={analysisTasks}
             onViewTask={viewTaskResult}

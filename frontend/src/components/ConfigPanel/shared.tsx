@@ -235,8 +235,9 @@ export interface ChipHardwareParams {
 }
 
 // 完整硬件配置（用于保存）
+// 支持多芯片独立配置，key = chip.name
 export interface HardwareParams {
-  chip: ChipHardwareParams
+  chips: Record<string, ChipHardwareParams>  // 按芯片名称分组的配置
   interconnect: {
     c2c: InterconnectParams    // Chip间（板内）
     b2b: InterconnectParams    // Board间（机架内）
@@ -356,7 +357,7 @@ export const DEFAULT_CHIP_HARDWARE: ChipHardwareParams = {
 
 // 默认互联参数
 export const DEFAULT_INTERCONNECT: HardwareParams['interconnect'] = {
-  c2c: { bandwidth_gbps: 900, latency_us: 1.0 },
+  c2c: { bandwidth_gbps: 900, latency_us: 0.2 },
   b2b: { bandwidth_gbps: 450, latency_us: 0.35 },
   r2r: { bandwidth_gbps: 200, latency_us: 2.0 },
   p2p: { bandwidth_gbps: 100, latency_us: 5.0 },
@@ -364,7 +365,9 @@ export const DEFAULT_INTERCONNECT: HardwareParams['interconnect'] = {
 
 // 默认完整硬件配置
 export const DEFAULT_HARDWARE_PARAMS: HardwareParams = {
-  chip: DEFAULT_CHIP_HARDWARE,
+  chips: {
+    'SG2262': DEFAULT_CHIP_HARDWARE,
+  },
   interconnect: DEFAULT_INTERCONNECT,
 }
 

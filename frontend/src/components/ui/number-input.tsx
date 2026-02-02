@@ -24,7 +24,7 @@ export const NumberInput: React.FC<NumberInputProps> = ({
   value,
   onChange,
   min = 0,
-  max = 9999,
+  max = Number.MAX_SAFE_INTEGER,
   step = 1,
   className = '',
   disabled = false,

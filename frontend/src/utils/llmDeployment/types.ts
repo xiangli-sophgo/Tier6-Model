@@ -783,8 +783,6 @@ export interface CommLatencyConfig {
   cable_delay_us: number;
 
   // === 芯片延迟 ===
-  /** 芯片间物理互联延迟 (微秒) */
-  chip_to_chip_us: number;
   /** 显存读延迟 (微秒) */
   memory_read_latency_us: number;
   /** 显存写延迟 (微秒) */
@@ -806,7 +804,6 @@ export const DEFAULT_COMM_LATENCY_CONFIG: CommLatencyConfig = {
   switch_delay_us: 1.0,
   cable_delay_us: 0.025,
   // 芯片延迟
-  chip_to_chip_us: 0.2,
   memory_read_latency_us: 0.15,
   memory_write_latency_us: 0.01,
   noc_latency_us: 0.05,

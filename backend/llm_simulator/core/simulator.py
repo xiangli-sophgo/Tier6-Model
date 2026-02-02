@@ -53,8 +53,6 @@ class RuntimeHardwareParams:
     memory_bandwidth_utilization: float = 0.85
     lmem_capacity_mb: float = 0.0
     lmem_bandwidth_gbps: float = 0.0
-    c2c_bandwidth_gbps: float = 0.0
-    c2c_latency_us: float = 0.0
     # 微架构参数（可选）
     cube_m: Optional[int] = None
     cube_k: Optional[int] = None
@@ -65,6 +63,8 @@ class RuntimeHardwareParams:
     align_bytes: Optional[int] = None
     compute_dma_overlap_rate: Optional[float] = None
     # 互联参数（默认值，会被拓扑配置覆盖）
+    c2c_bandwidth_gbps: float = 0.0
+    c2c_latency_us: float = 0.0
     b2b_bandwidth_gbps: float = 450.0  # Board-to-Board
     b2b_latency_us: float = 0.35
     r2r_bandwidth_gbps: float = 200.0  # Rack-to-Rack

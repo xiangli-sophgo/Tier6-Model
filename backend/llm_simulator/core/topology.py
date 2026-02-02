@@ -71,8 +71,6 @@ class TopologyParser:
                             memory_bandwidth_utilization=chip_data.get("memory_bandwidth_utilization") or chip_params.get("memory_bandwidth_utilization", 0.85),
                             lmem_capacity_mb=chip_data.get("lmem_capacity_mb") or chip_params.get("lmem_capacity_mb", 0.0),
                             lmem_bandwidth_gbps=chip_data.get("lmem_bandwidth_gbps") or chip_params.get("lmem_bandwidth_gbps", 0.0),
-                            c2c_bandwidth_gbps=chip_data.get("c2c_bandwidth_gbps") or c2c_params.get("bandwidth_gbps", 0.0),
-                            c2c_latency_us=chip_data.get("c2c_latency_us") or c2c_params.get("latency_us", 0.0),
                             # 微架构参数（可选）
                             cube_m=chip_data.get("cube_m") or chip_params.get("cube_m"),
                             cube_k=chip_data.get("cube_k") or chip_params.get("cube_k"),
@@ -495,12 +493,5 @@ class TopologyParser:
                 min_bandwidth = min(min_bandwidth, bw)
                 max_latency = max(max_latency, lat)
 
-        if min_bandwidth == float('inf'):
-            # 如果没有找到链路，尝试使用第一个芯片的 C2C 参数
-            if group_chips:
-                chip_config = self.get_chip_config(group_chips[0])
-                if chip_config:
-                    return chip_config.c2c_bandwidth_gbps, chip_config.c2c_latency_us
-            return 0.0, 0.0
-
+        
         return min_bandwidth, max_latency

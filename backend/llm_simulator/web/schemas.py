@@ -23,8 +23,6 @@ class ChipHardwareConfigRequest(BaseModel):
     memory_bandwidth_utilization: float = Field(..., gt=0, le=1, description="显存带宽利用率")
     lmem_capacity_mb: float = Field(..., gt=0, description="LMEM/SRAM 缓存容量（MB）")
     lmem_bandwidth_gbps: float = Field(..., gt=0, description="LMEM 缓存带宽（GB/s）")
-    c2c_bandwidth_gbps: float = Field(..., gt=0, description="C2C 芯片间互联带宽（GB/s）")
-    c2c_latency_us: float = Field(..., gt=0, description="C2C 芯片间互联延迟（微秒）")
     cost_per_hour: float = Field(0.0, ge=0, description="每小时成本")
 
     # 微架构参数（可选，用于精确 GEMM 评估）

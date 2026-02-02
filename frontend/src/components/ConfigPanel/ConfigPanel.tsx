@@ -56,6 +56,7 @@ import {
   DEFAULT_RACK_CONFIG,
   DEFAULT_SWITCH_CONFIG,
   DEFAULT_HARDWARE_PARAMS,
+  DEFAULT_CHIP_HARDWARE,
   loadCachedConfig,
   saveCachedConfig,
   HardwareParams,
@@ -167,12 +168,25 @@ export const ConfigPanel: React.FC<ConfigPanelProps> = ({
     return DEFAULT_SWITCH_CONFIG
   })
 
-  // 硬件参数配置（芯片参数 + 互联参数）
+  // 硬件参数配置（多芯片独立配置 + 互联参数）
   const [hardwareParams, setHardwareParams] = useState<HardwareParams>(() => {
-    if (cachedConfig?.hardwareParams) {
-      // 深度合并默认值
+    if (cachedConfig?.hardwareParams?.chips) {
+      // 新格式：多芯片配置
       return {
-        chip: { ...DEFAULT_HARDWARE_PARAMS.chip, ...cachedConfig.hardwareParams.chip },
+        chips: { ...DEFAULT_HARDWARE_PARAMS.chips, ...cachedConfig.hardwareParams.chips },
+        interconnect: {
+          c2c: { ...DEFAULT_HARDWARE_PARAMS.interconnect.c2c, ...cachedConfig.hardwareParams.interconnect?.c2c },
+          b2b: { ...DEFAULT_HARDWARE_PARAMS.interconnect.b2b, ...cachedConfig.hardwareParams.interconnect?.b2b },
+          r2r: { ...DEFAULT_HARDWARE_PARAMS.interconnect.r2r, ...cachedConfig.hardwareParams.interconnect?.r2r },
+          p2p: { ...DEFAULT_HARDWARE_PARAMS.interconnect.p2p, ...cachedConfig.hardwareParams.interconnect?.p2p },
+        },
+      }
+    }
+    // 兼容旧格式 (chip -> chips)
+    if (cachedConfig?.hardwareParams?.chip) {
+      const chipName = cachedConfig.hardwareParams.chip.name || 'SG2262'
+      return {
+        chips: { [chipName]: { ...DEFAULT_CHIP_HARDWARE, ...cachedConfig.hardwareParams.chip } },
         interconnect: {
           c2c: { ...DEFAULT_HARDWARE_PARAMS.interconnect.c2c, ...cachedConfig.hardwareParams.interconnect?.c2c },
           b2b: { ...DEFAULT_HARDWARE_PARAMS.interconnect.b2b, ...cachedConfig.hardwareParams.interconnect?.b2b },
@@ -256,6 +270,72 @@ export const ConfigPanel: React.FC<ConfigPanelProps> = ({
 
     return () => clearTimeout(timer)
   }, [podCount, racksPerPod, rackConfig, switchConfig, manualConnectionConfig, hardwareParams.interconnect, onGenerate])
+
+  // 当 rackConfig.boards 变化时，确保每个芯片类型都有对应的硬件配置
+  useEffect(() => {
+    const chipNames = new Set<string>()
+    for (const board of rackConfig.boards) {
+      for (const chip of board.chips) {
+        chipNames.add(chip.name)
+      }
+    }
+
+    setHardwareParams(prev => {
+      const newChips = { ...prev.chips }
+      let changed = false
+
+      for (const name of chipNames) {
+        if (!newChips[name]) {
+          // 尝试从预设加载配置，否则使用默认值
+          const board = rackConfig.boards.find(b => b.chips.some(c => c.name === name))
+          const chipItem = board?.chips.find(c => c.name === name)
+          if (chipItem?.preset_id) {
+            const preset = getChipConfig(chipItem.preset_id)
+            if (preset) {
+              // getChipConfig 返回的已经是 ChipHardwareConfig 类型，直接使用
+              newChips[name] = {
+                name: preset.name,
+                num_cores: preset.num_cores || DEFAULT_CHIP_HARDWARE.num_cores,
+                compute_tflops_fp8: preset.compute_tflops_fp8 || DEFAULT_CHIP_HARDWARE.compute_tflops_fp8,
+                compute_tflops_bf16: preset.compute_tflops_bf16 || DEFAULT_CHIP_HARDWARE.compute_tflops_bf16,
+                memory_capacity_gb: preset.memory_capacity_gb || DEFAULT_CHIP_HARDWARE.memory_capacity_gb,
+                memory_bandwidth_gbps: preset.memory_bandwidth_gbps || DEFAULT_CHIP_HARDWARE.memory_bandwidth_gbps,
+                memory_bandwidth_utilization: preset.memory_bandwidth_utilization || DEFAULT_CHIP_HARDWARE.memory_bandwidth_utilization,
+                lmem_capacity_mb: preset.lmem_capacity_mb || DEFAULT_CHIP_HARDWARE.lmem_capacity_mb,
+                lmem_bandwidth_gbps: preset.lmem_bandwidth_gbps || DEFAULT_CHIP_HARDWARE.lmem_bandwidth_gbps,
+                cube_m: preset.cube_m,
+                cube_k: preset.cube_k,
+                cube_n: preset.cube_n,
+                sram_size_kb: preset.sram_size_kb,
+                sram_utilization: preset.sram_utilization,
+                lane_num: preset.lane_num,
+                align_bytes: preset.align_bytes,
+                compute_dma_overlap_rate: preset.compute_dma_overlap_rate,
+              }
+              changed = true
+              continue
+            }
+          }
+          // 使用默认值
+          newChips[name] = { ...DEFAULT_CHIP_HARDWARE, name }
+          changed = true
+        }
+      }
+
+      return changed ? { ...prev, chips: newChips } : prev
+    })
+  }, [rackConfig.boards])
+
+  // 更新单个芯片参数的辅助函数
+  const updateChipParam = React.useCallback((chipName: string, field: string, value: any) => {
+    setHardwareParams(prev => ({
+      ...prev,
+      chips: {
+        ...prev.chips,
+        [chipName]: { ...prev.chips[chipName], [field]: value }
+      }
+    }))
+  }, [])
 
   // 保存当前配置
   const handleSaveConfig = async () => {
@@ -352,17 +432,33 @@ export const ConfigPanel: React.FC<ConfigPanelProps> = ({
     if (config.manual_connections && onManualConnectionConfigChange) {
       onManualConnectionConfigChange(config.manual_connections)
     }
-    // 加载硬件参数配置
+    // 加载硬件参数配置（支持新格式 chips 和旧格式 chip）
     if (config.hardware_params) {
-      setHardwareParams({
-        chip: { ...DEFAULT_HARDWARE_PARAMS.chip, ...config.hardware_params.chip },
-        interconnect: {
-          c2c: { ...DEFAULT_HARDWARE_PARAMS.interconnect.c2c, ...config.hardware_params.interconnect?.c2c },
-          b2b: { ...DEFAULT_HARDWARE_PARAMS.interconnect.b2b, ...config.hardware_params.interconnect?.b2b },
-          r2r: { ...DEFAULT_HARDWARE_PARAMS.interconnect.r2r, ...config.hardware_params.interconnect?.r2r },
-          p2p: { ...DEFAULT_HARDWARE_PARAMS.interconnect.p2p, ...config.hardware_params.interconnect?.p2p },
-        },
-      })
+      const hw = config.hardware_params as any
+      if (hw.chips) {
+        // 新格式：多芯片配置
+        setHardwareParams({
+          chips: { ...DEFAULT_HARDWARE_PARAMS.chips, ...hw.chips },
+          interconnect: {
+            c2c: { ...DEFAULT_HARDWARE_PARAMS.interconnect.c2c, ...hw.interconnect?.c2c },
+            b2b: { ...DEFAULT_HARDWARE_PARAMS.interconnect.b2b, ...hw.interconnect?.b2b },
+            r2r: { ...DEFAULT_HARDWARE_PARAMS.interconnect.r2r, ...hw.interconnect?.r2r },
+            p2p: { ...DEFAULT_HARDWARE_PARAMS.interconnect.p2p, ...hw.interconnect?.p2p },
+          },
+        })
+      } else if (hw.chip) {
+        // 旧格式兼容：单芯片配置转换为多芯片
+        const chipName = hw.chip.name || 'SG2262'
+        setHardwareParams({
+          chips: { [chipName]: { ...DEFAULT_CHIP_HARDWARE, ...hw.chip } },
+          interconnect: {
+            c2c: { ...DEFAULT_HARDWARE_PARAMS.interconnect.c2c, ...hw.interconnect?.c2c },
+            b2b: { ...DEFAULT_HARDWARE_PARAMS.interconnect.b2b, ...hw.interconnect?.b2b },
+            r2r: { ...DEFAULT_HARDWARE_PARAMS.interconnect.r2r, ...hw.interconnect?.r2r },
+            p2p: { ...DEFAULT_HARDWARE_PARAMS.interconnect.p2p, ...hw.interconnect?.p2p },
+          },
+        })
+      }
     }
 
     // 加载通信延迟配置
@@ -1103,294 +1199,291 @@ export const ConfigPanel: React.FC<ConfigPanelProps> = ({
 
       <TabsContent value="chip">
         <div className="space-y-3">
-          {/* 显示所有 Board 层配置的芯片 */}
-          {rackConfig.boards.length === 0 ? (
-            <div className="text-center py-8 text-gray-400 text-sm">
-              请先在 Board 层配置芯片
-            </div>
-          ) : (
-            rackConfig.boards.map((board, boardIndex) => (
-              <div key={board.id}>
-                {board.chips.map((chip, chipIndex) => {
-                  // 芯片面板的唯一 ID
-                  const chipPanelId = `${board.id}-${chipIndex}`
+          {/* 按芯片名称分组显示（相同名称的芯片共享配置） */}
+          {(() => {
+            // 收集所有唯一的芯片名称及其总数
+            const chipNameMap = new Map<string, { totalCount: number; boards: string[] }>()
+            for (const board of rackConfig.boards) {
+              for (const chip of board.chips) {
+                const existing = chipNameMap.get(chip.name)
+                if (existing) {
+                  existing.totalCount += chip.count * (board.count || 1)
+                  if (!existing.boards.includes(board.name)) {
+                    existing.boards.push(board.name)
+                  }
+                } else {
+                  chipNameMap.set(chip.name, {
+                    totalCount: chip.count * (board.count || 1),
+                    boards: [board.name]
+                  })
+                }
+              }
+            }
+            const uniqueChips = Array.from(chipNameMap.entries())
 
-                  return (
-                    <div
-                      key={chipPanelId}
-                      ref={(el) => {
-                        if (el) {
-                          chipPanelRefs.current.set(chipPanelId, el)
-                        } else {
-                          chipPanelRefs.current.delete(chipPanelId)
-                        }
-                      }}
-                    >
-                      <BaseCard
-                        title={
-                          <>
-                            {board.name} - {chip.name} <span className="text-gray-400 text-xs ml-2">x{chip.count}</span>
-                          </>
-                        }
-                        collapsible
-                        defaultExpanded={boardIndex === 0 && chipIndex === 0}
-                        gradient
-                      >
-                      {/* 核心数 + 算力 (3列) */}
-                      <div className="grid grid-cols-3 gap-3 mb-2">
-                        <FormInputField
-                          label="核心数"
-                          tooltip="计算核心数量"
-                          min={1}
-                          max={512}
-                          value={hardwareParams.chip.num_cores}
-                          onChange={(v) => setHardwareParams(prev => ({
-                            ...prev,
-                            chip: { ...prev.chip, num_cores: v ?? 64 }
-                          }))}
-                        />
-                        <FormInputField
-                          label="FP8"
-                          tooltip="FP8 算力 (TFLOPS)"
-                          min={0}
-                          value={hardwareParams.chip.compute_tflops_fp8}
-                          onChange={(v) => setHardwareParams(prev => ({
-                            ...prev,
-                            chip: {
-                              ...prev.chip,
-                              compute_tflops_fp8: v ?? 256,
-                              compute_tflops_bf16: v !== undefined ? v / 2 : 128
-                            }
-                          }))}
-                        />
-                        <FormInputField
-                          label="BF16"
-                          tooltip="BF16 算力 (TFLOPS)"
-                          min={0}
-                          value={hardwareParams.chip.compute_tflops_bf16}
-                          onChange={(v) => setHardwareParams(prev => ({
-                            ...prev,
-                            chip: {
-                              ...prev.chip,
-                              compute_tflops_bf16: v ?? 128,
-                              compute_tflops_fp8: v !== undefined ? v * 2 : 256
-                            }
-                          }))}
-                        />
-                      </div>
+            if (uniqueChips.length === 0) {
+              return (
+                <div className="text-center py-8 text-gray-400 text-sm">
+                  请先在 Board 层配置芯片
+                </div>
+              )
+            }
 
-                      {/* Memory (3列: 容量、带宽、利用率) */}
-                      <div className="border-t border-dashed my-2 pt-1.5">
-                        <span className="text-xs text-gray-500">Memory</span>
-                      </div>
-                      <div className="grid grid-cols-3 gap-3 mb-2">
-                        <FormInputField
-                          label="容量 (GB)"
-                          tooltip="显存容量"
-                          min={1}
-                          max={512}
-                          value={hardwareParams.chip.memory_capacity_gb}
-                          onChange={(v) => setHardwareParams(prev => ({
-                            ...prev,
-                            chip: { ...prev.chip, memory_capacity_gb: v ?? 32 }
-                          }))}
-                        />
-                        <FormInputField
-                          label="带宽 (TB/s)"
-                          tooltip="显存总带宽 (理论峰值)"
-                          min={0}
-                          max={1000}
-                          step={0.1}
-                          value={Number((hardwareParams.chip.memory_bandwidth_gbps / 1000).toFixed(1))}
-                          onChange={(v) => setHardwareParams(prev => ({
-                            ...prev,
-                            chip: { ...prev.chip, memory_bandwidth_gbps: v !== undefined ? v * 1000 : 800 }
-                          }))}
-                        />
-                        <FormInputField
-                          label="利用率"
-                          tooltip="显存带宽利用率 (0-1)"
-                          min={0}
-                          max={1}
-                          step={0.01}
-                          value={hardwareParams.chip.memory_bandwidth_utilization}
-                          onChange={(v) => setHardwareParams(prev => ({
-                            ...prev,
-                            chip: { ...prev.chip, memory_bandwidth_utilization: v ?? 0.85 }
-                          }))}
-                        />
-                      </div>
+            return uniqueChips.map(([chipName, info], chipIndex) => {
+              // 获取该芯片的硬件参数（如果不存在则使用默认值）
+              const chipParams = hardwareParams.chips[chipName] || { ...DEFAULT_CHIP_HARDWARE, name: chipName }
 
-                      {/* LMEM (2列) */}
-                      <div className="border-t border-dashed my-2 pt-1.5">
-                        <span className="text-xs text-gray-500">LMEM</span>
-                      </div>
-                      <div className="grid grid-cols-2 gap-3 mb-2">
-                        <FormInputField
-                          label="LMEM (MB)"
-                          tooltip="LMEM 片上缓存容量"
-                          min={0}
-                          value={hardwareParams.chip.lmem_capacity_mb}
-                          onChange={(v) => setHardwareParams(prev => ({
+              return (
+                <div
+                  key={chipName}
+                  ref={(el) => {
+                    // 为了保持滚动到芯片面板的功能，使用第一个 board 的 id
+                    const firstBoard = rackConfig.boards.find(b => b.chips.some(c => c.name === chipName))
+                    if (firstBoard) {
+                      const chipIdx = firstBoard.chips.findIndex(c => c.name === chipName)
+                      const panelId = `${firstBoard.id}-${chipIdx}`
+                      if (el) {
+                        chipPanelRefs.current.set(panelId, el)
+                      } else {
+                        chipPanelRefs.current.delete(panelId)
+                      }
+                    }
+                  }}
+                >
+                  <BaseCard
+                    title={
+                      <>
+                        {chipName} <span className="text-gray-400 text-xs ml-2">共 {info.totalCount} 个</span>
+                        <span className="text-gray-300 text-[10px] ml-2">({info.boards.join(', ')})</span>
+                      </>
+                    }
+                    collapsible
+                    defaultExpanded={chipIndex === 0}
+                    gradient
+                  >
+                    {/* 核心数 + 算力 (3列) */}
+                    <div className="grid grid-cols-3 gap-3 mb-2">
+                      <FormInputField
+                        label="核心数"
+                        tooltip="计算核心数量"
+                        min={1}
+                        max={512}
+                        value={chipParams.num_cores}
+                        onChange={(v) => updateChipParam(chipName, 'num_cores', v ?? 64)}
+                      />
+                      <FormInputField
+                        label="FP8"
+                        tooltip="FP8 算力 (TFLOPS)"
+                        min={0}
+                        value={chipParams.compute_tflops_fp8}
+                        onChange={(v) => {
+                          const newFP8 = v ?? 256
+                          setHardwareParams(prev => ({
                             ...prev,
-                            chip: { ...prev.chip, lmem_capacity_mb: v ?? 128 }
-                          }))}
-                        />
-                        <FormInputField
-                          label="L带宽 (GB/s)"
-                          tooltip="LMEM 缓存带宽"
-                          min={0}
-                          max={999999}
-                          value={hardwareParams.chip.lmem_bandwidth_gbps}
-                          onChange={(v) => setHardwareParams(prev => ({
-                            ...prev,
-                            chip: { ...prev.chip, lmem_bandwidth_gbps: v ?? 12000 }
-                          }))}
-                        />
-                      </div>
-
-                      {/* 微架构参数 (4列) */}
-                      <div className="border-t border-dashed my-2 pt-1.5">
-                        <span className="text-xs text-gray-500">微架构 / GEMM</span>
-                      </div>
-                      <div className="grid grid-cols-4 gap-3 mb-1.5">
-                        <FormInputField
-                          label="Cube M"
-                          tooltip="矩阵单元 M 维度"
-                          min={1}
-                          value={hardwareParams.chip.cube_m ?? 0}
-                          onChange={(v) => setHardwareParams(prev => ({
-                            ...prev,
-                            chip: { ...prev.chip, cube_m: v }
-                          }))}
-                          inputClassName="placeholder:text-xs"
-                          placeholder="自动"
-                        />
-                        <FormInputField
-                          label="Cube K"
-                          tooltip="矩阵单元 K 维度"
-                          min={1}
-                          value={hardwareParams.chip.cube_k ?? 0}
-                          onChange={(v) => setHardwareParams(prev => ({
-                            ...prev,
-                            chip: { ...prev.chip, cube_k: v }
-                          }))}
-                          inputClassName="placeholder:text-xs"
-                          placeholder="自动"
-                        />
-                        <FormInputField
-                          label="Cube N"
-                          tooltip="矩阵单元 N 维度"
-                          min={1}
-                          value={hardwareParams.chip.cube_n ?? 0}
-                          onChange={(v) => setHardwareParams(prev => ({
-                            ...prev,
-                            chip: { ...prev.chip, cube_n: v }
-                          }))}
-                          inputClassName="placeholder:text-xs"
-                          placeholder="自动"
-                        />
-                        <FormInputField
-                          label="Lane 数"
-                          tooltip="SIMD lane 数量"
-                          min={1}
-                          value={hardwareParams.chip.lane_num ?? 0}
-                          onChange={(v) => setHardwareParams(prev => ({
-                            ...prev,
-                            chip: { ...prev.chip, lane_num: v }
-                          }))}
-                          inputClassName="placeholder:text-xs"
-                          placeholder="自动"
-                        />
-                      </div>
-                      <div className="grid grid-cols-4 gap-3">
-                        <FormInputField
-                          label="SRAM (KB)"
-                          tooltip="每核 SRAM 大小"
-                          min={0}
-                          value={hardwareParams.chip.sram_size_kb ?? 0}
-                          onChange={(v) => setHardwareParams(prev => ({
-                            ...prev,
-                            chip: { ...prev.chip, sram_size_kb: v }
-                          }))}
-                          inputClassName="placeholder:text-xs"
-                          placeholder="自动"
-                        />
-                        <FormInputField
-                          label="SRAM利用"
-                          tooltip="SRAM 可用比例 (0-1)"
-                          min={0}
-                          max={1}
-                          step={0.01}
-                          value={hardwareParams.chip.sram_utilization ?? 0}
-                          onChange={(v) => setHardwareParams(prev => ({
-                            ...prev,
-                            chip: { ...prev.chip, sram_utilization: v }
-                          }))}
-                          inputClassName="placeholder:text-xs"
-                          placeholder="自动"
-                        />
-                        <FormInputField
-                          label="对齐字节"
-                          tooltip="内存对齐字节数"
-                          min={1}
-                          value={hardwareParams.chip.align_bytes ?? 0}
-                          onChange={(v) => setHardwareParams(prev => ({
-                            ...prev,
-                            chip: { ...prev.chip, align_bytes: v }
-                          }))}
-                          inputClassName="placeholder:text-xs"
-                          placeholder="自动"
-                        />
-                        <FormInputField
-                          label="重叠率"
-                          tooltip="计算-搬运重叠率 (0-1)"
-                          min={0}
-                          max={1}
-                          step={0.01}
-                          value={hardwareParams.chip.compute_dma_overlap_rate ?? 0}
-                          onChange={(v) => setHardwareParams(prev => ({
-                            ...prev,
-                            chip: { ...prev.chip, compute_dma_overlap_rate: v }
-                          }))}
-                          inputClassName="placeholder:text-xs"
-                          placeholder="自动"
-                        />
-                      </div>
-
-                      {/* 保存为预设按钮 */}
-                      <div className="mt-4 pt-3 border-t border-gray-200/50">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="w-full"
-                          onClick={async () => {
-                            const presetName = prompt('输入芯片预设名称（如 SG2262）:')
-                            if (presetName && presetName.trim()) {
-                              try {
-                                await saveCustomChipPreset({
-                                  ...hardwareParams.chip,
-                                  name: presetName.trim(),
-                                })
-                                toast.success(`芯片预设 "${presetName.trim()}" 已保存`)
-                              } catch (error) {
-                                console.error('保存芯片预设失败:', error)
-                                toast.error('保存芯片预设失败')
+                            chips: {
+                              ...prev.chips,
+                              [chipName]: {
+                                ...prev.chips[chipName],
+                                compute_tflops_fp8: newFP8,
+                                compute_tflops_bf16: newFP8 / 2
                               }
                             }
-                          }}
-                        >
-                          <Save className="h-3.5 w-3.5 mr-1.5" />
-                          保存为预设
-                        </Button>
-                      </div>
-                    </BaseCard>
+                          }))
+                        }}
+                      />
+                      <FormInputField
+                        label="BF16"
+                        tooltip="BF16 算力 (TFLOPS)"
+                        min={0}
+                        value={chipParams.compute_tflops_bf16}
+                        onChange={(v) => {
+                          const newBF16 = v ?? 128
+                          setHardwareParams(prev => ({
+                            ...prev,
+                            chips: {
+                              ...prev.chips,
+                              [chipName]: {
+                                ...prev.chips[chipName],
+                                compute_tflops_bf16: newBF16,
+                                compute_tflops_fp8: newBF16 * 2
+                              }
+                            }
+                          }))
+                        }}
+                      />
                     </div>
-                  )
-                })}
-              </div>
-            ))
-          )}
+
+                    {/* Memory (3列: 容量、带宽、利用率) */}
+                    <div className="border-t border-dashed my-2 pt-1.5">
+                      <span className="text-xs text-gray-500">Memory</span>
+                    </div>
+                    <div className="grid grid-cols-3 gap-3 mb-2">
+                      <FormInputField
+                        label="容量 (GB)"
+                        tooltip="显存容量"
+                        min={1}
+                        max={512}
+                        value={chipParams.memory_capacity_gb}
+                        onChange={(v) => updateChipParam(chipName, 'memory_capacity_gb', v ?? 32)}
+                      />
+                      <FormInputField
+                        label="带宽 (TB/s)"
+                        tooltip="显存总带宽 (理论峰值)"
+                        min={0}
+                        max={1000}
+                        step={0.1}
+                        value={Number((chipParams.memory_bandwidth_gbps / 1000).toFixed(1))}
+                        onChange={(v) => updateChipParam(chipName, 'memory_bandwidth_gbps', v !== undefined ? v * 1000 : 800)}
+                      />
+                      <FormInputField
+                        label="利用率"
+                        tooltip="显存带宽利用率 (0-1)"
+                        min={0}
+                        max={1}
+                        step={0.01}
+                        value={chipParams.memory_bandwidth_utilization}
+                        onChange={(v) => updateChipParam(chipName, 'memory_bandwidth_utilization', v ?? 0.85)}
+                      />
+                    </div>
+
+                    {/* LMEM (2列) */}
+                    <div className="border-t border-dashed my-2 pt-1.5">
+                      <span className="text-xs text-gray-500">LMEM</span>
+                    </div>
+                    <div className="grid grid-cols-2 gap-3 mb-2">
+                      <FormInputField
+                        label="LMEM (MB)"
+                        tooltip="LMEM 片上缓存容量"
+                        min={0}
+                        value={chipParams.lmem_capacity_mb}
+                        onChange={(v) => updateChipParam(chipName, 'lmem_capacity_mb', v ?? 128)}
+                      />
+                      <FormInputField
+                        label="L带宽 (GB/s)"
+                        tooltip="LMEM 缓存带宽"
+                        min={0}
+                        max={999999}
+                        value={chipParams.lmem_bandwidth_gbps}
+                        onChange={(v) => updateChipParam(chipName, 'lmem_bandwidth_gbps', v ?? 12000)}
+                      />
+                    </div>
+
+                    {/* 微架构参数 (4列) */}
+                    <div className="border-t border-dashed my-2 pt-1.5">
+                      <span className="text-xs text-gray-500">微架构 / GEMM</span>
+                    </div>
+                    <div className="grid grid-cols-4 gap-3 mb-1.5">
+                      <FormInputField
+                        label="Cube M"
+                        tooltip="矩阵单元 M 维度"
+                        min={1}
+                        value={chipParams.cube_m ?? 0}
+                        onChange={(v) => updateChipParam(chipName, 'cube_m', v)}
+                        inputClassName="placeholder:text-xs"
+                        placeholder="自动"
+                      />
+                      <FormInputField
+                        label="Cube K"
+                        tooltip="矩阵单元 K 维度"
+                        min={1}
+                        value={chipParams.cube_k ?? 0}
+                        onChange={(v) => updateChipParam(chipName, 'cube_k', v)}
+                        inputClassName="placeholder:text-xs"
+                        placeholder="自动"
+                      />
+                      <FormInputField
+                        label="Cube N"
+                        tooltip="矩阵单元 N 维度"
+                        min={1}
+                        value={chipParams.cube_n ?? 0}
+                        onChange={(v) => updateChipParam(chipName, 'cube_n', v)}
+                        inputClassName="placeholder:text-xs"
+                        placeholder="自动"
+                      />
+                      <FormInputField
+                        label="Lane 数"
+                        tooltip="SIMD lane 数量"
+                        min={1}
+                        value={chipParams.lane_num ?? 0}
+                        onChange={(v) => updateChipParam(chipName, 'lane_num', v)}
+                        inputClassName="placeholder:text-xs"
+                        placeholder="自动"
+                      />
+                    </div>
+                    <div className="grid grid-cols-4 gap-3">
+                      <FormInputField
+                        label="SRAM (KB)"
+                        tooltip="每核 SRAM 大小"
+                        min={0}
+                        value={chipParams.sram_size_kb ?? 0}
+                        onChange={(v) => updateChipParam(chipName, 'sram_size_kb', v)}
+                        inputClassName="placeholder:text-xs"
+                        placeholder="自动"
+                      />
+                      <FormInputField
+                        label="SRAM利用"
+                        tooltip="SRAM 可用比例 (0-1)"
+                        min={0}
+                        max={1}
+                        step={0.01}
+                        value={chipParams.sram_utilization ?? 0}
+                        onChange={(v) => updateChipParam(chipName, 'sram_utilization', v)}
+                        inputClassName="placeholder:text-xs"
+                        placeholder="自动"
+                      />
+                      <FormInputField
+                        label="对齐字节"
+                        tooltip="内存对齐字节数"
+                        min={1}
+                        value={chipParams.align_bytes ?? 0}
+                        onChange={(v) => updateChipParam(chipName, 'align_bytes', v)}
+                        inputClassName="placeholder:text-xs"
+                        placeholder="自动"
+                      />
+                      <FormInputField
+                        label="重叠率"
+                        tooltip="计算-搬运重叠率 (0-1)"
+                        min={0}
+                        max={1}
+                        step={0.01}
+                        value={chipParams.compute_dma_overlap_rate ?? 0}
+                        onChange={(v) => updateChipParam(chipName, 'compute_dma_overlap_rate', v)}
+                        inputClassName="placeholder:text-xs"
+                        placeholder="自动"
+                      />
+                    </div>
+
+                    {/* 保存为预设按钮 */}
+                    <div className="mt-4 pt-3 border-t border-gray-200/50">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="w-full"
+                        onClick={async () => {
+                          const presetName = prompt('输入芯片预设名称（如 SG2262）:')
+                          if (presetName && presetName.trim()) {
+                            try {
+                              await saveCustomChipPreset({
+                                ...chipParams,
+                                name: presetName.trim(),
+                              })
+                              toast.success(`芯片预设 "${presetName.trim()}" 已保存`)
+                            } catch (error) {
+                              console.error('保存芯片预设失败:', error)
+                              toast.error('保存芯片预设失败')
+                            }
+                          }
+                        }}
+                      >
+                        <Save className="h-3.5 w-3.5 mr-1.5" />
+                        保存为预设
+                      </Button>
+                    </div>
+                  </BaseCard>
+                </div>
+              )
+            })
+          })()}
         </div>
 
         {/* 互联通信参数 - 全局配置 */}

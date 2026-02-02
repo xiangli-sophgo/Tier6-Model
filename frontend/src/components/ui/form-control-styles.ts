@@ -9,7 +9,7 @@
  */
 export const formControlBaseStyles = [
   // 布局和尺寸
-  "flex h-9 w-full items-center",
+  "flex h-7 w-full items-center",
   // 边框和圆角
   "rounded-lg border border-blue-200",
   // 背景

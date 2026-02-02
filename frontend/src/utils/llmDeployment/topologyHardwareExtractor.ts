@@ -186,7 +186,8 @@ export function extractChipGroupsFromConfig(
   for (const board of boards) {
     const boardCount = board.count || 1
     for (const chip of board.chips) {
-      const key = chip.preset_id || chip.name
+      // 使用芯片名称作为唯一 key，确保相同名称的芯片合并到一个组
+      const key = chip.name
       const existing = chipGroupMap.get(key)
 
       // 从预设或默认值获取硬件参数

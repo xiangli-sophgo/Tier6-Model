@@ -59,6 +59,8 @@ export const ConfigSnapshotDisplay: React.FC<ConfigSnapshotDisplayProps> = ({
 
   // 提取通信延迟配置
   const commLatencyConfig = (topology as any).comm_latency_config
+  // 提取互联参数配置（C2C延迟使用互联参数）
+  const interconnectParams = (topology as any).hardware_params?.interconnect
 
   // 计算总芯片数
   const calculateTotalChips = () => {
@@ -182,7 +184,7 @@ export const ConfigSnapshotDisplay: React.FC<ConfigSnapshotDisplayProps> = ({
               <DescItem label="同步延迟 (μs)">{commLatencyConfig.sync_latency_us ?? '-'}</DescItem>
               <DescItem label="交换机延迟 (μs)">{commLatencyConfig.switch_delay_us ?? '-'}</DescItem>
               <DescItem label="线缆延迟 (μs)">{commLatencyConfig.cable_delay_us ?? '-'}</DescItem>
-              <DescItem label="芯片间延迟 (μs)">{commLatencyConfig.chip_to_chip_us ?? '-'}</DescItem>
+              <DescItem label="芯片间延迟 (μs)">{interconnectParams?.c2c?.latency_us ?? '-'}</DescItem>
               <DescItem label="内存读延迟 (μs)">{commLatencyConfig.memory_read_latency_us ?? '-'}</DescItem>
               <DescItem label="内存写延迟 (μs)">{commLatencyConfig.memory_write_latency_us ?? '-'}</DescItem>
               <DescItem label="NoC延迟 (μs)">{commLatencyConfig.noc_latency_us ?? '-'}</DescItem>

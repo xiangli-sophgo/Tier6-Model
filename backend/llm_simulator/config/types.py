@@ -137,8 +137,6 @@ class ChipConfig:
     memory_bandwidth_utilization: float = 0.85  # 显存带宽利用率 (0-1)
     lmem_capacity_mb: float = 0.0  # LMEM/SRAM 片上缓存容量 (MB)
     lmem_bandwidth_gbps: float = 0.0  # LMEM 缓存带宽 (GB/s)
-    c2c_bandwidth_gbps: float = 0.0  # C2C 芯片间互联带宽 (GB/s)
-    c2c_latency_us: float = 0.0  # C2C 芯片间互联延迟 (us)
     # === 微架构参数 (可选，用于精确 GEMM 评估) ===
     cube_m: Optional[int] = None
     cube_k: Optional[int] = None

@@ -1,5 +1,5 @@
 name: SG2261
-num_cores: 64
+num_cores: 32
 compute_tflops_fp8: 512
 compute_tflops_bf16: 256
 memory_capacity_gb: 64
@@ -15,3 +15,5 @@ sram_utilization: 0.45
 lane_num: 16
 align_bytes: 32
 compute_dma_overlap_rate: 0.8
+created_at: '2026-02-02T10:44:36.643577'
+updated_at: '2026-02-02T10:44:36.643577'

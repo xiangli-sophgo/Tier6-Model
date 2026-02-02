@@ -13,8 +13,8 @@ import {
 } from '../../../utils/llmDeployment/types'
 
 interface ParallelismConfigPanelProps {
-  mode: 'manual' | 'auto'
-  onModeChange: (mode: 'manual' | 'auto') => void
+  mode: 'manual' | 'auto' | 'sweep'
+  onModeChange: (mode: 'manual' | 'auto' | 'sweep') => void
   manualStrategy: ParallelismStrategy
   onManualStrategyChange: (strategy: ParallelismStrategy) => void
   maxChips: number
@@ -60,6 +60,14 @@ export const ParallelismConfigPanel: React.FC<ParallelismConfigPanelProps> = ({
               }`}
             >
               手动指定
+            </button>
+            <button
+              onClick={() => onModeChange('sweep')}
+              className={`px-3 py-1 text-xs transition-colors border-l border-gray-200 ${
+                mode === 'sweep' ? 'bg-blue-500 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'
+              }`}
+            >
+              参数遍历
             </button>
           </div>
         </div>
@@ -152,22 +160,16 @@ export const ParallelismConfigPanel: React.FC<ParallelismConfigPanelProps> = ({
           </div>
         ) : (
           <div>
-            <div className="flex justify-between items-center mb-3">
-              <span className="text-xs">最大使用芯片数</span>
-              <Badge variant="outline" className="text-[11px] bg-green-50 text-green-700 border-green-200">
-                {maxChips} 个
-              </Badge>
-            </div>
-
-            {/* 搜索约束显示 */}
-            <div>
-              <div
-                className="flex justify-between items-center cursor-pointer"
-                onClick={() => setShowConstraints(!showConstraints)}
-              >
-                <span className="text-xs">搜索约束</span>
-                <span className="text-[11px] text-gray-500">{showConstraints ? '▲' : '▼'}</span>
-              </div>
+            {/* 搜索约束显示（仅自动搜索模式） */}
+            {mode === 'auto' && (
+              <div>
+                <div
+                  className="flex justify-between items-center cursor-pointer"
+                  onClick={() => setShowConstraints(!showConstraints)}
+                >
+                  <span className="text-xs">搜索约束</span>
+                  <span className="text-[11px] text-gray-500">{showConstraints ? '▲' : '▼'}</span>
+                </div>
 
               {showConstraints && (
                 <div className="mt-2 p-2 bg-gray-50 rounded-md">
@@ -247,7 +249,8 @@ export const ParallelismConfigPanel: React.FC<ParallelismConfigPanelProps> = ({
                   </div>
                 </div>
               )}
-            </div>
+              </div>
+            )}
           </div>
         )}
     </div>

@@ -23,6 +23,13 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Checkbox } from '@/components/ui/checkbox'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import {
   Tooltip,
@@ -78,15 +85,19 @@ const Pagination: React.FC<{
     <div className="flex items-center justify-between px-4 py-6 border-t border-blue-100 bg-white">
       <span className="text-sm text-text-muted">共 {total} 个实验</span>
       <div className="flex items-center gap-3">
-        <select
-          value={pageSize}
-          onChange={(e) => onPageSizeChange(Number(e.target.value))}
-          className="h-9 rounded-lg border border-blue-200 bg-white px-3 text-sm text-text-primary hover:border-blue-300"
+        <Select
+          value={String(pageSize)}
+          onValueChange={(v) => onPageSizeChange(Number(v))}
         >
-          <option value={10}>10条/页</option>
-          <option value={20}>20条/页</option>
-          <option value={50}>50条/页</option>
-        </select>
+          <SelectTrigger className="w-[120px]">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="10">10条/页</SelectItem>
+            <SelectItem value="20">20条/页</SelectItem>
+            <SelectItem value="50">50条/页</SelectItem>
+          </SelectContent>
+        </Select>
         <Button
           variant="outline"
           size="sm"

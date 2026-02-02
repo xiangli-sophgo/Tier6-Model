@@ -1,0 +1,9 @@
+# 拓扑配置文件目录
+
+此目录用于存放拓扑配置 YAML 文件。
+
+## 新格式要求
+
+配置文件必须使用新格式 `hardware_params.chips`（多芯片字典），不再支持旧格式 `hardware_params.chip`（单芯片对象）。
+
+参考模板: `TOPOLOGY_TEMPLATE.yaml`

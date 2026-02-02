@@ -93,7 +93,6 @@ export interface SavedConfig {
     switch_delay_us: number;
     cable_delay_us: number;
     // 芯片延迟
-    chip_to_chip_us: number;
     memory_read_latency_us: number;
     memory_write_latency_us: number;
     noc_latency_us: number;
@@ -102,7 +101,8 @@ export interface SavedConfig {
 
   /** 硬件参数配置 (芯片参数 + 互联参数) */
   hardware_params?: {
-    chip: {
+    // 多芯片独立配置，key = chip.name
+    chips: Record<string, {
       name: string;
       num_cores: number;
       compute_tflops_fp8: number;
@@ -121,7 +121,7 @@ export interface SavedConfig {
       lane_num?: number;
       align_bytes?: number;
       compute_dma_overlap_rate?: number;
-    };
+    }>;
     interconnect: {
       c2c: { bandwidth_gbps: number; latency_us: number };
       b2b: { bandwidth_gbps: number; latency_us: number };
