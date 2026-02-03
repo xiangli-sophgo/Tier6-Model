@@ -27,6 +27,7 @@ class EventType(IntEnum):
     COMPUTE_END = 1
     COMM_END = 2
     MEMORY_END = 3
+    PACKET_RECEIVE = 4  # 数据包到达目标（Phase 3）
 
     # 完成事件（中优先级）
     LAYER_COMPLETE = 10
@@ -38,6 +39,10 @@ class EventType(IntEnum):
     COMM_START = 21
     MEMORY_START = 22
 
+    # 包级事件（Phase 3）
+    PACKET_SEND = 23       # 芯片发送数据包
+    SWITCH_FORWARD = 24    # Switch 转发数据包
+
     # 调度事件（最低优先级，确保其他事件先处理）
     SCHEDULE = 30
 
@@ -47,6 +52,7 @@ class ResourceType(IntEnum):
     COMPUTE = 1      # 计算资源（Tensor Core）
     NETWORK = 2      # 网络资源（NVLink/IB）
     MEMORY_BUS = 3   # 内存总线
+    SWITCH_PORT = 4  # Switch 端口资源（Phase 3）
 
 
 @dataclass
@@ -1032,6 +1038,437 @@ class ChunkedCommEndEvent(BaseEvent):
             if dependency_graph:
                 op_key = (self.chip_id, self.layer_index, self.comm_type, self.micro_batch)
                 dependency_graph.mark_completed(op_key)
+
+        return new_events
+
+
+# ============================================
+# 包级事件 (Phase 3: Switch 节点建模)
+# ============================================
+
+@dataclass
+class PacketSendEvent(BaseEvent):
+    """数据包发送事件
+
+    芯片发送数据包到第一个 Switch（或直接到目标芯片）。
+    支持链式包生成：处理完当前包后生成下一个包事件。
+    """
+
+    event_type: EventType = field(default=EventType.PACKET_SEND, init=False)
+
+    # 数据包信息
+    packet_id: str = ""
+    flow_id: str = ""
+    packet_size_bytes: float = 0.0
+
+    # 路由信息
+    src_chip: str = ""
+    dst_chip: str = ""
+    route: list[str] = field(default_factory=list)  # Switch 路径
+
+    # 链式包生成
+    packet_index: int = 0
+    total_packets: int = 1
+    remaining_packets: int = 0
+
+    # 通信上下文
+    comm_type: str = ""
+    participating_chips: list[str] = field(default_factory=list)
+
+    def handle(
+        self,
+        resource_manager: ResourceManager,
+        gantt_builder: GanttChartBuilder,
+        context: dict[str, Any],
+    ) -> list[BaseEvent]:
+        """处理数据包发送事件
+
+        1. 请求源芯片的网络资源（NIC）
+        2. 计算串行化延迟
+        3. 生成 SwitchForwardEvent 或 PacketReceiveEvent
+        4. 如果还有剩余包，生成下一个 PacketSendEvent
+        """
+        new_events = []
+
+        # 获取 SwitchManager
+        switch_manager = context.get("switch_manager")
+        if not switch_manager:
+            # 如果没有 SwitchManager，回退到简单模式
+            return self._handle_simple_mode(resource_manager, gantt_builder, context)
+
+        # 1. 请求源芯片的网络资源
+        # 计算串行化延迟（基于 NIC 带宽）
+        nic_bandwidth_gbps = context.get("nic_bandwidth_gbps", 400.0)
+        serialization_delay = self.packet_size_bytes / (nic_bandwidth_gbps * 1e9 / 8 / 1e6)
+
+        actual_start, actual_end = resource_manager.request_resource(
+            chip_id=self.src_chip,
+            resource_type=ResourceType.NETWORK,
+            requested_start=self.timestamp,
+            duration=serialization_delay,
+        )
+
+        # 记录等待时间
+        if actual_start > self.timestamp:
+            resource_manager.record_bubble(
+                chip_id=self.src_chip,
+                start=self.timestamp,
+                duration=actual_start - self.timestamp,
+                reason="nic_busy",
+            )
+
+        # 2. 生成下一跳事件
+        if self.route:
+            # 有 Switch 路径，发送到第一个 Switch
+            first_switch = self.route[0]
+            output_port = switch_manager.get_output_port(first_switch, self.src_chip)
+            if output_port < 0:
+                # 找不到端口，尝试反向查找
+                output_port = 0
+
+            forward_event = SwitchForwardEvent(
+                timestamp=actual_end,
+                chip_id=self.src_chip,
+                layer_index=self.layer_index,
+                token_index=self.token_index,
+                micro_batch=self.micro_batch,
+                pp_stage=self.pp_stage,
+                packet_id=self.packet_id,
+                flow_id=self.flow_id,
+                packet_size_bytes=self.packet_size_bytes,
+                src_chip=self.src_chip,
+                dst_chip=self.dst_chip,
+                route=self.route,
+                hop_index=0,
+                switch_id=first_switch,
+                output_port=output_port,
+                comm_type=self.comm_type,
+                packet_index=self.packet_index,
+                total_packets=self.total_packets,
+                participating_chips=self.participating_chips,
+            )
+            new_events.append(forward_event)
+        else:
+            # 直连（同板芯片），直接发送到目标
+            receive_event = PacketReceiveEvent(
+                timestamp=actual_end,
+                chip_id=self.dst_chip,
+                layer_index=self.layer_index,
+                token_index=self.token_index,
+                micro_batch=self.micro_batch,
+                pp_stage=self.pp_stage,
+                packet_id=self.packet_id,
+                flow_id=self.flow_id,
+                packet_size_bytes=self.packet_size_bytes,
+                src_chip=self.src_chip,
+                dst_chip=self.dst_chip,
+                comm_type=self.comm_type,
+                packet_index=self.packet_index,
+                total_packets=self.total_packets,
+                participating_chips=self.participating_chips,
+            )
+            new_events.append(receive_event)
+
+        # 3. 链式包生成：如果还有剩余包，生成下一个 PacketSendEvent
+        if self.remaining_packets > 0:
+            next_packet_event = PacketSendEvent(
+                timestamp=actual_end,  # 紧接着发送下一个包
+                chip_id=self.src_chip,
+                layer_index=self.layer_index,
+                token_index=self.token_index,
+                micro_batch=self.micro_batch,
+                pp_stage=self.pp_stage,
+                packet_id=f"{self.flow_id}_pkt_{self.packet_index + 1}",
+                flow_id=self.flow_id,
+                packet_size_bytes=self.packet_size_bytes,
+                src_chip=self.src_chip,
+                dst_chip=self.dst_chip,
+                route=self.route,
+                packet_index=self.packet_index + 1,
+                total_packets=self.total_packets,
+                remaining_packets=self.remaining_packets - 1,
+                comm_type=self.comm_type,
+                participating_chips=self.participating_chips,
+            )
+            new_events.append(next_packet_event)
+
+        return new_events
+
+    def _handle_simple_mode(
+        self,
+        resource_manager: ResourceManager,
+        gantt_builder: GanttChartBuilder,
+        context: dict[str, Any],
+    ) -> list[BaseEvent]:
+        """简单模式：不经过 Switch，直接发送"""
+        # 计算串行化延迟
+        nic_bandwidth_gbps = context.get("nic_bandwidth_gbps", 400.0)
+        serialization_delay = self.packet_size_bytes / (nic_bandwidth_gbps * 1e9 / 8 / 1e6)
+
+        actual_start, actual_end = resource_manager.request_resource(
+            chip_id=self.src_chip,
+            resource_type=ResourceType.NETWORK,
+            requested_start=self.timestamp,
+            duration=serialization_delay,
+        )
+
+        # 直接生成接收事件
+        receive_event = PacketReceiveEvent(
+            timestamp=actual_end,
+            chip_id=self.dst_chip,
+            layer_index=self.layer_index,
+            token_index=self.token_index,
+            micro_batch=self.micro_batch,
+            pp_stage=self.pp_stage,
+            packet_id=self.packet_id,
+            flow_id=self.flow_id,
+            packet_size_bytes=self.packet_size_bytes,
+            src_chip=self.src_chip,
+            dst_chip=self.dst_chip,
+            comm_type=self.comm_type,
+            packet_index=self.packet_index,
+            total_packets=self.total_packets,
+            participating_chips=self.participating_chips,
+        )
+
+        new_events = [receive_event]
+
+        # 链式包生成
+        if self.remaining_packets > 0:
+            next_packet_event = PacketSendEvent(
+                timestamp=actual_end,
+                chip_id=self.src_chip,
+                layer_index=self.layer_index,
+                token_index=self.token_index,
+                micro_batch=self.micro_batch,
+                pp_stage=self.pp_stage,
+                packet_id=f"{self.flow_id}_pkt_{self.packet_index + 1}",
+                flow_id=self.flow_id,
+                packet_size_bytes=self.packet_size_bytes,
+                src_chip=self.src_chip,
+                dst_chip=self.dst_chip,
+                route=self.route,
+                packet_index=self.packet_index + 1,
+                total_packets=self.total_packets,
+                remaining_packets=self.remaining_packets - 1,
+                comm_type=self.comm_type,
+                participating_chips=self.participating_chips,
+            )
+            new_events.append(next_packet_event)
+
+        return new_events
+
+
+@dataclass
+class SwitchForwardEvent(BaseEvent):
+    """Switch 转发事件
+
+    数据包经过 Switch 端口转发。
+    请求端口资源，计算处理延迟和串行化延迟。
+    """
+
+    event_type: EventType = field(default=EventType.SWITCH_FORWARD, init=False)
+
+    # 数据包信息
+    packet_id: str = ""
+    flow_id: str = ""
+    packet_size_bytes: float = 0.0
+
+    # 路由信息
+    src_chip: str = ""
+    dst_chip: str = ""
+    route: list[str] = field(default_factory=list)
+    hop_index: int = 0
+
+    # 当前 Switch 信息
+    switch_id: str = ""
+    output_port: int = 0
+
+    # 通信上下文
+    comm_type: str = ""
+    packet_index: int = 0
+    total_packets: int = 1
+    participating_chips: list[str] = field(default_factory=list)
+
+    def handle(
+        self,
+        resource_manager: ResourceManager,
+        gantt_builder: GanttChartBuilder,
+        context: dict[str, Any],
+    ) -> list[BaseEvent]:
+        """处理 Switch 转发事件
+
+        1. 请求 Switch 输出端口资源
+        2. 计算处理延迟 + 串行化延迟
+        3. 生成下一跳事件（SwitchForwardEvent 或 PacketReceiveEvent）
+        """
+        new_events = []
+
+        # 获取 SwitchManager
+        switch_manager = context.get("switch_manager")
+        if not switch_manager:
+            # 回退：直接跳到目标
+            receive_event = PacketReceiveEvent(
+                timestamp=self.timestamp,
+                chip_id=self.dst_chip,
+                layer_index=self.layer_index,
+                token_index=self.token_index,
+                micro_batch=self.micro_batch,
+                pp_stage=self.pp_stage,
+                packet_id=self.packet_id,
+                flow_id=self.flow_id,
+                packet_size_bytes=self.packet_size_bytes,
+                src_chip=self.src_chip,
+                dst_chip=self.dst_chip,
+                comm_type=self.comm_type,
+                packet_index=self.packet_index,
+                total_packets=self.total_packets,
+                participating_chips=self.participating_chips,
+            )
+            return [receive_event]
+
+        # 1. 计算延迟
+        processing_delay = switch_manager.get_processing_delay(self.switch_id)
+        serialization_delay = switch_manager.get_serialization_delay(
+            self.switch_id, self.packet_size_bytes
+        )
+        total_delay = processing_delay + serialization_delay
+
+        # 2. 请求 Switch 输出端口资源
+        actual_start, actual_end = resource_manager.request_switch_port(
+            switch_id=self.switch_id,
+            port_number=self.output_port,
+            requested_start=self.timestamp,
+            duration=total_delay,
+        )
+
+        # 3. 确定下一跳
+        next_hop_index = self.hop_index + 1
+        is_last_hop = next_hop_index >= len(self.route)
+
+        if is_last_hop:
+            # 最后一跳，到达目标芯片
+            receive_event = PacketReceiveEvent(
+                timestamp=actual_end,
+                chip_id=self.dst_chip,
+                layer_index=self.layer_index,
+                token_index=self.token_index,
+                micro_batch=self.micro_batch,
+                pp_stage=self.pp_stage,
+                packet_id=self.packet_id,
+                flow_id=self.flow_id,
+                packet_size_bytes=self.packet_size_bytes,
+                src_chip=self.src_chip,
+                dst_chip=self.dst_chip,
+                comm_type=self.comm_type,
+                packet_index=self.packet_index,
+                total_packets=self.total_packets,
+                participating_chips=self.participating_chips,
+            )
+            new_events.append(receive_event)
+        else:
+            # 还有下一个 Switch
+            next_switch_id = self.route[next_hop_index]
+            next_output_port = switch_manager.get_output_port(
+                next_switch_id, self.switch_id
+            )
+            if next_output_port < 0:
+                next_output_port = 0
+
+            next_forward_event = SwitchForwardEvent(
+                timestamp=actual_end,
+                chip_id=self.chip_id,
+                layer_index=self.layer_index,
+                token_index=self.token_index,
+                micro_batch=self.micro_batch,
+                pp_stage=self.pp_stage,
+                packet_id=self.packet_id,
+                flow_id=self.flow_id,
+                packet_size_bytes=self.packet_size_bytes,
+                src_chip=self.src_chip,
+                dst_chip=self.dst_chip,
+                route=self.route,
+                hop_index=next_hop_index,
+                switch_id=next_switch_id,
+                output_port=next_output_port,
+                comm_type=self.comm_type,
+                packet_index=self.packet_index,
+                total_packets=self.total_packets,
+                participating_chips=self.participating_chips,
+            )
+            new_events.append(next_forward_event)
+
+        return new_events
+
+
+@dataclass
+class PacketReceiveEvent(BaseEvent):
+    """数据包接收事件
+
+    数据包到达目标芯片。
+    如果是通信流的最后一个包，触发通信完成逻辑。
+    """
+
+    event_type: EventType = field(default=EventType.PACKET_RECEIVE, init=False)
+
+    # 数据包信息
+    packet_id: str = ""
+    flow_id: str = ""
+    packet_size_bytes: float = 0.0
+
+    # 路由信息
+    src_chip: str = ""
+    dst_chip: str = ""
+
+    # 通信上下文
+    comm_type: str = ""
+    packet_index: int = 0
+    total_packets: int = 1
+    participating_chips: list[str] = field(default_factory=list)
+
+    def handle(
+        self,
+        resource_manager: ResourceManager,
+        gantt_builder: GanttChartBuilder,
+        context: dict[str, Any],
+    ) -> list[BaseEvent]:
+        """处理数据包接收事件
+
+        1. 更新接收计数
+        2. 如果是最后一个包，触发通信完成
+        """
+        new_events = []
+
+        # 获取或初始化流状态
+        flow_states = context.setdefault("flow_states", {})
+        flow_state = flow_states.setdefault(self.flow_id, {
+            "received_packets": 0,
+            "total_packets": self.total_packets,
+            "first_receive_time": self.timestamp,
+            "last_receive_time": self.timestamp,
+        })
+
+        # 更新接收计数
+        flow_state["received_packets"] += 1
+        flow_state["last_receive_time"] = self.timestamp
+
+        # 检查是否是最后一个包
+        if flow_state["received_packets"] >= flow_state["total_packets"]:
+            # 通信完成，清理状态
+            del flow_states[self.flow_id]
+
+            # 触发通信结束事件
+            comm_end_event = CommEndEvent(
+                timestamp=self.timestamp,
+                chip_id=self.dst_chip,
+                layer_index=self.layer_index,
+                token_index=self.token_index,
+                micro_batch=self.micro_batch,
+                pp_stage=self.pp_stage,
+                comm_type=self.comm_type,
+                participating_chips=self.participating_chips,
+            )
+            new_events.append(comm_end_event)
 
         return new_events
 

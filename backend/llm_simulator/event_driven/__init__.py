@@ -25,6 +25,10 @@ from .event import (
     LayerCompleteEvent,
     StageReadyEvent,
     BatchCompleteEvent,
+    # 包级事件 (Phase 3)
+    PacketSendEvent,
+    SwitchForwardEvent,
+    PacketReceiveEvent,
 )
 
 from .event_queue import EventQueue
@@ -34,6 +38,8 @@ from .resource import ResourceManager, ResourceState
 from .dependency import DependencyGraph, OperatorNode
 
 from .simulator import EventDrivenSimulator, EventDrivenSimConfig
+
+from .switch_manager import SwitchManager, SwitchNode
 
 __all__ = [
     # 事件类型
@@ -49,6 +55,10 @@ __all__ = [
     "LayerCompleteEvent",
     "StageReadyEvent",
     "BatchCompleteEvent",
+    # 包级事件 (Phase 3)
+    "PacketSendEvent",
+    "SwitchForwardEvent",
+    "PacketReceiveEvent",
     # 事件队列
     "EventQueue",
     # 资源管理
@@ -60,4 +70,7 @@ __all__ = [
     # 仿真器
     "EventDrivenSimulator",
     "EventDrivenSimConfig",
+    # Switch 管理
+    "SwitchManager",
+    "SwitchNode",
 ]

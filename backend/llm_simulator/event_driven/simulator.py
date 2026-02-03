@@ -77,6 +77,16 @@ class EventDrivenSimConfig:
     enable_chunked_comm: bool = False  # 是否启用分块传输
     comm_chunk_size_mb: float = 16.0  # 每块大小（MB）
 
+    # ========== Switch 建模配置 (Phase 3) ==========
+    enable_switch_modeling: bool = False  # 是否启用 Switch 建模
+    packet_size_kb: float = 512.0  # 数据包大小（KB），默认 512 KB
+    # 可调范围：
+    # - 128 KB: 更精确，慢 4 倍
+    # - 512 KB: 默认，平衡精度和性能
+    # - 1024 KB (1 MB): 更快，精度稍降
+    # - 4096 KB (4 MB): 最快，粗粒度
+    nic_bandwidth_gbps: float = 400.0  # NIC 带宽（Gbps）
+
     # 评估器配置
     use_precise_evaluator: bool = True
     evaluation_granularity: str = "fine"
@@ -149,6 +159,21 @@ class EventDrivenSimulator:
         self.resource_manager = ResourceManager(self.chip_ids)
         self.gantt_builder = GanttChartBuilder(parallelism)
         self.dependency_graph: Optional[DependencyGraph] = None
+
+        # 初始化 SwitchManager (Phase 3)
+        self.switch_manager = None
+        if self.config.enable_switch_modeling:
+            from .switch_manager import SwitchManager
+            self.switch_manager = SwitchManager(topology_parser=self.topo_parser)
+            # 注册所有 Switch 端口资源
+            for switch in self.switch_manager.switches.values():
+                self.resource_manager.register_switch_ports(
+                    switch.switch_id, switch.port_count
+                )
+            logger.info(
+                f"Switch 建模已启用: {self.switch_manager.get_switch_count()} 个 Switch, "
+                f"packet_size={self.config.packet_size_kb} KB"
+            )
 
         # 仿真状态
         self.current_time = 0.0
@@ -689,6 +714,13 @@ class EventDrivenSimulator:
             "comm_chunk_size_mb": self.config.comm_chunk_size_mb,
             # 资源管理器引用（事件需要查询资源状态）
             "resource_manager": self.resource_manager,
+            # ========== Switch 建模配置 (Phase 3) ==========
+            "switch_manager": self.switch_manager,
+            "enable_switch_modeling": self.config.enable_switch_modeling,
+            "packet_size_kb": self.config.packet_size_kb,
+            "nic_bandwidth_gbps": self.config.nic_bandwidth_gbps,
+            # 包级仿真状态
+            "flow_states": {},  # 通信流状态追踪
         }
 
     def _calculate_pp_comm_latency(self) -> float:

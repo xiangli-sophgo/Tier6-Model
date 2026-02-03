@@ -360,3 +360,162 @@ class ResourceManager:
 
         self._bubbles.clear()
         self._comm_sync_states.clear()
+
+    # ========== Switch 端口资源管理 (Phase 3) ==========
+
+    def register_switch_port(
+        self,
+        switch_id: str,
+        port_number: int,
+    ) -> None:
+        """注册 Switch 端口资源
+
+        Args:
+            switch_id: Switch ID
+            port_number: 端口号
+        """
+        port_id = f"{switch_id}:port_{port_number}"
+        key = (port_id, ResourceType.SWITCH_PORT)
+
+        if key not in self._resources:
+            self._resources[key] = ResourceState(
+                resource_type=ResourceType.SWITCH_PORT,
+                chip_id=port_id,  # 使用 port_id 作为 chip_id 字段
+            )
+
+    def register_switch_ports(
+        self,
+        switch_id: str,
+        port_count: int,
+    ) -> None:
+        """批量注册 Switch 所有端口
+
+        Args:
+            switch_id: Switch ID
+            port_count: 端口数量
+        """
+        for port_num in range(port_count):
+            self.register_switch_port(switch_id, port_num)
+
+    def request_switch_port(
+        self,
+        switch_id: str,
+        port_number: int,
+        requested_start: float,
+        duration: float,
+    ) -> tuple[float, float]:
+        """请求 Switch 端口资源
+
+        端口资源的排队通过 idle_at 机制自然实现：
+        - 如果端口空闲（idle_at <= requested_start），立即开始
+        - 如果端口忙碌（idle_at > requested_start），排队等待
+
+        Args:
+            switch_id: Switch ID
+            port_number: 端口号
+            requested_start: 请求的开始时间
+            duration: 占用时长
+
+        Returns:
+            (actual_start, actual_end): 实际的开始和结束时间
+        """
+        port_id = f"{switch_id}:port_{port_number}"
+        key = (port_id, ResourceType.SWITCH_PORT)
+
+        # 如果端口未注册，自动注册
+        if key not in self._resources:
+            self.register_switch_port(switch_id, port_number)
+
+        resource = self._resources[key]
+
+        # 计算实际开始时间（排队自然发生）
+        actual_start = max(requested_start, resource.idle_at)
+        actual_end = actual_start + duration
+
+        # 记录排队延迟
+        queue_delay = actual_start - requested_start
+        if queue_delay > 0:
+            resource.total_idle_time += queue_delay
+            # 记录为气泡
+            self._bubbles.append(BubbleRecord(
+                chip_id=port_id,
+                start=requested_start,
+                duration=queue_delay,
+                reason="switch_port_busy",
+            ))
+
+        # 更新资源状态
+        resource.idle_at = actual_end
+        resource.total_busy_time += duration
+        resource.task_count += 1
+
+        return actual_start, actual_end
+
+    def get_switch_port_idle_time(
+        self,
+        switch_id: str,
+        port_number: int,
+    ) -> float:
+        """获取 Switch 端口的空闲时间点
+
+        Args:
+            switch_id: Switch ID
+            port_number: 端口号
+
+        Returns:
+            端口下次空闲的时间
+        """
+        port_id = f"{switch_id}:port_{port_number}"
+        key = (port_id, ResourceType.SWITCH_PORT)
+        resource = self._resources.get(key)
+        return resource.idle_at if resource else 0.0
+
+    def get_switch_port_stats(self, switch_id: str) -> dict[int, dict]:
+        """获取 Switch 所有端口的统计信息
+
+        Args:
+            switch_id: Switch ID
+
+        Returns:
+            端口号 → 统计信息的字典
+        """
+        stats = {}
+        prefix = f"{switch_id}:port_"
+
+        for key, resource in self._resources.items():
+            port_id, res_type = key
+            if res_type == ResourceType.SWITCH_PORT and port_id.startswith(prefix):
+                port_num = int(port_id.split("_")[-1])
+                total_time = resource.total_busy_time + resource.total_idle_time
+                stats[port_num] = {
+                    "total_busy_time": resource.total_busy_time,
+                    "total_idle_time": resource.total_idle_time,
+                    "task_count": resource.task_count,
+                    "utilization": (
+                        resource.total_busy_time / total_time
+                        if total_time > 0 else 0.0
+                    ),
+                }
+
+        return stats
+
+    def get_all_switch_port_stats(self) -> dict[str, dict[int, dict]]:
+        """获取所有 Switch 端口的统计信息
+
+        Returns:
+            Switch ID → (端口号 → 统计信息) 的嵌套字典
+        """
+        # 收集所有 Switch ID
+        switch_ids = set()
+        for key, _ in self._resources.items():
+            port_id, res_type = key
+            if res_type == ResourceType.SWITCH_PORT:
+                # port_id 格式: "switch_id:port_N"
+                parts = port_id.rsplit(":port_", 1)
+                if len(parts) == 2:
+                    switch_ids.add(parts[0])
+
+        return {
+            switch_id: self.get_switch_port_stats(switch_id)
+            for switch_id in switch_ids
+        }
