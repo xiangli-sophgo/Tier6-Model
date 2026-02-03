@@ -1,121 +1,117 @@
 /**
  * 雷达图 - 六维评分对比
+ * 使用统一的评分计算器和主题配置
  */
 
 import React, { useMemo } from 'react'
 import ReactECharts from 'echarts-for-react'
 import type { EChartsOption } from 'echarts'
 import { PlanAnalysisResult } from '../../../../utils/llmDeployment/types'
+import {
+  calculateScores,
+  scoresToRadarData,
+  SCORE_RULES,
+  ScoreInput,
+} from '../../../../utils/llmDeployment/scoreCalculator'
+import {
+  CHART_SERIES_COLORS,
+  RADAR_DIMENSIONS,
+  getScoreColor,
+} from './chartTheme'
 
 interface ScoreRadarChartProps {
   result: PlanAnalysisResult
   comparisonResults?: PlanAnalysisResult[]
   height?: number
+  /** 芯片显存容量 (GB)，用于显存评分计算 */
+  chipMemoryGB?: number
 }
 
-const COLORS = ['#5E6AD2', '#52c41a', '#faad14', '#722ed1', '#eb2f96']
-
-// 评分规则说明
-const SCORING_RULES: Record<string, { name: string; rule: string; tip: string }> = {
-  '延迟': {
-    name: '延迟评分',
-    rule: 'TTFT < 100ms → 100分',
-    tip: 'TTFT 越低越好，>1000ms 则 0 分',
-  },
-  '吞吐': {
-    name: '吞吐评分',
-    rule: 'MFU ≥ 50% → 100分',
-    tip: 'MFU 越高越好',
-  },
-  '效率': {
-    name: '效率评分',
-    rule: '(计算 + 显存利用率) / 2',
-    tip: '综合资源利用效率',
-  },
-  '均衡': {
-    name: '均衡评分',
-    rule: '负载均衡度 × 100',
-    tip: 'TP/PP/EP 均匀切分时得分高',
-  },
-  '显存': {
-    name: '显存评分',
-    rule: '60-80% 利用率 → 100分',
-    tip: '过高或过低都会扣分',
-  },
-  '通信': {
-    name: '通信评分',
-    rule: '(1 - 通信占比) × 100',
-    tip: '通信开销越小越好',
-  },
+/** 从 PlanAnalysisResult 提取评分输入 */
+function extractScoreInput(result: PlanAnalysisResult, chipMemoryGB: number): ScoreInput {
+  return {
+    ttft: result.latency.prefill_total_latency_ms,
+    tpot: result.latency.decode_per_token_latency_ms,
+    tps: result.throughput.tokens_per_second,
+    tpsPerChip: result.throughput.tps_per_chip || result.throughput.tokens_per_second / (result.plan.total_chips || 1),
+    mfu: result.throughput.model_flops_utilization,
+    mbu: result.throughput.memory_bandwidth_utilization,
+    memoryUsedGB: result.memory.total_per_chip_gb,
+    memoryCapacityGB: chipMemoryGB,
+    prefillCommLatency: result.latency.prefill_comm_latency_ms,
+    prefillComputeLatency: result.latency.prefill_compute_latency_ms,
+    decodeCommLatency: result.latency.decode_comm_latency_ms,
+    decodeComputeLatency: result.latency.decode_compute_latency_ms,
+  }
 }
 
 export const ScoreRadarChart: React.FC<ScoreRadarChartProps> = ({
   result,
   comparisonResults = [],
   height = 280,
+  chipMemoryGB = 80,
 }) => {
   const option = useMemo((): EChartsOption => {
     const allResults = [result, ...comparisonResults.slice(0, 4)]
 
-    // 计算显存利用率评分 (60-80% 最优，超出则降分)
-    const calcMemoryScore = (r: PlanAnalysisResult): number => {
-      const utilization = r.memory.total_per_chip_gb / 80 // 假设 80GB 显存
-      if (utilization <= 0.6) return utilization / 0.6 * 80  // 低于60%，线性增长到80分
-      if (utilization <= 0.8) return 80 + (utilization - 0.6) / 0.2 * 20  // 60-80%，增长到100分
-      if (utilization <= 0.95) return 100 - (utilization - 0.8) / 0.15 * 30  // 80-95%，降到70分
-      return Math.max(0, 70 - (utilization - 0.95) / 0.05 * 70)  // >95%，急剧下降
-    }
+    const seriesData = allResults.map((r, index) => {
+      // 使用统一的评分计算器
+      const scoreInput = extractScoreInput(r, chipMemoryGB)
+      const scores = calculateScores(scoreInput)
+      const radarData = scoresToRadarData(scores)
 
-    // 计算通信效率评分 (通信占比越低越好)
-    const calcCommScore = (r: PlanAnalysisResult): number => {
-      const commRatio = r.latency.prefill_comm_latency_ms /
-        (r.latency.prefill_compute_latency_ms + r.latency.prefill_comm_latency_ms + 0.01)
-      return Math.max(0, Math.min(100, (1 - commRatio) * 100))
-    }
-
-    const seriesData = allResults.map((r, index) => ({
-      name: r.plan.plan_id,
-      value: [
-        r.score.latency_score,
-        r.score.throughput_score,
-        r.score.efficiency_score,
-        r.score.balance_score,
-        calcMemoryScore(r),
-        calcCommScore(r),
-      ],
-      symbol: 'circle',
-      symbolSize: index === 0 ? 6 : 4,
-      lineStyle: {
-        width: index === 0 ? 2.5 : 1,
-      },
-      areaStyle: {
-        opacity: index === 0 ? 0.25 : 0.08,
-      },
-    }))
+      return {
+        name: r.plan.plan_id,
+        value: radarData,
+        symbol: 'circle',
+        symbolSize: index === 0 ? 6 : 4,
+        lineStyle: {
+          width: index === 0 ? 2.5 : 1.5,
+        },
+        areaStyle: {
+          opacity: index === 0 ? 0.25 : 0.08,
+        },
+      }
+    })
 
     return {
       tooltip: {
         trigger: 'item',
+        backgroundColor: 'rgba(0, 0, 0, 0.85)',
+        borderColor: 'transparent',
+        padding: [12, 16],
+        textStyle: {
+          color: '#fff',
+          fontSize: 12,
+        },
         formatter: (params: unknown) => {
           const p = params as { name: string; value: number[] }
-          const dims = ['延迟', '吞吐', '效率', '均衡', '显存', '通信']
+          const dims = RADAR_DIMENSIONS.map(d => d.name)
+
           return `
-            <div style="font-weight: bold; margin-bottom: 8px; font-size: 13px; border-bottom: 1px solid #e8e8e8; padding-bottom: 6px;">${p.name}</div>
+            <div style="font-weight: bold; margin-bottom: 10px; font-size: 13px; border-bottom: 1px solid rgba(255,255,255,0.2); padding-bottom: 8px;">
+              ${p.name}
+            </div>
             ${dims.map((dim, i) => {
-              const rule = SCORING_RULES[dim]
+              const ruleKey = `${RADAR_DIMENSIONS[i].key}Score` as keyof typeof SCORE_RULES
+              const rule = SCORE_RULES[ruleKey]
               const score = p.value[i]?.toFixed(1) ?? '-'
-              const scoreColor = Number(score) >= 80 ? '#52c41a' : Number(score) >= 60 ? '#faad14' : '#ff4d4f'
+              const scoreColor = getScoreColor(Number(score))
               return `
-                <div style="margin: 6px 0; padding: 4px 0; border-bottom: 1px solid #f5f5f5;">
+                <div style="margin: 8px 0; padding: 6px 0; border-bottom: 1px solid rgba(255,255,255,0.1);">
                   <div style="display: flex; justify-content: space-between; align-items: center;">
                     <span style="font-weight: 500;">${dim}</span>
                     <span style="font-weight: 600; color: ${scoreColor};">${score}分</span>
                   </div>
-                  <div style="font-size: 11px; color: #999; margin-top: 2px;">${rule?.rule || ''}</div>
+                  <div style="font-size: 10px; color: rgba(255,255,255,0.6); margin-top: 4px;">
+                    ${rule?.rule || ''}
+                  </div>
                 </div>
               `
             }).join('')}
-            <div style="font-size: 10px; color: #bbb; margin-top: 6px; text-align: center;">点击维度查看详细规则</div>
+            <div style="font-size: 10px; color: rgba(255,255,255,0.5); margin-top: 8px; text-align: center;">
+              悬停维度查看详细规则
+            </div>
           `
         },
       },
@@ -124,17 +120,13 @@ export const ScoreRadarChart: React.FC<ScoreRadarChartProps> = ({
         bottom: 0,
         itemWidth: 12,
         itemHeight: 8,
-        textStyle: { fontSize: 10 },
+        textStyle: { fontSize: 10, color: '#666' },
       },
       radar: {
-        indicator: [
-          { name: '延迟', max: 100 },
-          { name: '吞吐', max: 100 },
-          { name: '效率', max: 100 },
-          { name: '均衡', max: 100 },
-          { name: '显存', max: 100 },
-          { name: '通信', max: 100 },
-        ],
+        indicator: RADAR_DIMENSIONS.map(d => ({
+          name: d.name,
+          max: 100,
+        })),
         shape: 'polygon',
         radius: '60%',
         center: ['50%', allResults.length > 1 ? '45%' : '50%'],
@@ -144,8 +136,8 @@ export const ScoreRadarChart: React.FC<ScoreRadarChartProps> = ({
           fontSize: 11,
           formatter: (name?: string) => {
             if (!name) return ''
-            const rule = SCORING_RULES[name]
-            return rule ? `{name|${name}}\n{tip|${rule.tip}}` : name
+            const dim = RADAR_DIMENSIONS.find(d => d.name === name)
+            return dim ? `{name|${name}}\n{tip|${dim.tip}}` : name
           },
           rich: {
             name: {
@@ -179,9 +171,9 @@ export const ScoreRadarChart: React.FC<ScoreRadarChartProps> = ({
           data: seriesData,
         },
       ],
-      color: COLORS,
+      color: [...CHART_SERIES_COLORS],
     }
-  }, [result, comparisonResults])
+  }, [result, comparisonResults, chipMemoryGB])
 
   if (!result.is_feasible) {
     return (

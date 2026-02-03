@@ -930,7 +930,7 @@ def _transform_to_ds_tpu_format(
                 tps=tps,
                 bytes_per_param=2  # FP16/BF16
             )
-            logger.info(f"成本评估完成: 总成本=${cost_result.get('total_cost', 0):,.2f}, 单位成本=${cost_result.get('cost_per_million_tokens', 0):.4f}/M tokens")
+            logger.info(f"成本评估完成: 总成本=${cost_result.get('total_cost', 0):,.2f}")
         else:
             logger.warning(f"跳过成本计算: num_parameters={num_parameters}, avg_tpot={avg_tpot}, tps={tps}")
     except Exception as e:

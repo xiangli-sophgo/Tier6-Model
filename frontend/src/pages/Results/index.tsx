@@ -68,6 +68,7 @@ import { listExperiments, deleteExperiment, deleteExperimentsBatch, deleteResult
 import { AnalysisResultDisplay } from '@/components/ConfigPanel/DeploymentAnalysis/AnalysisResultDisplay'
 import { ChartsPanel } from '@/components/ConfigPanel/DeploymentAnalysis/charts'
 import { PlanAnalysisResult, HardwareConfig, LLMModelConfig, InferenceConfig } from '@/utils/llmDeployment/types'
+import { calculateScores, extractScoreInputFromPlan } from '@/utils/llmDeployment/scoreCalculator'
 import TaskTable from './components/TaskTable'
 import TaskDetailPanel from './components/TaskDetailPanel'
 import { useWorkbench } from '@/contexts/WorkbenchContext'
@@ -393,27 +394,32 @@ export const Results: React.FC = () => {
       const prefillStats = stats.prefill || {}
       const decodeStats = stats.decode || {}
 
-      // 计算各维度评分（基于性能指标，0-100分）
-      // 延迟评分：TTFT < 50ms 满分，> 500ms 0分
-      const latencyScore = Math.max(0, Math.min(100, 100 - (plan.ttft - 50) / 4.5))
-      // 吞吐评分：基于 MFU，MFU > 0.5 满分
-      const throughputScore = Math.min(100, plan.mfu * 200)
-      // 效率评分：综合 MFU 和 MBU
-      const efficiencyScore = Math.min(100, (plan.mfu + plan.mbu) * 100)
-      // 平衡评分：MFU 和 MBU 越接近越好
-      const balanceScore = Math.max(0, 100 - Math.abs(plan.mfu - plan.mbu) * 200)
-
       // 估算显存分解（如果后端没有提供详细数据）
       const totalMemoryGB = plan.dram_occupy ? plan.dram_occupy / (1024 * 1024 * 1024) : 0
-      // 粗略估算：参数占 60%，KV Cache 占 30%，激活占 10%
-      const paramsMemoryGB = totalMemoryGB * 0.6
-      const kvCacheMemoryGB = totalMemoryGB * 0.3
-      const activationMemoryGB = totalMemoryGB * 0.1
+      // 如果后端提供了详细的显存分解，优先使用
+      const memoryBreakdown = stats.memory_breakdown as Record<string, number> | undefined
+      const paramsMemoryGB = memoryBreakdown?.model ?? totalMemoryGB * 0.6
+      const kvCacheMemoryGB = memoryBreakdown?.kv_cache ?? totalMemoryGB * 0.3
+      const activationMemoryGB = memoryBreakdown?.activation ?? totalMemoryGB * 0.1
 
       // 从 stats 提取通信数据
       const commTime = decodeStats.commTime || 0
       const computeTime = decodeStats.computeTime || 0
       const totalTime = decodeStats.totalTime || (commTime + computeTime) || 1
+
+      // 使用统一评分计算器
+      const scoreInput = extractScoreInputFromPlan({
+        ttft: plan.ttft,
+        tpot: plan.tpot,
+        tps: plan.tps,
+        tps_per_chip: plan.tps_per_chip,
+        mfu: plan.mfu,
+        mbu: plan.mbu,
+        dram_occupy: plan.dram_occupy,
+        memory_capacity_gb: 80, // 默认 80GB，后续可从配置中获取
+        stats: plan.stats,
+      })
+      const calculatedScores = calculateScores(scoreInput)
 
       return {
         is_feasible: plan.is_feasible,
@@ -429,10 +435,10 @@ export const Results: React.FC = () => {
           bottleneck_type: (plan.mfu > plan.mbu ? 'memory' : 'compute') as 'memory' | 'compute' | 'balanced',
           prefill_compute_latency_ms: prefillStats.computeTime ? prefillStats.computeTime / 1000 : 0,
           prefill_memory_latency_ms: prefillStats.memoryTime ? prefillStats.memoryTime / 1000 : 0,
-          prefill_communication_latency_ms: prefillStats.commTime ? prefillStats.commTime / 1000 : 0,
+          prefill_comm_latency_ms: prefillStats.commTime ? prefillStats.commTime / 1000 : 0,
           decode_compute_latency_ms: decodeStats.computeTime ? decodeStats.computeTime / 1000 : 0,
           decode_memory_latency_ms: decodeStats.memoryTime ? decodeStats.memoryTime / 1000 : 0,
-          decode_communication_latency_ms: decodeStats.commTime ? decodeStats.commTime / 1000 : 0,
+          decode_comm_latency_ms: decodeStats.commTime ? decodeStats.commTime / 1000 : 0,
         },
         throughput: {
           tokens_per_second: plan.tps,
@@ -443,10 +449,13 @@ export const Results: React.FC = () => {
         },
         memory: {
           total_per_chip_gb: totalMemoryGB,
-          params_memory_gb: paramsMemoryGB,
+          model_memory_gb: paramsMemoryGB,
           kv_cache_memory_gb: kvCacheMemoryGB,
           activation_memory_gb: activationMemoryGB,
+          overhead_gb: Math.max(0, totalMemoryGB - paramsMemoryGB - kvCacheMemoryGB - activationMemoryGB),
           is_memory_sufficient: true,
+          // 标记数据来源
+          is_estimated: !memoryBreakdown,
         },
         cost: plan.cost || undefined,
         communication: {
@@ -459,11 +468,11 @@ export const Results: React.FC = () => {
           bubble_ratio: stats.bubbleRatio || 0,
         },
         score: {
-          overall_score: plan.score || (latencyScore + throughputScore + efficiencyScore + balanceScore) / 4,
-          latency_score: latencyScore,
-          throughput_score: throughputScore,
-          efficiency_score: efficiencyScore,
-          balance_score: balanceScore,
+          overall_score: plan.score || calculatedScores.overallScore,
+          latency_score: calculatedScores.latencyScore,
+          throughput_score: calculatedScores.throughputScore,
+          efficiency_score: calculatedScores.efficiencyScore,
+          balance_score: calculatedScores.balanceScore,
         },
         suggestions: [],
       } as unknown as PlanAnalysisResult
@@ -504,42 +513,62 @@ export const Results: React.FC = () => {
       const inferenceConfig = selectedTask.config_snapshot?.inference as Record<string, unknown> || {}
       const topology = selectedTask.config_snapshot?.topology as Record<string, unknown> || {}
 
-      // 从拓扑中提取硬件配置（简化版）
+      // 从拓扑中提取硬件配置（新格式 v2.1.0+）
       const hardwareConfig: HardwareConfig | undefined = (() => {
         const pods = (topology.pods as any[]) || []
         if (pods.length > 0 && pods[0].racks && pods[0].racks[0].boards && pods[0].racks[0].boards[0].chips) {
           const board = pods[0].racks[0].boards[0]
           const chip = board.chips[0]
-          // 从拓扑中计算每个 board 的芯片数量
-          const chipsPerBoard = board.chips ? board.chips.length : 8
-          return {
-            chip: {
+
+          // 构建芯片字典（新格式）
+          const chips: Record<string, any> = {
+            [chip.name]: {
               name: chip.name,
-              num_cores: (chip as any).num_cores,
-              compute_tflops_fp8: (chip as any).compute_tflops_fp8,
-              compute_tflops_bf16: (chip as any).compute_tflops_bf16,
-              memory_capacity_gb: (chip as any).memory_capacity_gb,
-              memory_bandwidth_gbps: chip.memory_bandwidth_gbps,
-              memory_bandwidth_utilization: chip.memory_bandwidth_utilization,
-              lmem_capacity_mb: (chip as any).lmem_capacity_mb,
-              lmem_bandwidth_gbps: (chip as any).lmem_bandwidth_gbps,
+              num_cores: (chip as any).num_cores || 256,
+              compute_tflops_fp8: (chip as any).compute_tflops_fp8 || 1600,
+              compute_tflops_bf16: (chip as any).compute_tflops_bf16 || 800,
+              memory_capacity_gb: (chip as any).memory_capacity_gb || 64,
+              memory_bandwidth_gbps: chip.memory_bandwidth_gbps || 1200,
+              memory_bandwidth_utilization: chip.memory_bandwidth_utilization || 0.85,
+              lmem_capacity_mb: (chip as any).lmem_capacity_mb || 128,
+              lmem_bandwidth_gbps: (chip as any).lmem_bandwidth_gbps || 12000,
+              cube_m: (chip as any).cube_m || 16,
+              cube_k: (chip as any).cube_k || 32,
+              cube_n: (chip as any).cube_n || 8,
+              sram_size_kb: (chip as any).sram_size_kb || 2048,
+              sram_utilization: (chip as any).sram_utilization || 0.45,
+              lane_num: (chip as any).lane_num || 16,
+              align_bytes: (chip as any).align_bytes || 32,
+              compute_dma_overlap_rate: (chip as any).compute_dma_overlap_rate || 0.8,
+            }
+          }
+
+          // 构建互联配置
+          const interconnect = {
+            c2c: {
+              bandwidth_gbps: 448,
+              latency_us: 0.2
             },
-            board: {
-              chips_per_board: chipsPerBoard,
-              b2b_bandwidth_gbps: 900,
-              b2b_latency_us: 1,
+            b2b: {
+              bandwidth_gbps: 900,
+              latency_us: 1
             },
-            rack: {
-              boards_per_rack: 4,
-              r2r_bandwidth_gbps: 400,
-              r2r_latency_us: 2,
+            r2r: {
+              bandwidth_gbps: 400,
+              latency_us: 2
             },
-            pod: {
-              racks_per_pod: 1,
-              p2p_bandwidth_gbps: 400,
-              p2p_latency_us: 2,
-            },
-          } as unknown as HardwareConfig
+            p2p: {
+              bandwidth_gbps: 400,
+              latency_us: 2
+            }
+          }
+
+          return {
+            hardware_params: {
+              chips,
+              interconnect
+            }
+          } as HardwareConfig
         }
         return undefined
       })()

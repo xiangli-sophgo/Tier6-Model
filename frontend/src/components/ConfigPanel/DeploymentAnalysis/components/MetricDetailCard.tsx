@@ -11,8 +11,9 @@ import {
   CalculationSteps,
 } from './FormulaDisplay'
 import { PlanAnalysisResult } from '../../../../utils/llmDeployment/types'
-import { detailWrapperStyle, sectionTitleStyle } from '../../../ui/common-styles'
+import { sectionTitleStyle } from '../../../ui/common-styles'
 import { COLORS } from '../../../../utils/design-tokens'
+import { BaseCard } from '../../../common/BaseCard'
 
 export type MetricType = 'ttft' | 'tpot' | 'throughput' | 'tps_batch' | 'tps_chip' | 'mfu' | 'mbu' | 'cost' | 'percentiles' | 'bottleneck' | 'e2e' | 'chips' | 'memory'
 
@@ -43,18 +44,18 @@ export const MetricDetailCard: React.FC<MetricDetailCardProps> = ({ metric, resu
   // 如果数据不完整，显示简化版本
   if (!hasDetailedLatency && !hasDetailedThroughput && !hasDetailedMemory) {
     return (
-      <div style={detailWrapperStyle}>
+      <BaseCard titleless glassmorphism>
         <div style={{ fontSize: 14, color: '#8c8c8c', textAlign: 'center', padding: 24 }}>
           详细分析数据暂不可用
         </div>
-      </div>
+      </BaseCard>
     )
   }
 
   switch (metric) {
     case 'ttft':
       return (
-        <div style={detailWrapperStyle}>
+        <BaseCard titleless glassmorphism>
           <div style={{ fontSize: 18, fontWeight: 600, color: '#1890ff', marginBottom: 12 }}>
             First Token Latency (FTL)
           </div>
@@ -149,12 +150,12 @@ export const MetricDetailCard: React.FC<MetricDetailCardProps> = ({ metric, resu
               },
             ]}
           />
-        </div>
+        </BaseCard>
       )
 
     case 'tpot':
       return (
-        <div style={detailWrapperStyle}>
+        <BaseCard titleless glassmorphism>
           <div style={{ fontSize: 18, fontWeight: 600, color: '#1890ff', marginBottom: 12 }}>
             Time Per Output Token (TPOT)
           </div>
@@ -259,12 +260,12 @@ export const MetricDetailCard: React.FC<MetricDetailCardProps> = ({ metric, resu
               },
             ]}
           />
-        </div>
+        </BaseCard>
       )
 
     case 'throughput':
       return (
-        <div style={detailWrapperStyle}>
+        <BaseCard titleless glassmorphism>
           <div style={{ fontSize: 18, fontWeight: 600, color: '#52c41a', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
             <span>Total TPS</span>
             <span style={{ fontSize: 12, fontWeight: 400, color: '#8c8c8c' }}>集群总吞吐 · 系统整体处理能力</span>
@@ -335,12 +336,12 @@ export const MetricDetailCard: React.FC<MetricDetailCardProps> = ({ metric, resu
               },
             ]}
           />
-        </div>
+        </BaseCard>
       )
 
     case 'tps_batch':
       return (
-        <div style={detailWrapperStyle}>
+        <BaseCard titleless glassmorphism>
           <div style={{ fontSize: 18, fontWeight: 600, color: '#1890ff', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
             <span>TPS per Batch</span>
             <span style={{ fontSize: 12, fontWeight: 400, color: '#8c8c8c' }}>用户体验指标 · SLO约束 ≥10</span>
@@ -415,12 +416,12 @@ export const MetricDetailCard: React.FC<MetricDetailCardProps> = ({ metric, resu
             TPS/Batch = <strong>{throughput.tps_per_batch.toFixed(1)}</strong> tok/s ·
             要求 ≥ 10 tok/s
           </div>
-        </div>
+        </BaseCard>
       )
 
     case 'tps_chip':
       return (
-        <div style={detailWrapperStyle}>
+        <BaseCard titleless glassmorphism>
           <div style={{ fontSize: 18, fontWeight: 600, color: '#fa8c16', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
             <span>TPS per Chip</span>
             <span style={{ fontSize: 12, fontWeight: 400, color: '#8c8c8c' }}>成本效益指标 · 优化目标</span>
@@ -498,12 +499,12 @@ export const MetricDetailCard: React.FC<MetricDetailCardProps> = ({ metric, resu
           }}>
             💡 优化目标: 在满足 TPS/Batch ≥ 10 的前提下，最大化 TPS/Chip
           </div>
-        </div>
+        </BaseCard>
       )
 
     case 'mfu':
       return (
-        <div style={detailWrapperStyle}>
+        <BaseCard titleless glassmorphism>
           <div style={{ fontSize: 18, fontWeight: 600, color: '#52c41a', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
             <span>Model FLOPs Utilization (MFU)</span>
             <span style={{ fontSize: 12, fontWeight: 400, color: '#8c8c8c' }}>算力利用率 · Prefill效率指标</span>
@@ -578,13 +579,13 @@ export const MetricDetailCard: React.FC<MetricDetailCardProps> = ({ metric, resu
               },
             ]}
           />
-        </div>
+        </BaseCard>
       )
 
     case 'mbu':
       const achievedBW = (memory.model_memory_gb + memory.kv_cache_memory_gb * 0.5) / (latency.decode_per_token_latency_ms / 1000)
       return (
-        <div style={detailWrapperStyle}>
+        <BaseCard titleless glassmorphism>
           <div style={{ fontSize: 18, fontWeight: 600, color: '#52c41a', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
             <span>Memory Bandwidth Utilization (MBU)</span>
             <span style={{ fontSize: 12, fontWeight: 400, color: '#8c8c8c' }}>带宽利用率 · Decode效率指标</span>
@@ -659,7 +660,7 @@ export const MetricDetailCard: React.FC<MetricDetailCardProps> = ({ metric, resu
               },
             ]}
           />
-        </div>
+        </BaseCard>
       )
 
     case 'cost':
@@ -674,7 +675,7 @@ export const MetricDetailCard: React.FC<MetricDetailCardProps> = ({ metric, resu
       }
 
       return (
-        <div style={detailWrapperStyle}>
+        <BaseCard titleless glassmorphism>
           <div style={{ fontSize: 18, fontWeight: 600, color: '#fa8c16', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
             <span>Cost Analysis (成本分析)</span>
             <span style={{ fontSize: 12, fontWeight: 400, color: '#8c8c8c' }}>集群采购成本 · 互联成本分层模型</span>
@@ -715,13 +716,6 @@ export const MetricDetailCard: React.FC<MetricDetailCardProps> = ({ metric, resu
                 {formatCost(costData.total_cost)}
               </div>
             </div>
-            <div style={{ padding: '12px', background: '#f6ffed', borderRadius: 8, textAlign: 'center' }}>
-              <div style={{ fontSize: 11, color: '#389e0d', marginBottom: 4 }}>单位成本</div>
-              <div style={{ fontSize: 18, fontWeight: 700, color: '#52c41a' }}>
-                ${costData.cost_per_million_tokens.toFixed(4)}
-              </div>
-              <div style={{ fontSize: 10, color: '#389e0d' }}>/M tokens</div>
-            </div>
           </div>
 
           <div style={{ marginBottom: 16, padding: '10px 12px', background: '#fafafa', borderRadius: 8, fontSize: 11, color: '#595959' }}>
@@ -741,14 +735,14 @@ export const MetricDetailCard: React.FC<MetricDetailCardProps> = ({ metric, resu
               {plan.total_chips >= 64 && '⚠️ 大规模集群，互联成本显著，建议评估 ROI'}
             </div>
           </div>
-        </div>
+        </BaseCard>
       )
 
     case 'percentiles':
       const ttftP = latency.ttft_percentiles
       const tpotP = latency.tpot_percentiles
       return (
-        <div style={detailWrapperStyle}>
+        <BaseCard titleless glassmorphism>
           <div style={{ fontSize: 18, fontWeight: 600, color: '#1890ff', marginBottom: 12 }}>
             Latency Percentiles (延迟分位数)
           </div>
@@ -859,7 +853,7 @@ export const MetricDetailCard: React.FC<MetricDetailCardProps> = ({ metric, resu
             }}>
               📊 MLPerf SLO标准: FTL P99 ≤ 450ms, TPOT P99 ≤ 40ms
             </div>
-        </div>
+        </BaseCard>
       )
 
     case 'bottleneck':
@@ -892,7 +886,7 @@ export const MetricDetailCard: React.FC<MetricDetailCardProps> = ({ metric, resu
       const info = bottleneckInfo[latency.bottleneck_type] || { name: '未知', color: '#666', desc: '', solution: '' }
 
       return (
-        <div style={{ ...detailWrapperStyle, background: '#fffbe6' }}>
+        <BaseCard titleless glassmorphism style={{ background: '#fffbe6' }}>
           <div style={{ fontSize: 15, fontWeight: 600, color: '#fa8c16', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
             <span>⚠️ 性能瓶颈分析</span>
             <span style={{ fontSize: 12, fontWeight: 400, color: '#8c8c8c' }}>{info.name}</span>
@@ -929,12 +923,12 @@ export const MetricDetailCard: React.FC<MetricDetailCardProps> = ({ metric, resu
                 { label: '流水线气泡比', value: (latency.pipeline_bubble_ratio * 100).toFixed(1), unit: '%' },
               ]}
             />
-        </div>
+        </BaseCard>
       )
 
     case 'e2e':
       return (
-        <div style={detailWrapperStyle}>
+        <BaseCard titleless glassmorphism>
           <div style={{ fontSize: 18, fontWeight: 600, color: '#1890ff', marginBottom: 12 }}>
             End-to-End Latency (E2E)
           </div>
@@ -1008,13 +1002,13 @@ export const MetricDetailCard: React.FC<MetricDetailCardProps> = ({ metric, resu
               },
             ]}
           />
-        </div>
+        </BaseCard>
       )
 
     case 'chips':
       const { dp, tp, pp, ep } = plan.parallelism
       return (
-        <div style={detailWrapperStyle}>
+        <BaseCard titleless glassmorphism>
           <div style={{ fontSize: 15, fontWeight: 600, color: '#fa8c16', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
             <span>Chip Configuration (芯片配置)</span>
             <span style={{ fontSize: 12, fontWeight: 400, color: '#8c8c8c' }}>资源利用 · 并行策略分解</span>
@@ -1080,12 +1074,12 @@ export const MetricDetailCard: React.FC<MetricDetailCardProps> = ({ metric, resu
                 </div>
               ))}
             </div>
-        </div>
+        </BaseCard>
       )
 
     case 'memory':
       return (
-        <div style={detailWrapperStyle}>
+        <BaseCard titleless glassmorphism>
           <div style={{ fontSize: 18, fontWeight: 600, color: '#fa8c16', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
             <span>Memory Usage (显存占用)</span>
             <span style={{ fontSize: 12, fontWeight: 400, color: '#8c8c8c' }}>资源约束 · 可行性关键指标</span>
@@ -1231,7 +1225,7 @@ export const MetricDetailCard: React.FC<MetricDetailCardProps> = ({ metric, resu
             总占用 <strong>{memory.total_per_chip_gb.toFixed(1)} GB</strong> / 80 GB ·
             利用率 <strong>{(memory.memory_utilization * 100).toFixed(1)}%</strong>
           </div>
-        </div>
+        </BaseCard>
       )
 
     default:

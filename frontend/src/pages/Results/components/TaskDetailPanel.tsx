@@ -325,6 +325,7 @@ export const TaskDetailPanel: React.FC<TaskDetailPanelProps> = ({ task, onAnalyz
         defaultExpanded={false}
         collapsibleCount={4}
         glassmorphism={true}
+        gradient={true}
       >
         <InfoGrid
           items={[
@@ -341,9 +342,10 @@ export const TaskDetailPanel: React.FC<TaskDetailPanelProps> = ({ task, onAnalyz
         <BaseCard
           title="配置参数"
           collapsible={true}
-          defaultExpanded={true}
+          defaultExpanded={false}
           collapsibleCount={configItemCount + (result?.parallelism ? 6 : 0)}
           glassmorphism={true}
+          gradient={true}
         >
           <div className="space-y-4">
             {/* 并行策略 */}
@@ -476,6 +478,7 @@ export const TaskDetailPanel: React.FC<TaskDetailPanelProps> = ({ task, onAnalyz
           defaultExpanded={false}
           collapsibleCount={11 + (result.cost ? 5 : 0)}
           glassmorphism={true}
+          gradient={true}
         >
           <InfoGrid
             items={[
@@ -492,7 +495,6 @@ export const TaskDetailPanel: React.FC<TaskDetailPanelProps> = ({ task, onAnalyz
               { label: '计算量 (TFLOPs)', value: formatNumber(result.flops / 1e12, 2) },
               ...(result.cost ? [
                 { label: '总成本 ($)', value: formatNumber(result.cost.total_cost, 2) },
-                { label: '单位成本 ($/M tokens)', value: formatNumber(result.cost.cost_per_million_tokens, 4) },
                 { label: '服务器成本 ($)', value: formatNumber(result.cost.server_cost, 2) },
                 { label: '互联成本 ($)', value: formatNumber(result.cost.interconnect_cost, 2) },
                 { label: '单芯成本 ($)', value: formatNumber(result.cost.cost_per_chip, 2) },

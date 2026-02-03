@@ -474,8 +474,6 @@ export interface CostAnalysis {
   lane_cost: number;
   /** 单芯片摊派成本 ($) */
   cost_per_chip: number;
-  /** 每百万 tokens 成本 ($/M tokens) */
-  cost_per_million_tokens: number;
   /** 模型大小 (GB) */
   model_size_gb: number;
 }

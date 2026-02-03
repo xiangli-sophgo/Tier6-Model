@@ -255,14 +255,7 @@ def evaluate_deployment_cost(
         tpot_ms=tpot_ms,
     )
 
-    # 计算单位成本
-    cost_per_m_tokens = evaluator.calculate_cost_per_million_tokens(
-        total_cost=cost_result["total_cost"],
-        tps=tps,
-    )
-
     return {
         **cost_result,
-        "cost_per_million_tokens": cost_per_m_tokens,
         "model_size_gb": model_size_gb,
     }

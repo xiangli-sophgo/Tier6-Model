@@ -23,7 +23,7 @@ interface RooflineChartProps {
 
 const COLORS = ['#5E6AD2', '#52c41a', '#faad14', '#722ed1']
 
-export const RooflineChart: React.FC<RooflineChartProps> = ({
+export const RooflineChart: React.FC<RooflineChartProps> = React.memo(({
   result,
   hardware,
   model: _model,
@@ -32,7 +32,7 @@ export const RooflineChart: React.FC<RooflineChartProps> = ({
   simulationStats,
 }) => {
   const option: EChartsOption = useMemo(() => {
-    // 安全地获取第一个芯片配置
+    // 安全地获取第一个芯片配置（仅支持新格式）
     if (!hardware?.hardware_params?.chips) {
       // 如果没有硬件配置，返回空图表配置
       return {
@@ -50,32 +50,29 @@ export const RooflineChart: React.FC<RooflineChartProps> = ({
     const memoryBandwidthTBps = (firstChip?.memory_bandwidth_gbps || 12000) / 1000
     const ridgePoint = peakTflops / memoryBandwidthTBps
 
-    // 生成 Roofline 边界线数据点
+    // 生成 Roofline 边界线数据点（优化：减少数据点）
     const rooflineData: [number, number][] = []
     const minOI = 0.1
     const maxOI = 1000
 
-    for (let oi = minOI; oi <= maxOI; oi *= 1.5) {
+    // 优化：使用更大的步进减少数据点（1.5 -> 1.8）
+    for (let oi = minOI; oi <= maxOI; oi *= 1.8) {
       const memoryBoundPerf = oi * memoryBandwidthTBps
       const actualPerf = Math.min(peakTflops, memoryBoundPerf)
       rooflineData.push([oi, actualPerf])
     }
 
-    // 生成带宽受限区域的填充数据（拐点左侧）
-    const memoryBoundAreaData: [number, number][] = []
-    for (let oi = minOI; oi <= ridgePoint; oi *= 1.3) {
-      memoryBoundAreaData.push([oi, oi * memoryBandwidthTBps])
-    }
-    memoryBoundAreaData.push([ridgePoint, peakTflops])
-
-    // 生成算力受限区域的填充数据（拐点右侧）
-    const computeBoundAreaData: [number, number][] = [
+    // 生成带宽受限区域的填充数据（拐点左侧）- 优化：仅需起点和拐点
+    const memoryBoundAreaData: [number, number][] = [
+      [minOI, minOI * memoryBandwidthTBps],
       [ridgePoint, peakTflops],
     ]
-    for (let oi = ridgePoint * 1.3; oi <= maxOI; oi *= 1.3) {
-      computeBoundAreaData.push([oi, peakTflops])
-    }
-    computeBoundAreaData.push([maxOI, peakTflops])
+
+    // 生成算力受限区域的填充数据（拐点右侧）- 优化：仅需拐点和终点
+    const computeBoundAreaData: [number, number][] = [
+      [ridgePoint, peakTflops],
+      [maxOI, peakTflops],
+    ]
 
     // 计算当前方案的工作点
     const calculateWorkPoint = (r: PlanAnalysisResult, isMainResult: boolean = false) => {
@@ -115,11 +112,11 @@ export const RooflineChart: React.FC<RooflineChartProps> = ({
         }
       }
 
-      // 回退：简化估算
-      const achievedTflops = r.throughput.model_flops_utilization * peakTflops
+      // 回退：简化估算（添加保护，确保值不为0）
+      const achievedTflops = Math.max(0.1, r.throughput.model_flops_utilization * peakTflops)
       const operationalIntensity = r.latency.bottleneck_type === 'memory'
-        ? achievedTflops / memoryBandwidthTBps * 0.8
-        : ridgePoint * 1.2
+        ? Math.max(0.1, achievedTflops / memoryBandwidthTBps * 0.8)
+        : Math.max(ridgePoint * 1.2, 1.0)
 
       return {
         oi: operationalIntensity,
@@ -134,6 +131,22 @@ export const RooflineChart: React.FC<RooflineChartProps> = ({
     const workPoints = allResults
       .filter((r) => r.is_feasible)
       .map((r, index) => calculateWorkPoint(r, index === 0))
+
+    // 如果没有可行方案，显示提示
+    if (workPoints.length === 0) {
+      return {
+        title: {
+          text: '当前配置下无可行方案\n请调整并行策略或硬件配置',
+          left: 'center',
+          top: 'center',
+          textStyle: {
+            color: '#faad14',
+            fontSize: 12,
+            lineHeight: 20,
+          },
+        },
+      }
+    }
 
     return {
       tooltip: {
@@ -161,27 +174,27 @@ export const RooflineChart: React.FC<RooflineChartProps> = ({
       },
       legend: {
         show: workPoints.length > 1,
-        bottom: 5,
-        itemWidth: 10,
-        itemHeight: 10,
-        itemGap: 12,
-        textStyle: { fontSize: 10 },
+        bottom: 8,
+        itemWidth: 14,
+        itemHeight: 14,
+        itemGap: 16,
+        textStyle: { fontSize: 13 },
       },
       grid: {
-        left: 60,
-        right: 30,
-        top: 30,
-        bottom: workPoints.length > 1 ? 60 : 30,  // 为 legend 和 X 轴名称留出空间
+        left: 80,
+        right: 40,
+        top: 40,
+        bottom: workPoints.length > 1 ? 70 : 50,  // 为 legend 和 X 轴名称留出空间
       },
       xAxis: {
         type: 'log',
         name: '算术强度 (FLOP/Byte)',
         nameLocation: 'middle',
-        nameGap: 25,
-        nameTextStyle: { fontSize: 11, color: '#666' },
+        nameGap: 35,
+        nameTextStyle: { fontSize: 14, color: '#666', fontWeight: 500 },
         min: 0.1,
         max: 1000,
-        axisLabel: { fontSize: 10 },
+        axisLabel: { fontSize: 13 },
         axisLine: { lineStyle: { color: '#d9d9d9' } },
         splitLine: { lineStyle: { color: '#f0f0f0', type: 'dashed' } },
       },
@@ -189,11 +202,11 @@ export const RooflineChart: React.FC<RooflineChartProps> = ({
         type: 'log',
         name: '性能 (TFLOPS)',
         nameLocation: 'middle',
-        nameGap: 40,
-        nameTextStyle: { fontSize: 11, color: '#666' },
+        nameGap: 55,
+        nameTextStyle: { fontSize: 14, color: '#666', fontWeight: 500 },
         min: 0.1,
         max: peakTflops * 1.5,
-        axisLabel: { fontSize: 10 },
+        axisLabel: { fontSize: 13 },
         axisLine: { show: false },
         splitLine: { lineStyle: { color: '#f0f0f0', type: 'dashed' } },
       },
@@ -242,20 +255,20 @@ export const RooflineChart: React.FC<RooflineChartProps> = ({
           name: point.planId,
           type: 'scatter' as const,
           data: [[point.oi, point.perf]],
-          symbolSize: index === 0 ? 16 : 12,
+          symbolSize: index === 0 ? 20 : 16,
           itemStyle: {
             color: COLORS[index % COLORS.length],
             borderColor: '#fff',
-            borderWidth: 2,
-            shadowBlur: index === 0 ? 8 : 0,
-            shadowColor: index === 0 ? 'rgba(94, 106, 210, 0.4)' : 'transparent',
+            borderWidth: 3,
+            shadowBlur: index === 0 ? 10 : 4,
+            shadowColor: index === 0 ? 'rgba(94, 106, 210, 0.5)' : 'rgba(0, 0, 0, 0.2)',
           },
           label: {
             show: index === 0,
             position: 'top' as const,
             formatter: point.planId,
-            fontSize: 11,
-            fontWeight: 500,
+            fontSize: 13,
+            fontWeight: 600,
             color: '#333',
           },
           z: 20,
@@ -268,7 +281,7 @@ export const RooflineChart: React.FC<RooflineChartProps> = ({
           symbol: 'none',
           lineStyle: {
             color: '#52c41a',
-            width: 1.5,
+            width: 2,
             type: 'dashed',
           },
           z: 5,
@@ -278,18 +291,18 @@ export const RooflineChart: React.FC<RooflineChartProps> = ({
           name: '拐点',
           type: 'scatter',
           data: [[ridgePoint, peakTflops]],
-          symbolSize: 10,
+          symbolSize: 13,
           itemStyle: {
             color: '#52c41a',
             borderColor: '#fff',
-            borderWidth: 2,
+            borderWidth: 2.5,
           },
           label: {
             show: true,
             position: 'right',
             formatter: `拐点: ${ridgePoint.toFixed(1)}`,
-            fontSize: 10,
-            fontWeight: 500,
+            fontSize: 12,
+            fontWeight: 600,
             color: '#52c41a',
           },
           z: 15,
@@ -304,9 +317,9 @@ export const RooflineChart: React.FC<RooflineChartProps> = ({
           top: '20%',
           style: {
             text: '带宽受限区',
-            fontSize: 11,
-            fill: 'rgba(24, 144, 255, 0.6)',
-            fontWeight: 500,
+            fontSize: 14,
+            fill: 'rgba(24, 144, 255, 0.65)',
+            fontWeight: 600,
           },
           z: 5,
         },
@@ -317,9 +330,9 @@ export const RooflineChart: React.FC<RooflineChartProps> = ({
           top: '20%',
           style: {
             text: '算力受限区',
-            fontSize: 11,
-            fill: 'rgba(82, 196, 26, 0.6)',
-            fontWeight: 500,
+            fontSize: 14,
+            fill: 'rgba(82, 196, 26, 0.65)',
+            fontWeight: 600,
           },
           z: 5,
         },
@@ -349,6 +362,12 @@ export const RooflineChart: React.FC<RooflineChartProps> = ({
       option={option}
       style={{ height }}
       opts={{ renderer: 'canvas' }}
+      notMerge={false}
+      lazyUpdate={true}
+      shouldSetOption={(prevProps, nextProps) => {
+        // 仅在 option 真正变化时才更新图表
+        return prevProps.option !== nextProps.option
+      }}
     />
   )
-}
+})

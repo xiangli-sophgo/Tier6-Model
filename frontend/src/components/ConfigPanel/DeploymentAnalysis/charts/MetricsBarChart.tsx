@@ -75,9 +75,9 @@ const METRIC_CONFIG: Record<MetricType, {
     colorEnd: '#722ed1',
   },
   cost: {
-    name: '成本',
-    unit: '$/M',
-    accessor: (p) => p.cost?.cost_per_million_tokens ?? 0,
+    name: '总成本',
+    unit: 'K$',
+    accessor: (p) => (p.cost?.total_cost ?? 0) / 1000,
     colorStart: '#ff9c6e',
     colorEnd: '#fa541c',
     lowerIsBetter: true,

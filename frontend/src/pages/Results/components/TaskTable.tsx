@@ -91,7 +91,6 @@ const columnNameMap: Record<string, string> = {
   'result_id': '结果ID',
   // 成本字段
   'cost_total': '总成本 ($)',
-  'cost_per_million_tokens': '单位成本 ($/M)',
   'cost_server': '服务器成本 ($)',
   'cost_interconnect': '互联成本 ($)',
   'cost_per_chip': '单芯成本 ($)',
@@ -796,7 +795,6 @@ export default function TaskTable({
       const costKey = field.replace('cost_', '')
       const costMap: Record<string, keyof typeof result.cost> = {
         'total': 'total_cost',
-        'per_million_tokens': 'cost_per_million_tokens',
         'server': 'server_cost',
         'interconnect': 'interconnect_cost',
         'per_chip': 'cost_per_chip',

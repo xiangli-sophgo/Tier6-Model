@@ -1,9 +1,13 @@
 @echo off
 chcp 65001 > nul
 title Tier6+ 启动
+SETLOCAL EnableDelayedExpansion
 
 set SCRIPT_DIR=%~dp0
 cd /d %SCRIPT_DIR%
+
+:: 设置临时 PID 文件
+set PID_FILE=%TEMP%\tier6_pids.tmp
 
 :: 检查是否需要安装依赖
 if "%1"=="--setup" goto SETUP
@@ -17,63 +21,63 @@ echo ==========================================
 echo.
 
 :: 检查 Python
-echo [1/3] 检查 Python 环境...
+echo [1/3] Checking Python environment...
 python3 --version >nul 2>&1
 if %errorlevel% neq 0 (
-    echo [错误] Python 未安装或未添加到 PATH
-    echo 请访问 https://www.python.org/downloads/ 安装 Python 3.9+
+    echo [ERROR] Python not found in PATH
+    echo Please install Python 3.9+ from https://www.python.org/downloads/
     pause
     exit /b 1
 )
 python3 --version
-echo Python ✓
+echo Python OK
 
 :: 检查 Node.js 和 pnpm
 echo.
-echo [2/3] 检查 Node.js 和 pnpm...
+echo [2/3] Checking Node.js and pnpm...
 node --version >nul 2>&1
 if %errorlevel% neq 0 (
-    echo [错误] Node.js 未安装
-    echo 请访问 https://nodejs.org/ 安装 Node.js
+    echo [ERROR] Node.js not found
+    echo Please install Node.js from https://nodejs.org/
     pause
     exit /b 1
 )
 node --version
-echo Node.js ✓
+echo Node.js OK
 
 where pnpm >nul 2>&1
 if %errorlevel% neq 0 (
-    echo pnpm 未安装，正在安装...
+    echo Installing pnpm...
     call npm install -g pnpm
 )
 pnpm --version
-echo pnpm ✓
+echo pnpm OK
 
 :: 安装依赖
 echo.
-echo [3/3] 安装项目依赖...
+echo [3/3] Installing project dependencies...
 echo.
-echo 安装后端依赖...
+echo Installing backend dependencies...
 cd backend
 python3 -m pip install -r requirements.txt
 if %errorlevel% neq 0 (
-    echo [错误] 后端依赖安装失败
+    echo [ERROR] Backend dependencies installation failed
     pause
     exit /b 1
 )
-echo 后端依赖 ✓
+echo Backend dependencies OK
 
 cd ..
 echo.
-echo 安装前端依赖...
+echo Installing frontend dependencies...
 cd frontend
 call pnpm install
 if %errorlevel% neq 0 (
-    echo [错误] 前端依赖安装失败
+    echo [ERROR] Frontend dependencies installation failed
     pause
     exit /b 1
 )
-echo 前端依赖 ✓
+echo Frontend dependencies OK
 
 cd ..
 echo.
@@ -91,66 +95,136 @@ echo.
 :: 检查 pnpm
 where pnpm >nul 2>&1
 if %errorlevel% neq 0 (
-    echo [提示] pnpm 未安装，请先运行: start.bat --setup
+    echo [NOTICE] pnpm not installed. Please run: start.bat --setup
     pause
     exit /b 1
 )
 
 :: 检查前端依赖
 if not exist "frontend\node_modules" (
-    echo [提示] 前端依赖未安装，请先运行: start.bat --setup
+    echo [NOTICE] Frontend dependencies not installed. Please run: start.bat --setup
     pause
     exit /b 1
 )
 
 :: 清理旧进程
-echo [0/2] 清理旧进程...
+echo [0/2] Cleaning up old processes...
 
 :: 读取 .env 中的端口配置
 set API_PORT=8001
 for /f "tokens=2 delims==" %%a in ('findstr /r "^VITE_API_PORT=" .env 2^>nul') do set API_PORT=%%a
 
+:: 清理旧的 PID 记录
+if exist "%PID_FILE%" del /f /q "%PID_FILE%" >nul 2>&1
+
 :: 杀死占用后端端口的进程
 for /f "tokens=5" %%a in ('netstat -ano ^| findstr ":%API_PORT% " ^| findstr "LISTENING" 2^>nul') do (
-    echo 发现旧后端进程 PID: %%a，正在终止...
+    echo Killing backend process PID: %%a
     taskkill /F /PID %%a >nul 2>&1
 )
 
 :: 杀死占用前端端口 3100 的进程
 for /f "tokens=5" %%a in ('netstat -ano ^| findstr ":3100 " ^| findstr "LISTENING" 2^>nul') do (
-    echo 发现旧前端进程 PID: %%a，正在终止...
+    echo Killing frontend process PID: %%a
     taskkill /F /PID %%a >nul 2>&1
 )
 
 :: 等待进程释放端口
 timeout /t 1 /nobreak > nul
-echo 旧进程清理完成 ✓
+echo Cleanup completed
 echo.
 
-:: 启动后端
-echo [1/2] 启动后端服务 (读取 .env 配置)...
-start "Tier6+ Backend" cmd /k "cd /d %SCRIPT_DIR%backend && python3 -m llm_simulator.main"
+:: 启动后端（后台运行）
+echo.
+echo Starting backend service (port %API_PORT%)...
+cd /d %SCRIPT_DIR%backend
+start /B python3 -m llm_simulator.main
+echo Backend started in background
 
-:: 等待2秒
-timeout /t 2 /nobreak > nul
+:: 等待后端启动并记录 PID
+timeout /t 3 /nobreak > nul
+for /f "tokens=5" %%a in ('netstat -ano ^| findstr ":%API_PORT% " ^| findstr "LISTENING" 2^>nul') do (
+    echo BACKEND_PID=%%a >> "%PID_FILE%"
+    echo Backend PID: %%a
+    goto :backend_started
+)
+:backend_started
 
-:: 启动前端
-echo [2/2] 启动前端服务 (端口 3100)...
-start "Tier6+ Frontend" cmd /k "cd /d %SCRIPT_DIR%frontend && pnpm run dev"
+:: 启动前端（后台运行）
+echo.
+echo Starting frontend service (port 3100)...
+cd /d %SCRIPT_DIR%frontend
+start /B pnpm run dev
+echo Frontend started in background
+
+:: 等待前端启动并记录 PID
+timeout /t 3 /nobreak > nul
+for /f "tokens=5" %%a in ('netstat -ano ^| findstr ":3100 " ^| findstr "LISTENING" 2^>nul') do (
+    echo FRONTEND_PID=%%a >> "%PID_FILE%"
+    echo Frontend PID: %%a
+    goto :frontend_started
+)
+:frontend_started
 
 echo.
 echo ==========================================
-echo   服务已启动
-echo   前端: http://localhost:3100
-echo   后端: http://localhost:8002 (配置在 backend/.env)
+echo   Services started
+echo   Frontend: http://localhost:3100
+echo   Backend: http://localhost:%API_PORT%
 echo ==========================================
 echo.
-echo 提示: 关闭后端/前端窗口可停止对应服务
+echo Press Ctrl+C or any key to stop all services
 echo.
 
-:: 等待5秒后打开浏览器
-timeout /t 5 /nobreak > nul
+:: 等待3秒后打开浏览器
+timeout /t 3 /nobreak > nul
 start http://localhost:3100
 
-echo 浏览器已打开，可以关闭此窗口
-timeout /t 3 /nobreak > nul
+:: 等待用户停止服务（使用 timeout 循环以便捕获 Ctrl+C）
+echo.
+:WAIT_LOOP
+timeout /t 5 > nul 2>&1
+if errorlevel 1 (
+    :: Ctrl+C 被按下，清理并退出
+    call :CLEANUP
+    goto :END
+)
+goto :WAIT_LOOP
+
+:: ============================================
+:: 清理函数 - 停止所有服务
+:: ============================================
+:CLEANUP
+echo.
+echo Stopping services...
+
+:: 优先使用保存的 PID
+if exist "%PID_FILE%" (
+    for /f "tokens=1,2 delims==" %%a in (%PID_FILE%) do (
+        set PID_NAME=%%a
+        set PID_VALUE=%%b
+        echo Stopping !PID_NAME!: !PID_VALUE!
+        taskkill /F /PID !PID_VALUE! >nul 2>&1
+    )
+    del /f /q "%PID_FILE%" >nul 2>&1
+)
+
+:: 兜底清理：通过端口查找并杀死进程
+for /f "tokens=5" %%a in ('netstat -ano ^| findstr ":%API_PORT% " ^| findstr "LISTENING" 2^>nul') do (
+    echo Stopping backend process PID: %%a
+    taskkill /F /PID %%a >nul 2>&1
+)
+
+for /f "tokens=5" %%a in ('netstat -ano ^| findstr ":3100 " ^| findstr "LISTENING" 2^>nul') do (
+    echo Stopping frontend process PID: %%a
+    taskkill /F /PID %%a >nul 2>&1
+)
+
+echo.
+echo All services stopped
+timeout /t 1 /nobreak > nul
+exit /b 0
+
+:END
+ENDLOCAL
+exit /b 0

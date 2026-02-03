@@ -1,21 +1,13 @@
 /**
- * 图表面板 - 整合所有图表的容器组件（CSS Grid 布局）
+ * 图表面板 - 整合所有图表的容器组件（CSS Grid 响应式布局）
+ * 使用统一主题配置
  */
 
 import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { toast } from 'sonner'
 import { RefreshCw } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { ScoreRadarChart } from './ScoreRadarChart'
-import { MetricsBarChart } from './MetricsBarChart'
 import { MemoryPieChart } from './MemoryPieChart'
 import { RooflineChart } from './RooflineChart'
 import { GanttChart } from './GanttChart'
@@ -23,6 +15,11 @@ import { LayerWaterfallChart } from './LayerWaterfallChart'
 import { CommunicationBreakdownChart } from './CommunicationBreakdownChart'
 import { TaskDetailDrawer } from '../TaskDetailDrawer'
 import { BaseCard } from "@/components/common/BaseCard"
+import {
+  CHART_CARD_STYLE,
+  CHART_TITLE_STYLE,
+  BOTTLENECK_COLORS,
+} from './chartTheme'
 import {
   PlanAnalysisResult,
   HardwareConfig,
@@ -58,27 +55,6 @@ interface ChartsPanelProps {
   externalStats?: SimulationStats | null
 }
 
-type MetricType = 'score' | 'ttft' | 'tpot' | 'throughput' | 'tps_per_batch' | 'tps_per_chip' | 'mfu' | 'mbu' | 'cost' | 'p99_ttft' | 'p99_tpot'
-
-const chartCardStyle: React.CSSProperties = {
-  background: '#fff',
-  borderRadius: 12,
-  padding: 16,
-  border: '1px solid #E5E5E5',
-  boxShadow: '0 2px 8px rgba(0,0,0,0.04)',
-}
-
-const chartTitleStyle: React.CSSProperties = {
-  fontSize: 14,
-  fontWeight: 600,
-  color: '#1a1a1a',
-  marginBottom: 12,
-  display: 'flex',
-  alignItems: 'center',
-  justifyContent: 'space-between',
-}
-
-
 export const ChartsPanel: React.FC<ChartsPanelProps> = ({
   result,
   topKPlans,
@@ -89,7 +65,6 @@ export const ChartsPanel: React.FC<ChartsPanelProps> = ({
   externalGanttData,
   externalStats,
 }) => {
-  const [selectedMetric, setSelectedMetric] = useState<MetricType>('score')
   const [simulationResult, setSimulationResult] = useState<SimulationResult | null>(null)
   const [isSimulating, setIsSimulating] = useState(false)
 
@@ -207,19 +182,20 @@ export const ChartsPanel: React.FC<ChartsPanelProps> = ({
     )
   }
 
-  const metricOptions = [
-    { value: 'score', label: '综合评分' },
-    { value: 'ttft', label: 'TTFT (ms)' },
-    { value: 'tpot', label: 'TPOT (ms)' },
-    { value: 'throughput', label: '总吞吐 (tok/s)' },
-    { value: 'tps_per_batch', label: 'TPS/Batch (tok/s)' },
-    { value: 'tps_per_chip', label: 'TPS/Chip (tok/s)' },
-    { value: 'mfu', label: 'MFU (%)' },
-    { value: 'mbu', label: 'MBU (%)' },
-    { value: 'cost', label: '成本 ($/M)' },
-    { value: 'p99_ttft', label: 'TTFT P99 (ms)' },
-    { value: 'p99_tpot', label: 'TPOT P99 (ms)' },
-  ]
+  // 获取瓶颈状态颜色
+  const getBottleneckColor = (type: string) => {
+    return BOTTLENECK_COLORS[type as keyof typeof BOTTLENECK_COLORS] || BOTTLENECK_COLORS.balanced
+  }
+
+  // 获取瓶颈状态文字
+  const getBottleneckText = (type: string) => {
+    switch (type) {
+      case 'memory': return '带宽受限'
+      case 'compute': return '算力受限'
+      case 'communication': return '通信受限'
+      default: return '均衡'
+    }
+  }
 
   return (
     <div>
@@ -228,95 +204,43 @@ export const ChartsPanel: React.FC<ChartsPanelProps> = ({
       {/* ═══════════════════════════════════════════════════════════════ */}
       <BaseCard collapsible
         title="图表可视化"
-        open={expandedSections.charts}
-        onOpenChange={(expanded) => setExpandedSections(prev => ({ ...prev, charts: expanded }))}
+        expanded={expandedSections.charts}
+        onExpandChange={(expanded: boolean) => setExpandedSections(prev => ({ ...prev, charts: expanded }))}
         className="mb-4"
       >
-          <div
-          style={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(2, 1fr)',
-            gap: 16,
-          }}
-        >
-          {/* 雷达图 - 左上 */}
-          <div style={chartCardStyle}>
-            <div style={chartTitleStyle}>
-              <span className="font-semibold">多维评分分析</span>
-              {topKPlans.length > 1 && (
-                <span className="text-[11px] text-gray-500">
-                  对比 Top-{Math.min(5, topKPlans.length)} 方案
+        {/* 响应式网格布局：小屏单列，中屏2列 */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {/* 内存图 */}
+          <div style={CHART_CARD_STYLE} className="transition-shadow hover:shadow-md">
+            <div style={CHART_TITLE_STYLE}>
+              <span className="font-semibold">内存占用分解</span>
+              <div className="flex items-center gap-2">
+                {/* 数据来源标记 */}
+                {(result.memory as any)?.is_estimated && (
+                  <span className="text-[10px] text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded">
+                    估算值
+                  </span>
+                )}
+                <span
+                  className="text-[11px]"
+                  style={{ color: result.memory.is_memory_sufficient ? '#52c41a' : '#faad14' }}
+                >
+                  {result.memory.is_memory_sufficient ? '✓ 内存充足' : '⚠ 内存不足'}
                 </span>
-              )}
+              </div>
             </div>
-            <ScoreRadarChart
-              result={result}
-              comparisonResults={topKPlans.slice(1, 5)}
-              height={240}
-            />
+            <MemoryPieChart memory={result.memory} height={400} />
           </div>
 
-          {/* 柱状图 - 右上 */}
-          <div style={chartCardStyle}>
-            <div style={chartTitleStyle}>
-              <span className="font-semibold">多方案对比</span>
-              <Select
-                value={selectedMetric}
-                onValueChange={(value: string) => setSelectedMetric(value as MetricType)}
-              >
-                <SelectTrigger className="w-[130px] h-7 text-xs">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {metricOptions.map((opt) => (
-                    <SelectItem key={opt.value} value={opt.value}>
-                      {opt.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <MetricsBarChart
-              plans={topKPlans}
-              metric={selectedMetric}
-              height={240}
-            />
-          </div>
-
-          {/* 显存图 - 左下 */}
-          <div style={chartCardStyle}>
-            <div style={chartTitleStyle}>
-              <span className="font-semibold">显存占用分解</span>
-              <span
-                className="text-[11px]"
-                style={{ color: result.memory.is_memory_sufficient ? '#52c41a' : '#faad14' }}
-              >
-                {result.memory.is_memory_sufficient ? '✓ 显存充足' : '⚠ 显存不足'}
-              </span>
-            </div>
-            <MemoryPieChart memory={result.memory} height={220} />
-          </div>
-
-          {/* Roofline 图 - 右下 */}
-          <div style={chartCardStyle}>
-            <div style={chartTitleStyle}>
+          {/* Roofline 图 */}
+          <div style={CHART_CARD_STYLE} className="transition-shadow hover:shadow-md">
+            <div style={CHART_TITLE_STYLE}>
               <span className="font-semibold">Roofline 性能分析</span>
               <span
-                className="text-[11px]"
-                style={{
-                  color:
-                    result.latency.bottleneck_type === 'memory'
-                      ? '#1890ff'
-                      : result.latency.bottleneck_type === 'compute'
-                      ? '#52c41a'
-                      : '#faad14',
-                }}
+                className="text-[11px] font-medium"
+                style={{ color: getBottleneckColor(result.latency.bottleneck_type) }}
               >
-                {result.latency.bottleneck_type === 'memory'
-                  ? '带宽受限'
-                  : result.latency.bottleneck_type === 'compute'
-                  ? '算力受限'
-                  : '通信受限'}
+                {getBottleneckText(result.latency.bottleneck_type)}
               </span>
             </div>
             <RooflineChart
@@ -324,7 +248,7 @@ export const ChartsPanel: React.FC<ChartsPanelProps> = ({
               hardware={hardware}
               model={model}
               comparisonResults={topKPlans.slice(1, 4)}
-              height={220}
+              height={400}
               simulationStats={simulationResult?.stats}
             />
           </div>
@@ -376,8 +300,8 @@ export const ChartsPanel: React.FC<ChartsPanelProps> = ({
             </TabsList>
 
             <TabsContent value="timeline">
-              <div style={{ ...chartCardStyle, boxShadow: 'none', border: 'none' }}>
-                <div style={chartTitleStyle}>
+              <div style={{ ...CHART_CARD_STYLE, boxShadow: 'none', border: 'none' }}>
+                <div style={CHART_TITLE_STYLE}>
                   <span className="font-semibold">Prefill + Decode 时序甘特图</span>
                   <span className="text-[11px] text-gray-500">点击任务查看详情</span>
                 </div>
@@ -393,8 +317,8 @@ export const ChartsPanel: React.FC<ChartsPanelProps> = ({
             </TabsContent>
 
             <TabsContent value="layers">
-              <div style={{ ...chartCardStyle, boxShadow: 'none', border: 'none' }}>
-                <div style={chartTitleStyle}>
+              <div style={{ ...CHART_CARD_STYLE, boxShadow: 'none', border: 'none' }}>
+                <div style={CHART_TITLE_STYLE}>
                   <span className="font-semibold">层级时间分解</span>
                   <span className="text-[11px] text-gray-500">每层的计算/访存/通信占比</span>
                 </div>
@@ -406,8 +330,8 @@ export const ChartsPanel: React.FC<ChartsPanelProps> = ({
             </TabsContent>
 
             <TabsContent value="communication">
-              <div style={{ ...chartCardStyle, boxShadow: 'none', border: 'none' }}>
-                <div style={chartTitleStyle}>
+              <div style={{ ...CHART_CARD_STYLE, boxShadow: 'none', border: 'none' }}>
+                <div style={CHART_TITLE_STYLE}>
                   <span className="font-semibold">通信开销分析</span>
                   <span className="text-[11px] text-gray-500">TP/PP/EP/SP 通信分解</span>
                 </div>

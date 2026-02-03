@@ -574,11 +574,17 @@ export const AnalysisResultDisplay: React.FC<AnalysisResultDisplayProps> = ({
     boxShadow: isSelected ? `0 2px 8px ${colors.interactiveShadow}` : 'none',
   })
 
-  // 性能指标卡片样式（保持紧凑布局）
-  const metricCardStyle = (isSelected: boolean): React.CSSProperties => ({
-    ...clickableCardStyle(isSelected),
-    padding: '12px 10px',
-  })
+  // 性能指标卡片样式 - 紧凑版 + 渐变背景（移除交互）
+  const metricCardStyle: React.CSSProperties = {
+    padding: '8px',
+    textAlign: 'center',
+    background: 'linear-gradient(135deg, #fafafa 0%, #f5f5f5 100%)',
+    borderRadius: '6px',
+    border: `1px solid ${colors.border}`,
+    transition: 'all 0.2s ease',
+  }
+
+  const metricCardClassName = 'hover:shadow-md hover:border-blue-300'
 
   return (
       <div>
@@ -592,110 +598,79 @@ export const AnalysisResultDisplay: React.FC<AnalysisResultDisplayProps> = ({
           gradient
         >
           <>
-          {/* 延迟指标 */}
-          <span className="text-[13px] font-medium block mb-2" style={{ color: colors.text }}>延迟</span>
-          <div className="grid grid-cols-4 gap-2 mb-3">
-            <div style={{ ...metricCardStyle(selectedMetric === 'ttft'), textAlign: 'center', position: 'relative' }} onClick={() => setSelectedMetric(selectedMetric === 'ttft' ? null : 'ttft')}>
-              <Info className="absolute top-2 right-2 h-2.5 w-2.5" style={{ color: selectedMetric === 'ttft' ? colors.interactive : '#d9d9d9' }} />
-              <span className="text-[13px]" style={{ color: colors.textSecondary }}>TTFT</span>
-              <div className="text-lg font-semibold mt-1" style={{ color: colors.text }}>
+          {/* 所有指标统一展示 */}
+          <div className="grid grid-cols-6 gap-1.5 mb-2.5">
+            <div style={metricCardStyle} className={metricCardClassName}>
+              <span className="text-xs" style={{ color: colors.textSecondary }}>TTFT</span>
+              <div className="text-xl font-bold mt-0.5" style={{ color: colors.text }}>
                 {formatNumber(latency?.prefill_total_latency_ms, 1) || '0.0'} <span className="text-xs font-normal" style={{ color: colors.textSecondary }}>ms</span>
               </div>
             </div>
-            <div style={{ ...metricCardStyle(selectedMetric === 'tpot'), textAlign: 'center', position: 'relative' }} onClick={() => setSelectedMetric(selectedMetric === 'tpot' ? null : 'tpot')}>
-              <Info className="absolute top-2 right-2 h-2.5 w-2.5" style={{ color: selectedMetric === 'tpot' ? colors.interactive : '#d9d9d9' }} />
-              <span className="text-[13px]" style={{ color: colors.textSecondary }}>TPOT</span>
-              <div className="text-lg font-semibold mt-1" style={{ color: colors.text }}>
+            <div style={metricCardStyle} className={metricCardClassName}>
+              <span className="text-xs" style={{ color: colors.textSecondary }}>TPOT</span>
+              <div className="text-xl font-bold mt-0.5" style={{ color: colors.text }}>
                 {formatNumber(latency?.decode_per_token_latency_ms, 2) || '0.00'} <span className="text-xs font-normal" style={{ color: colors.textSecondary }}>ms</span>
               </div>
             </div>
-            <div style={{ ...metricCardStyle(selectedMetric === 'e2e'), textAlign: 'center', position: 'relative' }} onClick={() => setSelectedMetric(selectedMetric === 'e2e' ? null : 'e2e')}>
-              <Info className="absolute top-2 right-2 h-2.5 w-2.5" style={{ color: selectedMetric === 'e2e' ? colors.interactive : '#d9d9d9' }} />
-              <span className="text-[13px]" style={{ color: colors.textSecondary }}>E2E</span>
-              <div className="text-lg font-semibold mt-1" style={{ color: colors.text }}>
-                {formatNumber((latency?.end_to_end_latency_ms || 0) / 1000, 2)} <span className="text-xs font-normal" style={{ color: colors.textSecondary }}>s</span>
+            <div style={metricCardStyle} className={metricCardClassName}>
+              <span className="text-xs" style={{ color: colors.textSecondary }}>Total TPS</span>
+              <div className="text-xl font-bold mt-0.5" style={{ color: colors.text }}>
+                {formatNumber(throughput?.tokens_per_second, 0) || '0'} <span className="text-xs font-normal" style={{ color: colors.textSecondary }}>tok/s</span>
               </div>
             </div>
-            <div style={{ ...metricCardStyle(selectedMetric === 'percentiles'), textAlign: 'center', position: 'relative' }} onClick={() => setSelectedMetric(selectedMetric === 'percentiles' ? null : 'percentiles')}>
-              <Info className="absolute top-2 right-2 h-2.5 w-2.5" style={{ color: selectedMetric === 'percentiles' ? colors.interactive : '#d9d9d9' }} />
-              <span className="text-[13px]" style={{ color: colors.textSecondary }}>P99</span>
-              <div className="text-lg font-semibold mt-1" style={{ color: latency.ttft_percentiles && latency.ttft_percentiles.p99 > 450 ? colors.error : colors.text }}>
-                {latency.ttft_percentiles ? formatNumber(latency.ttft_percentiles.p99, 0) : '-'} <span className="text-xs font-normal" style={{ color: colors.textSecondary }}>ms</span>
+            <div style={metricCardStyle} className={metricCardClassName}>
+              <span className="text-xs" style={{ color: colors.textSecondary }}>TPS/Batch</span>
+              <div className="text-xl font-bold mt-0.5" style={{ color: (throughput?.tps_per_batch || 0) >= 10 ? colors.text : colors.error }}>
+                {formatNumber(throughput?.tps_per_batch, 1) || '0.0'} <span className="text-xs font-normal" style={{ color: colors.textSecondary }}>tok/s</span>
               </div>
             </div>
-          </div>
-
-          {/* 吞吐与效率 */}
-          <span className="text-[13px] font-medium block mb-2" style={{ color: colors.text }}>吞吐与效率</span>
-          <div className="grid grid-cols-3 gap-2 mb-2">
-            <InfoTooltip content="Total TPS = TPS_chip × NumChips，集群总吞吐">
-              <div style={{ ...metricCardStyle(selectedMetric === 'throughput'), textAlign: 'center', position: 'relative' }} onClick={() => setSelectedMetric(selectedMetric === 'throughput' ? null : 'throughput')}>
-                <Info className="absolute top-2 right-2 h-2.5 w-2.5" style={{ color: selectedMetric === 'throughput' ? colors.interactive : '#d9d9d9' }} />
-                <span className="text-[13px]" style={{ color: colors.textSecondary }}>Total TPS</span>
-                <div className="text-lg font-semibold mt-1" style={{ color: colors.text }}>
-                  {formatNumber(throughput?.tokens_per_second, 0) || '0'} <span className="text-xs font-normal" style={{ color: colors.textSecondary }}>tok/s</span>
-                </div>
+            <div style={metricCardStyle} className={metricCardClassName}>
+              <span className="text-xs" style={{ color: colors.textSecondary }}>TPS/Chip</span>
+              <div className="text-xl font-bold mt-0.5" style={{ color: colors.text }}>
+                {formatNumber(throughput?.tps_per_chip, 0) || '0'} <span className="text-xs font-normal" style={{ color: colors.textSecondary }}>tok/s</span>
               </div>
-            </InfoTooltip>
-            <InfoTooltip content="TPS per Batch = 1000 / TPOT(ms)，用户体验指标，SLO约束 ≥10">
-              <div style={{ ...metricCardStyle(selectedMetric === 'tps_batch'), textAlign: 'center', position: 'relative' }} onClick={() => setSelectedMetric(selectedMetric === 'tps_batch' ? null : 'tps_batch')}>
-                <Info className="absolute top-2 right-2 h-2.5 w-2.5" style={{ color: selectedMetric === 'tps_batch' ? colors.interactive : '#d9d9d9' }} />
-                <span className="text-[13px]" style={{ color: colors.textSecondary }}>TPS/Batch</span>
-                <div className="text-lg font-semibold mt-1" style={{ color: (throughput?.tps_per_batch || 0) >= 10 ? colors.text : colors.error }}>
-                  {formatNumber(throughput?.tps_per_batch, 1) || '0.0'} <span className="text-xs font-normal" style={{ color: colors.textSecondary }}>tok/s</span>
-                </div>
-              </div>
-            </InfoTooltip>
-            <InfoTooltip content="TPS per Chip = B × TPS_batch，成本效益优化目标">
-              <div style={{ ...metricCardStyle(selectedMetric === 'tps_chip'), textAlign: 'center', position: 'relative' }} onClick={() => setSelectedMetric(selectedMetric === 'tps_chip' ? null : 'tps_chip')}>
-                <Info className="absolute top-2 right-2 h-2.5 w-2.5" style={{ color: selectedMetric === 'tps_chip' ? colors.interactive : '#d9d9d9' }} />
-                <span className="text-[13px]" style={{ color: colors.textSecondary }}>TPS/Chip</span>
-                <div className="text-lg font-semibold mt-1" style={{ color: colors.text }}>
-                  {formatNumber(throughput?.tps_per_chip, 0) || '0'} <span className="text-xs font-normal" style={{ color: colors.textSecondary }}>tok/s</span>
-                </div>
-              </div>
-            </InfoTooltip>
-          </div>
-          <div className="grid grid-cols-2 gap-2 mb-3">
-            <div style={{ ...metricCardStyle(selectedMetric === 'mfu'), textAlign: 'center', position: 'relative' }} onClick={() => setSelectedMetric(selectedMetric === 'mfu' ? null : 'mfu')}>
-              <Info className="absolute top-2 right-2 h-2.5 w-2.5" style={{ color: selectedMetric === 'mfu' ? colors.interactive : '#d9d9d9' }} />
-              <span className="text-[13px]" style={{ color: colors.textSecondary }}>MFU</span>
-              <div className="text-lg font-semibold mt-1" style={{ color: colors.text }}>
+            </div>
+            <div style={metricCardStyle} className={metricCardClassName}>
+              <span className="text-xs" style={{ color: colors.textSecondary }}>MFU</span>
+              <div className="text-xl font-bold mt-0.5" style={{ color: colors.text }}>
                 {formatNumber((throughput?.model_flops_utilization || 0) * 100, 1)} <span className="text-xs font-normal" style={{ color: colors.textSecondary }}>%</span>
               </div>
             </div>
-            <div style={{ ...metricCardStyle(selectedMetric === 'mbu'), textAlign: 'center', position: 'relative' }} onClick={() => setSelectedMetric(selectedMetric === 'mbu' ? null : 'mbu')}>
-              <Info className="absolute top-2 right-2 h-2.5 w-2.5" style={{ color: selectedMetric === 'mbu' ? colors.interactive : '#d9d9d9' }} />
-              <span className="text-[13px]" style={{ color: colors.textSecondary }}>MBU</span>
-              <div className="text-lg font-semibold mt-1" style={{ color: colors.text }}>
+
+            <div style={metricCardStyle} className={metricCardClassName}>
+              <span className="text-xs" style={{ color: colors.textSecondary }}>MBU</span>
+              <div className="text-xl font-bold mt-0.5" style={{ color: colors.text }}>
                 {formatNumber((throughput?.memory_bandwidth_utilization || 0) * 100, 1)} <span className="text-xs font-normal" style={{ color: colors.textSecondary }}>%</span>
               </div>
             </div>
-          </div>
-
-          {/* 资源利用 */}
-          <span className="text-[13px] font-medium block mb-2" style={{ color: colors.text }}>资源利用</span>
-          <div className="grid grid-cols-2 gap-2 mb-3">
-            {/* 显存占用 */}
-            <div
-              style={{ ...metricCardStyle(selectedMetric === 'memory'), textAlign: 'center', position: 'relative' }}
-              onClick={() => setSelectedMetric(selectedMetric === 'memory' ? null : 'memory')}
-            >
-              <Info className="absolute top-2 right-2 h-2.5 w-2.5" style={{ color: selectedMetric === 'memory' ? colors.interactive : '#d9d9d9' }} />
-              <span className="text-[13px]" style={{ color: colors.textSecondary }}>显存占用</span>
-              <div className="text-lg font-semibold mt-1" style={{ color: memory?.is_memory_sufficient ? colors.text : colors.error }}>
+            <div style={metricCardStyle} className={metricCardClassName}>
+              <span className="text-xs" style={{ color: colors.textSecondary }}>显存占用</span>
+              <div className="text-xl font-bold mt-0.5" style={{ color: memory?.is_memory_sufficient ? colors.text : colors.error }}>
                 {formatNumber(memory?.total_per_chip_gb, 1) || '0.0'} <span className="text-xs font-normal" style={{ color: colors.textSecondary }}>/ 80G</span>
               </div>
             </div>
-            {/* 推理成本 */}
-            <div
-              style={{ ...metricCardStyle(selectedMetric === 'cost'), textAlign: 'center', position: 'relative' }}
-              onClick={() => setSelectedMetric(selectedMetric === 'cost' ? null : 'cost')}
-            >
-              <Info className="absolute top-2 right-2 h-2.5 w-2.5" style={{ color: selectedMetric === 'cost' ? colors.interactive : '#d9d9d9' }} />
-              <span className="text-[13px]" style={{ color: colors.textSecondary }}>推理成本</span>
-              <div className="text-lg font-semibold mt-1" style={{ color: colors.text }}>
-                ${result.cost ? formatNumber(result.cost.cost_per_million_tokens, 3) : '-'} <span className="text-xs font-normal" style={{ color: colors.textSecondary }}>/M</span>
+            <div style={metricCardStyle} className={metricCardClassName}>
+              <span className="text-xs" style={{ color: colors.textSecondary }}>硬件成本</span>
+              <div className="text-xl font-bold mt-0.5" style={{ color: colors.text }}>
+                ${result.cost ? formatNumber(result.cost.total_cost / 1000, 0) : '-'}<span className="text-xs font-normal" style={{ color: colors.textSecondary }}>K</span>
+              </div>
+            </div>
+            <div style={metricCardStyle} className={metricCardClassName}>
+              <span className="text-xs" style={{ color: colors.textSecondary }}>服务器成本</span>
+              <div className="text-xl font-bold mt-0.5" style={{ color: colors.text }}>
+                ${result.cost ? formatNumber(result.cost.server_cost / 1000, 0) : '-'}<span className="text-xs font-normal" style={{ color: colors.textSecondary }}>K</span>
+              </div>
+            </div>
+            <div style={metricCardStyle} className={metricCardClassName}>
+              <span className="text-xs" style={{ color: colors.textSecondary }}>互联成本</span>
+              <div className="text-xl font-bold mt-0.5" style={{ color: colors.text }}>
+                ${result.cost ? formatNumber(result.cost.interconnect_cost / 1000, 0) : '-'}<span className="text-xs font-normal" style={{ color: colors.textSecondary }}>K</span>
+              </div>
+            </div>
+            <div style={metricCardStyle} className={metricCardClassName}>
+              <span className="text-xs" style={{ color: colors.textSecondary }}>单芯片成本</span>
+              <div className="text-xl font-bold mt-0.5" style={{ color: colors.text }}>
+                ${result.cost ? formatNumber(result.cost.cost_per_chip / 1000, 1) : '-'}<span className="text-xs font-normal" style={{ color: colors.textSecondary }}>K</span>
               </div>
             </div>
           </div>

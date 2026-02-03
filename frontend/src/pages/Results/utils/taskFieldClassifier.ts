@@ -48,7 +48,6 @@ export function extractTaskFields(tasks: EvaluationTask[]): string[] {
 
   // 成本指标字段
   fields.add('cost_total')
-  fields.add('cost_per_million_tokens')
   fields.add('cost_server')
   fields.add('cost_interconnect')
   fields.add('cost_per_chip')
@@ -79,7 +78,7 @@ export function classifyTaskFields(fieldKeys: string[]): ClassifiedTaskFields {
     time: [],
   }
 
-  const performanceFields = ['tps', 'tps_per_chip', 'tps_per_batch', 'tpot', 'ttft', 'mfu', 'mbu', 'score', 'chips', 'dram_occupy', 'flops', 'end_to_end_latency', 'cost_total', 'cost_per_million_tokens', 'cost_server', 'cost_interconnect', 'cost_per_chip']
+  const performanceFields = ['tps', 'tps_per_chip', 'tps_per_batch', 'tpot', 'ttft', 'mfu', 'mbu', 'score', 'chips', 'dram_occupy', 'flops', 'end_to_end_latency', 'cost_total', 'cost_server', 'cost_interconnect', 'cost_per_chip']
   const parallelismFields = ['parallelism_dp', 'parallelism_tp', 'parallelism_pp', 'parallelism_ep', 'parallelism_sp', 'parallelism_moe_tp']
 
   fieldKeys.forEach(key => {
