@@ -207,6 +207,10 @@ class HierarchicalTopology:
     """层级拓扑配置"""
     pods: list[PodConfig] = field(default_factory=list)
     connections: list[ConnectionConfig] = field(default_factory=list)
+    # Switch 配置（可选，Phase 3）
+    # 格式: {"switches": [...], "switch_types": {...}}
+    switches: list[dict] = field(default_factory=list)
+    switch_types: dict[str, dict] = field(default_factory=dict)
 
 
 # ============================================
@@ -792,3 +796,189 @@ def validate_parallelism_config(parallelism_dict: dict, model_dict: Optional[dic
 
             if attention_chips != moe_chips:
                 raise ValueError(f"MoE 并行约束不满足: dp*tp ({dp}*{tp}={attention_chips}) 必须等于 moe_tp*ep ({moe_tp}*{ep}={moe_chips})")
+
+
+# ============================================
+# Switch 网络设备配置 (Phase 3)
+# ============================================
+
+class SwitchType(str, Enum):
+    """Switch 类型"""
+    LEAF = "leaf"        # 叶子交换机 (ToR Switch)
+    SPINE = "spine"      # 脊交换机
+    CORE = "core"        # 核心交换机
+
+
+class SwitchLayer(str, Enum):
+    """Switch 所属层级（对应互联层级）"""
+    INTER_CHIP = "inter_chip"    # 芯片间（同板）
+    INTER_BOARD = "inter_board"  # 板间（同 Rack）
+    INTER_RACK = "inter_rack"    # Rack 间（同 Pod）
+    INTER_POD = "inter_pod"      # Pod 间
+
+
+@dataclass
+class SwitchHardwareConfig:
+    """Switch 硬件配置
+
+    定义交换机的硬件特性，用于精确计算转发延迟。
+    """
+    # 基本信息
+    name: str                           # Switch 型号名称
+    switch_type: SwitchType             # 类型（leaf/spine/core）
+    port_count: int                     # 端口数量（如 72, 128, 512）
+
+    # 性能参数
+    port_bandwidth_gbps: float          # 单端口带宽 (GB/s，如 100, 400)
+    processing_delay_us: float = 0.5    # 固定处理延迟 (us，Store-and-Forward)
+    cut_through_delay_us: float = 0.1   # Cut-Through 模式延迟 (us)
+
+    # 缓冲区配置（用于高级排队模型，Phase 3 预留）
+    buffer_size_mb: float = 32.0        # 总缓冲区大小 (MB)
+    buffer_per_port_kb: float = 512.0   # 每端口缓冲区 (KB)
+
+    # 转发模式
+    forwarding_mode: str = "store_and_forward"  # 'store_and_forward' | 'cut_through'
+
+
+@dataclass
+class SwitchInstanceConfig:
+    """Switch 实例配置
+
+    表示拓扑中的一个具体 Switch 实例。
+    """
+    # 唯一标识
+    switch_id: str                      # 全局唯一 ID（如 "leaf_0_rack_0"）
+
+    # 硬件类型
+    hardware_type: str                  # 引用 SwitchHardwareConfig.name
+
+    # 拓扑位置
+    layer: SwitchLayer                  # 所属互联层级
+    pod_id: Optional[str] = None        # 所属 Pod ID
+    rack_id: Optional[str] = None       # 所属 Rack ID
+
+    # 连接信息（端口 → 设备映射）
+    # 由 SwitchManager 动态填充
+    port_to_device: dict = field(default_factory=dict)
+    device_to_port: dict = field(default_factory=dict)
+
+
+@dataclass
+class SwitchPortState:
+    """Switch 端口状态
+
+    追踪单个端口的资源状态和统计信息。
+    用于端口级别的排队建模。
+    """
+    # 标识
+    port_id: str                        # "switch_id:port_num"
+    switch_id: str
+    port_number: int
+
+    # 连接信息
+    connected_device: str = ""          # 连接的设备 ID（Chip 或 Switch）
+    link_bandwidth_gbps: float = 0.0    # 实际链路带宽
+
+    # 统计信息（由仿真过程中更新）
+    total_bytes_transferred: float = 0.0
+    total_packets_forwarded: int = 0
+    total_busy_time_us: float = 0.0
+    total_idle_time_us: float = 0.0
+
+    def get_utilization(self, total_time_us: float) -> float:
+        """计算端口利用率"""
+        if total_time_us <= 0:
+            return 0.0
+        return self.total_busy_time_us / total_time_us
+
+
+@dataclass
+class Packet:
+    """数据包
+
+    表示网络中传输的数据包（NCCL Chunk 级别）。
+    用于包级仿真。
+    """
+    # 唯一标识
+    packet_id: str                      # 全局唯一 ID
+    flow_id: str                        # 所属通信流 ID
+
+    # 数据信息
+    size_bytes: float                   # 包大小（默认 512 KB）
+    payload_type: str = "data"          # 'data' | 'ack' | 'control'
+
+    # 路由信息
+    src_chip: str = ""                  # 源芯片 ID
+    dst_chip: str = ""                  # 目标芯片 ID
+    current_location: str = ""          # 当前位置（chip_id 或 switch_id）
+
+    # 路径（经过的 Switch 列表）
+    route: list[str] = field(default_factory=list)  # ["leaf_0", "spine_0", "leaf_1"]
+    hop_index: int = 0                  # 当前跳索引 (0 = 在源芯片, 1 = 第一个 Switch)
+
+    # 时间戳
+    created_at: float = 0.0             # 创建时间 (us)
+    last_hop_time: float = 0.0          # 上一跳完成时间 (us)
+
+    # 元数据（用于追踪通信上下文）
+    layer_index: int = -1
+    micro_batch: int = 0
+    comm_type: str = ""                 # allreduce, p2p, etc.
+
+    def get_next_hop(self) -> Optional[str]:
+        """获取下一跳设备 ID"""
+        if self.hop_index < len(self.route):
+            return self.route[self.hop_index]
+        return None
+
+    def advance_hop(self) -> None:
+        """前进到下一跳"""
+        self.hop_index += 1
+
+    def is_at_destination(self) -> bool:
+        """检查是否已到达目标"""
+        return self.hop_index >= len(self.route)
+
+
+@dataclass
+class SwitchGraph:
+    """Switch 互联图
+
+    描述 Switch 之间以及 Switch 与 Chip 之间的连接关系。
+    """
+    # Switch 节点列表
+    switches: list[SwitchInstanceConfig] = field(default_factory=list)
+
+    # Switch 硬件配置（按名称索引）
+    hardware_configs: dict[str, SwitchHardwareConfig] = field(default_factory=dict)
+
+    # 连接关系
+    # key: (src_id, dst_id), value: (bandwidth_gbps, latency_us)
+    connections: dict[tuple[str, str], tuple[float, float]] = field(default_factory=dict)
+
+    def get_switch(self, switch_id: str) -> Optional[SwitchInstanceConfig]:
+        """获取 Switch 实例"""
+        for switch in self.switches:
+            if switch.switch_id == switch_id:
+                return switch
+        return None
+
+    def get_hardware_config(self, hardware_type: str) -> Optional[SwitchHardwareConfig]:
+        """获取 Switch 硬件配置"""
+        return self.hardware_configs.get(hardware_type)
+
+    def get_connection_params(
+        self, src_id: str, dst_id: str
+    ) -> tuple[float, float]:
+        """获取两个设备之间的连接参数
+
+        Returns:
+            (bandwidth_gbps, latency_us)
+        """
+        # 尝试正向和反向查找
+        if (src_id, dst_id) in self.connections:
+            return self.connections[(src_id, dst_id)]
+        if (dst_id, src_id) in self.connections:
+            return self.connections[(dst_id, src_id)]
+        return (0.0, 0.0)

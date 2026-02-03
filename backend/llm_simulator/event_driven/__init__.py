@@ -20,9 +20,15 @@ from .event import (
     ComputeEndEvent,
     CommStartEvent,
     CommEndEvent,
+    ChunkedCommStartEvent,
+    ChunkedCommEndEvent,
     LayerCompleteEvent,
     StageReadyEvent,
     BatchCompleteEvent,
+    # 包级事件 (Phase 3)
+    PacketSendEvent,
+    SwitchForwardEvent,
+    PacketReceiveEvent,
 )
 
 from .event_queue import EventQueue
@@ -33,6 +39,8 @@ from .dependency import DependencyGraph, OperatorNode
 
 from .simulator import EventDrivenSimulator, EventDrivenSimConfig
 
+from .switch_manager import SwitchManager, SwitchNode
+
 __all__ = [
     # 事件类型
     "EventType",
@@ -42,9 +50,15 @@ __all__ = [
     "ComputeEndEvent",
     "CommStartEvent",
     "CommEndEvent",
+    "ChunkedCommStartEvent",
+    "ChunkedCommEndEvent",
     "LayerCompleteEvent",
     "StageReadyEvent",
     "BatchCompleteEvent",
+    # 包级事件 (Phase 3)
+    "PacketSendEvent",
+    "SwitchForwardEvent",
+    "PacketReceiveEvent",
     # 事件队列
     "EventQueue",
     # 资源管理
@@ -56,4 +70,7 @@ __all__ = [
     # 仿真器
     "EventDrivenSimulator",
     "EventDrivenSimConfig",
+    # Switch 管理
+    "SwitchManager",
+    "SwitchNode",
 ]

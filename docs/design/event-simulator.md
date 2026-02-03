@@ -1,8 +1,9 @@
 # 事件驱动仿真器技术文档
 
 **创建日期**: 2025-01-28
-**版本**: v0.1.0 (Phase 1)
-**状态**: In Progress
+**更新日期**: 2025-02-03
+**版本**: v0.2.0 (Phase 2)
+**状态**: Phase 2 Completed
 
 ---
 
@@ -11,11 +12,13 @@
 1. [概述](#1-概述)
 2. [架构设计](#2-架构设计)
 3. [已完成功能 (Phase 1)](#3-已完成功能-phase-1)
-4. [待实现功能 (Phase 2-4)](#4-待实现功能-phase-2-4)
-5. [使用方式](#5-使用方式)
-6. [API 参考](#6-api-参考)
-7. [实现细节](#7-实现细节)
-8. [测试与验证](#8-测试与验证)
+4. [已完成功能 (Phase 2)](#4-已完成功能-phase-2)
+5. [待实现功能 (Phase 3-4)](#5-待实现功能-phase-3-4)
+6. [使用方式](#6-使用方式)
+7. [API 参考](#7-api-参考)
+8. [实现细节](#8-实现细节)
+9. [测试与验证](#9-测试与验证)
+10. [附录](#附录)
 
 ---
 
@@ -293,48 +296,265 @@ assert graph.get_stats()['total_edges'] == 1  # ✅ 依赖关系正确
 
 ---
 
-## 4. 待实现功能 (Phase 2-4)
+## 4. 已完成功能 (Phase 2)
 
-### 4.1 Phase 2: 高级特性
+### 4.1 API 集成
 
-| 功能 | 优先级 | 说明 |
-|------|--------|------|
-| **多 micro-batch 支持** | P0 | 支持多个 micro-batch 并行执行 |
-| **GPipe 调度** | P0 | 所有前向完成后再后向 |
-| **1F1B 调度** | P0 | 交替前向/后向，减少气泡 |
-| **计算-通信重叠** | P0 | 分块传输，流水线执行 |
-| **MoE TBO 优化** | P1 | Dispatch/Combine 与 Expert 计算重叠 |
+事件驱动仿真器现已完全集成到后端 API，可通过 `/api/simulate` 端点调用。
 
-#### 1F1B 调度策略
+#### 请求格式
 
+```json
+POST /api/simulate
+{
+    "topology": { ... },
+    "model": { ... },
+    "inference": { ... },
+    "parallelism": { ... },
+    "hardware": { ... },
+    "use_event_driven": true,
+    "event_driven_config": {
+        "max_simulated_tokens": 16,
+        "enable_comm_overlap": true,
+        "overlap_ratio": 0.8,
+        "enable_chunked_comm": true,
+        "comm_chunk_size_mb": 16.0,
+        "enable_tbo": true,
+        "pp_schedule": "gpipe"
+    }
+}
 ```
-1F1B 时间线 (PP=4, micro-batch=8):
 
-Stage 0: [F0][F1][F2][F3][B0][F4][B1][F5][B2][F6][B3][F7][B4][B5][B6][B7]
-Stage 1:    [F0][F1][F2][B0][F3][B1][F4][B2][F5][B3][F6][B4][F7][B5][B6][B7]
-Stage 2:       [F0][F1][B0][F2][B1][F3][B2][F4][B3][F5][B4][F6][B5][F7][B6][B7]
-Stage 3:          [F0][B0][F1][B1][F2][B2][F3][B3][F4][B4][F5][B5][F6][B6][F7][B7]
-```
+#### 关键参数
 
-#### 计算-通信重叠建模
+| 参数 | 类型 | 默认值 | 说明 |
+|------|------|--------|------|
+| `use_event_driven` | bool | false | 是否使用事件驱动仿真 |
+| `enable_comm_overlap` | bool | true | 是否启用计算-通信重叠 |
+| `overlap_ratio` | float | 0.8 | 重叠比例（0-1） |
+| `enable_chunked_comm` | bool | false | 是否启用分块传输 |
+| `comm_chunk_size_mb` | float | 16.0 | 每块大小（MB） |
+| `enable_tbo` | bool | true | 是否启用 MoE TBO 优化 |
+
+### 4.2 计算-通信并行调度
+
+实现了真正的计算-通信并行执行，利用独立的资源追踪实现精确的重叠建模。
+
+#### 核心机制
 
 ```
 传统顺序执行:
-┌────────────────┐┌────────────────┐┌────────────────┐
-│   O Proj       ││  TP AllReduce  ││    RMSNorm     │
-└────────────────┘└────────────────┘└────────────────┘
+┌──────────────────┐┌──────────────────┐┌──────────────────┐
+│   Compute Op     ││  TP AllReduce    ││   Next Compute   │
+└──────────────────┘└──────────────────┘└──────────────────┘
+        10us              8us                  10us
+                                          Total: 28us
 
-重叠执行（分块）:
-┌────────────────┐┌────────────────────────────────┐
-│   O Proj       ││  TP AllReduce (分块)            │
-└────────────────┘└───────────┬────────────────────┘
-                              │ 第一块完成即可开始
-                  ┌───────────▼────────────────────┐
-                  │  RMSNorm (流水线)               │
-                  └────────────────────────────────┘
+重叠执行 (overlap_ratio=0.8):
+┌──────────────────┐
+│   Compute Op     │
+└────────┬─────────┘
+         │ 在完成 20% 时启动通信
+         ▼
+    ┌────────────────────┐
+    │   TP AllReduce     │
+    └──────────┬─────────┘
+               │ 通信完成
+               ▼
+         ┌──────────────────┐
+         │   Next Compute   │
+         └──────────────────┘
+                          Total: ~22us (节省 ~20%)
 ```
 
-### 4.2 Phase 3: 精细化增强
+#### 事件处理流程
+
+```python
+# ComputeStartEvent.handle() 中的重叠调度逻辑
+
+def handle(self, resource_manager, gantt_builder, context):
+    # 1. 请求计算资源
+    actual_start, actual_end = resource_manager.request_resource(
+        chip_id, ResourceType.COMPUTE, timestamp, duration
+    )
+
+    # 2. 检查是否启用重叠且后续有通信
+    if context["enable_comm_overlap"] and self.has_following_comm:
+        # 计算提前启动通信的时间点
+        overlap_start = actual_start + duration * (1 - context["overlap_ratio"])
+
+        # 检查网络资源是否可用
+        network_idle = resource_manager.get_resource_idle_time(
+            chip_id, ResourceType.NETWORK
+        )
+
+        # 创建提前的通信事件
+        comm_start_time = max(overlap_start, network_idle)
+        new_events.append(CommStartEvent(
+            timestamp=comm_start_time,
+            is_overlapped=True,  # 标记为重叠调度
+            ...
+        ))
+
+    # 3. 创建计算结束事件
+    new_events.append(ComputeEndEvent(
+        has_overlapped_comm=True,  # 避免重复触发
+        ...
+    ))
+```
+
+### 4.3 分块传输 (Chunked Communication)
+
+将大型 AllReduce 分成多个块，实现更细粒度的流水线。
+
+#### 工作原理
+
+```
+传统 AllReduce (256MB):
+┌────────────────────────────────────────┐
+│           AllReduce 256MB              │
+└────────────────────────────────────────┘
+                                      完成后才能开始下一个计算
+
+分块 AllReduce (16MB × 16 chunks):
+┌────┐┌────┐┌────┐┌────┐...┌────┐
+│ C0 ││ C1 ││ C2 ││ C3 │   │C15 │
+└──┬─┘└────┘└────┘└────┘   └────┘
+   │
+   │ 第一块完成即可开始下一个计算
+   ▼
+   ┌──────────────────────────────────┐
+   │        Next Compute (流水线)      │
+   └──────────────────────────────────┘
+```
+
+#### 新增事件类型
+
+```python
+@dataclass
+class ChunkedCommStartEvent(BaseEvent):
+    """分块通信开始事件"""
+    chunk_index: int = 0           # 当前块索引
+    total_chunks: int = 1          # 总块数
+    chunk_size_bytes: float = 0.0  # 每块大小
+    duration_per_chunk_us: float   # 每块传输时间
+    following_compute_op: Any      # 后续计算算子（仅第一块）
+
+@dataclass
+class ChunkedCommEndEvent(BaseEvent):
+    """分块通信结束事件"""
+    chunk_index: int
+    total_chunks: int
+
+    def handle(self, ...):
+        # 第一块完成时，触发后续计算
+        if self.chunk_index == 0 and self.following_compute_op:
+            new_events.append(ComputeStartEvent(...))
+
+        # 最后一块完成时，标记整个通信完成
+        if self.chunk_index == self.total_chunks - 1:
+            dependency_graph.mark_completed(...)
+```
+
+#### 启用条件
+
+分块传输仅在以下条件下启用：
+- `enable_chunked_comm = true`
+- 通信类型为 `allreduce`、`allgather` 或 `reduce_scatter`
+- 通信大小 > 2 × `comm_chunk_size_mb`
+
+### 4.4 MoE TBO 优化 (Tensor-Bus Overlap)
+
+MoE 层的 Dispatch 通信和 Expert 计算可以并行执行。
+
+#### MoE 层结构
+
+```
+标准 MoE 层执行顺序:
+Gate → Dispatch → Expert → Combine
+
+传统顺序执行:
+┌──────┐┌──────────┐┌────────────────────┐┌──────────┐
+│ Gate ││ Dispatch ││      Expert        ││ Combine  │
+└──────┘└──────────┘└────────────────────┘└──────────┘
+                                          Total: 40us
+
+TBO 优化后 (Dispatch 和 Expert 并行):
+┌──────┐
+│ Gate │
+└──┬───┘
+   │
+   ├──────────────────────┐
+   │                      │
+   ▼                      ▼
+┌──────────┐    ┌────────────────────┐
+│ Dispatch │    │      Expert        │
+└─────┬────┘    └─────────┬──────────┘
+      │                   │
+      └─────────┬─────────┘
+                │ 等待两者都完成
+                ▼
+         ┌──────────┐
+         │ Combine  │
+         └──────────┘
+                    Total: ~30us (节省 ~25%)
+```
+
+#### 依赖图构建
+
+```python
+def build_moe_layer_with_tbo(self, layer_idx, layer, enable_tbo=True):
+    """构建 MoE 层的依赖图（支持 TBO 优化）"""
+
+    if enable_tbo:
+        # TBO 模式：允许并行
+
+        # Gate → Dispatch（顺序）
+        add_edge(gate.key, dispatch.key, DATA)
+
+        # Gate → Expert（并行分支，而非 Dispatch → Expert）
+        add_edge(gate.key, expert.key, DATA)
+
+        # Combine 需要等待 Expert 和 Dispatch 都完成
+        add_edge(expert.key, combine.key, DATA)
+        add_edge(dispatch.key, combine.key, SYNC)
+    else:
+        # 非 TBO 模式：严格顺序
+        for i in range(1, len(all_ops)):
+            add_edge(all_ops[i-1].key, all_ops[i].key, DATA)
+```
+
+### 4.5 仿真流程更新
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                     EventDrivenSimulator.simulate()                   │
+├─────────────────────────────────────────────────────────────────────┤
+│  1. 初始化                                                           │
+│     └── reset_event_counter(), event_queue.clear(), etc.           │
+│                                                                      │
+│  2. 构建依赖图 (支持 MoE TBO)                                         │
+│     └── 识别 MoE 层 → build_moe_layer_with_tbo()                    │
+│     └── Dense 层 → 标准依赖构建                                      │
+│                                                                      │
+│  3. 创建仿真上下文 (包含重叠配置)                                       │
+│     └── enable_comm_overlap, overlap_ratio, enable_chunked_comm     │
+│                                                                      │
+│  4. 事件循环                                                          │
+│     └── ComputeStartEvent: 检查后续通信 → 提前调度                    │
+│     └── CommStartEvent: 检查是否分块 → 创建 ChunkedCommStartEvent    │
+│     └── ChunkedCommEndEvent: 第一块完成 → 触发下一个计算              │
+│                                                                      │
+│  5. 收集结果                                                          │
+│     └── 统计重叠时间、气泡时间、MFU 等                                │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## 5. 待实现功能 (Phase 3-4)
+
+### 5.1 Phase 3: 精细化增强
 
 | 功能 | 优先级 | 说明 |
 |------|--------|------|
@@ -342,26 +562,27 @@ Stage 3:          [F0][B0][F1][B1][F2][B2][F3][B3][F4][B4][F5][B5][F6][B6][F7][B
 | **量化支持** | P1 | INT8/FP8 量化建模 |
 | **网络拥塞建模** | P2 | 多通信流竞争带宽 |
 | **动态 Batching** | P2 | Continuous Batching 支持 |
+| **1F1B 调度策略** | P1 | 更高效的流水线调度 |
 
-### 4.3 Phase 4: 生产就绪
+### 5.2 Phase 4: 生产就绪
 
 | 功能 | 优先级 | 说明 |
 |------|--------|------|
 | **完整测试覆盖** | P0 | 单元测试 + 集成测试 |
 | **性能基准** | P0 | 与真实系统对比验证 |
 | **文档完善** | P0 | API 文档 + 使用指南 |
-| **新旧模式切换** | P0 | 前端可选择仿真模式 |
+| **前端集成** | P0 | 前端可选择仿真模式 |
 
-### 4.4 实施路线图
+### 5.3 实施路线图
 
 ```
-Phase 1: 基础事件系统 ✅           Phase 2: 高级特性
+Phase 1: 基础事件系统 ✅           Phase 2: 高级特性 ✅
 ┌────────────────────────┐        ┌────────────────────────┐
-│ • Event & EventQueue   │        │ • 计算-通信重叠        │
-│ • Resource Manager     │        │ • 1F1B 调度支持        │
-│ • 基础 Handler         │  ──▶   │ • MoE TBO             │
-│ • 依赖图构建           │        │ • 分块传输建模         │
-│ • 简单场景验证         │        │ • 性能优化             │
+│ • Event & EventQueue   │        │ • API 集成 ✅          │
+│ • Resource Manager     │        │ • 计算-通信重叠 ✅     │
+│ • 基础 Handler         │  ──▶   │ • MoE TBO ✅           │
+│ • 依赖图构建           │        │ • 分块传输建模 ✅      │
+│ • 简单场景验证         │        │                        │
 └────────────────────────┘        └────────────────────────┘
          │                                  │
          │                                  │
@@ -371,15 +592,38 @@ Phase 3: 精细化增强                Phase 4: 生产就绪
 │ • Kernel Launch 开销   │        │ • 完整测试覆盖         │
 │ • 量化支持             │  ──▶   │ • 性能基准             │
 │ • 网络拥塞             │        │ • 文档完善             │
-│ • 动态 Batching        │        │ • 新旧模式切换         │
+│ • 1F1B 调度策略        │        │ • 前端集成             │
 └────────────────────────┘        └────────────────────────┘
 ```
 
 ---
 
-## 5. 使用方式
+## 6. 使用方式
 
-### 5.1 基本使用
+### 6.1 通过 API 调用（推荐）
+
+```bash
+# 使用事件驱动仿真器
+curl -X POST http://localhost:8001/api/simulate \
+  -H "Content-Type: application/json" \
+  -d '{
+    "topology": { ... },
+    "model": { ... },
+    "inference": { ... },
+    "parallelism": { ... },
+    "hardware": { ... },
+    "use_event_driven": true,
+    "event_driven_config": {
+      "max_simulated_tokens": 16,
+      "enable_comm_overlap": true,
+      "overlap_ratio": 0.8,
+      "enable_chunked_comm": false,
+      "enable_tbo": true
+    }
+  }'
+```
+
+### 6.2 Python 直接调用
 
 ```python
 from llm_simulator.event_driven import EventDrivenSimulator, EventDrivenSimConfig
@@ -388,8 +632,13 @@ from llm_simulator.event_driven import EventDrivenSimulator, EventDrivenSimConfi
 config = EventDrivenSimConfig(
     max_simulated_tokens=16,
     enable_data_transfer=True,
+    enable_kv_cache=True,
     enable_comm_overlap=True,
-    pp_schedule="gpipe",  # 或 "1f1b"
+    overlap_ratio=0.8,
+    enable_chunked_comm=False,
+    comm_chunk_size_mb=16.0,
+    enable_tbo=True,
+    pp_schedule="gpipe",
 )
 
 # 创建仿真器
@@ -411,49 +660,77 @@ print(f"TTFT: {result.stats.ttft} ms")
 print(f"MFU: {result.stats.dynamic_mfu:.2%}")
 ```
 
-### 5.2 API 切换（规划中）
+### 6.3 模式对比
 
-```python
-# 后端 API
-POST /api/simulate
-{
-    "mode": "event_driven",  # 或 "sequential"
-    ...
-}
-```
+| 参数 | 事件驱动模式 | 静态模式 |
+|------|-------------|---------|
+| `use_event_driven` | `true` | `false` (默认) |
+| 精度 | 高（精确重叠建模） | 中（公式估算） |
+| 性能 | 较慢 | 快 |
+| 适用场景 | 详细分析、调优 | 快速评估、参数扫描 |
 
 ---
 
-## 6. API 参考
+## 7. API 参考
 
-### 6.1 EventDrivenSimConfig
+### 7.1 EventDrivenSimConfig
 
 ```python
 @dataclass
 class EventDrivenSimConfig:
     # 基础配置
-    max_simulated_tokens: int = 16
-    enable_data_transfer: bool = True
-    enable_kv_cache: bool = True
+    max_simulated_tokens: int = 16          # 最大模拟 token 数
+    enable_data_transfer: bool = True       # 是否启用数据传输
+    enable_kv_cache: bool = True            # 是否启用 KV 缓存
 
-    # 重叠优化
-    enable_comm_overlap: bool = True
-    enable_tbo: bool = True
+    # 计算-通信重叠优化 (Phase 2)
+    enable_comm_overlap: bool = True        # 是否启用计算-通信重叠
+    overlap_ratio: float = 0.8              # 重叠比例（0-1）
+
+    # 分块传输 (Phase 2)
+    enable_chunked_comm: bool = False       # 是否启用分块传输
+    comm_chunk_size_mb: float = 16.0        # 每块大小（MB）
+
+    # MoE TBO 优化 (Phase 2)
+    enable_tbo: bool = True                 # 是否启用 MoE TBO 优化
 
     # 评估器配置
-    use_precise_evaluator: bool = True
-    evaluation_granularity: str = "fine"
+    use_precise_evaluator: bool = True      # 是否使用精确评估器
+    evaluation_granularity: str = "fine"    # 评估粒度
 
     # 调度策略
-    pp_schedule: str = "gpipe"  # gpipe | 1f1b
+    pp_schedule: str = "gpipe"              # gpipe | 1f1b (1f1b 待实现)
 
     # 调试选项
-    max_events: int = 1000000
-    log_events: bool = False
-    max_simulation_time_us: float = 1e9
+    max_events: int = 1000000               # 最大事件数
+    log_events: bool = False                # 是否记录事件日志
+    max_simulation_time_us: float = 1e9     # 最大仿真时间（微秒）
 ```
 
-### 6.2 EventQueue
+### 7.2 HTTP API 参数
+
+#### SimulationRequest 新增字段
+
+| 字段 | 类型 | 默认值 | 说明 |
+|------|------|--------|------|
+| `use_event_driven` | bool | false | 是否使用事件驱动仿真 |
+| `event_driven_config` | object | null | 事件驱动仿真配置 |
+
+#### EventDrivenConfigRequest
+
+| 字段 | 类型 | 默认值 | 说明 |
+|------|------|--------|------|
+| `max_simulated_tokens` | int | 16 | 最大模拟 token 数 |
+| `enable_data_transfer` | bool | true | 是否启用数据传输 |
+| `enable_kv_cache` | bool | true | 是否启用 KV 缓存 |
+| `enable_comm_overlap` | bool | true | 是否启用计算-通信重叠 |
+| `overlap_ratio` | float | 0.8 | 重叠比例（0-1） |
+| `enable_chunked_comm` | bool | false | 是否启用分块传输 |
+| `comm_chunk_size_mb` | float | 16.0 | 每块大小（MB） |
+| `enable_tbo` | bool | true | 是否启用 MoE TBO 优化 |
+| `pp_schedule` | string | "gpipe" | 流水线调度策略 |
+
+### 7.3 EventQueue
 
 | 方法 | 说明 |
 |------|------|
@@ -464,18 +741,19 @@ class EventDrivenSimConfig:
 | `is_empty()` | 检查是否为空 |
 | `stats()` | 返回统计信息 |
 
-### 6.3 ResourceManager
+### 7.4 ResourceManager
 
 | 方法 | 说明 |
 |------|------|
 | `request_resource(chip_id, type, start, duration)` | 请求资源 |
+| `get_resource_idle_time(chip_id, type)` | 获取资源空闲时间 |
 | `record_bubble(chip_id, start, duration, reason)` | 记录气泡 |
 | `get_total_bubble_time(chip_id)` | 获取总气泡时间 |
 | `get_bubble_breakdown()` | 按原因分类气泡 |
 | `record_comm_arrival(...)` | 记录通信到达 |
 | `all_chips_ready_for_comm(...)` | 检查同步就绪 |
 
-### 6.4 DependencyGraph
+### 7.5 DependencyGraph
 
 | 方法 | 说明 |
 |------|------|
@@ -486,11 +764,19 @@ class EventDrivenSimConfig:
 | `is_layer_complete(layer, mb)` | 检查层是否完成 |
 | `get_entry_nodes(mb)` | 获取入口节点 |
 
+### 7.6 DependencyGraphBuilder (Phase 2 新增)
+
+| 方法 | 说明 |
+|------|------|
+| `build_moe_layer_with_tbo(layer_idx, layer, ...)` | 构建 MoE 层依赖图（支持 TBO） |
+| `add_edge(src, dst, dep_type)` | 添加依赖边 |
+| `get_graph()` | 获取构建完成的依赖图 |
+
 ---
 
-## 7. 实现细节
+## 8. 实现细节
 
-### 7.1 事件处理流程
+### 8.1 事件处理流程
 
 ```
 ComputeStartEvent.handle():
@@ -506,7 +792,7 @@ ComputeEndEvent.handle():
     4. 检查是否层完成             → 触发 LayerCompleteEvent
 ```
 
-### 7.2 集合通信同步
+### 8.2 集合通信同步
 
 ```
 CommStartEvent.handle():
@@ -520,7 +806,7 @@ CommStartEvent.handle():
     6. 创建 CommEndEvent
 ```
 
-### 7.3 PP Stage 转换
+### 8.3 PP Stage 转换
 
 ```
 LayerCompleteEvent.handle():
@@ -538,9 +824,9 @@ StageReadyEvent.handle():
 
 ---
 
-## 8. 测试与验证
+## 9. 测试与验证
 
-### 8.1 单元测试
+### 9.1 单元测试
 
 ```bash
 cd backend
@@ -569,20 +855,21 @@ print('All tests passed!')
 "
 ```
 
-### 8.2 验证标准
+### 9.2 验证标准
 
 | 场景 | 验证方法 |
 |------|----------|
 | 单芯片无并行 | 总时间应与顺序仿真完全相等 |
 | 纯 TP 并行 | 计算时间相等，通信时间相近 |
 | 纯 PP 并行 | 总时间相近，气泡比例更准确 |
+| 计算-通信重叠 | Gantt 图应显示重叠区域 |
+| MoE TBO | Dispatch 和 Expert 应并行执行 |
 
-### 8.3 已知限制
+### 9.3 已知限制
 
-- Phase 1 仅支持 Prefill 阶段
 - 暂不支持 1F1B 调度策略
-- 暂不支持计算-通信分块重叠
 - 暂不支持 Decode 阶段逐 token 仿真
+- 分块传输仅支持 AllReduce/AllGather/ReduceScatter
 
 ---
 
@@ -603,14 +890,35 @@ print('All tests passed!')
 
 | 文件 | 行数 | 说明 |
 |------|------|------|
-| `event.py` | ~700 | 事件定义 |
+| `event.py` | ~850 | 事件定义（含分块通信事件） |
 | `event_queue.py` | ~120 | 优先队列 |
-| `resource.py` | ~300 | 资源管理 |
-| `dependency.py` | ~300 | 依赖图 |
-| `simulator.py` | ~700 | 仿真器主类 |
-| **总计** | ~2120 | |
+| `resource.py` | ~320 | 资源管理（含空闲时间查询） |
+| `dependency.py` | ~400 | 依赖图（含 MoE TBO） |
+| `simulator.py` | ~800 | 仿真器主类（含重叠配置） |
+| `__init__.py` | ~65 | 模块导出 |
+| **总计** | ~2555 | |
+
+**API 相关文件变更**:
+
+| 文件 | 变更类型 | 说明 |
+|------|----------|------|
+| `web/api.py` | 修改 | 添加事件驱动仿真调用 |
+| `web/schemas.py` | 修改 | 添加 EventDrivenConfigRequest |
 
 ### C. 更新日志
+
+- **2025-02-03**: Phase 2 完成
+  - **API 集成**: 事件驱动仿真器可通过 `/api/simulate` 端点调用
+  - **计算-通信并行**: 实现真正的计算-通信重叠调度
+    - 新增 `overlap_ratio` 配置参数
+    - ComputeStartEvent 支持提前触发通信事件
+  - **分块传输**: 实现 AllReduce 分块传输
+    - 新增 ChunkedCommStartEvent、ChunkedCommEndEvent 事件
+    - 第一块完成即可触发后续计算
+  - **MoE TBO 优化**: 实现 Dispatch 和 Expert 并行执行
+    - 新增 `build_moe_layer_with_tbo()` 方法
+    - Combine 等待 Expert 和 Dispatch 双重依赖
+  - **文档更新**: 更新架构文档至 v0.2.0
 
 - **2025-01-28**: Phase 1 完成
   - 实现事件系统（7种事件类型）

@@ -154,7 +154,16 @@ class TopologyParser:
                 latency=latency,
             ))
 
-        return HierarchicalTopology(pods=pods, connections=connections)
+        # 解析 Switch 配置（可选，Phase 3）
+        switches = data.get("switches", [])
+        switch_types = data.get("switch_types", {})
+
+        return HierarchicalTopology(
+            pods=pods,
+            connections=connections,
+            switches=switches,
+            switch_types=switch_types,
+        )
 
     def validate_hardware_params(self) -> None:
         """验证拓扑中嵌入的硬件参数是否完整
@@ -499,5 +508,126 @@ class TopologyParser:
                 min_bandwidth = min(min_bandwidth, bw)
                 max_latency = max(max_latency, lat)
 
-        
+
         return min_bandwidth, max_latency
+
+    def build_switch_graph(self) -> "SwitchGraph":
+        """构建 Switch 互联图
+
+        解析拓扑配置中的 Switch 信息，构建 SwitchGraph。
+        如果拓扑中没有显式的 Switch 配置，返回空图。
+
+        Returns:
+            SwitchGraph 对象
+        """
+        from ..config.types import (
+            SwitchGraph, SwitchHardwareConfig, SwitchInstanceConfig,
+            SwitchType, SwitchLayer,
+        )
+
+        # 解析硬件配置
+        hardware_configs: dict[str, SwitchHardwareConfig] = {}
+        for type_name, type_data in self.topology.switch_types.items():
+            hardware_configs[type_name] = SwitchHardwareConfig(
+                name=type_name,
+                switch_type=SwitchType(type_data.get("type", "leaf")),
+                port_count=type_data.get("port_count", 72),
+                port_bandwidth_gbps=type_data.get("port_bandwidth_gbps", 100.0),
+                processing_delay_us=type_data.get("processing_delay_us", 0.5),
+                cut_through_delay_us=type_data.get("cut_through_delay_us", 0.1),
+                buffer_size_mb=type_data.get("buffer_size_mb", 32.0),
+                buffer_per_port_kb=type_data.get("buffer_per_port_kb", 512.0),
+                forwarding_mode=type_data.get("forwarding_mode", "store_and_forward"),
+            )
+
+        # 解析 Switch 实例
+        switches: list[SwitchInstanceConfig] = []
+        connections: dict[tuple[str, str], tuple[float, float]] = {}
+
+        for switch_data in self.topology.switches:
+            switch_id = switch_data.get("id", "")
+            if not switch_id:
+                continue
+
+            # 确定层级
+            layer_str = switch_data.get("layer", "inter_chip")
+            try:
+                layer = SwitchLayer(layer_str)
+            except ValueError:
+                layer = SwitchLayer.INTER_CHIP
+
+            # 解析端口映射
+            port_to_device = {}
+            device_to_port = {}
+            ports = switch_data.get("ports", [])
+            for port_num, port_data in enumerate(ports):
+                if isinstance(port_data, dict):
+                    connected = port_data.get("connected_to", "")
+                elif isinstance(port_data, str):
+                    connected = port_data
+                else:
+                    connected = ""
+
+                if connected:
+                    port_to_device[port_num] = connected
+                    device_to_port[connected] = port_num
+
+            switch_config = SwitchInstanceConfig(
+                switch_id=switch_id,
+                hardware_type=switch_data.get("type", "leaf_72"),
+                layer=layer,
+                pod_id=switch_data.get("pod_id"),
+                rack_id=switch_data.get("rack_id"),
+                port_to_device=port_to_device,
+                device_to_port=device_to_port,
+            )
+            switches.append(switch_config)
+
+            # 解析 Switch 连接（到其他 Switch 或 Chip）
+            for port_num, device_id in port_to_device.items():
+                # 从互联参数获取带宽和延迟
+                bw, lat = self._get_switch_link_params(switch_id, device_id, layer)
+                connections[(switch_id, device_id)] = (bw, lat)
+
+        return SwitchGraph(
+            switches=switches,
+            hardware_configs=hardware_configs,
+            connections=connections,
+        )
+
+    def _get_switch_link_params(
+        self,
+        switch_id: str,
+        device_id: str,
+        layer: "SwitchLayer",
+    ) -> tuple[float, float]:
+        """获取 Switch 链路参数
+
+        Args:
+            switch_id: Switch ID
+            device_id: 连接的设备 ID
+            layer: Switch 层级
+
+        Returns:
+            (bandwidth_gbps, latency_us)
+        """
+        from ..config.types import SwitchLayer
+
+        # 根据层级选择互联参数
+        if layer == SwitchLayer.INTER_CHIP:
+            params = self.interconnect_params.get("c2c", {})
+        elif layer == SwitchLayer.INTER_BOARD:
+            params = self.interconnect_params.get("b2b", {})
+        elif layer == SwitchLayer.INTER_RACK:
+            params = self.interconnect_params.get("r2r", {})
+        else:  # INTER_POD
+            params = self.interconnect_params.get("p2p", {})
+
+        return (
+            params.get("bandwidth_gbps", 100.0),
+            params.get("latency_us", 1.0),
+        )
+
+    def has_switch_config(self) -> bool:
+        """检查拓扑是否包含 Switch 配置"""
+        return len(self.topology.switches) > 0
