@@ -42,8 +42,7 @@ export const MainLayout: React.FC = () => {
 
           {/* Results */}
           <div
-            className={`${ui.viewMode === 'results' ? 'flex' : 'hidden'} absolute inset-0 overflow-y-auto overflow-x-hidden`}
-            style={{ overscrollBehavior: 'none' }}
+            className={`${ui.viewMode === 'results' ? 'block' : 'hidden'} absolute inset-0 overflow-hidden`}
           >
             <Results />
           </div>

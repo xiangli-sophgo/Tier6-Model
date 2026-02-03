@@ -5,15 +5,101 @@
 
 import React from 'react'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Badge } from '@/components/ui/badge'
-import { BarChart3, ChevronDown, ChevronRight } from 'lucide-react'
+import { BaseCard } from '@/components/common/BaseCard'
+import { BarChart3 } from 'lucide-react'
 import type { EvaluationTask } from '@/api/results'
 import { formatPercent } from '@/utils/formatters'
 
 interface TaskDetailPanelProps {
   task: EvaluationTask
   onAnalyze: () => void
+}
+
+// ============================================
+// 字段中文名称映射
+// ============================================
+const FIELD_LABELS: Record<string, string> = {
+  // 模型配置
+  model_name: '模型名称',
+  model_type: '模型类型',
+  hidden_size: '隐藏层维度',
+  num_layers: '层数',
+  num_attention_heads: '注意力头数',
+  num_kv_heads: 'KV 头数',
+  intermediate_size: 'FFN 中间层',
+  vocab_size: '词表大小',
+  dtype: '数据类型',
+  weight_dtype: '权重数据类型',
+  activation_dtype: '激活数据类型',
+  max_seq_length: '最大序列长度',
+  attention_type: '注意力类型',
+  norm_type: '归一化类型',
+
+  // MoE 配置
+  moe_config: 'MoE 配置',
+  num_experts: '专家数量',
+  experts_per_token: '每 Token 激活专家数',
+  num_shared_experts: '共享专家数',
+  router_topk_policy: '路由 TopK 策略',
+
+  // MLA 配置
+  mla_config: 'MLA 配置',
+  kv_lora_rank: 'KV LoRA 秩',
+  q_lora_rank: 'Q LoRA 秩',
+  qk_rope_dim: 'QK RoPE 维度',
+  qk_nope_dim: 'QK Non-RoPE 维度',
+  v_head_dim: 'V 头维度',
+
+  // 推理配置
+  batch_size: '批次大小',
+  input_seq_length: '输入序列长度',
+  output_seq_length: '输出序列长度',
+  num_micro_batches: '微批次数量',
+
+  // 硬件配置
+  name: '名称',
+  num_cores: '计算核心数',
+  compute_tflops_fp8: 'FP8 算力 (TFLOPS)',
+  compute_tflops_bf16: 'BF16 算力 (TFLOPS)',
+  memory_capacity_gb: '显存容量 (GB)',
+  memory_bandwidth_gbps: '显存带宽 (GB/s)',
+  memory_bandwidth_utilization: '显存带宽利用率',
+  lmem_capacity_mb: 'LMEM 容量 (MB)',
+  lmem_bandwidth_gbps: 'LMEM 带宽 (GB/s)',
+  cube_m: 'Cube M 维度',
+  cube_k: 'Cube K 维度',
+  cube_n: 'Cube N 维度',
+  sram_size_kb: 'SRAM 大小 (KB)',
+  sram_utilization: 'SRAM 利用率',
+  lane_num: 'Lane 数量',
+  align_bytes: '对齐字节数',
+  compute_dma_overlap_rate: '计算-搬运重叠率',
+
+  // 互联配置
+  c2c: '芯片间 (C2C)',
+  b2b: '板间 (B2B)',
+  r2r: '机架间 (R2R)',
+  p2p: 'Pod 间 (P2P)',
+  bandwidth_gbps: '带宽 (GB/s)',
+  latency_us: '延迟 (μs)',
+
+  // 通信配置
+  allreduce_algorithm: 'AllReduce 算法',
+  alltoall_algorithm: 'AllToAll 算法',
+  enable_compute_comm_overlap: '计算-通信重叠',
+  network_efficiency: '网络效率',
+
+  // 拓扑配置
+  pod_count: 'Pod 数量',
+  racks_per_pod: '每 Pod Rack 数',
+  count: '数量',
+  chips: '芯片配置',
+  preset_id: '预设 ID',
+}
+
+// 获取字段的中文名称
+const getFieldLabel = (key: string): string => {
+  return FIELD_LABELS[key] || key
 }
 
 // 信息项组件（单个条目）
@@ -31,7 +117,7 @@ const InfoItem: React.FC<{
 const InfoGrid: React.FC<{
   items: Array<{ label: string; value: React.ReactNode }>
   columns?: number
-}> = ({ items, columns = 4 }) => (
+}> = ({ items, columns = 5 }) => (
   <div className={`grid gap-2`} style={{ gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))` }}>
     {items.map((item, index) => (
       <InfoItem key={index} label={item.label} value={item.value} />
@@ -39,51 +125,26 @@ const InfoGrid: React.FC<{
   </div>
 )
 
-// 折叠面板组件
-const CollapsibleSection: React.FC<{
+// 配置分区组件（带左边框和标题）
+const ConfigSection: React.FC<{
   title: string
+  color: string
   children: React.ReactNode
-  defaultOpen?: boolean
-  count?: number
-}> = ({ title, children, defaultOpen = false, count }) => {
-  const [isOpen, setIsOpen] = React.useState(defaultOpen)
-
-  const handleToggle = (e: React.MouseEvent) => {
-    e.preventDefault()
-    e.stopPropagation()
-    setIsOpen(!isOpen)
-  }
-
-  return (
-    <Card className="bg-white/80 backdrop-blur-sm">
-      <CardHeader
-        className="cursor-pointer py-3 px-4 hover:bg-gray-50/50 transition-colors"
-        onClick={handleToggle}
-      >
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            {isOpen ? (
-              <ChevronDown className="h-4 w-4 text-gray-500" />
-            ) : (
-              <ChevronRight className="h-4 w-4 text-gray-500" />
-            )}
-            <CardTitle className="text-base">
-              {title}
-              {count !== undefined && (
-                <span className="ml-2 text-sm text-gray-500 font-normal">({count})</span>
-              )}
-            </CardTitle>
-          </div>
-        </div>
-      </CardHeader>
-      {isOpen && (
-        <CardContent className="pt-0 pb-4 px-4 bg-white/50">
-          {children}
-        </CardContent>
-      )}
-    </Card>
-  )
-}
+  level?: number
+}> = ({ title, color, children, level = 0 }) => (
+  <div className={level > 0 ? 'ml-4' : ''}>
+    <h5
+      className={`text-xs font-semibold text-text-secondary mb-2 uppercase tracking-wide px-2 py-1 border-l-2`}
+      style={{
+        backgroundColor: `${color}15`,
+        borderLeftColor: color,
+      }}
+    >
+      {title}
+    </h5>
+    {children}
+  </div>
+)
 
 // 任务状态映射
 const STATUS_MAP: Record<string, { label: string; variant: 'default' | 'secondary' | 'destructive' | 'outline' | 'success' | 'warning' }> = {
@@ -98,7 +159,6 @@ const STATUS_MAP: Record<string, { label: string; variant: 'default' | 'secondar
 const formatNumber = (value: any, decimals = 2): string => {
   if (value === undefined || value === null) return '-'
   if (typeof value !== 'number') {
-    // 尝试转换为数字
     const num = Number(value)
     if (isNaN(num)) return String(value)
     value = num
@@ -113,29 +173,138 @@ const formatDate = (dateStr: string | undefined): string => {
   return new Date(dateStr).toLocaleString('zh-CN')
 }
 
-// 格式化配置对象
+// 格式化配置值
 const formatConfigValue = (value: any): string => {
   if (value === null || value === undefined) return '-'
   if (typeof value === 'boolean') return value ? '是' : '否'
-  if (typeof value === 'object') return JSON.stringify(value, null, 2)
+  if (typeof value === 'object') return JSON.stringify(value)
   return String(value)
 }
 
+// 渲染简单字段（非对象）
+const renderSimpleFields = (
+  config: Record<string, unknown>,
+  excludeKeys: string[] = []
+): Array<{ label: string; value: React.ReactNode }> => {
+  return Object.entries(config)
+    .filter(([key, value]) => typeof value !== 'object' && !excludeKeys.includes(key))
+    .map(([key, value]) => ({
+      label: getFieldLabel(key),
+      value: formatConfigValue(value),
+    }))
+}
+
+// 渲染嵌套对象字段
+const renderNestedFields = (
+  config: Record<string, unknown>,
+  color: string,
+  excludeKeys: string[] = []
+): React.ReactNode => {
+  const nestedEntries = Object.entries(config).filter(
+    ([key, value]) => typeof value === 'object' && value !== null && !excludeKeys.includes(key)
+  )
+
+  if (nestedEntries.length === 0) return null
+
+  return nestedEntries.map(([key, value]) => (
+    <div key={key} className="mt-3 ml-4">
+      <h6
+        className="text-xs font-medium text-text-secondary mb-2 px-2 py-1 border-l-2"
+        style={{
+          backgroundColor: `${color}10`,
+          borderLeftColor: color,
+        }}
+      >
+        {getFieldLabel(key)}
+      </h6>
+      <InfoGrid
+        items={Object.entries(value as Record<string, unknown>).map(([subKey, subValue]) => ({
+          label: getFieldLabel(subKey),
+          value: formatConfigValue(subValue),
+        }))}
+      />
+    </div>
+  ))
+}
+
 export const TaskDetailPanel: React.FC<TaskDetailPanelProps> = ({ task, onAnalyze }) => {
-  const statusInfo = STATUS_MAP[task.status] || { label: task.status, variant: 'outline' as const }
+  // statusInfo 保留用于将来扩展状态显示
+  const _statusInfo = STATUS_MAP[task.status] || { label: task.status, variant: 'outline' as const }
+  void _statusInfo // 避免未使用警告
   const result = task.result
 
-  // 提取配置快照的关键信息
+  // ============================================
+  // 提取配置快照（兼容新旧格式）
+  // ============================================
   const configSnapshot = task.config_snapshot || {}
-  const modelConfig = configSnapshot.model || {}
-  const hardwareConfig = configSnapshot.hardware || {}
-  const inferenceConfig = configSnapshot.inference || {}
-  const topologyConfig = configSnapshot.topology || {}
+
+  // 新格式: benchmark_config.model / benchmark_config.inference
+  // 旧格式: model / inference
+  const benchmarkConfig = configSnapshot.benchmark_config as Record<string, unknown> | undefined
+  const modelConfig = (benchmarkConfig?.model || configSnapshot.model || {}) as Record<string, unknown>
+  const inferenceConfig = (benchmarkConfig?.inference || configSnapshot.inference || {}) as Record<string, unknown>
+
+  // 新格式: topology_config
+  // 旧格式: topology
+  const topologyConfig = (configSnapshot.topology_config || configSnapshot.topology || {}) as Record<string, unknown>
+
+  // 从拓扑配置中提取硬件参数
+  const hardwareParams = topologyConfig.hardware_params as Record<string, unknown> | undefined
+  const chipsConfig = hardwareParams?.chips as Record<string, Record<string, unknown>> | undefined
+  const interconnectConfig = hardwareParams?.interconnect as Record<string, Record<string, unknown>> | undefined
+
+  // 通信配置（可能在 topology_config 或 hardware_params 中）
+  const commLatencyConfig = (topologyConfig.comm_latency_config || hardwareParams?.comm_latency_config) as Record<string, unknown> | undefined
+
+  // ============================================
+  // 计算拓扑规模
+  // ============================================
+  const podCount = (topologyConfig.pod_count as number) || 1
+  const racksPerPod = (topologyConfig.racks_per_pod as number) || 1
+  const rackConfig = topologyConfig.rack_config as { boards?: Array<{ count?: number; chips?: Array<{ count?: number; name?: string }> }> } | undefined
+
+  let totalBoards = 0
+  let totalChips = 0
+  let chipName = '-'
+
+  if (rackConfig?.boards) {
+    for (const board of rackConfig.boards) {
+      totalBoards += board.count || 1
+      if (board.chips) {
+        for (const chip of board.chips) {
+          totalChips += (board.count || 1) * (chip.count || 1)
+          if (chipName === '-' && chip.name) {
+            chipName = chip.name
+          }
+        }
+      }
+    }
+    totalBoards *= racksPerPod
+    totalChips *= racksPerPod * podCount
+  } else {
+    // 兼容旧格式：从 pods 数组统计
+    const pods = topologyConfig.pods as any[] | undefined
+    if (pods) {
+      pods.forEach((pod: any) => {
+        const racks = pod.racks || []
+        racks.forEach((rack: any) => {
+          const boards = rack.boards || []
+          totalBoards += boards.length
+          boards.forEach((board: any) => {
+            const chips = board.chips || []
+            totalChips += chips.length
+            if (chipName === '-' && chips.length > 0 && chips[0].name) {
+              chipName = chips[0].name
+            }
+          })
+        })
+      })
+    }
+  }
 
   // 统计配置项数量
   const configItemCount =
     Object.keys(modelConfig).length +
-    Object.keys(hardwareConfig).length +
     Object.keys(inferenceConfig).length +
     (topologyConfig && Object.keys(topologyConfig).length > 0 ? 1 : 0)
 
@@ -150,7 +319,13 @@ export const TaskDetailPanel: React.FC<TaskDetailPanelProps> = ({ task, onAnalyz
       </div>
 
       {/* 基础信息 */}
-      <CollapsibleSection title="基础信息" defaultOpen={false} count={4}>
+      <BaseCard
+        title="基础信息"
+        collapsible={true}
+        defaultExpanded={false}
+        collapsibleCount={4}
+        glassmorphism={true}
+      >
         <InfoGrid
           items={[
             { label: 'Benchmark', value: task.benchmark_name || '-' },
@@ -159,16 +334,21 @@ export const TaskDetailPanel: React.FC<TaskDetailPanelProps> = ({ task, onAnalyz
             { label: '创建时间', value: formatDate(task.created_at) },
           ]}
         />
-      </CollapsibleSection>
+      </BaseCard>
 
       {/* 配置参数 */}
       {(configItemCount > 0 || result?.parallelism) && (
-        <CollapsibleSection title="配置参数" count={configItemCount + (result?.parallelism ? 6 : 0)}>
+        <BaseCard
+          title="配置参数"
+          collapsible={true}
+          defaultExpanded={true}
+          collapsibleCount={configItemCount + (result?.parallelism ? 6 : 0)}
+          glassmorphism={true}
+        >
           <div className="space-y-4">
             {/* 并行策略 */}
             {result?.parallelism && (
-              <div>
-                <h5 className="text-xs font-semibold text-text-secondary mb-2 uppercase tracking-wide px-2 py-1 bg-indigo-50 border-l-2 border-indigo-400">并行策略</h5>
+              <ConfigSection title="并行策略" color="#6366f1">
                 <InfoGrid
                   items={[
                     { label: 'DP (数据并行)', value: result.parallelism.dp || '-' },
@@ -176,245 +356,127 @@ export const TaskDetailPanel: React.FC<TaskDetailPanelProps> = ({ task, onAnalyz
                     { label: 'PP (流水线并行)', value: result.parallelism.pp || '-' },
                     { label: 'EP (专家并行)', value: result.parallelism.ep || '-' },
                     { label: 'SP (序列并行)', value: result.parallelism.sp || '-' },
-                    { label: 'MoE_TP (MoE张量并行)', value: result.parallelism.moe_tp || '-' },
+                    { label: 'MoE_TP', value: result.parallelism.moe_tp || '-' },
                   ]}
                 />
-              </div>
+              </ConfigSection>
             )}
 
             {/* 模型配置 */}
             {Object.keys(modelConfig).length > 0 && (
-              <div>
-                <h5 className="text-xs font-semibold text-text-secondary mb-2 uppercase tracking-wide px-2 py-1 bg-blue-50 border-l-2 border-blue-400">模型配置</h5>
-                <InfoGrid
-                  items={Object.entries(modelConfig)
-                    .filter(([_, value]) => typeof value !== 'object')
-                    .map(([key, value]) => ({
-                      label: key,
-                      value: formatConfigValue(value),
-                    }))}
-                />
-                {/* 嵌套对象配置展开显示 */}
-                {Object.entries(modelConfig)
-                  .filter(([_, value]) => typeof value === 'object' && value !== null)
-                  .map(([key, value]) => (
-                    <div key={key} className="mt-3">
-                      <h6 className="text-xs font-medium text-text-secondary mb-2">{key}</h6>
-                      <InfoGrid
-                        items={Object.entries(value as Record<string, unknown>).map(([subKey, subValue]) => ({
-                          label: subKey,
-                          value: formatConfigValue(subValue),
-                        }))}
-                      />
-                    </div>
-                  ))}
-              </div>
-            )}
-
-            {/* 硬件配置 */}
-            {Object.keys(hardwareConfig).length > 0 && (
-              <div>
-                <h5 className="text-xs font-semibold text-text-secondary mb-2 uppercase tracking-wide px-2 py-1 bg-green-50 border-l-2 border-green-400">硬件配置</h5>
-                <InfoGrid
-                  items={Object.entries(hardwareConfig)
-                    .filter(([_, value]) => typeof value !== 'object')
-                    .map(([key, value]) => ({
-                      label: key,
-                      value: formatConfigValue(value),
-                    }))}
-                />
-                {/* 嵌套对象配置展开显示 */}
-                {Object.entries(hardwareConfig)
-                  .filter(([_, value]) => typeof value === 'object' && value !== null)
-                  .map(([key, value]) => (
-                    <div key={key} className="mt-3">
-                      <h6 className="text-xs font-medium text-text-secondary mb-2">{key}</h6>
-                      <InfoGrid
-                        items={Object.entries(value as Record<string, unknown>).map(([subKey, subValue]) => ({
-                          label: subKey,
-                          value: formatConfigValue(subValue),
-                        }))}
-                      />
-                    </div>
-                  ))}
-              </div>
+              <ConfigSection title="模型配置" color="#3b82f6">
+                <InfoGrid items={renderSimpleFields(modelConfig)} />
+                {renderNestedFields(modelConfig, '#3b82f6')}
+              </ConfigSection>
             )}
 
             {/* 推理配置 */}
             {Object.keys(inferenceConfig).length > 0 && (
-              <div>
-                <h5 className="text-xs font-semibold text-text-secondary mb-2 uppercase tracking-wide px-2 py-1 bg-purple-50 border-l-2 border-purple-400">推理配置</h5>
-                <InfoGrid
-                  items={Object.entries(inferenceConfig)
-                    .filter(([_, value]) => typeof value !== 'object')
-                    .map(([key, value]) => ({
-                      label: key,
-                      value: formatConfigValue(value),
-                    }))}
-                />
-                {/* 嵌套对象配置展开显示 */}
-                {Object.entries(inferenceConfig)
-                  .filter(([_, value]) => typeof value === 'object' && value !== null)
-                  .map(([key, value]) => (
-                    <div key={key} className="mt-3">
-                      <h6 className="text-xs font-medium text-text-secondary mb-2">{key}</h6>
-                      <InfoGrid
-                        items={Object.entries(value as Record<string, unknown>).map(([subKey, subValue]) => ({
-                          label: subKey,
-                          value: formatConfigValue(subValue),
-                        }))}
-                      />
-                    </div>
-                  ))}
-              </div>
+              <ConfigSection title="推理配置" color="#8b5cf6">
+                <InfoGrid items={renderSimpleFields(inferenceConfig)} />
+                {renderNestedFields(inferenceConfig, '#8b5cf6')}
+              </ConfigSection>
             )}
 
             {/* 拓扑配置 */}
             {topologyConfig && Object.keys(topologyConfig).length > 0 && (
-              <div>
-                <h5 className="text-xs font-semibold text-text-secondary mb-2 uppercase tracking-wide px-2 py-1 bg-orange-50 border-l-2 border-orange-400">拓扑配置</h5>
-                {(() => {
-                  const topology = topologyConfig as any
+              <ConfigSection title="拓扑配置" color="#f97316">
+                {/* 集群规模 */}
+                <InfoGrid
+                  items={[
+                    { label: 'Pod', value: podCount },
+                    { label: 'Rack', value: racksPerPod * podCount },
+                    { label: 'Board', value: totalBoards },
+                    { label: 'Chip', value: totalChips },
+                  ]}
+                />
 
-                  // 方式1：从hardware_config读取（如果有）
-                  const hardwareConfig = topology.hardware_config
-
-                  // 方式2：从拓扑结构提取
-                  const pods = topology.pods || []
-                  const numPods = pods.length
-
-                  let numRacks = 0
-                  let numBoards = 0
-                  let numChips = 0
-                  let chipInfo: any = null
-                  let boardConnections: any = null
-                  let rackConnections: any = null
-                  let podConnections: any = null
-
-                  // 统计数量并提取第一个chip信息和连接信息
-                  pods.forEach((pod: any) => {
-                    const racks = pod.racks || []
-                    numRacks += racks.length
-
-                    // 提取pod级别的连接
-                    if (!podConnections && pod.connections && pod.connections.length > 0) {
-                      podConnections = pod.connections[0]
-                    }
-
-                    racks.forEach((rack: any) => {
-                      const boards = rack.boards || []
-                      numBoards += boards.length
-
-                      // 提取rack级别的连接
-                      if (!rackConnections && rack.connections && rack.connections.length > 0) {
-                        rackConnections = rack.connections[0]
-                      }
-
-                      boards.forEach((board: any) => {
-                        const chips = board.chips || []
-                        numChips += chips.length
-
-                        // 获取第一个chip的信息
-                        if (!chipInfo && chips.length > 0) {
-                          chipInfo = chips[0]
-                        }
-
-                        // 提取board级别的连接
-                        if (!boardConnections && board.connections && board.connections.length > 0) {
-                          boardConnections = board.connections[0]
-                        }
-                      })
-                    })
-                  })
-
-                  // 优先使用hardware_config中的芯片信息
-                  const chip = hardwareConfig?.chip || chipInfo
-                  const node = hardwareConfig?.node
-                  const cluster = hardwareConfig?.cluster
-
-                  // 构建显示项
-                  const topologyItems = [
-                    { label: 'Pod数量', value: numPods },
-                    { label: 'Rack数量', value: numRacks },
-                    { label: 'Board数量', value: numBoards },
-                    { label: 'Chip总数', value: numChips },
-                  ]
-
-                  const chipItems = chip ? [
-                    { label: '芯片类型', value: chip.name || '-' },
-                    { label: '算力 (FP16)', value: chip.compute_tflops_fp16 ? `${chip.compute_tflops_fp16} TFLOPs` : '-' },
-                    { label: '显存', value: chip.memory_gb ? `${chip.memory_gb} GB` : '-' },
-                    { label: 'HBM带宽', value: chip.memory_bandwidth_gbps ? `${chip.memory_bandwidth_gbps} GB/s` : (chip.memory_bandwidth_tbps ? `${chip.memory_bandwidth_tbps * 1000} GB/s` : '-') },
-                  ] : []
-
-                  // 构建互联配置项（支持多种数据源）
-                  const interconnectItems = []
-
-                  // 板内互联（优先从hardware_config.node读取）
-                  if (node?.intra_bandwidth_gbps || boardConnections) {
-                    interconnectItems.push({
-                      label: '板内互联',
-                      value: node ?
-                        `NVLink (${node.intra_bandwidth_gbps || '-'} GB/s, ${node.intra_latency_us ? node.intra_latency_us * 1000 : '-'} ns)` :
-                        `${boardConnections.link_type || 'NVLink'} (${boardConnections.bandwidth_gbps || boardConnections.bandwidth || '-'} GB/s, ${boardConnections.latency_ns || boardConnections.latency || '-'} ns)`
-                    })
-                  }
-
-                  // 机架内互联
-                  if (cluster?.intra_bandwidth_gbps || rackConnections) {
-                    interconnectItems.push({
-                      label: '机架内互联',
-                      value: cluster ?
-                        `InfiniBand (${cluster.intra_bandwidth_gbps || '-'} GB/s, ${cluster.intra_latency_us ? cluster.intra_latency_us * 1000 : '-'} ns)` :
-                        `${rackConnections.link_type || 'InfiniBand'} (${rackConnections.bandwidth_gbps || rackConnections.bandwidth || '-'} GB/s, ${rackConnections.latency_ns || rackConnections.latency || '-'} ns)`
-                    })
-                  }
-
-                  // 跨机架互联
-                  if (cluster?.inter_bandwidth_gbps || podConnections) {
-                    interconnectItems.push({
-                      label: '跨机架互联',
-                      value: cluster ?
-                        `InfiniBand (${cluster.inter_bandwidth_gbps || '-'} GB/s, ${cluster.inter_latency_us ? cluster.inter_latency_us * 1000 : '-'} ns)` :
-                        `${podConnections.link_type || 'InfiniBand'} (${podConnections.bandwidth_gbps || podConnections.bandwidth || '-'} GB/s, ${podConnections.latency_ns || podConnections.latency || '-'} ns)`
-                    })
-                  }
-
-                  return (
-                    <div className="space-y-3">
-                      {/* 集群规模 */}
-                      <div>
-                        <h6 className="text-xs font-medium text-text-secondary mb-2">集群规模</h6>
-                        <InfoGrid items={topologyItems} />
+                {/* 芯片规格 */}
+                {chipsConfig && Object.keys(chipsConfig).length > 0 && (
+                  <div className="mt-3 ml-4">
+                    {Object.entries(chipsConfig).map(([chipKey, chipSpec]) => (
+                      <div key={chipKey} className="mb-3">
+                        <h6
+                          className="text-xs font-medium text-text-secondary mb-2 px-2 py-1 border-l-2"
+                          style={{
+                            backgroundColor: '#f9731610',
+                            borderLeftColor: '#f97316',
+                          }}
+                        >
+                          芯片: {chipKey}
+                        </h6>
+                        <InfoGrid
+                          items={[
+                            { label: 'FP8 算力', value: chipSpec.compute_tflops_fp8 ? `${chipSpec.compute_tflops_fp8} TFLOPS` : '-' },
+                            { label: 'BF16 算力', value: chipSpec.compute_tflops_bf16 ? `${chipSpec.compute_tflops_bf16} TFLOPS` : '-' },
+                            { label: '显存容量', value: chipSpec.memory_capacity_gb ? `${chipSpec.memory_capacity_gb} GB` : '-' },
+                            { label: '显存带宽', value: chipSpec.memory_bandwidth_gbps ? `${chipSpec.memory_bandwidth_gbps} GB/s` : '-' },
+                          ]}
+                        />
                       </div>
+                    ))}
+                  </div>
+                )}
 
-                      {/* 芯片规格 */}
-                      {chipItems.length > 0 && (
-                        <div>
-                          <h6 className="text-xs font-medium text-text-secondary mb-2">芯片规格</h6>
-                          <InfoGrid items={chipItems} />
-                        </div>
-                      )}
+                {/* 互联配置 */}
+                {interconnectConfig && Object.keys(interconnectConfig).length > 0 && (
+                  <div className="mt-3 ml-4">
+                    <h6
+                      className="text-xs font-medium text-text-secondary mb-2 px-2 py-1 border-l-2"
+                      style={{
+                        backgroundColor: '#f9731610',
+                        borderLeftColor: '#f97316',
+                      }}
+                    >
+                      互联配置
+                    </h6>
+                    <InfoGrid
+                      items={Object.entries(interconnectConfig).map(([level, spec]) => ({
+                        label: getFieldLabel(level),
+                        value: `${spec.bandwidth_gbps || '-'} GB/s, ${spec.latency_us || '-'} μs`,
+                      }))}
+                      columns={4}
+                    />
+                  </div>
+                )}
 
-                      {/* 互联配置 */}
-                      {interconnectItems.length > 0 && (
-                        <div>
-                          <h6 className="text-xs font-medium text-text-secondary mb-2">互联配置</h6>
-                          <InfoGrid items={interconnectItems} columns={2} />
-                        </div>
-                      )}
-                    </div>
-                  )
-                })()}
-              </div>
+                {/* 通信配置 */}
+                {commLatencyConfig && Object.keys(commLatencyConfig).length > 0 && (
+                  <div className="mt-3 ml-4">
+                    <h6
+                      className="text-xs font-medium text-text-secondary mb-2 px-2 py-1 border-l-2"
+                      style={{
+                        backgroundColor: '#f9731610',
+                        borderLeftColor: '#f97316',
+                      }}
+                    >
+                      通信配置
+                    </h6>
+                    <InfoGrid
+                      items={Object.entries(commLatencyConfig)
+                        .filter(([_, value]) => typeof value !== 'object')
+                        .map(([key, value]) => ({
+                          label: getFieldLabel(key),
+                          value: formatConfigValue(value),
+                        }))}
+                    />
+                  </div>
+                )}
+              </ConfigSection>
             )}
           </div>
-        </CollapsibleSection>
+        </BaseCard>
       )}
 
       {/* 性能指标 */}
       {result && (
-        <CollapsibleSection title="性能指标" defaultOpen={false} count={11 + (result.cost ? 5 : 0)}>
+        <BaseCard
+          title="性能指标"
+          collapsible={true}
+          defaultExpanded={false}
+          collapsibleCount={11 + (result.cost ? 5 : 0)}
+          glassmorphism={true}
+        >
           <InfoGrid
             items={[
               { label: '综合得分', value: formatNumber(result.score) },
@@ -437,7 +499,7 @@ export const TaskDetailPanel: React.FC<TaskDetailPanelProps> = ({ task, onAnalyz
               ] : []),
             ]}
           />
-        </CollapsibleSection>
+        </BaseCard>
       )}
     </div>
   )

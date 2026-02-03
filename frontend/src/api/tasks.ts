@@ -22,20 +22,29 @@ const api = axios.create({
 /**
  * 评估请求
  *
- * 通过配置文件名指定配置，后端自动加载完整配置：
- * - benchmark_name: Benchmark 配置文件（包含 model + inference）
- * - topology_config_name: Topology 配置文件（包含 topology + hardware + interconnect）
+ * 前端传递完整配置内容，后端直接使用：
+ * - benchmark_name: 配置来源标记（用于显示）
+ * - benchmark_config: 完整 benchmark 配置（model + inference）
+ * - topology_config_name: 拓扑配置来源标记（用于显示）
+ * - topology_config: 完整拓扑配置
  */
 export interface EvaluationRequest {
   experiment_name: string
   description?: string
 
-  // 配置文件引用（必填）
-  benchmark_name: string           // Benchmark 配置文件名
-  topology_config_name: string     // Topology 配置文件名
+  // 配置来源标记（必填，用于显示和追溯）
+  benchmark_name: string           // Benchmark 名称（如 DeepSeek-V3-671B-S32K-O1K-W8A8-B1）
+  topology_config_name: string     // Topology 名称（如 P1-R1-B1-C8）
+
+  // 完整配置内容（必填）
+  benchmark_config: {
+    model: Record<string, unknown>
+    inference: Record<string, unknown>
+  }
+  topology_config: Record<string, unknown>  // 完整拓扑配置
 
   // 搜索配置
-  search_mode: 'manual' | 'auto'
+  search_mode: 'manual' | 'auto' | 'sweep'
   manual_parallelism?: Record<string, unknown>
   search_constraints?: Record<string, unknown>
 

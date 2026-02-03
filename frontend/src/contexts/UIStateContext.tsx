@@ -10,6 +10,14 @@ import { NodeDetail, LinkDetail } from '../components/TopologyGraph'
 // ============================================
 export type ViewMode = 'dashboard' | 'topology' | 'deployment' | 'results' | 'knowledge' | '3d' | 'playground'
 
+// ============================================
+// 独立的 ViewMode Context（用于性能优化）
+// 子组件可以直接订阅 viewMode 而不需要订阅整个 UIState
+// ============================================
+export const ViewModeContext = createContext<ViewMode>('dashboard')
+
+export const useViewMode = () => useContext(ViewModeContext)
+
 export interface UIStateContextType {
   viewMode: ViewMode
   selectedNode: NodeDetail | null
@@ -99,9 +107,11 @@ export const UIStateProvider: React.FC<UIStateProviderProps> = ({ children, onVi
   }
 
   return (
-    <UIStateContext.Provider value={contextValue}>
-      {children}
-    </UIStateContext.Provider>
+    <ViewModeContext.Provider value={viewMode}>
+      <UIStateContext.Provider value={contextValue}>
+        {children}
+      </UIStateContext.Provider>
+    </ViewModeContext.Provider>
   )
 }
 

@@ -98,7 +98,7 @@ export const BaseCard: React.FC<BaseCardProps> = ({
     return (
       <div
         className={cn(
-          'card rounded-lg border bg-white',
+          'card rounded-lg border bg-white shadow-none hover:shadow-md transition-shadow duration-300',
           glassmorphism && 'bg-white/80 backdrop-blur-sm',
           onClick && 'cursor-pointer',
           className
@@ -118,7 +118,7 @@ export const BaseCard: React.FC<BaseCardProps> = ({
         open={isExpanded}
         onOpenChange={handleToggle}
         className={cn(
-          'card overflow-hidden rounded-lg border bg-white transition-all',
+          'card overflow-hidden rounded-lg border bg-white shadow-none hover:shadow-md transition-all duration-300',
           gradient ? 'border-blue-200/50' : 'border-gray-200',
           glassmorphism && 'bg-white/80 backdrop-blur-sm',
           className
@@ -194,7 +194,7 @@ export const BaseCard: React.FC<BaseCardProps> = ({
         </CollapsiblePrimitive.Trigger>
 
         {/* 内容区域（带折叠动画） */}
-        <CollapsiblePrimitive.Content>
+        <CollapsiblePrimitive.Content className="overflow-hidden data-[state=open]:animate-collapsible-down data-[state=closed]:animate-collapsible-up">
           <div className={cn('p-2.5', bodyClassName, contentClassName)} style={styles?.body}>
             {children}
           </div>
@@ -207,7 +207,7 @@ export const BaseCard: React.FC<BaseCardProps> = ({
   return (
     <div
       className={cn(
-        'card overflow-hidden rounded-lg border bg-white transition-all',
+        'card overflow-hidden rounded-lg border bg-white shadow-none hover:shadow-md transition-all duration-300',
         gradient ? 'border-blue-200/50' : 'border-gray-200',
         glassmorphism && 'bg-white/80 backdrop-blur-sm',
         className

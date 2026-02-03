@@ -191,7 +191,7 @@ export const MemoryPieChart: React.FC<MemoryPieChartProps> = ({
     <ReactECharts
       option={option}
       style={{ height }}
-      opts={{ renderer: 'svg' }}
+      opts={{ renderer: 'canvas' }}
     />
   )
 }

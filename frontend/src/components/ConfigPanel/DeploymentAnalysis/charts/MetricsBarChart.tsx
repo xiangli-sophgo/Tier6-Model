@@ -257,7 +257,7 @@ export const MetricsBarChart: React.FC<MetricsBarChartProps> = ({
     <ReactECharts
       option={option}
       style={{ height }}
-      opts={{ renderer: 'svg' }}
+      opts={{ renderer: 'canvas' }}
     />
   )
 }

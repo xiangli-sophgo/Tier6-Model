@@ -4,6 +4,7 @@
 解析前端的 HierarchicalTopology 配置，构建芯片互联图，
 并根据并行策略将芯片分配到 TP/PP/DP/EP 组。
 """
+from __future__ import annotations
 
 from typing import Any
 from ..config import (
@@ -16,11 +17,15 @@ from ..config import (
 class TopologyParser:
     """拓扑解析器
 
-    硬件参数现在直接嵌入在拓扑配置中：
-    - ChipConfig: c2c_bandwidth_gbps, c2c_latency_us (同板芯片互联)
-    - BoardConfig: b2b_bandwidth_gbps, b2b_latency_us (同 rack 不同 board)
-    - RackConfig: r2r_bandwidth_gbps, r2r_latency_us (同 pod 不同 rack)
-    - PodConfig: p2p_bandwidth_gbps, p2p_latency_us (跨 pod)
+    硬件参数来源：
+    - 芯片参数: hardware_params.chips (计算、内存、微架构)
+    - 互联参数: hardware_params.interconnect (c2c/b2b/r2r/p2p 带宽和延迟)
+
+    互联层级：
+    - c2c: 同板芯片互联 (Die-to-Die)
+    - b2b: 同 rack 不同 board (Board-to-Board)
+    - r2r: 同 pod 不同 rack (Rack-to-Rack)
+    - p2p: 跨 pod (Pod-to-Pod)
     """
 
     def __init__(self, topology_dict: dict[str, Any]):
@@ -41,8 +46,13 @@ class TopologyParser:
 
     def _parse_topology(self, data: dict[str, Any]) -> HierarchicalTopology:
         """解析拓扑配置（包含嵌入的硬件参数）"""
-        # 从 hardware_params 中获取芯片和互联参数
-        chip_params = self.hardware_params.get("chip", {})
+        # 从 hardware_params 中获取芯片参数（新格式 v2.1.0+: chips 字典）
+        chips_dict = self.hardware_params.get("chips", {})
+        if chips_dict:
+            first_chip_name = next(iter(chips_dict))
+            chip_params = chips_dict[first_chip_name]
+        else:
+            chip_params = {}
         c2c_params = self.interconnect_params.get("c2c", {})
         b2b_params = self.interconnect_params.get("b2b", {})
         r2r_params = self.interconnect_params.get("r2r", {})
@@ -178,8 +188,6 @@ class TopologyParser:
                             chip_errors.append("memory_capacity_gb")
                         if chip.memory_bandwidth_gbps <= 0:
                             chip_errors.append("memory_bandwidth_gbps")
-                        if chip.c2c_bandwidth_gbps <= 0:
-                            chip_errors.append("c2c_bandwidth_gbps")
 
                         if chip_errors:
                             errors.append(f"Chip '{chip.id}' 缺少有效的硬件参数: {', '.join(chip_errors)}")
@@ -246,11 +254,12 @@ class TopologyParser:
 
         if loc1.board_id == loc2.board_id:
             # 同板芯片 - 使用 C2C 互联 (如 NVLink)
-            chip: ChipConfig = chip1_loc["chip"]
+            # 从 interconnect_params 获取 c2c 配置
+            c2c_params = self.interconnect_params.get("c2c", {})
             return (
                 "nvlink",
-                chip.c2c_bandwidth_gbps,
-                chip.c2c_latency_us
+                c2c_params.get("bandwidth_gbps", 0.0),
+                c2c_params.get("latency_us", 0.0)
             )
         elif loc1.rack_id == loc2.rack_id:
             # 同机柜不同板 - 使用 B2B 互联
@@ -463,12 +472,9 @@ class TopologyParser:
 
         if len(group_chips) <= 1:
             # 单芯片不需要通信
-            # 尝试获取芯片的 C2C 带宽作为默认值
-            if group_chips:
-                chip_config = self.get_chip_config(group_chips[0])
-                if chip_config:
-                    return chip_config.c2c_bandwidth_gbps, 0.0
-            return 0.0, 0.0
+            # 返回 c2c 互联带宽作为默认值
+            c2c_params = self.interconnect_params.get("c2c", {})
+            return c2c_params.get("bandwidth_gbps", 0.0), 0.0
 
         # 找到组内所有芯片的位置
         chip_locations = {}

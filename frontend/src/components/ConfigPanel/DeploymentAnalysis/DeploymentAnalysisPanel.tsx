@@ -4,7 +4,7 @@
  * 提供模型配置、推理配置、硬件配置、并行策略配置和分析结果展示
  */
 
-import React, { useState, useCallback, useRef } from 'react'
+import React, { useState, useCallback, useRef, useMemo } from 'react'
 import { useWorkbench } from '../../../contexts/WorkbenchContext'
 import {
   PlayCircle,
@@ -76,8 +76,11 @@ import { listConfigs, getConfig, saveConfig, SavedConfig } from '../../../api/to
 import {
   BenchmarkConfigSelector,
   colors,
-  generateBenchmarkName,
 } from './ConfigSelectors'
+import {
+  generateBenchmarkName,
+  generateTopologyName,
+} from '../../../utils/configNameGenerator'
 import { BaseCard } from '@/components/common/BaseCard'
 import { ParallelismConfigPanel } from './ParallelismConfigPanel'
 import { AnalysisResultDisplay } from './AnalysisResultDisplay'
@@ -90,7 +93,7 @@ import {
   applyParameterCombination
 } from './ParameterSweep/sweepHelpers'
 import type { SweepParam } from './ParameterSweep/sweepTypes'
-import { createBenchmark } from '../../../api/benchmark'
+// createBenchmark 不再需要，Sweep 模式直接传递完整配置而不创建临时文件
 
 
 // ============================================
@@ -434,11 +437,14 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
     }
   }, [localRackConfig, topology, localPodCount, localRacksPerPod, localHardwareParams])
 
-  // 序列化 localRackConfig 用于深度比较
-  const rackConfigJson = React.useMemo(() =>
-    localRackConfig ? JSON.stringify(localRackConfig) : '',
-    [localRackConfig]
-  )
+  // 生成 rack 配置的稳定 key（用于比较是否变化，避免 JSON.stringify 的性能开销）
+  const rackConfigKey = useMemo(() => {
+    if (!localRackConfig) return ''
+    // 只比较关键字段：boards 数量、每个 board 的芯片配置
+    return localRackConfig.boards.map(b =>
+      `${b.count}:${b.chips.map(c => `${c.name}x${c.count}`).join(',')}`
+    ).join('|')
+  }, [localRackConfig])
 
   // 当拓扑配置变化时，提取芯片组信息并更新硬件配置
   React.useEffect(() => {
@@ -487,7 +493,7 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
         setHardwareConfig(config)
       }
     }
-  }, [rackConfigJson, localPodCount, localRacksPerPod, topology?.connections, localHardwareParams])
+  }, [rackConfigKey, localPodCount, localRacksPerPod, topology?.connections, localHardwareParams])
 
   // 当选择的芯片类型变化时，更新硬件配置
   React.useEffect(() => {
@@ -509,7 +515,7 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
   }, [selectedChipType, localRackConfig, chipGroups, localPodCount, localRacksPerPod, topology?.connections, localHardwareParams])
 
   // 并行策略状态
-  const [parallelismMode, setParallelismMode] = useState<'manual' | 'auto' | 'sweep'>('auto')
+  const [parallelismMode, setParallelismMode] = useState<'manual' | 'auto' | 'sweep'>('manual')
   const [manualStrategy, setManualStrategy] = useState<ParallelismStrategy>({
     dp: 1, tp: 1, pp: 1, ep: 1, sp: 1, moe_tp: 1,
   })
@@ -1040,8 +1046,16 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
 
     const strategy = parallelismMode === 'manual' ? manualStrategy : { dp: 1, tp: 1, pp: 1, ep: 1, sp: 1, moe_tp: 1 }
 
-    // 使用用户输入的实验名称，如果为空则使用 Benchmark 名称
-    const finalExperimentName = experimentName.trim() || selectedBenchmark
+    // 基于当前配置内容生成名称
+    const benchmarkName = generateBenchmarkName(modelConfig, inferenceConfig)
+    const topologyName = generateTopologyName({
+      pod_count: localPodCount,
+      racks_per_pod: localRacksPerPod,
+      rack_config: localRackConfig,
+    })
+
+    // 使用用户输入的实验名称，如果为空则使用生成的 Benchmark 名称
+    const finalExperimentName = experimentName.trim() || benchmarkName
 
     // 生成临时任务 ID（提交后会更新为后端返回的 ID）
     const tempTaskId = `temp-${Date.now()}`
@@ -1059,7 +1073,7 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
       startTime: Date.now(),
       experimentName: finalExperimentName,
       modelName: modelConfig.model_name,
-      benchmarkName: selectedBenchmark,
+      benchmarkName: benchmarkName,
       parallelism: strategy,
       mode: parallelismMode,
       chips: actualChips,
@@ -1067,13 +1081,32 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
     addTask(newTask)
 
     try {
-      // 提交任务：只传配置文件名，后端自动加载完整配置
-      // 注意：selectedBenchmark 和 selectedTopologyConfig 在函数开头已验证非空
+      // 提交任务：传递完整配置内容，不再依赖后端从文件加载
       const response = await submitEvaluation({
         experiment_name: finalExperimentName,
-        description: selectedBenchmark!,
-        benchmark_name: selectedBenchmark!,
-        topology_config_name: selectedTopologyConfig!,
+        description: benchmarkName,
+
+        // 配置来源标记
+        benchmark_name: benchmarkName,
+        topology_config_name: topologyName,
+
+        // 完整配置内容
+        benchmark_config: {
+          model: modelConfig as unknown as Record<string, unknown>,
+          inference: inferenceConfig as unknown as Record<string, unknown>,
+        },
+        topology_config: {
+          name: topologyName,
+          pod_count: localPodCount,
+          racks_per_pod: localRacksPerPod,
+          rack_config: localRackConfig,
+          hardware_params: {
+            chips: localHardwareParams?.chips || {},
+            interconnect: localHardwareParams?.interconnect || {},
+          },
+          comm_latency_config: commLatencyConfig,
+        },
+
         search_mode: parallelismMode,
         manual_parallelism: parallelismMode === 'manual' ? manualStrategy as unknown as Record<string, unknown> : undefined,
         search_constraints: parallelismMode === 'auto' ? { max_chips: maxChips } : undefined,
@@ -1103,9 +1136,10 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
       toast.error(`提交任务失败: ${msg}`)
     }
   }, [
-    experimentName, taskMaxWorkers, modelConfig, parallelismMode, manualStrategy,
+    experimentName, taskMaxWorkers, modelConfig, inferenceConfig, parallelismMode, manualStrategy,
     maxChips, addTask, updateTask, setAnalysisTasks, enableTileSearch,
-    enablePartitionSearch, maxSimulatedTokens, selectedTopologyConfig, selectedBenchmark
+    enablePartitionSearch, maxSimulatedTokens, selectedTopologyConfig, selectedBenchmark,
+    localPodCount, localRacksPerPod, localRackConfig, localHardwareParams, commLatencyConfig
   ])
 
   // 运行参数遍历（批量提交任务）
@@ -1135,9 +1169,13 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
       return
     }
 
-    // 时间戳用于生成唯一的临时配置文件名
-    const timestamp = Date.now()
-    const baseExperimentName = experimentName.trim() || selectedBenchmark
+    // 基础拓扑名称（不随 sweep 参数变化）
+    const baseTopologyName = generateTopologyName({
+      pod_count: localPodCount,
+      racks_per_pod: localRacksPerPod,
+      rack_config: localRackConfig,
+    })
+    const baseExperimentName = experimentName.trim() || generateBenchmarkName(modelConfig, inferenceConfig)
 
     toast.info(`开始批量提交 ${combinations.length} 个任务...`)
 
@@ -1155,16 +1193,13 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
           combo
         )
 
-        // 2. 创建临时 Benchmark 配置文件
-        const tempBenchmarkName = `${selectedBenchmark}_sweep_${timestamp}_${idx}`
-        await createBenchmark({
-          id: tempBenchmarkName,
-          name: tempBenchmarkName,
-          model: overriddenConfig.model,
-          inference: overriddenConfig.inference,
-        })
+        // 2. 基于变体配置生成名称（不再创建临时文件）
+        const variantBenchmarkName = generateBenchmarkName(
+          overriddenConfig.model as unknown as LLMModelConfig,
+          overriddenConfig.inference as unknown as InferenceConfig
+        )
 
-        // 3. 提交任务（引用临时配置文件名）
+        // 3. 提交任务（传递完整配置，不创建临时文件）
         const comboDesc = Object.entries(combo)
           .map(([key, value]) => `${key}=${value}`)
           .join(', ')
@@ -1177,8 +1212,8 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
           status: 'running',
           startTime: Date.now(),
           experimentName: taskExperimentName,
-          modelName: modelConfig.model_name,
-          benchmarkName: tempBenchmarkName,
+          modelName: (overriddenConfig.model as any).model_name || modelConfig.model_name,
+          benchmarkName: variantBenchmarkName,
           parallelism: overriddenConfig.parallelism,
           mode: 'manual',
           chips: overriddenConfig.parallelism.dp * overriddenConfig.parallelism.tp,
@@ -1188,8 +1223,28 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
         const response = await submitEvaluation({
           experiment_name: taskExperimentName,
           description: `[Sweep ${idx + 1}/${combinations.length}] ${comboDesc}`,
-          benchmark_name: tempBenchmarkName,
-          topology_config_name: selectedTopologyConfig!,
+
+          // 配置来源标记
+          benchmark_name: variantBenchmarkName,
+          topology_config_name: baseTopologyName,
+
+          // 完整配置内容（变体配置）
+          benchmark_config: {
+            model: overriddenConfig.model,
+            inference: overriddenConfig.inference,
+          },
+          topology_config: {
+            name: baseTopologyName,
+            pod_count: localPodCount,
+            racks_per_pod: localRacksPerPod,
+            rack_config: localRackConfig,
+            hardware_params: {
+              chips: overriddenConfig.hardware?.chips || localHardwareParams?.chips || {},
+              interconnect: overriddenConfig.hardware?.interconnect || localHardwareParams?.interconnect || {},
+            },
+            comm_latency_config: commLatencyConfig,
+          },
+
           search_mode: 'manual',
           manual_parallelism: overriddenConfig.parallelism as unknown as Record<string, unknown>,
           max_workers: taskMaxWorkers,
@@ -1227,6 +1282,10 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
     maxSimulatedTokens,
     addTask,
     setAnalysisTasks,
+    localPodCount,
+    localRacksPerPod,
+    localRackConfig,
+    commLatencyConfig,
   ])
 
 

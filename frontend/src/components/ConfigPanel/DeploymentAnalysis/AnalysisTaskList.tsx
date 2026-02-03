@@ -5,7 +5,7 @@
  * - 已完成的任务显示在历史列表中
  */
 
-import React, { useState, useEffect } from 'react'
+import React, { useState } from 'react'
 import {
   Loader2,
   CheckCircle,
@@ -40,6 +40,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { AnalysisTask } from '../shared'
+import { useElapsedTime } from '@/hooks/useGlobalTimer'
 
 interface AnalysisTaskListProps {
   tasks: AnalysisTask[]
@@ -50,19 +51,13 @@ interface AnalysisTaskListProps {
   onRefresh: () => void
 }
 
-// 格式化耗时
+// 格式化耗时（用于历史记录列表）
 const formatDuration = (startTime: number, endTime?: number): string => {
   const end = endTime || Date.now()
   const duration = end - startTime
   if (duration < 1000) return `${duration}ms`
   if (duration < 60000) return `${Math.round(duration / 1000)}s`
   return `${Math.floor(duration / 60000)}m ${Math.floor((duration % 60000) / 1000)}s`
-}
-
-// 获取运行时间（动态更新）
-const getElapsedTime = (startTime: number | null): string => {
-  if (!startTime) return '0s'
-  return formatDuration(startTime)
 }
 
 // 格式化并行策略
@@ -134,19 +129,14 @@ interface RunningTaskCardProps {
 }
 
 const RunningTaskCard: React.FC<RunningTaskCardProps> = ({ task, onCancel, onDelete }) => {
-  const [elapsedTime, setElapsedTime] = useState(getElapsedTime(task.startTime))
   const [showProgressModal, setShowProgressModal] = useState(false)
 
-  const isFailed = task.status === 'failed'
+  const isTerminated = task.status === 'failed' || task.status === 'completed' || task.status === 'cancelled'
 
-  // 每秒更新运行时间（仅运行中的任务）
-  useEffect(() => {
-    if (isFailed) return
-    const timer = setInterval(() => {
-      setElapsedTime(getElapsedTime(task.startTime))
-    }, 1000)
-    return () => clearInterval(timer)
-  }, [task.startTime, isFailed])
+  // 使用全局定时器 hook 替代独立的 setInterval
+  const elapsedTime = useElapsedTime(task.startTime, task.endTime, !isTerminated)
+
+  const isFailed = task.status === 'failed'
 
   const progress = task.progress
     ? Math.round((task.progress.current / task.progress.total) * 100)

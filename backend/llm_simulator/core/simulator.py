@@ -1667,8 +1667,12 @@ def run_simulation(
     # 获取 MoE 相关的 moe_tp 参数（从 parallelism_dict 中获取）
     moe_tp = parallelism_dict.get("moe_tp")
 
-    # 从 hardware_dict 获取芯片参数
-    chip_hw = hardware_dict.get("chip", {})
+    # 从 hardware_dict 获取芯片参数（仅支持新格式 v2.1.0+: hardware_params.chips）
+    chips_dict = hardware_dict.get("hardware_params", {}).get("chips", {})
+    if not chips_dict:
+        raise ValueError("硬件配置缺少 'hardware_params.chips' 字段，请确保使用 v2.1.0+ 新格式配置")
+    first_chip_name = next(iter(chips_dict))
+    chip_hw = chips_dict[first_chip_name]
 
     # ========== 互联参数获取（支持两种格式） ==========
     # 格式1: topology_dict.hardware_params.interconnect (YAML 配置文件格式)

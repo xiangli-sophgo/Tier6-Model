@@ -32,10 +32,22 @@ export const RooflineChart: React.FC<RooflineChartProps> = ({
   simulationStats,
 }) => {
   const option: EChartsOption = useMemo(() => {
-    // 从新格式中获取第一个芯片配置
-    const firstChip = Object.values(hardware.hardware_params.chips)[0]
-    const peakTflops = firstChip.compute_tflops_bf16
-    const memoryBandwidthTBps = firstChip.memory_bandwidth_gbps / 1000
+    // 安全地获取第一个芯片配置
+    if (!hardware?.hardware_params?.chips) {
+      // 如果没有硬件配置，返回空图表配置
+      return {
+        title: {
+          text: '缺少硬件配置',
+          left: 'center',
+          top: 'center',
+          textStyle: { color: '#999', fontSize: 12 },
+        },
+      }
+    }
+
+    const firstChip = Object.values(hardware.hardware_params.chips)[0] as any
+    const peakTflops = firstChip?.compute_tflops_bf16 || 256
+    const memoryBandwidthTBps = (firstChip?.memory_bandwidth_gbps || 12000) / 1000
     const ridgePoint = peakTflops / memoryBandwidthTBps
 
     // 生成 Roofline 边界线数据点
@@ -336,7 +348,7 @@ export const RooflineChart: React.FC<RooflineChartProps> = ({
     <ReactECharts
       option={option}
       style={{ height }}
-      opts={{ renderer: 'svg' }}
+      opts={{ renderer: 'canvas' }}
     />
   )
 }

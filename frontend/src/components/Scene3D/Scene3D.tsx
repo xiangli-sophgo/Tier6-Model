@@ -1,7 +1,8 @@
 import React, { useMemo, useRef, useState, useCallback, useEffect } from 'react'
-import { Canvas } from '@react-three/fiber'
+import { Canvas, useThree } from '@react-three/fiber'
 import { PerspectiveCamera } from '@react-three/drei'
 import { EffectComposer, Bloom } from '@react-three/postprocessing'
+import { useViewMode } from '@/contexts/UIStateContext'
 import { RotateCcw, HelpCircle, LayoutGrid, Network } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { InfoTooltip } from '@/components/ui/info-tooltip'
@@ -29,6 +30,23 @@ import { sharedGeometries, sharedBasicMaterials, CameraAnimationTarget } from '.
 import { CameraController } from './materials'
 import { BoardModel, SwitchModel, PodLabel, AnimatedRack } from './models'
 import { useNodePositions } from '../../hooks/useNodePositions'
+
+// ============================================
+// 渲染控制组件 - 在页面隐藏时暂停渲染
+// ============================================
+const RenderController: React.FC<{ pageVisible: boolean }> = ({ pageVisible }) => {
+  const { invalidate } = useThree()
+
+  useEffect(() => {
+    if (pageVisible) {
+      // 页面变为可见时，触发一次渲染
+      invalidate()
+    }
+    // 页面隐藏时不需要特殊处理，frameloop="demand" 模式下不调用 invalidate 就不会渲染
+  }, [pageVisible, invalidate])
+
+  return null
+}
 
 // ============================================
 // Props 接口定义
@@ -82,40 +100,57 @@ const UnifiedScene: React.FC<{
   // 使用自定义 hook 计算所有节点的世界坐标
   const nodePositions = useNodePositions(topology)
 
+  // 预计算节点查找索引，用 Map 替代 find/some 查找，将 O(n*m) 降为 O(1)
+  const nodeIndex = useMemo(() => {
+    // rackToPod: rack.id -> pod.id
+    const rackToPod = new Map<string, string>()
+    // boardToPod: board.id -> pod.id
+    const boardToPod = new Map<string, string>()
+    // boardToRack: board.id -> rack.id
+    const boardToRack = new Map<string, string>()
+    // podRacks: pod.id -> Set<rack.id>
+    const podRacks = new Map<string, Set<string>>()
 
-  // 获取节点目标透明度 - 非聚焦内容完全隐藏
+    topology.pods.forEach(pod => {
+      const rackIds = new Set<string>()
+      pod.racks.forEach(rack => {
+        rackToPod.set(rack.id, pod.id)
+        rackIds.add(rack.id)
+        rack.boards.forEach(board => {
+          boardToPod.set(board.id, pod.id)
+          boardToRack.set(board.id, rack.id)
+        })
+      })
+      podRacks.set(pod.id, rackIds)
+    })
+
+    return { rackToPod, boardToPod, boardToRack, podRacks }
+  }, [topology])
+
+  // 获取节点目标透明度 - 非聚焦内容完全隐藏（使用索引优化，O(1) 查找）
   const getTargetOpacity = useCallback((nodeId: string, nodeType: 'pod' | 'rack' | 'board' | 'switch'): number => {
     if (focusPath.length === 0) return 1.0 // 顶层全显示
 
     if (nodeType === 'rack') {
       if (focusPath.length === 1) {
-        // 聚焦Pod，只显示该Pod下的Rack，其他Pod的Rack完全隐藏
-        const pod = topology.pods.find(p => p.id === focusPath[0])
-        const isInPod = pod?.racks.some(r => r.id === nodeId)
-        return isInPod ? 1.0 : 0
+        // 聚焦Pod，只显示该Pod下的Rack
+        return nodeIndex.rackToPod.get(nodeId) === focusPath[0] ? 1.0 : 0
       }
       if (focusPath.length === 2) {
         // 聚焦Rack，只显示聚焦的Rack
         return focusPath[1] === nodeId ? 1.0 : 0
       }
-      if (focusPath.length >= 3) {
-        // 聚焦Board，所有Rack都完全隐藏（只显示Board）
-        return 0
-      }
+      // focusPath.length >= 3: 聚焦Board，所有Rack都隐藏
+      return 0
     }
     if (nodeType === 'board') {
       if (focusPath.length === 1) {
-        // 聚焦Pod，只显示该Pod下的Board，其他Pod的Board隐藏
-        const pod = topology.pods.find(p => p.id === focusPath[0])
-        const isInPod = pod?.racks.some(r => r.boards.some(b => b.id === nodeId))
-        return isInPod ? 1.0 : 0
+        // 聚焦Pod，只显示该Pod下的Board
+        return nodeIndex.boardToPod.get(nodeId) === focusPath[0] ? 1.0 : 0
       }
       if (focusPath.length === 2) {
         // 聚焦Rack，只显示该Rack下的Board
-        const pod = topology.pods.find(p => p.id === focusPath[0])
-        const rack = pod?.racks.find(r => r.id === focusPath[1])
-        const isInRack = rack?.boards.some(b => b.id === nodeId)
-        return isInRack ? 1.0 : 0
+        return nodeIndex.boardToRack.get(nodeId) === focusPath[1] ? 1.0 : 0
       }
       if (focusPath.length >= 3) {
         // 聚焦Board，只显示聚焦的Board
@@ -127,8 +162,8 @@ const UnifiedScene: React.FC<{
       const rackId = nodeId.replace('/switch', '')
       if (focusPath.length === 1) {
         // 聚焦Pod，显示该Pod下所有Rack的Switch
-        const pod = topology.pods.find(p => p.id === focusPath[0])
-        return pod?.racks.some(r => r.id === rackId) ? 1.0 : 0
+        const podRacks = nodeIndex.podRacks.get(focusPath[0])
+        return podRacks?.has(rackId) ? 1.0 : 0
       }
       if (focusPath.length === 2) {
         // 聚焦Rack，只显示该Rack的Switch
@@ -138,7 +173,7 @@ const UnifiedScene: React.FC<{
       return 0
     }
     return 1.0
-  }, [focusPath, topology])
+  }, [focusPath, nodeIndex])
 
   // 计算所有节点的目标透明度
   const targetOpacities = useMemo(() => {
@@ -443,6 +478,10 @@ export const Scene3D: React.FC<Scene3DProps> = ({
   viewMode,
   onViewModeChange,
 }) => {
+  // 获取全局页面可见性状态（用于在非 topology 页面时暂停渲染）
+  const globalViewMode = useViewMode()
+  const isPageVisible = globalViewMode === 'topology'
+
   // 用于强制重置相机位置的 key
   const [resetKey, setResetKey] = useState(0)
   // 是否显示快捷键帮助
@@ -583,9 +622,10 @@ export const Scene3D: React.FC<Scene3DProps> = ({
         </div>
       )}
 
-      {/* 3D Canvas */}
+      {/* 3D Canvas - 使用 demand 模式只在需要时渲染，通过 RenderController 控制 */}
       <Canvas
         shadows
+        frameloop="demand"
         onCreated={({ gl }) => {
           // 监听上下文丢失事件
           gl.domElement.addEventListener('webglcontextlost', (event) => {
@@ -602,6 +642,9 @@ export const Scene3D: React.FC<Scene3DProps> = ({
           })
         }}
       >
+        {/* 渲染控制器 - 管理页面可见性时的渲染状态 */}
+        <RenderController pageVisible={isPageVisible} />
+
         {/* PerspectiveCamera只使用初始位置，后续由CameraController控制 */}
         <PerspectiveCamera
           makeDefault

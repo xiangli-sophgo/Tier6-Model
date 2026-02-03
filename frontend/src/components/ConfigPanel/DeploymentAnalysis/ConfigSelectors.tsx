@@ -26,6 +26,7 @@ import {
   HardwareConfig,
 } from '../../../utils/llmDeployment/types'
 import { calculateModelParams } from '../../../api/model'
+import { useDebouncedValue } from '@/hooks/useDebouncedCallback'
 import {
   getModelList,
   getChipList,
@@ -130,9 +131,12 @@ export const ModelConfigSelector: React.FC<ModelConfigSelectorProps> = ({ value,
   const [paramsStr, setParamsStr] = useState<string>('--')
   const modelList = getModelList()
 
+  // 使用防抖值减少 API 调用频率（300ms 延迟）
+  const debouncedModelConfig = useDebouncedValue(value, 300)
+
   useEffect(() => {
     let cancelled = false
-    calculateModelParams(value)
+    calculateModelParams(debouncedModelConfig)
       .then((res) => {
         if (!cancelled) setParamsStr(res.formatted)
       })
@@ -140,7 +144,7 @@ export const ModelConfigSelector: React.FC<ModelConfigSelectorProps> = ({ value,
         if (!cancelled) setParamsStr('--')
       })
     return () => { cancelled = true }
-  }, [value])
+  }, [debouncedModelConfig])
 
   const handlePresetChange = (id: string) => {
     setPresetId(id)
@@ -511,13 +515,16 @@ export const BenchmarkConfigSelector: React.FC<BenchmarkConfigSelectorProps> = (
 
   const modelList = getModelList()
 
+  // 使用防抖值减少 API 调用频率（300ms 延迟）
+  const debouncedModelConfig = useDebouncedValue(modelConfig, 300)
+
   useEffect(() => {
     let cancelled = false
-    calculateModelParams(modelConfig)
+    calculateModelParams(debouncedModelConfig)
       .then((res) => { if (!cancelled) setParamsStr(res.formatted) })
       .catch(() => { if (!cancelled) setParamsStr('--') })
     return () => { cancelled = true }
-  }, [modelConfig])
+  }, [debouncedModelConfig])
 
   useEffect(() => {
     listBenchmarks().then((benchmarks) => {

@@ -4,12 +4,13 @@
  * 显示运行中的评估任务进度和状态
  */
 
-import React, { useEffect, useState } from 'react'
+import React from 'react'
 import { Loader2, CheckCircle, XCircle, StopCircle, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Progress } from '@/components/ui/progress'
 import { InfoTooltip } from '@/components/ui/info-tooltip'
+import { useCurrentTimestamp } from '@/hooks/useGlobalTimer'
 
 export interface TaskStatus {
   task_id: string
@@ -89,19 +90,14 @@ export const TaskStatusCard: React.FC<TaskStatusCardProps> = ({
   onCancel,
   onClose,
 }) => {
-  const [elapsedTime, setElapsedTime] = useState(0)
+  // 使用全局定时器 hook 替代独立的 setInterval
+  const isRunning = task.status === 'running' || task.status === 'pending'
+  const currentTimestamp = useCurrentTimestamp(isRunning)
 
-  // 计算已用时间
-  useEffect(() => {
-    if (!startTime) return
-    if (task.status !== 'running' && task.status !== 'pending') return
-
-    const timer = setInterval(() => {
-      setElapsedTime(Math.floor((Date.now() - startTime) / 1000))
-    }, 1000)
-
-    return () => clearInterval(timer)
-  }, [startTime, task.status])
+  // 计算已用时间（秒）
+  const elapsedTime = startTime && isRunning
+    ? Math.floor((currentTimestamp * 1000 - startTime) / 1000)
+    : 0
 
   const formatTime = (seconds: number) => {
     const h = Math.floor(seconds / 3600)

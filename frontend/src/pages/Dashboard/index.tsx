@@ -90,7 +90,7 @@ export const Dashboard: React.FC = () => {
       <div className="mb-8">
 
       {/* 快速操作 */}
-      <Card className="mb-8 border-0">
+      <Card className="mb-8 shadow-none hover:shadow-md transition-shadow duration-300">
         <CardHeader className="pb-6">
           <CardTitle className="flex items-center gap-3 text-lg">
             <div className="rounded-lg bg-blue-50 p-2">

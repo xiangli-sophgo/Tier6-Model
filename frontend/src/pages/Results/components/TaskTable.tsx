@@ -844,6 +844,31 @@ export default function TaskTable({
     }
   }, [tableData])
 
+  // 监听滚动事件，滚动时移除表格焦点防止自动回滚
+  useEffect(() => {
+    const handleScroll = () => {
+      // 当页面滚动时，移除 Handsontable 的选中状态和焦点
+      if (hotTableRef.current?.hotInstance) {
+        hotTableRef.current.hotInstance.deselectCell()
+      }
+      // 移除任何获得焦点的表格单元格
+      if (document.activeElement instanceof HTMLElement) {
+        const activeElement = document.activeElement
+        // 只在焦点在表格内时才移除
+        if (activeElement.closest('.task-hot-table')) {
+          activeElement.blur()
+        }
+      }
+    }
+
+    // 监听父容器或 window 的滚动
+    window.addEventListener('scroll', handleScroll, true)
+
+    return () => {
+      window.removeEventListener('scroll', handleScroll, true)
+    }
+  }, [])
+
   // 双击行显示详情
   const handleRowDoubleClick = (row: number) => {
     if (row >= 0 && sortedTasks[row]) {
@@ -1218,7 +1243,7 @@ export default function TaskTable({
               licenseKey="non-commercial-and-evaluation"
               stretchH="all"
               selectionMode="multiple"
-              outsideClickDeselects={false}
+              outsideClickDeselects={true}
               beforeRowMove={handleBeforeRowMove}
               afterOnCellMouseDown={(event, coords) => {
                 if (selectMode && coords.row >= 0) {

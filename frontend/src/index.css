@@ -73,6 +73,11 @@ body[style*="pointer-events: none"] #root {
   pointer-events: auto;
 }
 
+/* 禁用滚动锚定 - 防止折叠/展开时页面弹回 */
+.overflow-y-auto {
+  overflow-anchor: none;
+}
+
 /* 滚动条 */
 ::-webkit-scrollbar {
   width: 8px;
@@ -106,13 +111,15 @@ button:hover:not(:disabled) {
 
 /* 卡片悬停效果 - 更微妙的交互反馈 */
 .card {
-  transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.2s ease;
+  /* 移除默认的 transform 和额外的阴影，只保留过渡动画 */
+  transition: box-shadow 0.2s ease;
 }
 
-.card:hover {
+/* 移除全局的 hover 效果，让各组件自行控制 */
+/* .card:hover {
   transform: translateY(-2px);
   box-shadow: 0 4px 12px rgba(37, 99, 235, 0.08), 0 2px 4px rgba(37, 99, 235, 0.04);
-}
+} */
 
 /* 等宽字体应用 */
 input[type="number"],

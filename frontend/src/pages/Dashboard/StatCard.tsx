@@ -28,8 +28,8 @@ export const StatCard: React.FC<StatCardProps> = ({
   return (
     <Card
       className={cn(
-        'cursor-default',
-        onClick && 'cursor-pointer hover:shadow-md'
+        'cursor-default shadow-none',
+        onClick && 'cursor-pointer hover:shadow-md transition-shadow duration-300'
       )}
       onClick={onClick}
     >

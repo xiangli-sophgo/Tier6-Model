@@ -173,7 +173,13 @@ def _convert_rack_config_to_pods(config: dict) -> dict:
     racks_per_pod = config.get("racks_per_pod", 1)
     rack_config = config.get("rack_config", {})
     hardware_params = config.get("hardware_params", {})
-    chip_params = hardware_params.get("chip", {})
+    # 新格式 v2.1.0+: hardware_params.chips 字典
+    chips_dict = hardware_params.get("chips", {})
+    if chips_dict:
+        first_chip_name = next(iter(chips_dict))
+        chip_params = chips_dict[first_chip_name]
+    else:
+        chip_params = {}
 
     pods = []
     for pod_idx in range(pod_count):
@@ -835,9 +841,9 @@ async def submit_evaluation(request: EvaluationRequest):
     """
     提交评估任务到后台执行
 
-    通过配置文件名指定配置，后端自动加载完整配置：
-    - benchmark_name: Benchmark 配置文件（包含 model + inference）
-    - topology_config_name: Topology 配置文件（包含 topology + hardware + interconnect）
+    前端传递完整配置内容，后端直接使用：
+    - benchmark_config: 完整 benchmark 配置（model + inference）
+    - topology_config: 完整拓扑配置
 
     Args:
         request: 评估请求
@@ -847,24 +853,20 @@ async def submit_evaluation(request: EvaluationRequest):
     """
     try:
         # ============================================
-        # 1. 从配置文件加载完整配置
+        # 1. 直接使用前端传来的完整配置（不再从文件加载）
         # ============================================
 
-        # 加载 Topology 配置
-        try:
-            topology_config = load_topology_config(request.topology_config_name)
-            logger.info(f"加载 Topology 配置: {request.topology_config_name}")
-        except FileNotFoundError as e:
-            raise HTTPException(status_code=404, detail=str(e))
+        # 从 benchmark_config 提取 model 和 inference 配置
+        model_config = request.benchmark_config.get("model", {})
+        inference_config = request.benchmark_config.get("inference", {})
+        logger.info(f"使用 Benchmark 配置: {request.benchmark_name}")
 
-        # 加载 Benchmark 配置
-        try:
-            benchmark_config = load_benchmark_config(request.benchmark_name)
-            model_config = benchmark_config.get("model", {})
-            inference_config = benchmark_config.get("inference", {})
-            logger.info(f"加载 Benchmark 配置: {request.benchmark_name}")
-        except FileNotFoundError as e:
-            raise HTTPException(status_code=404, detail=str(e))
+        # 拓扑配置来自前端传递的完整配置
+        # 如果需要格式转换（rack_config -> pods），调用转换函数
+        topology_config = request.topology_config
+        if "rack_config" in topology_config and "pods" not in topology_config:
+            topology_config = _convert_rack_config_to_pods(topology_config)
+        logger.info(f"使用 Topology 配置: {request.topology_config_name}")
 
         # ============================================
         # 2. 提交任务

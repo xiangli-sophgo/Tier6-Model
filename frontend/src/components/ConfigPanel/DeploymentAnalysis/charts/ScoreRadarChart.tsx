@@ -204,7 +204,7 @@ export const ScoreRadarChart: React.FC<ScoreRadarChartProps> = ({
     <ReactECharts
       option={option}
       style={{ height }}
-      opts={{ renderer: 'svg' }}
+      opts={{ renderer: 'canvas' }}
     />
   )
 }

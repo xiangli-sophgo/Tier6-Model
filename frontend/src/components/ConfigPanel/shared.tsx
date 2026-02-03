@@ -55,7 +55,7 @@ export interface AnalysisTask {
   modelName: string
   benchmarkName?: string                        // Benchmark描述 (如: "B=64, Seq=1024/4096")
   parallelism: ParallelismStrategy
-  mode: 'manual' | 'auto'
+  mode: 'manual' | 'auto' | 'sweep'
   chips: number
 
   // 结果摘要（完成时填充）

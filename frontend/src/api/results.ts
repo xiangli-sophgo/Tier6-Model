@@ -61,10 +61,22 @@ export interface EvaluationTask {
   search_constraints?: Record<string, unknown>
   search_stats?: Record<string, unknown>
   config_snapshot?: {
+    // 旧格式
     model?: Record<string, unknown>
     hardware?: Record<string, unknown>
     inference?: Record<string, unknown>
     topology?: Record<string, unknown>
+    // 新格式 (v2.1.3+)
+    benchmark_config?: {
+      model?: Record<string, unknown>
+      inference?: Record<string, unknown>
+    }
+    topology_config?: Record<string, unknown>
+    // 任务配置
+    max_workers?: number
+    enable_tile_search?: boolean
+    enable_partition_search?: boolean
+    max_simulated_tokens?: number
   }
   benchmark_name?: string
   topology_config_name?: string

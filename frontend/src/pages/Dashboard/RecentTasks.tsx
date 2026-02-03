@@ -48,7 +48,7 @@ const getStatusConfig = (status: string) => {
 
 export const RecentTasks: React.FC<RecentTasksProps> = ({ tasks, loading, onNavigate, onTaskClick }) => {
   return (
-    <Card className="border-0">
+    <Card className="shadow-none hover:shadow-md transition-shadow duration-300">
       <CardHeader className="flex-row items-center justify-between space-y-0 pb-6">
         <CardTitle className="flex items-center gap-3 text-lg">
           <div className="rounded-lg bg-blue-50 p-2">
@@ -92,7 +92,7 @@ export const RecentTasks: React.FC<RecentTasksProps> = ({ tasks, loading, onNavi
               return (
                 <div
                   key={task.task_id}
-                  className="rounded-lg border border-blue-50 bg-blue-50/30 p-4 transition-all hover:bg-blue-50/50 hover:border-blue-200 cursor-pointer"
+                  className="rounded-lg border border-blue-50 bg-blue-50/30 p-4 shadow-none hover:shadow-md hover:bg-blue-50/50 hover:border-blue-200 cursor-pointer transition-all duration-300"
                   onClick={() => onTaskClick?.(task)}
                 >
                   <div className="mb-2 flex items-center gap-3">

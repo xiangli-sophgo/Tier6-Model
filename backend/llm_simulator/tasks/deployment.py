@@ -835,8 +835,14 @@ def _transform_to_ds_tpu_format(
 
     # 从拓扑配置中提取硬件配置（只调用一次，后续复用）
     hardware_config = _extract_hardware_config(topology)
-    chip_hw = hardware_config.get("chip", {})
-    chip_type = chip_hw.get("chip_type", "SG2260E")
+    # 新格式 v2.1.0+: hardware_params.chips 字典
+    chips_dict = hardware_config.get("hardware_params", {}).get("chips", {})
+    if chips_dict:
+        first_chip_name = next(iter(chips_dict))
+        chip_hw = chips_dict[first_chip_name]
+        chip_type = chip_hw.get("name", "SG2260E")
+    else:
+        chip_type = "SG2260E"
 
     # 使用 PerformanceAnalyzer 获取详细的 layers 信息
     layers_info = {}
@@ -1001,13 +1007,7 @@ def _extract_hardware_config(topology: dict) -> dict:
             logger.warning(f"[DEBUG] _extract_hardware_config: returning result with keys = {result.keys()}")
             return result
 
-    # 格式3：展开后的 pods/racks/boards/chips 结构
-    hardware_config = {
-        "chip": {},
-        "node": {},
-        "cluster": {}
-    }
-
+    # 格式3：展开后的 pods/racks/boards/chips 结构 -> 转换为新格式
     pods = topology.get("pods", [])
     if pods:
         for pod in pods:
@@ -1020,14 +1020,35 @@ def _extract_hardware_config(topology: dict) -> dict:
                             chips = board.get("chips", [])
                             if chips:
                                 chip = chips[0]
-                                hardware_config["chip"] = {
-                                    "chip_type": chip.get("name", "SG2260E"),
-                                    "compute_tflops_fp16": chip.get("compute_tflops_fp16", 2000),
-                                    "memory_gb": chip.get("memory_gb", 80),
-                                    "memory_bandwidth_gbps": chip.get("memory_bandwidth_gbps", 3000),
-                                    "memory_bandwidth_utilization": chip.get("memory_bandwidth_utilization", 0.9),
+                                chip_name = chip.get("name", "SG2260E")
+                                # 构建新格式的 hardware_params.chips 结构
+                                return {
+                                    "hardware_params": {
+                                        "chips": {
+                                            chip_name: {
+                                                "name": chip_name,
+                                                "num_cores": chip.get("num_cores", 64),
+                                                "compute_tflops_fp8": chip.get("compute_tflops_fp8", 0),
+                                                "compute_tflops_bf16": chip.get("compute_tflops_bf16", 0),
+                                                "memory_capacity_gb": chip.get("memory_capacity_gb", chip.get("memory_gb", 80)),
+                                                "memory_bandwidth_gbps": chip.get("memory_bandwidth_gbps", 3000),
+                                                "memory_bandwidth_utilization": chip.get("memory_bandwidth_utilization", 0.85),
+                                                "lmem_capacity_mb": chip.get("lmem_capacity_mb", 0),
+                                                "lmem_bandwidth_gbps": chip.get("lmem_bandwidth_gbps", 0),
+                                                "cube_m": chip.get("cube_m"),
+                                                "cube_k": chip.get("cube_k"),
+                                                "cube_n": chip.get("cube_n"),
+                                                "sram_size_kb": chip.get("sram_size_kb"),
+                                                "sram_utilization": chip.get("sram_utilization"),
+                                                "lane_num": chip.get("lane_num"),
+                                                "align_bytes": chip.get("align_bytes"),
+                                                "compute_dma_overlap_rate": chip.get("compute_dma_overlap_rate"),
+                                            }
+                                        },
+                                        "interconnect": {},
+                                        "comm_latency_config": {},
+                                    }
                                 }
-                                return hardware_config
 
     # 如果找不到芯片配置，抛出错误
-    raise ValueError("无法从拓扑配置中提取芯片硬件配置，请确保拓扑中包含有效的芯片数据")
+    raise ValueError("无法从拓扑配置中提取芯片硬件配置，请确保拓扑中包含有效的芯片数据或 hardware_params.chips 配置")

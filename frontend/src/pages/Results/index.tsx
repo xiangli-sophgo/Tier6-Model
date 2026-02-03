@@ -3,7 +3,7 @@
  * 显示所有实验和评估任务的列表
  */
 
-import React, { useEffect, useState, useCallback } from 'react'
+import React, { useEffect, useState, useCallback, useMemo } from 'react'
 import { toast } from 'sonner'
 import {
   RefreshCw,
@@ -384,10 +384,10 @@ export const Results: React.FC = () => {
     setTaskResults(null)
   }
 
-  // 将 API 返回的 top_k_plans 转换为 PlanAnalysisResult[]
-  const convertToAnalysisResults = (results: TaskResultsResponse | null): PlanAnalysisResult[] => {
-    if (!results || !results.top_k_plans) return []
-    return results.top_k_plans.map(plan => {
+  // 将 API 返回的 top_k_plans 转换为 PlanAnalysisResult[]（使用 useMemo 缓存）
+  const analysisResultsCache = useMemo((): PlanAnalysisResult[] => {
+    if (!taskResults || !taskResults.top_k_plans) return []
+    return taskResults.top_k_plans.map(plan => {
       // 从 stats 中提取更多数据
       const stats = plan.stats as Record<string, any> || {}
       const prefillStats = stats.prefill || {}
@@ -468,7 +468,7 @@ export const Results: React.FC = () => {
         suggestions: [],
       } as unknown as PlanAnalysisResult
     })
-  }
+  }, [taskResults])
 
   // 处理全选
   const handleSelectAll = useCallback((checked: boolean) => {
@@ -544,14 +544,15 @@ export const Results: React.FC = () => {
         return undefined
       })()
 
-      const analysisResults = convertToAnalysisResults(taskResults)
+      // 使用缓存的分析结果（由 useMemo 计算）
+      const analysisResults = analysisResultsCache
       const bestResult = analysisResults.length > 0 ? analysisResults[0] : null
 
       return (
         <TooltipProvider>
-          <div className="w-full min-h-full bg-gradient-to-b from-gray-50 to-white pb-16">
+          <div className="h-full w-full bg-gradient-to-b from-gray-50 to-white flex flex-col">
             {/* 标题栏 */}
-            <div className="px-8 py-6 border-b border-blue-100 bg-gradient-to-r from-blue-50 to-white flex justify-between items-center" style={{boxShadow: '0 2px 12px rgba(37, 99, 235, 0.08)'}}>
+            <div className="px-8 py-6 border-b border-blue-100 bg-gradient-to-r from-blue-50 to-white flex justify-between items-center flex-shrink-0" style={{boxShadow: '0 2px 12px rgba(37, 99, 235, 0.08)'}}>
               <h3 className="m-0 bg-gradient-to-r from-blue-600 to-blue-400 bg-clip-text text-2xl font-bold text-transparent">
                 任务分析
               </h3>
@@ -583,8 +584,8 @@ export const Results: React.FC = () => {
               </div>
             </div>
 
-            {/* 内容区 - 使用 AnalysisResultDisplay + ChartsPanel */}
-            <div className="p-8 bg-gradient-to-b from-gray-50 to-white">
+            {/* 内容区 - 内部滚动 */}
+            <div className="flex-1 overflow-auto p-8 bg-gradient-to-b from-gray-50 to-white">
               <div className="w-full">
                 <AnalysisResultDisplay
                   result={bestResult}
@@ -623,9 +624,9 @@ export const Results: React.FC = () => {
 
     return (
       <TooltipProvider>
-        <div className="w-full min-h-full bg-gradient-to-b from-gray-50 to-white pb-16">
+        <div className="h-full w-full bg-gradient-to-b from-gray-50 to-white flex flex-col">
           {/* 标题栏 */}
-          <div className="px-8 py-6 border-b border-blue-100 bg-gradient-to-r from-blue-50 to-white flex justify-between items-center" style={{boxShadow: '0 2px 12px rgba(37, 99, 235, 0.08)'}}>
+          <div className="px-8 py-6 border-b border-blue-100 bg-gradient-to-r from-blue-50 to-white flex justify-between items-center flex-shrink-0" style={{boxShadow: '0 2px 12px rgba(37, 99, 235, 0.08)'}}>
             <h3 className="m-0 bg-gradient-to-r from-blue-600 to-blue-400 bg-clip-text text-2xl font-bold text-transparent">
               实验详情
             </h3>
@@ -666,11 +667,11 @@ export const Results: React.FC = () => {
             </div>
           </div>
 
-          {/* 内容区 */}
-          <div className="p-6">
+          {/* 内容区 - 内部滚动 */}
+          <div className="flex-1 overflow-auto p-6">
             <div className="w-full">
               {/* 任务列表表格 */}
-              <Card className="mb-4">
+              <Card className="mb-4 shadow-none hover:shadow-md transition-shadow duration-300">
                 <CardHeader className="pb-3">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
@@ -719,7 +720,7 @@ export const Results: React.FC = () => {
 
               {/* 任务详情面板 - 在 Card 外面独立渲染 */}
               {detailTask && (
-                <Card className="mt-4 mb-8">
+                <Card className="mt-4 mb-8 shadow-none hover:shadow-md transition-shadow duration-300">
                   {/* 标题栏 */}
                   <div className="flex items-center justify-between bg-gradient-to-r from-blue-50 to-white px-4 py-3 border-b border-blue-100 rounded-t-lg">
                     <div className="flex items-center gap-2">
@@ -776,18 +777,18 @@ export const Results: React.FC = () => {
 
   return (
     <TooltipProvider>
-      <div className="w-full min-h-full bg-gradient-to-b from-gray-50 to-white pb-16">
+      <div className="h-full w-full bg-gradient-to-b from-gray-50 to-white flex flex-col">
         {/* 标题栏 */}
-        <div className="px-8 py-6 border-b border-blue-100 bg-gradient-to-r from-blue-50 to-white" style={{boxShadow: '0 2px 12px rgba(37, 99, 235, 0.08)'}}>
+        <div className="px-8 py-6 border-b border-blue-100 bg-gradient-to-r from-blue-50 to-white flex-shrink-0" style={{boxShadow: '0 2px 12px rgba(37, 99, 235, 0.08)'}}>
           <h3 className="m-0 bg-gradient-to-r from-blue-600 to-blue-400 bg-clip-text text-2xl font-bold text-transparent">
             结果管理
           </h3>
         </div>
 
-        {/* 内容区 */}
-        <div className="p-8">
+        {/* 内容区 - 内部滚动 */}
+        <div className="flex-1 overflow-auto p-8">
           {/* 实验列表 */}
-          <Card>
+          <Card className="shadow-none hover:shadow-md transition-shadow duration-300">
             <CardHeader className="pb-4">
               <div className="flex items-center justify-between">
                 <CardTitle className="flex items-center gap-2">

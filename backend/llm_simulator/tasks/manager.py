@@ -350,14 +350,11 @@ def _execute_evaluation(
         )
 
         # 保存结果（自动模式已经边评估边保存，只有手动模式需要在此保存）
-        if search_mode == 'manual':
+        # 注意：只有找到可行方案时才保存结果，失败的任务不保存到数据库
+        if search_mode == 'manual' and result["top_k_plans"]:
             with get_db_session() as db:
                 # 保存可行方案
-                if result["top_k_plans"]:
-                    _save_results(task_id, result["top_k_plans"], db)
-                # 也保存不可行方案（用于返回失败原因）
-                if result.get("infeasible_plans"):
-                    _save_results(task_id, result["infeasible_plans"], db)
+                _save_results(task_id, result["top_k_plans"], db)
 
         # 保存搜索统计
         search_stats = result.get("search_stats", {})
