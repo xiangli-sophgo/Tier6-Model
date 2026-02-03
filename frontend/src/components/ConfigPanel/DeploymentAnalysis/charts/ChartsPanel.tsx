@@ -5,9 +5,7 @@
 
 import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { toast } from 'sonner'
-import { RefreshCw } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { MemoryPieChart } from './MemoryPieChart'
 import { RooflineChart } from './RooflineChart'
 import { GanttChart } from './GanttChart'
@@ -70,12 +68,6 @@ export const ChartsPanel: React.FC<ChartsPanelProps> = ({
 
   // 判断是否有外部数据（来自后端评估结果）
   const hasExternalData = !!(externalGanttData || externalStats)
-  const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
-    charts: true,
-    simulation: true,
-    comparison: true,
-  })
-  const [activeSimTab, setActiveSimTab] = useState<'timeline' | 'layers' | 'communication'>('timeline')
   const [selectedTask, setSelectedTask] = useState<GanttTask | null>(null)
   const [isDrawerOpen, setIsDrawerOpen] = useState(false)
 
@@ -200,38 +192,14 @@ export const ChartsPanel: React.FC<ChartsPanelProps> = ({
   return (
     <div>
       {/* ═══════════════════════════════════════════════════════════════ */}
-      {/* 四、图表可视化 */}
+      {/* 四、性能分析与可视化 */}
       {/* ═══════════════════════════════════════════════════════════════ */}
-      <BaseCard collapsible
-        title="图表可视化"
-        expanded={expandedSections.charts}
-        onExpandChange={(expanded: boolean) => setExpandedSections(prev => ({ ...prev, charts: expanded }))}
+      <BaseCard
+        title="性能分析与可视化"
         className="mb-4"
       >
-        {/* 响应式网格布局：小屏单列，中屏2列 */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {/* 内存图 */}
-          <div style={CHART_CARD_STYLE} className="transition-shadow hover:shadow-md">
-            <div style={CHART_TITLE_STYLE}>
-              <span className="font-semibold">内存占用分解</span>
-              <div className="flex items-center gap-2">
-                {/* 数据来源标记 */}
-                {(result.memory as any)?.is_estimated && (
-                  <span className="text-[10px] text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded">
-                    估算值
-                  </span>
-                )}
-                <span
-                  className="text-[11px]"
-                  style={{ color: result.memory.is_memory_sufficient ? '#52c41a' : '#faad14' }}
-                >
-                  {result.memory.is_memory_sufficient ? '✓ 内存充足' : '⚠ 内存不足'}
-                </span>
-              </div>
-            </div>
-            <MemoryPieChart memory={result.memory} height={400} />
-          </div>
-
+        {/* 第一行：Roofline + 内存占用（网格布局） */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
           {/* Roofline 图 */}
           <div style={CHART_CARD_STYLE} className="transition-shadow hover:shadow-md">
             <div style={CHART_TITLE_STYLE}>
@@ -248,102 +216,104 @@ export const ChartsPanel: React.FC<ChartsPanelProps> = ({
               hardware={hardware}
               model={model}
               comparisonResults={topKPlans.slice(1, 4)}
-              height={400}
+              height={350}
               simulationStats={simulationResult?.stats}
             />
           </div>
-        </div>
-      </BaseCard>
 
-      {/* ═══════════════════════════════════════════════════════════════ */}
-      {/* 五、推理时序模拟 */}
-      {/* ═══════════════════════════════════════════════════════════════ */}
-      <div style={{ marginBottom: 16 }}>
-        <BaseCard
-          title="推理时序模拟"
-          accentColor="#faad14"
-          collapsible
-          expanded={expandedSections.simulation}
-          onExpandChange={(expanded) => setExpandedSections(prev => ({ ...prev, simulation: expanded }))}
-          extra={
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              {isSimulating ? (
-                <span className="text-[11px] text-gray-500">模拟中...</span>
-              ) : (externalStats || simulationResult?.stats) ? (
+          {/* 内存占用（简化版，无圆环图） */}
+          <div style={CHART_CARD_STYLE} className="transition-shadow hover:shadow-md">
+            <div style={CHART_TITLE_STYLE}>
+              <span className="font-semibold">内存占用分解</span>
+              <div className="flex items-center gap-2">
+                {(result.memory as any)?.is_estimated && (
+                  <span className="text-[10px] text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded">
+                    估算值
+                  </span>
+                )}
+                {(() => {
+                  // 基于实际利用率判断内存状态（前端二次校验）
+                  // 从 hardware.hardware_params.chips 中获取第一个芯片的容量
+                  const chips = hardware?.hardware_params?.chips || {}
+                  const firstChipName = Object.keys(chips)[0]
+
+                  if (!firstChipName || !chips[firstChipName]?.memory_capacity_gb) {
+                    return (
+                      <span className="text-[11px] text-red-500">
+                        ⚠ 配置错误：无法获取芯片容量
+                      </span>
+                    )
+                  }
+
+                  const chipMemoryGB = chips[firstChipName].memory_capacity_gb
+                  const utilization = (result.memory.total_per_chip_gb / chipMemoryGB) * 100
+                  const statusColor = utilization > 100 ? '#ff4d4f' : utilization > 90 ? '#faad14' : '#52c41a'
+                  const statusText = utilization > 100 ? '✗ 内存溢出' : utilization > 90 ? '⚠ 接近上限' : '✓ 内存充足'
+
+                  return (
+                    <span
+                      className="text-[11px]"
+                      style={{ color: statusColor }}
+                    >
+                      {statusText}
+                    </span>
+                  )
+                })()}
+              </div>
+            </div>
+            <MemoryPieChart memory={result.memory} height={350} />
+          </div>
+        </div>
+
+        {/* 第二行：时序甘特图（全宽） */}
+        <div style={CHART_CARD_STYLE} className="mb-4">
+          <div style={CHART_TITLE_STYLE}>
+            <span className="font-semibold">Prefill + Decode 时序甘特图</span>
+            <div className="flex items-center gap-2">
+              <span className="text-[11px] text-gray-500">点击任务查看详情</span>
+              {(externalStats || simulationResult?.stats) && (
                 <span className="text-[11px] text-gray-500">
-                  TTFT: {(externalStats?.ttft ?? simulationResult?.stats.ttft ?? 0).toFixed(2)}ms |
-                  Avg TPOT: {(externalStats?.avgTpot ?? simulationResult?.stats.avgTpot ?? 0).toFixed(2)}ms |
-                  动态MFU: {((externalStats?.dynamicMfu ?? simulationResult?.stats.dynamicMfu ?? 0) * 100).toFixed(1)}%
+                  | TTFT: {(externalStats?.ttft ?? simulationResult?.stats.ttft ?? 0).toFixed(2)}ms
+                  | Avg TPOT: {(externalStats?.avgTpot ?? simulationResult?.stats.avgTpot ?? 0).toFixed(2)}ms
+                  | 动态MFU: {((externalStats?.dynamicMfu ?? simulationResult?.stats.dynamicMfu ?? 0) * 100).toFixed(1)}%
                 </span>
-              ) : null}
-              {/* 只有在没有外部数据时才显示刷新按钮 */}
-              {!hasExternalData && (
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-7 w-7"
-                  disabled={!inference || isSimulating}
-                  onClick={runSimulation}
-                  title="重新运行模拟"
-                >
-                  <RefreshCw className={`h-4 w-4 ${isSimulating ? 'animate-spin' : ''}`} />
-                </Button>
               )}
             </div>
-          }
-        >
-          <Tabs value={activeSimTab} onValueChange={(v) => setActiveSimTab(v as typeof activeSimTab)}>
-            <TabsList className="mb-4">
-              <TabsTrigger value="timeline">时序甘特图</TabsTrigger>
-              <TabsTrigger value="layers">层级分析</TabsTrigger>
-              <TabsTrigger value="communication">通信分析</TabsTrigger>
-            </TabsList>
+          </div>
+          <GanttChart
+            data={externalGanttData ?? simulationResult?.ganttChart ?? null}
+            showLegend
+            onTaskClick={(task) => {
+              setSelectedTask(task)
+              setIsDrawerOpen(true)
+            }}
+          />
+        </div>
 
-            <TabsContent value="timeline">
-              <div style={{ ...CHART_CARD_STYLE, boxShadow: 'none', border: 'none' }}>
-                <div style={CHART_TITLE_STYLE}>
-                  <span className="font-semibold">Prefill + Decode 时序甘特图</span>
-                  <span className="text-[11px] text-gray-500">点击任务查看详情</span>
-                </div>
-                <GanttChart
-                  data={externalGanttData ?? simulationResult?.ganttChart ?? null}
-                  showLegend
-                  onTaskClick={(task) => {
-                    setSelectedTask(task)
-                    setIsDrawerOpen(true)
-                  }}
-                />
-              </div>
-            </TabsContent>
+        {/* 第三行：层级分析（全宽） */}
+        <div style={CHART_CARD_STYLE} className="mb-4">
+          <div style={CHART_TITLE_STYLE}>
+            <span className="font-semibold">层级时间分解</span>
+            <span className="text-[11px] text-gray-500">每层的计算/访存/通信占比</span>
+          </div>
+          <LayerWaterfallChart
+            data={externalGanttData ?? simulationResult?.ganttChart ?? null}
+            height={400}
+          />
+        </div>
 
-            <TabsContent value="layers">
-              <div style={{ ...CHART_CARD_STYLE, boxShadow: 'none', border: 'none' }}>
-                <div style={CHART_TITLE_STYLE}>
-                  <span className="font-semibold">层级时间分解</span>
-                  <span className="text-[11px] text-gray-500">每层的计算/访存/通信占比</span>
-                </div>
-                <LayerWaterfallChart
-                  data={externalGanttData ?? simulationResult?.ganttChart ?? null}
-                  height={Math.max(300, ((externalGanttData ?? simulationResult?.ganttChart)?.tasks?.length ?? 0) > 100 ? 500 : 350)}
-                />
-              </div>
-            </TabsContent>
-
-            <TabsContent value="communication">
-              <div style={{ ...CHART_CARD_STYLE, boxShadow: 'none', border: 'none' }}>
-                <div style={CHART_TITLE_STYLE}>
-                  <span className="font-semibold">通信开销分析</span>
-                  <span className="text-[11px] text-gray-500">TP/PP/EP/SP 通信分解</span>
-                </div>
-                <CommunicationBreakdownChart
-                  data={externalGanttData ?? simulationResult?.ganttChart ?? null}
-                  height={400}
-                />
-              </div>
-            </TabsContent>
-          </Tabs>
-        </BaseCard>
-      </div>
+        {/* 第四行：通信分析（全宽） */}
+        <div style={CHART_CARD_STYLE}>
+          <div style={CHART_TITLE_STYLE}>
+            <span className="font-semibold">通信开销分析</span>
+            <span className="text-[11px] text-gray-500">TP/PP/EP/SP 通信分解</span>
+          </div>
+          <CommunicationBreakdownChart
+            data={externalGanttData ?? simulationResult?.ganttChart ?? null}
+            height={400}
+          />
+        </div>
+      </BaseCard>
 
       {/* 任务详情侧边栏 */}
       <TaskDetailDrawer

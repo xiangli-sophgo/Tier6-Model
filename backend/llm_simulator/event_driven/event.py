@@ -7,6 +7,7 @@
 
 from __future__ import annotations
 
+import logging
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from enum import IntEnum
@@ -15,6 +16,8 @@ from typing import TYPE_CHECKING, Any, Optional
 if TYPE_CHECKING:
     from .resource import ResourceManager
     from ..core.gantt import GanttChartBuilder
+
+logger = logging.getLogger(__name__)
 
 
 class EventType(IntEnum):
@@ -44,6 +47,7 @@ class EventType(IntEnum):
     SWITCH_FORWARD = 24    # Switch 转发数据包
 
     # 调度事件（最低优先级，确保其他事件先处理）
+    PORT_SCHEDULE = 25     # 端口调度事件（Phase 3.5）
     SCHEDULE = 30
 
 
@@ -1298,9 +1302,10 @@ class SwitchForwardEvent(BaseEvent):
     ) -> list[BaseEvent]:
         """处理 Switch 转发事件
 
-        1. 请求 Switch 输出端口资源
-        2. 计算处理延迟 + 串行化延迟
-        3. 生成下一跳事件（SwitchForwardEvent 或 PacketReceiveEvent）
+        1. 根据转发模式计算延迟（Store-and-Forward 或 Cut-Through）
+        2. 检查端口是否空闲，如果忙则入队等待
+        3. 如果空闲，请求端口资源并转发
+        4. 转发完成后触发端口调度事件
         """
         new_events = []
 
@@ -1327,14 +1332,78 @@ class SwitchForwardEvent(BaseEvent):
             )
             return [receive_event]
 
-        # 1. 计算延迟
-        processing_delay = switch_manager.get_processing_delay(self.switch_id)
-        serialization_delay = switch_manager.get_serialization_delay(
-            self.switch_id, self.packet_size_bytes
-        )
+        # 获取 Switch 节点
+        switch = switch_manager.get_switch(self.switch_id)
+        if not switch:
+            logger.warning(
+                f"[SwitchForwardEvent] Switch 未找到: {self.switch_id}, "
+                f"packet_id={self.packet_id}"
+            )
+            # 回退
+            receive_event = PacketReceiveEvent(
+                timestamp=self.timestamp,
+                chip_id=self.dst_chip,
+                layer_index=self.layer_index,
+                token_index=self.token_index,
+                micro_batch=self.micro_batch,
+                pp_stage=self.pp_stage,
+                packet_id=self.packet_id,
+                flow_id=self.flow_id,
+                packet_size_bytes=self.packet_size_bytes,
+                src_chip=self.src_chip,
+                dst_chip=self.dst_chip,
+                comm_type=self.comm_type,
+                packet_index=self.packet_index,
+                total_packets=self.total_packets,
+                participating_chips=self.participating_chips,
+            )
+            return [receive_event]
+
+        # 1. 根据转发模式计算延迟
+        forwarding_mode = switch.hardware.forwarding_mode
+        if forwarding_mode == "cut_through":
+            # Cut-Through: 固定延迟，与包大小无关
+            processing_delay = switch.hardware.cut_through_delay_us
+            serialization_delay = 0.0  # Cut-Through 模式忽略包大小
+        else:
+            # Store-and-Forward: 处理延迟 + 串行化延迟
+            processing_delay = switch.hardware.processing_delay_us
+            serialization_delay = switch.get_serialization_delay_us(
+                self.packet_size_bytes
+            )
+
         total_delay = processing_delay + serialization_delay
 
-        # 2. 请求 Switch 输出端口资源
+        # 2. 检查端口是否空闲（通过 ResourceManager）
+        port_idle_time = resource_manager.get_switch_port_idle_time(
+            self.switch_id, self.output_port
+        )
+
+        # 检查是否是调度产生的事件（绕过排队逻辑）
+        scheduled_events = context.get("scheduled_events", set())
+        is_scheduled = id(self) in scheduled_events
+        if is_scheduled:
+            scheduled_events.discard(id(self))
+
+        if port_idle_time > self.timestamp and not is_scheduled:
+            # 端口忙，入队等待
+            port_queue = switch.get_port_queue(self.output_port)
+            # TODO: 确定输入端口（需要从路由信息中提取）
+            # 暂时使用 "nic" 作为占位符
+            input_port = "nic"  # 简化版本
+            port_queue.enqueue(self, input_port)
+
+            logger.debug(
+                f"[SwitchForwardEvent] 端口忙，入队: "
+                f"{self.switch_id}:port_{self.output_port}, "
+                f"packet_id={self.packet_id}, "
+                f"port_idle_time={port_idle_time:.2f}, "
+                f"timestamp={self.timestamp:.2f}"
+            )
+
+            return []  # 不生成新事件，等待调度
+
+        # 3. 端口空闲，请求资源
         actual_start, actual_end = resource_manager.request_switch_port(
             switch_id=self.switch_id,
             port_number=self.output_port,
@@ -1342,7 +1411,16 @@ class SwitchForwardEvent(BaseEvent):
             duration=total_delay,
         )
 
-        # 3. 确定下一跳
+        logger.debug(
+            f"[SwitchForwardEvent] 转发数据包: "
+            f"{self.switch_id}:port_{self.output_port}, "
+            f"packet_id={self.packet_id}, "
+            f"mode={forwarding_mode}, "
+            f"delay={total_delay:.2f}us, "
+            f"start={actual_start:.2f}, end={actual_end:.2f}"
+        )
+
+        # 4. 确定下一跳
         next_hop_index = self.hop_index + 1
         is_last_hop = next_hop_index >= len(self.route)
 
@@ -1397,6 +1475,19 @@ class SwitchForwardEvent(BaseEvent):
                 participating_chips=self.participating_chips,
             )
             new_events.append(next_forward_event)
+
+        # 5. 转发完成后，触发端口调度事件
+        port_schedule_event = PortScheduleEvent(
+            timestamp=actual_end,
+            chip_id=self.chip_id,
+            layer_index=self.layer_index,
+            token_index=self.token_index,
+            micro_batch=self.micro_batch,
+            pp_stage=self.pp_stage,
+            switch_id=self.switch_id,
+            output_port=self.output_port,
+        )
+        new_events.append(port_schedule_event)
 
         return new_events
 
@@ -1469,6 +1560,81 @@ class PacketReceiveEvent(BaseEvent):
                 participating_chips=self.participating_chips,
             )
             new_events.append(comm_end_event)
+
+        return new_events
+
+
+@dataclass
+class PortScheduleEvent(BaseEvent):
+    """端口调度事件（端口空闲时触发）
+
+    当 Switch 端口完成当前数据包的转发后，触发此事件。
+    使用 Round-Robin 调度算法从端口队列中选择下一个包进行处理。
+    """
+
+    event_type: EventType = field(default=EventType.PORT_SCHEDULE, init=False)
+
+    # Switch 和端口信息
+    switch_id: str = ""
+    output_port: int = 0
+
+    def handle(
+        self,
+        resource_manager: ResourceManager,
+        gantt_builder: GanttChartBuilder,
+        context: dict[str, Any],
+    ) -> list[BaseEvent]:
+        """处理端口调度事件
+
+        1. 从端口队列中 Round-Robin 选择下一个包
+        2. 重新处理该 SwitchForwardEvent（绕过排队逻辑）
+        """
+        new_events = []
+
+        # 获取 SwitchManager
+        switch_manager = context.get("switch_manager")
+        if not switch_manager:
+            logger.warning(
+                f"[PortScheduleEvent] SwitchManager 未找到，跳过调度: "
+                f"{self.switch_id}:port_{self.output_port}"
+            )
+            return new_events
+
+        # 获取 Switch 节点
+        switch = switch_manager.get_switch(self.switch_id)
+        if not switch:
+            logger.warning(
+                f"[PortScheduleEvent] Switch 未找到: {self.switch_id}"
+            )
+            return new_events
+
+        # 获取端口队列
+        port_queue = switch.get_port_queue(self.output_port)
+
+        # Round-Robin 调度下一个包
+        next_event = port_queue.schedule_next()
+
+        if next_event:
+            # 更新时间戳为当前时刻（端口空闲时刻）
+            next_event.timestamp = self.timestamp
+
+            # 标记该事件为调度产生，绕过排队逻辑
+            # 通过 context 传递标志
+            context.setdefault("scheduled_events", set()).add(id(next_event))
+
+            logger.debug(
+                f"[PortScheduleEvent] 调度下一个包: "
+                f"{self.switch_id}:port_{self.output_port}, "
+                f"packet_id={next_event.packet_id}, "
+                f"remaining_queue={port_queue.total_size()}"
+            )
+
+            new_events.append(next_event)
+        else:
+            logger.debug(
+                f"[PortScheduleEvent] 端口队列为空: "
+                f"{self.switch_id}:port_{self.output_port}"
+            )
 
         return new_events
 

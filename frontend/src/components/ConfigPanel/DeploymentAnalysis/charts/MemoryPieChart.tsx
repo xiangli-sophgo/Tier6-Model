@@ -34,13 +34,8 @@ export const MemoryPieChart: React.FC<MemoryPieChartProps> = React.memo(({
     const total = memory.total_per_chip_gb
     const utilization = (total / chipMemoryGB) * 100
     const warningThreshold = chipMemoryGB * 0.9  // 90% 警戒线
-
-    // 饼图数据
-    const pieData = MEMORY_COMPONENTS.map((comp, i) => ({
-      name: comp.name,
-      value: data[i].value,
-      itemStyle: { color: comp.color },
-    }))
+    // 动态调整x轴最大值：如果总内存超过芯片容量，则扩展x轴以显示完整内存
+    const xAxisMax = Math.max(chipMemoryGB, total * 1.05)  // 留5%余量
 
     return {
       tooltip: {
@@ -74,29 +69,20 @@ export const MemoryPieChart: React.FC<MemoryPieChartProps> = React.memo(({
                 </div>
               </div>
             `
-          } else {
-            // 饼图 tooltip
-            const percent = ((params.value / total) * 100).toFixed(1)
-            const absPercent = ((params.value / chipMemoryGB) * 100).toFixed(1)
-            return `
-              <div style="font-weight: 600; margin-bottom: 4px;">${params.name}</div>
-              <div>占总量: <span style="font-weight: 500;">${percent}%</span></div>
-              <div>绝对值: <span style="font-weight: 500;">${params.value.toFixed(2)} GB</span></div>
-              <div>占容量: <span style="font-weight: 500;">${absPercent}%</span></div>
-            `
           }
+          return ''
         },
       },
-      // 左侧 grid（柱状图）
+      // 柱状图 grid（占满整个宽度）
       grid: {
-        left: '5%',
-        right: '52%',
-        top: '12%',
-        bottom: '18%',
+        left: '8%',
+        right: '8%',
+        top: '15%',
+        bottom: '20%',
       },
       xAxis: {
         type: 'value',
-        max: chipMemoryGB,
+        max: xAxisMax,
         axisLabel: {
           formatter: (value: number) => `${value}GB`,
           fontSize: 12,
@@ -133,43 +119,13 @@ export const MemoryPieChart: React.FC<MemoryPieChartProps> = React.memo(({
           // 即使值为0也显示
           showBackground: false,
         })),
-        // 右侧饼图
-        {
-          name: '内存占比',
-          type: 'pie',
-          radius: ['48%', '78%'],
-          center: ['73%', '42%'],
-          data: pieData.filter(d => d.value > 0),  // 过滤掉0值
-          label: {
-            formatter: '{b}',  // 只显示名称
-            fontSize: 11,
-            color: '#666',
-          },
-          labelLine: {
-            length: 12,
-            length2: 8,
-            lineStyle: {
-              width: 1,
-            },
-          },
-          emphasis: {
-            label: {
-              fontSize: 13,
-              fontWeight: 'bold',
-            },
-            itemStyle: {
-              shadowBlur: 15,
-              shadowColor: 'rgba(0, 0, 0, 0.3)',
-            },
-          },
-        },
       ],
       // 警戒线和标注
       graphic: [
-        // 90% 警戒线（左侧柱状图）
+        // 90% 警戒线
         {
           type: 'line',
-          left: `${5 + ((warningThreshold / chipMemoryGB) * 43)}%`,
+          left: `${8 + ((warningThreshold / xAxisMax) * 84)}%`,
           top: '15%',
           shape: {
             x1: 0,
@@ -178,75 +134,55 @@ export const MemoryPieChart: React.FC<MemoryPieChartProps> = React.memo(({
             y2: height * 0.65,
           },
           style: {
-            stroke: '#ff4d4f',
+            stroke: '#faad14',
             lineDash: [5, 5],
             lineWidth: 2,
           },
         },
-        // 警戒线标签
+        // 90% 警戒线标签
         {
           type: 'text',
-          left: `${5 + ((warningThreshold / chipMemoryGB) * 43)}%`,
+          left: `${8 + ((warningThreshold / xAxisMax) * 84)}%`,
           top: '10%',
           style: {
             text: '90%',
             fontSize: 11,
-            fill: '#ff4d4f',
+            fill: '#faad14',
             textAlign: 'center',
             fontWeight: 600,
           },
         },
-        // 饼图中心文字（总量和利用率）
-        {
-          type: 'text',
-          left: '73%',
-          top: '35%',
-          style: {
-            text: `${total.toFixed(1)} GB`,
-            fontSize: 22,
-            fontWeight: 'bold',
-            fill: utilization > 90 ? '#ff4d4f' : '#333',
-            textAlign: 'center',
-            x: -50,
+        // 100% 容量线（当内存超出时显示）
+        ...(total > chipMemoryGB ? [
+          {
+            type: 'line',
+            left: `${8 + ((chipMemoryGB / xAxisMax) * 84)}%`,
+            top: '15%',
+            shape: {
+              x1: 0,
+              y1: 0,
+              x2: 0,
+              y2: height * 0.65,
+            },
+            style: {
+              stroke: '#ff4d4f',
+              lineDash: [4, 4],
+              lineWidth: 2.5,
+            },
           },
-        },
-        {
-          type: 'text',
-          left: '73%',
-          top: '42%',
-          style: {
-            text: `/ ${chipMemoryGB} GB`,
-            fontSize: 11,
-            fill: '#999',
-            textAlign: 'center',
-            x: -32,
+          {
+            type: 'text',
+            left: `${8 + ((chipMemoryGB / xAxisMax) * 84)}%`,
+            top: '10%',
+            style: {
+              text: '100%',
+              fontSize: 11,
+              fill: '#ff4d4f',
+              textAlign: 'center',
+              fontWeight: 700,
+            },
           },
-        },
-        {
-          type: 'text',
-          left: '73%',
-          top: '48%',
-          style: {
-            text: `利用率`,
-            fontSize: 11,
-            fill: '#666',
-            textAlign: 'center',
-            x: -18,
-          },
-        },
-        {
-          type: 'text',
-          left: '73%',
-          top: '52%',
-          style: {
-            text: `${utilization.toFixed(1)}%`,
-            fontSize: 16,
-            fontWeight: 'bold',
-            fill: utilization > 90 ? '#ff4d4f' : utilization > 80 ? '#faad14' : '#52c41a',
-            textAlign: 'center',
-            x: -30,
-          },
-        },
+        ] : []),
       ],
       // 图例
       legend: {

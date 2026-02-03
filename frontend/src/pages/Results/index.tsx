@@ -67,7 +67,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { listExperiments, deleteExperiment, deleteExperimentsBatch, deleteResultsBatch, getExperimentDetail, getTaskResults, updateExperiment, downloadExperimentJSON, checkImportFile, executeImport, Experiment, EvaluationTask, TaskResultsResponse } from '@/api/results'
 import { AnalysisResultDisplay } from '@/components/ConfigPanel/DeploymentAnalysis/AnalysisResultDisplay'
 import { ChartsPanel } from '@/components/ConfigPanel/DeploymentAnalysis/charts'
-import { PlanAnalysisResult, HardwareConfig, LLMModelConfig, InferenceConfig } from '@/utils/llmDeployment/types'
+import { PlanAnalysisResult, HardwareConfig, LLMModelConfig, InferenceConfig, isMemorySufficient } from '@/utils/llmDeployment/types'
 import { calculateScores, extractScoreInputFromPlan } from '@/utils/llmDeployment/scoreCalculator'
 import TaskTable from './components/TaskTable'
 import TaskDetailPanel from './components/TaskDetailPanel'
@@ -388,6 +388,24 @@ export const Results: React.FC = () => {
   // 将 API 返回的 top_k_plans 转换为 PlanAnalysisResult[]（使用 useMemo 缓存）
   const analysisResultsCache = useMemo((): PlanAnalysisResult[] => {
     if (!taskResults || !taskResults.top_k_plans) return []
+
+    // 从任务配置快照中提取芯片容量
+    if (!selectedTask?.config_snapshot?.topology) {
+      console.error('无法获取任务配置快照中的拓扑信息')
+      return []
+    }
+
+    const topology = selectedTask.config_snapshot.topology as any
+    const chips = topology.hardware_params?.chips || {}
+    const firstChipName = Object.keys(chips)[0]
+
+    if (!firstChipName || !chips[firstChipName]?.memory_capacity_gb) {
+      console.error('无法从拓扑配置中获取芯片容量 (memory_capacity_gb)')
+      return []
+    }
+
+    const chipCapacityGB = chips[firstChipName].memory_capacity_gb
+
     return taskResults.top_k_plans.map(plan => {
       // 从 stats 中提取更多数据
       const stats = plan.stats as Record<string, any> || {}
@@ -407,7 +425,7 @@ export const Results: React.FC = () => {
       const computeTime = decodeStats.computeTime || 0
       const totalTime = decodeStats.totalTime || (commTime + computeTime) || 1
 
-      // 使用统一评分计算器
+      // 使用从配置中提取的芯片容量
       const scoreInput = extractScoreInputFromPlan({
         ttft: plan.ttft,
         tpot: plan.tpot,
@@ -416,7 +434,7 @@ export const Results: React.FC = () => {
         mfu: plan.mfu,
         mbu: plan.mbu,
         dram_occupy: plan.dram_occupy,
-        memory_capacity_gb: 80, // 默认 80GB，后续可从配置中获取
+        memory_capacity_gb: chipCapacityGB,
         stats: plan.stats,
       })
       const calculatedScores = calculateScores(scoreInput)
@@ -453,7 +471,8 @@ export const Results: React.FC = () => {
           kv_cache_memory_gb: kvCacheMemoryGB,
           activation_memory_gb: activationMemoryGB,
           overhead_gb: Math.max(0, totalMemoryGB - paramsMemoryGB - kvCacheMemoryGB - activationMemoryGB),
-          is_memory_sufficient: true,
+          is_memory_sufficient: isMemorySufficient(totalMemoryGB, chipCapacityGB),
+          memory_utilization: totalMemoryGB / chipCapacityGB,
           // 标记数据来源
           is_estimated: !memoryBreakdown,
         },
@@ -477,7 +496,7 @@ export const Results: React.FC = () => {
         suggestions: [],
       } as unknown as PlanAnalysisResult
     })
-  }, [taskResults])
+  }, [taskResults, selectedTask])
 
   // 处理全选
   const handleSelectAll = useCallback((checked: boolean) => {

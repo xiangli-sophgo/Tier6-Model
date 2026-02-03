@@ -26,8 +26,100 @@ from ..config.types import (
 
 if TYPE_CHECKING:
     from ..core.topology import TopologyParser
+    from .event import SwitchForwardEvent
 
 logger = logging.getLogger(__name__)
+
+
+# ============================================
+# 端口队列（用于 Round-Robin 调度）
+# ============================================
+
+@dataclass
+class PortQueue:
+    """端口队列（用于调度）
+
+    维护等待使用某个输出端口的数据包队列。
+    使用 Round-Robin 调度策略，按输入端口轮询选择下一个包。
+    """
+    port_id: str                                    # 端口标识 "switch_id:port_num"
+    switch_id: str                                  # 所属 Switch ID
+    output_port: int                                # 输出端口号
+
+    # 等待队列（按输入端口分组）
+    # key: 输入端口号（或 "nic" 表示来自芯片）
+    # value: 该输入端口等待的事件列表
+    waiting_packets: dict[str, list[SwitchForwardEvent]] = field(default_factory=dict)
+
+    # Round-Robin 调度指针（记录上次选择的输入端口索引）
+    rr_pointer: int = 0
+
+    def enqueue(self, event: SwitchForwardEvent, input_port: str = "nic") -> None:
+        """数据包入队
+
+        Args:
+            event: 等待转发的 SwitchForwardEvent
+            input_port: 输入端口标识（用于 RR 调度）
+        """
+        if input_port not in self.waiting_packets:
+            self.waiting_packets[input_port] = []
+        self.waiting_packets[input_port].append(event)
+
+        logger.debug(
+            f"[PortQueue] 包入队: {self.port_id}, "
+            f"input_port={input_port}, "
+            f"queue_size={len(self.waiting_packets[input_port])}"
+        )
+
+    def schedule_next(self) -> Optional[SwitchForwardEvent]:
+        """Round-Robin 调度下一个数据包
+
+        按输入端口轮询，保证公平性。
+        每次选择一个输入端口，从该端口队列中取出第一个包。
+
+        Returns:
+            选中的 SwitchForwardEvent，如果队列为空返回 None
+        """
+        if not self.waiting_packets:
+            return None
+
+        # 获取所有非空输入端口
+        non_empty_ports = [
+            port for port, queue in self.waiting_packets.items()
+            if queue
+        ]
+
+        if not non_empty_ports:
+            return None
+
+        # Round-Robin 选择输入端口
+        selected_port = non_empty_ports[self.rr_pointer % len(non_empty_ports)]
+        self.rr_pointer = (self.rr_pointer + 1) % len(non_empty_ports)
+
+        # 从选中的输入端口队列中取出第一个包
+        event = self.waiting_packets[selected_port].pop(0)
+
+        # 如果队列为空，删除该输入端口
+        if not self.waiting_packets[selected_port]:
+            del self.waiting_packets[selected_port]
+
+        logger.debug(
+            f"[PortQueue] RR 调度: {self.port_id}, "
+            f"selected_port={selected_port}, "
+            f"packet_id={event.packet_id}"
+        )
+
+        return event
+
+    def is_empty(self) -> bool:
+        """检查队列是否为空"""
+        return not self.waiting_packets or all(
+            not queue for queue in self.waiting_packets.values()
+        )
+
+    def total_size(self) -> int:
+        """返回队列中所有包的总数"""
+        return sum(len(queue) for queue in self.waiting_packets.values())
 
 
 # ============================================
@@ -91,6 +183,9 @@ class SwitchNode:
     # 端口状态（端口号 → 状态）
     port_states: dict[int, SwitchPortState] = field(default_factory=dict)
 
+    # 端口队列（端口号 → 队列，用于 Round-Robin 调度）
+    port_queues: dict[int, PortQueue] = field(default_factory=dict)
+
     # 路由表缓存（目标设备 ID → 输出端口号）
     routing_cache: dict[str, int] = field(default_factory=dict)
 
@@ -135,6 +230,24 @@ class SwitchNode:
                 link_bandwidth_gbps=self.port_bandwidth_gbps,
             )
         return self.port_states[port_number]
+
+    def get_port_queue(self, port_number: int) -> PortQueue:
+        """获取端口队列（不存在则创建）
+
+        Args:
+            port_number: 端口号
+
+        Returns:
+            端口队列对象
+        """
+        if port_number not in self.port_queues:
+            port_id = f"{self.switch_id}:port_{port_number}"
+            self.port_queues[port_number] = PortQueue(
+                port_id=port_id,
+                switch_id=self.switch_id,
+                output_port=port_number,
+            )
+        return self.port_queues[port_number]
 
     def get_serialization_delay_us(self, packet_size_bytes: float) -> float:
         """计算串行化延迟（数据包传输时间）

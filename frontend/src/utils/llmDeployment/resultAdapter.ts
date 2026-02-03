@@ -21,6 +21,7 @@ import {
   SimulationStats,
   ScoreWeights,
   DEFAULT_SCORE_WEIGHTS,
+  isMemorySufficient,
 } from './types';
 
 /**
@@ -75,14 +76,24 @@ export function adaptSimulationResult(
   const stats = simulation.stats;
 
   // 1. 显存分析（简化版，后端应提供详细数据）
+  // 从 hardware.hardware_params.chips 中获取第一个芯片的容量
+  const chips = hardware?.hardware_params?.chips || {};
+  const firstChipName = Object.keys(chips)[0];
+
+  if (!firstChipName || !chips[firstChipName]?.memory_capacity_gb) {
+    throw new Error('无法从硬件配置中获取芯片容量 (memory_capacity_gb)');
+  }
+
+  const chipCapacityGB = chips[firstChipName].memory_capacity_gb;
+  const totalMemoryGB = 0; // TODO: 从后端获取实际内存数据
   const memory: MemoryAnalysis = {
     model_memory_gb: 0,
     kv_cache_memory_gb: 0,
     activation_memory_gb: 0,
     overhead_gb: 0,
-    total_per_chip_gb: 0,
-    is_memory_sufficient: true,
-    memory_utilization: 0,
+    total_per_chip_gb: totalMemoryGB,
+    is_memory_sufficient: isMemorySufficient(totalMemoryGB, chipCapacityGB),
+    memory_utilization: totalMemoryGB / chipCapacityGB,
   };
 
   // 2. 通信分析（简化版，后端应提供详细数据）

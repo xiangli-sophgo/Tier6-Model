@@ -376,6 +376,16 @@ export interface MemoryAnalysis {
   memory_utilization: number;
 }
 
+/**
+ * 判断内存是否充足
+ * @param totalMemoryGB 总内存使用量（GB）
+ * @param chipCapacityGB 芯片容量（GB，从配置中获取）
+ * @returns 是否充足（利用率 <= 100%）
+ */
+export function isMemorySufficient(totalMemoryGB: number, chipCapacityGB: number): boolean {
+  return totalMemoryGB <= chipCapacityGB;
+}
+
 /** 通信分析结果 */
 export interface CommunicationAnalysis {
   /** TP 通信量 (GB) */

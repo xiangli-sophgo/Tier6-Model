@@ -397,6 +397,28 @@ class ResourceManager:
         for port_num in range(port_count):
             self.register_switch_port(switch_id, port_num)
 
+    def get_switch_port_idle_time(
+        self,
+        switch_id: str,
+        port_number: int,
+    ) -> float:
+        """获取 Switch 端口的空闲时间
+
+        Args:
+            switch_id: Switch ID
+            port_number: 端口号
+
+        Returns:
+            端口空闲时间（idle_at），如果端口未注册返回 0.0
+        """
+        port_id = f"{switch_id}:port_{port_number}"
+        key = (port_id, ResourceType.SWITCH_PORT)
+
+        if key not in self._resources:
+            return 0.0
+
+        return self._resources[key].idle_at
+
     def request_switch_port(
         self,
         switch_id: str,

@@ -15,10 +15,6 @@ import {
   Trash2,
   Trash,
   Download,
-  Zap,
-  Gauge,
-  Clock,
-  Target,
   StopCircle,
   XCircle,
   Loader2,
@@ -47,7 +43,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import { PlanAnalysisResult, DEFAULT_SCORE_WEIGHTS } from '../../../utils/llmDeployment/types'
+import { PlanAnalysisResult } from '../../../utils/llmDeployment/types'
 import { InfeasibleResult } from '../../../utils/llmDeployment'
 import { generateBenchmarkName } from '../../../utils/llmDeployment/benchmarkNaming'
 import { AnalysisHistoryItem, AnalysisViewMode } from '../shared'
@@ -310,7 +306,6 @@ export const AnalysisResultDisplay: React.FC<AnalysisResultDisplayProps> = ({
   onClearHistory,
 }) => {
   const [selectedMetric, setSelectedMetric] = useState<MetricType>(null)
-  const [showScoreDetails, setShowScoreDetails] = useState(false)
 
   // 各章节折叠状态
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
@@ -674,146 +669,6 @@ export const AnalysisResultDisplay: React.FC<AnalysisResultDisplayProps> = ({
               </div>
             </div>
           </div>
-
-          {/* 综合评分 + 瓶颈分析 */}
-          <div className="flex items-stretch gap-3 mt-4 pt-4" style={{ borderTop: `1px dashed ${colors.borderLight}` }}>
-            {/* 综合评分 */}
-            <div
-              className="relative flex items-center gap-3 px-5 py-3 rounded-lg cursor-pointer transition-shadow"
-              style={{
-                background: is_feasible ? '#f6ffed' : '#fff2f0',
-                border: `2px solid ${is_feasible ? '#b7eb8f' : '#ffccc7'}`,
-                boxShadow: showScoreDetails ? (is_feasible ? '0 2px 8px rgba(82, 196, 26, 0.15)' : '0 2px 8px rgba(255, 77, 79, 0.15)') : 'none',
-              }}
-              onClick={() => setShowScoreDetails(!showScoreDetails)}
-            >
-              {/* 右上角标记 */}
-              <Info
-                className="absolute top-2 right-2 h-2.5 w-2.5"
-                style={{ color: showScoreDetails ? (is_feasible ? colors.success : colors.error) : '#d9d9d9' }}
-              />
-              {is_feasible ? (
-                <CheckCircle className="h-[18px] w-[18px]" style={{ color: colors.success }} />
-              ) : (
-                <InfoTooltip content={infeasibility_reason}>
-                  <AlertTriangle className="h-[18px] w-[18px]" style={{ color: colors.error }} />
-                </InfoTooltip>
-              )}
-              <div>
-                <span className="text-2xl font-bold leading-none" style={{ color: is_feasible ? colors.success : colors.error }}>
-                  {formatNumber(score?.overall_score, 1) || '0.0'}
-                </span>
-                <span className="text-[13px] ml-1" style={{ color: colors.textSecondary }}>分</span>
-              </div>
-              <div className="text-xs" style={{ color: colors.textSecondary }}>
-                综合评分
-              </div>
-            </div>
-
-            {/* 瓶颈分析 */}
-            <div
-              style={{
-                ...clickableCardStyle(selectedMetric === 'bottleneck'),
-                flex: 1,
-              }}
-              onClick={() => setSelectedMetric(selectedMetric === 'bottleneck' ? null : 'bottleneck')}
-            >
-              {/* 右上角标记 */}
-              <Info
-                className="absolute top-2 right-2 h-2.5 w-2.5"
-                style={{ color: selectedMetric === 'bottleneck' ? colors.interactive : '#d9d9d9' }}
-              />
-              <div className="flex items-center justify-between mb-1.5">
-                <Badge
-                  className="m-0"
-                  style={{
-                    background: latency.bottleneck_type === 'compute' ? '#fff7e6' :
-                              latency.bottleneck_type === 'memory' ? '#e6f7ff' :
-                              latency.bottleneck_type === 'communication' ? '#f9f0ff' :
-                              latency.bottleneck_type === 'balanced' ? '#f6ffed' : '#f5f5f5',
-                    color: latency.bottleneck_type === 'compute' ? '#fa8c16' :
-                           latency.bottleneck_type === 'memory' ? '#1890ff' :
-                           latency.bottleneck_type === 'communication' ? '#722ed1' :
-                           latency.bottleneck_type === 'balanced' ? '#52c41a' : '#666',
-                    border: 'none',
-                  }}
-                >
-                  {latency.bottleneck_type === 'compute' ? '算力瓶颈' :
-                   latency.bottleneck_type === 'memory' ? '访存瓶颈' :
-                   latency.bottleneck_type === 'communication' ? '通信瓶颈' :
-                   latency.bottleneck_type === 'balanced' ? '均衡状态' : latency.bottleneck_type}
-                </Badge>
-                {latency.bottleneck_analysis && (
-                  <span className="text-[11px]" style={{ color: colors.textSecondary }}>
-                    {latency.bottleneck_analysis.dominant_phase === 'prefill' ? 'Prefill主导' : 'Decode主导'}
-                  </span>
-                )}
-              </div>
-              {latency.bottleneck_analysis && (
-                <>
-                  <div className="flex h-1.5 rounded-sm overflow-hidden bg-gray-200">
-                    {(() => {
-                      const analysis = latency.bottleneck_analysis.dominant_phase === 'prefill'
-                        ? latency.bottleneck_analysis.prefill
-                        : latency.bottleneck_analysis.decode;
-                      return (
-                        <>
-                          <div style={{ width: `${analysis.compute_ratio * 100}%`, background: '#faad14' }} />
-                          <div style={{ width: `${analysis.memory_ratio * 100}%`, background: '#1890ff' }} />
-                          <div style={{ width: `${analysis.comm_ratio * 100}%`, background: '#722ed1' }} />
-                        </>
-                      );
-                    })()}
-                  </div>
-                  <div className="flex gap-3 mt-1 text-[10px]" style={{ color: colors.textSecondary }}>
-                    {(() => {
-                      const analysis = latency.bottleneck_analysis.dominant_phase === 'prefill'
-                        ? latency.bottleneck_analysis.prefill
-                        : latency.bottleneck_analysis.decode;
-                      return (
-                        <>
-                          <span><span className="inline-block w-1.5 h-1.5 rounded-sm mr-0.5 align-middle" style={{ background: '#faad14' }} />计算{formatNumber(analysis.compute_ratio * 100, 0)}%</span>
-                          <span><span className="inline-block w-1.5 h-1.5 rounded-sm mr-0.5 align-middle" style={{ background: '#1890ff' }} />访存{formatNumber(analysis.memory_ratio * 100, 0)}%</span>
-                          <span><span className="inline-block w-1.5 h-1.5 rounded-sm mr-0.5 align-middle" style={{ background: '#722ed1' }} />通信{formatNumber(analysis.comm_ratio * 100, 0)}%</span>
-                        </>
-                      );
-                    })()}
-                  </div>
-                </>
-              )}
-            </div>
-          </div>
-
-          {/* 评分详情展开区域 */}
-          {showScoreDetails && (
-            <div className="mt-3 p-3 bg-gray-50 rounded-lg">
-              <div className="grid grid-cols-4 gap-2 mb-3">
-                <div className="text-center p-2 bg-blue-50 rounded-md">
-                  <Clock className="h-3.5 w-3.5 text-blue-500 mx-auto" />
-                  <div className="text-base font-semibold text-blue-500 my-1">{formatNumber(score?.latency_score, 0) || '0'}</div>
-                  <div className="text-[10px]" style={{ color: colors.textSecondary }}>延迟 {formatNumber(DEFAULT_SCORE_WEIGHTS.latency * 100, 0)}%</div>
-                </div>
-                <div className="text-center p-2 bg-green-50 rounded-md">
-                  <Zap className="h-3.5 w-3.5 text-green-500 mx-auto" />
-                  <div className="text-base font-semibold text-green-500 my-1">{formatNumber(score?.throughput_score, 0) || '0'}</div>
-                  <div className="text-[10px]" style={{ color: colors.textSecondary }}>吞吐 {formatNumber(DEFAULT_SCORE_WEIGHTS.throughput * 100, 0)}%</div>
-                </div>
-                <div className="text-center p-2 bg-orange-50 rounded-md">
-                  <Gauge className="h-3.5 w-3.5 text-orange-500 mx-auto" />
-                  <div className="text-base font-semibold text-orange-500 my-1">{formatNumber(score?.efficiency_score, 0) || '0'}</div>
-                  <div className="text-[10px]" style={{ color: colors.textSecondary }}>效率 {formatNumber(DEFAULT_SCORE_WEIGHTS.efficiency * 100, 0)}%</div>
-                </div>
-                <div className="text-center p-2 bg-purple-50 rounded-md">
-                  <Target className="h-3.5 w-3.5 text-purple-500 mx-auto" />
-                  <div className="text-base font-semibold text-purple-500 my-1">{formatNumber(score?.balance_score, 0) || '0'}</div>
-                  <div className="text-[10px]" style={{ color: colors.textSecondary }}>均衡 {formatNumber(DEFAULT_SCORE_WEIGHTS.balance * 100, 0)}%</div>
-                </div>
-              </div>
-              <div className="text-[11px] text-center font-mono" style={{ color: colors.textSecondary }}>
-                综合 = {formatNumber(DEFAULT_SCORE_WEIGHTS.latency * 100, 0)}%×延迟 + {formatNumber(DEFAULT_SCORE_WEIGHTS.throughput * 100, 0)}%×吞吐 + {formatNumber(DEFAULT_SCORE_WEIGHTS.efficiency * 100, 0)}%×效率 + {formatNumber(DEFAULT_SCORE_WEIGHTS.balance * 100, 0)}%×均衡
-              </div>
-            </div>
-          )}
 
           {/* 指标详情展示 - 内嵌在性能分析中 */}
           {selectedMetric && (
