@@ -111,6 +111,34 @@ class ParallelismConfigRequest(BaseModel):
 # 模拟请求/响应
 # ============================================
 
+class EventDrivenConfigRequest(BaseModel):
+    """事件驱动仿真配置请求"""
+    max_simulated_tokens: int = Field(16, ge=1, description="最大模拟 token 数")
+    enable_data_transfer: bool = Field(True, description="是否启用数据传输")
+    enable_kv_cache: bool = Field(True, description="是否启用 KV 缓存")
+
+    # 重叠优化配置
+    enable_comm_overlap: bool = Field(True, description="是否启用计算-通信重叠")
+    enable_tbo: bool = Field(True, description="是否启用 MoE TBO 优化")
+    overlap_ratio: float = Field(0.8, ge=0, le=1, description="重叠比例（0-1）")
+
+    # 分块传输配置
+    enable_chunked_comm: bool = Field(False, description="是否启用分块传输")
+    comm_chunk_size_mb: float = Field(16.0, gt=0, description="每块大小（MB）")
+
+    # 评估器配置
+    use_precise_evaluator: bool = Field(True, description="是否使用精确评估器")
+    evaluation_granularity: str = Field("fine", description="评估粒度：fine/coarse")
+
+    # 调度策略
+    pp_schedule: str = Field("gpipe", description="PP 调度策略：gpipe/1f1b")
+
+    # 调试选项
+    max_events: int = Field(1000000, ge=1, description="最大事件数")
+    log_events: bool = Field(False, description="是否记录事件日志")
+    max_simulation_time_us: float = Field(1e9, gt=0, description="最大仿真时间（us）")
+
+
 class SimulationRequest(BaseModel):
     """模拟请求 - 使用严格类型"""
     topology: dict[str, Any]  # 拓扑配置保持灵活，因为结构复杂
@@ -119,6 +147,10 @@ class SimulationRequest(BaseModel):
     parallelism: ParallelismConfigRequest
     hardware: HardwareConfigRequest
     config: dict[str, Any] | None = None  # protocol_config 和 network_config 保持灵活
+
+    # 事件驱动仿真配置
+    use_event_driven: bool = Field(False, description="是否使用事件驱动仿真")
+    event_driven_config: Optional[EventDrivenConfigRequest] = Field(None, description="事件驱动仿真配置")
 
 
 class SimulationResponse(BaseModel):

@@ -19,6 +19,7 @@ from typing import Any, Optional
 from sqlalchemy.orm import Session
 
 from ..core.simulator import run_simulation
+from ..event_driven import EventDrivenSimulator, EventDrivenSimConfig
 from ..core.database import get_db, get_db_session, init_db, Experiment, EvaluationTask, EvaluationResult, TaskStatus
 from ..core.model_utils import calculate_params_from_dict, format_params
 from ..evaluators import ARCH_PRESETS
@@ -32,6 +33,11 @@ from ..config import (
     validate_moe_config,
     get_max_global_workers,
     set_max_global_workers,
+    LLMModelConfig,
+    InferenceConfig,
+    ParallelismStrategy,
+    MoEConfig,
+    MLAConfig,
 )
 from ..tasks import manager as task_manager
 from ..tasks.deployment import count_topology_chips, calculate_required_chips
@@ -61,6 +67,7 @@ from .schemas import (
     ImportExecuteRequest,
     ImportResult,
     TopologyConfigRequest,
+    EventDrivenConfigRequest,
 )
 
 # 配置日志
@@ -416,6 +423,176 @@ async def get_runtime_presets():
     }
 
 
+def _run_event_driven_simulation(
+    topology_dict: dict[str, Any],
+    model_dict: dict[str, Any],
+    inference_dict: dict[str, Any],
+    parallelism_dict: dict[str, Any],
+    hardware_dict: dict[str, Any],
+    event_driven_config: Optional[EventDrivenConfigRequest],
+) -> dict[str, Any]:
+    """
+    运行事件驱动仿真
+
+    Args:
+        topology_dict: 拓扑配置
+        model_dict: 模型配置
+        inference_dict: 推理配置
+        parallelism_dict: 并行策略
+        hardware_dict: 硬件配置
+        event_driven_config: 事件驱动仿真配置
+
+    Returns:
+        仿真结果字典
+    """
+    from ..core.simulator import RuntimeHardwareParams
+
+    # 验证配置
+    validate_model_config(model_dict)
+    validate_hardware_config(hardware_dict)
+    validate_parallelism_config(parallelism_dict, model_dict)
+
+    # 解析 MLA 配置
+    mla_config = None
+    mla_dict = model_dict.get("mla_config")
+    if mla_dict:
+        from ..config import validate_mla_config as validate_mla
+        mla_config = validate_mla(mla_dict)
+
+    # 解析 MoE 配置
+    moe_config = None
+    moe_dict = model_dict.get("moe_config")
+    if moe_dict:
+        from ..config import validate_moe_config as validate_moe
+        moe_config = validate_moe(moe_dict)
+
+    # 构建模型配置
+    model = LLMModelConfig(
+        model_name=model_dict.get("model_name", "Unknown"),
+        model_type=model_dict.get("model_type", "dense"),
+        hidden_size=model_dict["hidden_size"],
+        num_layers=model_dict["num_layers"],
+        num_attention_heads=model_dict["num_attention_heads"],
+        num_kv_heads=model_dict.get("num_kv_heads", model_dict["num_attention_heads"]),
+        intermediate_size=model_dict["intermediate_size"],
+        vocab_size=model_dict.get("vocab_size", 32000),
+        dtype=model_dict.get("dtype", "fp16"),
+        max_seq_length=model_dict.get("max_seq_length", 4096),
+        attention_type=model_dict.get("attention_type", "gqa"),
+        mla_config=mla_config,
+        moe_config=moe_config,
+    )
+
+    # 构建推理配置
+    inference = InferenceConfig(
+        batch_size=inference_dict["batch_size"],
+        input_seq_length=inference_dict["input_seq_length"],
+        output_seq_length=inference_dict["output_seq_length"],
+        max_seq_length=inference_dict.get("max_seq_length", 4096),
+        num_micro_batches=inference_dict.get("num_micro_batches", 1),
+    )
+
+    # 构建并行策略
+    parallelism = ParallelismStrategy(
+        dp=parallelism_dict.get("dp", 1),
+        tp=parallelism_dict.get("tp", 1),
+        pp=parallelism_dict.get("pp", 1),
+        ep=parallelism_dict.get("ep", 1),
+        sp=parallelism_dict.get("sp", 1),
+    )
+
+    # 从 hardware_dict 获取芯片参数
+    chips_dict = hardware_dict.get("hardware_params", {}).get("chips", {})
+    if not chips_dict:
+        raise ValueError("硬件配置缺少 'hardware_params.chips' 字段")
+    first_chip_name = next(iter(chips_dict))
+    chip_hw = chips_dict[first_chip_name]
+
+    # 获取互联参数
+    hardware_params = topology_dict.get("hardware_params", {})
+    interconnect = hardware_params.get("interconnect", {})
+    c2c_config = interconnect.get("c2c", {})
+    b2b_config = interconnect.get("b2b", {})
+    r2r_config = interconnect.get("r2r", {})
+    p2p_config = interconnect.get("p2p", {})
+
+    # 构建运行时硬件参数
+    hardware = RuntimeHardwareParams(
+        chip_type=chip_hw.get("name", "Unknown"),
+        num_cores=chip_hw.get("num_cores", 64),
+        compute_tflops_fp8=chip_hw.get("compute_tflops_fp8", 0.0),
+        compute_tflops_bf16=chip_hw.get("compute_tflops_bf16", 0.0),
+        memory_capacity_gb=chip_hw.get("memory_capacity_gb", 0.0),
+        memory_bandwidth_gbps=chip_hw.get("memory_bandwidth_gbps", 0.0),
+        memory_bandwidth_utilization=chip_hw.get("memory_bandwidth_utilization", 0.85),
+        lmem_capacity_mb=chip_hw.get("lmem_capacity_mb", 0.0),
+        lmem_bandwidth_gbps=chip_hw.get("lmem_bandwidth_gbps", 0.0),
+        # 互联参数
+        c2c_bandwidth_gbps=c2c_config.get("bandwidth_gbps", chip_hw.get("c2c_bandwidth_gbps", 448.0)),
+        c2c_latency_us=c2c_config.get("latency_us", chip_hw.get("c2c_latency_us", 0.2)),
+        b2b_bandwidth_gbps=b2b_config.get("bandwidth_gbps", 400.0),
+        b2b_latency_us=b2b_config.get("latency_us", 2.0),
+        r2r_bandwidth_gbps=r2r_config.get("bandwidth_gbps", 200.0),
+        r2r_latency_us=r2r_config.get("latency_us", 3.0),
+        p2p_bandwidth_gbps=p2p_config.get("bandwidth_gbps", 100.0),
+        p2p_latency_us=p2p_config.get("latency_us", 5.0),
+        # 微架构参数
+        cube_m=chip_hw.get("cube_m"),
+        cube_k=chip_hw.get("cube_k"),
+        cube_n=chip_hw.get("cube_n"),
+        sram_size_kb=chip_hw.get("sram_size_kb"),
+        sram_utilization=chip_hw.get("sram_utilization"),
+        lane_num=chip_hw.get("lane_num"),
+        align_bytes=chip_hw.get("align_bytes"),
+        compute_dma_overlap_rate=chip_hw.get("compute_dma_overlap_rate"),
+    )
+
+    # 构建事件驱动仿真配置
+    ed_config_dict = {}
+    if event_driven_config:
+        ed_config_dict = event_driven_config.model_dump()
+
+    ed_config = EventDrivenSimConfig(
+        max_simulated_tokens=ed_config_dict.get("max_simulated_tokens", 16),
+        enable_data_transfer=ed_config_dict.get("enable_data_transfer", True),
+        enable_kv_cache=ed_config_dict.get("enable_kv_cache", True),
+        enable_comm_overlap=ed_config_dict.get("enable_comm_overlap", True),
+        enable_tbo=ed_config_dict.get("enable_tbo", True),
+        use_precise_evaluator=ed_config_dict.get("use_precise_evaluator", True),
+        evaluation_granularity=ed_config_dict.get("evaluation_granularity", "fine"),
+        pp_schedule=ed_config_dict.get("pp_schedule", "gpipe"),
+        max_events=ed_config_dict.get("max_events", 1000000),
+        log_events=ed_config_dict.get("log_events", False),
+        max_simulation_time_us=ed_config_dict.get("max_simulation_time_us", 1e9),
+    )
+
+    # 创建并运行事件驱动仿真器
+    simulator = EventDrivenSimulator(
+        topology_dict=topology_dict,
+        model=model,
+        inference=inference,
+        parallelism=parallelism,
+        hardware=hardware,
+        config=ed_config,
+    )
+
+    result = simulator.simulate()
+
+    # 转换结果格式
+    import time
+    from dataclasses import asdict
+
+    # 将 dataclass 转换为 dict
+    stats_dict = asdict(result.stats)
+    gantt_dict = result.gantt_chart if isinstance(result.gantt_chart, dict) else asdict(result.gantt_chart)
+
+    return {
+        "ganttChart": gantt_dict,
+        "stats": stats_dict,
+        "timestamp": time.time(),
+    }
+
+
 @app.post("/api/model/calculate-params")
 async def calculate_model_params_api(model: dict[str, Any]):
     """
@@ -443,8 +620,13 @@ async def simulate(request: SimulationRequest):
     """
     运行 LLM 推理模拟
 
+    支持两种仿真模式：
+    - 静态仿真（默认）：使用传统的同步仿真器
+    - 事件驱动仿真：使用基于 DES 的仿真器，支持精确的计算-通信重叠建模
+
     Args:
         request: 模拟请求，包含拓扑、模型、推理、并行策略、硬件配置
+                 设置 use_event_driven=True 启用事件驱动仿真
 
     Returns:
         模拟结果，包含甘特图数据和统计信息
@@ -456,15 +638,29 @@ async def simulate(request: SimulationRequest):
         parallelism_dict = request.parallelism.model_dump()
         hardware_dict = request.hardware.model_dump()
 
-        logger.info(f"开始模拟: model={model_dict['model_name']}")
-        result = run_simulation(
-            topology_dict=request.topology,
-            model_dict=model_dict,
-            inference_dict=inference_dict,
-            parallelism_dict=parallelism_dict,
-            hardware_dict=hardware_dict,
-            config_dict=request.config,
-        )
+        logger.info(f"开始模拟: model={model_dict['model_name']}, use_event_driven={request.use_event_driven}")
+
+        if request.use_event_driven:
+            # 使用事件驱动仿真器
+            result = _run_event_driven_simulation(
+                topology_dict=request.topology,
+                model_dict=model_dict,
+                inference_dict=inference_dict,
+                parallelism_dict=parallelism_dict,
+                hardware_dict=hardware_dict,
+                event_driven_config=request.event_driven_config,
+            )
+        else:
+            # 使用静态仿真器（现有逻辑）
+            result = run_simulation(
+                topology_dict=request.topology,
+                model_dict=model_dict,
+                inference_dict=inference_dict,
+                parallelism_dict=parallelism_dict,
+                hardware_dict=hardware_dict,
+                config_dict=request.config,
+            )
+
         logger.info("模拟完成")
         return SimulationResponse(**result)
     except ValueError as e:

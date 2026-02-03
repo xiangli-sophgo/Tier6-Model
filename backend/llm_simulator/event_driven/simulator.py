@@ -19,7 +19,7 @@ from .event import (
 )
 from .event_queue import EventQueue
 from .resource import ResourceManager
-from .dependency import DependencyGraph, DependencyGraphBuilder, OperatorNode
+from .dependency import DependencyGraph, DependencyGraphBuilder, OperatorNode, DependencyType
 
 # 导入现有模块
 from ..config import (
@@ -71,6 +71,11 @@ class EventDrivenSimConfig:
     # 重叠优化
     enable_comm_overlap: bool = True
     enable_tbo: bool = True  # MoE TBO 优化
+    overlap_ratio: float = 0.8  # 计算-通信重叠比例（0-1）
+
+    # 分块传输配置
+    enable_chunked_comm: bool = False  # 是否启用分块传输
+    comm_chunk_size_mb: float = 16.0  # 每块大小（MB）
 
     # 评估器配置
     use_precise_evaluator: bool = True
@@ -247,7 +252,11 @@ class EventDrivenSimulator:
         return result
 
     def _build_dependency_graph(self) -> None:
-        """构建依赖图"""
+        """构建依赖图
+
+        支持 MoE TBO 优化：对于 MoE 层，使用特殊的依赖关系构建
+        允许 Dispatch 通信和 Expert 计算并行
+        """
         num_layers = self.model.num_layers
         num_micro_batches = self.inference.num_micro_batches
 
@@ -257,14 +266,120 @@ class EventDrivenSimulator:
             # 为每个 micro-batch 构建层
             layers = self._build_all_layers(micro_batch)
 
-            builder.build_from_layers(
-                layers=layers,
-                chip_assignments=self.layer_to_chip,
-                pp_stage_map=self.layer_to_stage,
-                micro_batch=micro_batch,
-            )
+            # 检查是否有 MoE 层需要 TBO 优化
+            is_moe_model = self.model.model_type == "moe" and self.model.moe_config
+            enable_tbo = self.config.enable_tbo
+
+            if is_moe_model and enable_tbo:
+                # 对于 MoE 模型，使用混合构建方式
+                self._build_dependency_graph_with_tbo(
+                    builder=builder,
+                    layers=layers,
+                    micro_batch=micro_batch,
+                )
+            else:
+                # 常规构建
+                builder.build_from_layers(
+                    layers=layers,
+                    chip_assignments=self.layer_to_chip,
+                    pp_stage_map=self.layer_to_stage,
+                    micro_batch=micro_batch,
+                )
 
         self.dependency_graph = builder.graph
+
+    def _build_dependency_graph_with_tbo(
+        self,
+        builder: DependencyGraphBuilder,
+        layers: list,
+        micro_batch: int,
+    ) -> None:
+        """构建带 TBO 优化的依赖图
+
+        对于 MoE 层使用 TBO 优化，对于 Dense 层使用标准依赖
+        """
+        first_k_dense = 0
+        if self.model.moe_config:
+            first_k_dense = self.model.moe_config.first_k_dense_replace
+
+        prev_layer_last_op = None
+
+        for layer_idx, layer in enumerate(layers):
+            chip_id = self.layer_to_chip.get(layer_idx, "chip_0")
+            pp_stage = self.layer_to_stage.get(layer_idx, 0)
+
+            is_moe_layer = layer_idx >= first_k_dense
+
+            if is_moe_layer and hasattr(layer, 'comp_ops'):
+                # MoE 层：使用 TBO 优化构建
+                layer_ops = builder.build_moe_layer_with_tbo(
+                    layer_idx=layer_idx,
+                    layer=layer,
+                    chip_id=chip_id,
+                    pp_stage=pp_stage,
+                    micro_batch=micro_batch,
+                    enable_tbo=True,
+                )
+            else:
+                # Dense 层：标准构建
+                layer_ops = []
+
+                for op in layer.comp_ops:
+                    node = OperatorNode(
+                        name=op.name,
+                        chip_id=chip_id,
+                        layer_index=layer_idx,
+                        micro_batch=micro_batch,
+                        op_type=op.operator_type,
+                        is_compute=True,
+                        pp_stage=pp_stage,
+                        duration_us=op.elapse,
+                        flops=getattr(op, 'flops', 0.0),
+                        dram_traffic_bytes=getattr(op, 'dram_traffic', 0.0),
+                        compute_time_us=getattr(op, 'comp_elapse', 0.0),
+                        memory_time_us=getattr(op, 'dma_elapse', 0.0),
+                    )
+                    builder.graph.add_node(node)
+                    layer_ops.append(node)
+
+                for op in layer.comm_ops:
+                    node = OperatorNode(
+                        name=op.name,
+                        chip_id=chip_id,
+                        layer_index=layer_idx,
+                        micro_batch=micro_batch,
+                        op_type=op.comm_kind,
+                        is_compute=False,
+                        pp_stage=pp_stage,
+                        duration_us=op.comm_elapse,
+                        comm_size_bytes=getattr(op, 'comm_size', 0.0),
+                    )
+                    builder.graph.add_node(node)
+                    layer_ops.append(node)
+
+                # 层内依赖
+                for i in range(1, len(layer_ops)):
+                    builder.graph.add_edge(
+                        layer_ops[i - 1].key,
+                        layer_ops[i].key,
+                        DependencyType.DATA,
+                    )
+
+            # 层间依赖
+            if prev_layer_last_op and layer_ops:
+                prev_pp_stage = self.layer_to_stage.get(layer_idx - 1, 0)
+                curr_pp_stage = pp_stage
+
+                dep_type = DependencyType.DATA if prev_pp_stage == curr_pp_stage else DependencyType.COMM
+
+                builder.graph.add_edge(
+                    prev_layer_last_op.key,
+                    layer_ops[0].key,
+                    dep_type,
+                )
+
+            if layer_ops:
+                prev_layer_last_op = layer_ops[-1]
 
     def _build_all_layers(self, micro_batch: int) -> list:
         """构建所有层
@@ -482,9 +597,9 @@ class EventDrivenSimulator:
             result = self.reduce_scatter_eval.evaluate(tp, comm_size)
             op.comm_elapse = result.latency_us
         else:
-            # P2P 或其他通信
-            bandwidth_gbps = self.hardware.node.intra_node_bandwidth_gbps
-            latency_us = self.hardware.node.intra_node_latency_us
+            # P2P 或其他通信 - 使用 B2B 带宽（同 Rack 内不同 Board）
+            bandwidth_gbps = self.hardware.b2b_bandwidth_gbps
+            latency_us = self.hardware.b2b_latency_us
             op.comm_elapse = latency_us + (comm_size / 1e9) / bandwidth_gbps * 1e6
 
     def _add_initial_events(self) -> None:
@@ -567,6 +682,13 @@ class EventDrivenSimulator:
             "batch_end_times": {},
             "simulation_complete": False,
             "total_time": 0.0,
+            # 重叠配置
+            "enable_comm_overlap": self.config.enable_comm_overlap,
+            "overlap_ratio": self.config.overlap_ratio,
+            "enable_chunked_comm": self.config.enable_chunked_comm,
+            "comm_chunk_size_mb": self.config.comm_chunk_size_mb,
+            # 资源管理器引用（事件需要查询资源状态）
+            "resource_manager": self.resource_manager,
         }
 
     def _calculate_pp_comm_latency(self) -> float:
@@ -579,9 +701,9 @@ class EventDrivenSimulator:
 
         activation_size = batch_size * seq_length * hidden_size * bytes_per_elem
 
-        # 使用节点间带宽
-        bandwidth_gbps = self.hardware.cluster.inter_node_bandwidth_gbps
-        latency_us = self.hardware.cluster.inter_node_latency_us
+        # 使用 R2R 带宽（跨 Rack 的 PP 通信）
+        bandwidth_gbps = self.hardware.r2r_bandwidth_gbps
+        latency_us = self.hardware.r2r_latency_us
 
         return latency_us + (activation_size / 1e9) / bandwidth_gbps * 1e6
 
