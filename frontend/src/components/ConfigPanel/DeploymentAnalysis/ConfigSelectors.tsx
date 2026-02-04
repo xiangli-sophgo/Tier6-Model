@@ -480,6 +480,7 @@ function parseModelName(modelName: string): { name: string; size: string } {
 }
 
 export function generateBenchmarkName(model: LLMModelConfig, inference: InferenceConfig): string {
+  if (!model?.model_name) return 'Unknown-Model'
   const { name, size } = parseModelName(model.model_name)
   const seqIn = formatSeqLen(inference.input_seq_length)
   const seqOut = formatSeqLen(inference.output_seq_length)

@@ -12,6 +12,7 @@ import {
   PodConfig,
   HardwareConfig,
 } from './types';
+import { getChipPresets as tier6GetChipPresets } from '../../api/tier6';
 
 // ============================================
 // 模型预设（全部从后端获取）
@@ -139,49 +140,29 @@ let backendPresetsLoaded = false;
 /** 后端芯片互联配置缓存 */
 let backendChipInterconnectCache: Record<string, ChipInterconnectConfig> = {};
 
-/** 从后端加载芯片预设 */
+/** 从后端加载芯片预设 (使用 Tier6 API) */
 export async function loadBackendChipPresets(): Promise<void> {
   if (backendPresetsLoaded) return;
 
   try {
-    const response = await fetch('/api/presets/chips');
-    if (!response.ok) {
-      console.warn('后端芯片预设加载失败，使用本地预设');
-      return;
-    }
-    const data = await response.json();
-    const chips = data.chips || [];
+    const data = await tier6GetChipPresets();
+    const presets = data.presets || [];
 
-    // 转换为 ChipHardwareConfig 格式
+    // 直接使用 Tier6 ChipPreset 格式
     backendChipPresetsCache = {};
     backendChipInterconnectCache = {};
-    for (const chip of chips) {
-      backendChipPresetsCache[chip.id] = {
-        name: chip.name,
-        num_cores: chip.num_cores,
-        compute_tflops_fp8: chip.compute_tflops * 2,  // FP8 = 2 × BF16/FP16
-        compute_tflops_bf16: chip.compute_tflops,  // BF16/FP16
-        memory_capacity_gb: chip.name.includes('SG2262') ? 128 : 64,  // SG2262: 128GB, 其他默认 64GB
-        memory_bandwidth_gbps: chip.dram_bandwidth_gbps,
-        memory_bandwidth_utilization: 0.85,
-        lmem_capacity_mb: chip.sram_size_mb || 2,  // 从后端获取 SRAM 大小
-        lmem_bandwidth_gbps: 512,  // 默认 512 GB/s LMEM 带宽
-        // 微架构参数（SG2260E 默认值，用户可在前端修改）
-        cube_m: 16,
-        cube_k: 32,
-        cube_n: 8,
-        sram_size_kb: 2048,
-        sram_utilization: 0.45,
-        lane_num: 16,
-        align_bytes: 32,
-        compute_dma_overlap_rate: 0.8,
+    for (const preset of presets) {
+      // 芯片配置直接使用 Tier6 格式
+      backendChipPresetsCache[preset.name] = {
+        ...preset.config,
+        name: preset.name,
       };
-      // 保存互联配置
-      backendChipInterconnectCache[chip.id] = {
-        interconnect_type: chip.name,  // 使用芯片名作为互联类型标识
-        intra_board_bandwidth_gbps: chip.c2c_bw_unidirectional_gbps,
-        intra_board_latency_us: chip.intra_latency_us,
-        recommended_chips_per_board: 8,  // 默认值
+      // 互联配置暂时使用默认值（c2c 在拓扑层配置）
+      backendChipInterconnectCache[preset.name] = {
+        interconnect_type: preset.name,
+        intra_board_bandwidth_gbps: 448,  // 默认 c2c 带宽
+        intra_board_latency_us: 0.2,  // 默认延迟
+        recommended_chips_per_board: 8,
       };
     }
     backendPresetsLoaded = true;
@@ -195,14 +176,29 @@ export function getBackendChipPresets(): Record<string, ChipHardwareConfig> {
   return backendChipPresetsCache;
 }
 
+/** 从 ChipPreset 计算 BF16 TFLOPS */
+function computeTflopsBf16(config: ChipHardwareConfig): number {
+  const cores = config.cores?.count || 1;
+  const lanes = config.cores?.lanes_per_core || 64;
+  const macBf16 = config.compute_units?.cube?.mac_per_lane?.BF16 || 500;
+  const freq = config.frequency_ghz || 1.0;
+  // TFLOPS = cores * lanes * mac * 2 * freq / 1000
+  return (cores * lanes * macBf16 * 2 * freq) / 1000;
+}
+
+/** 从 ChipPreset 获取 GMEM 容量 */
+function getGmemCapacityGb(config: ChipHardwareConfig): number {
+  return config.memory?.gmem?.capacity_gb || 64;
+}
+
 /** 获取芯片列表（优先使用后端预设） */
 export function getChipList(): Array<{ id: string; name: string; memory: string; compute: string; flops_dtype?: string; isCustom?: boolean; isBackend?: boolean }> {
   // 后端预设优先
   const backend = Object.entries(backendChipPresetsCache).map(([id, config]) => ({
     id,
     name: config.name,
-    memory: `${config.memory_capacity_gb}GB`,
-    compute: `${config.compute_tflops_bf16.toFixed(0)} BF16 TFLOPs`,
+    memory: `${getGmemCapacityGb(config)}GB`,
+    compute: `${computeTflopsBf16(config).toFixed(0)} BF16 TFLOPs`,
     flops_dtype: 'BF16',
     isCustom: false,
     isBackend: true,
@@ -212,8 +208,8 @@ export function getChipList(): Array<{ id: string; name: string; memory: string;
   const custom = Object.entries(getCustomChipPresets()).map(([id, config]) => ({
     id,
     name: config.name,
-    memory: `${config.memory_capacity_gb}GB`,
-    compute: `${config.compute_tflops_bf16} BF16 TFLOPs`,
+    memory: `${getGmemCapacityGb(config)}GB`,
+    compute: `${computeTflopsBf16(config).toFixed(0)} BF16 TFLOPs`,
     flops_dtype: 'BF16',
     isCustom: true,
     isBackend: false,
@@ -237,20 +233,23 @@ export function getCustomChipPresets(): Record<string, ChipHardwareConfig> {
   }
 }
 
-/** 保存自定义芯片预设（调用后端 API，保存到 YAML）*/
-export async function saveCustomChipPreset(config: any): Promise<void> {
+/** 保存自定义芯片预设（调用 Tier6 API，保存到 YAML）*/
+export async function saveCustomChipPreset(config: ChipHardwareConfig): Promise<void> {
   try {
-    const response = await fetch('/api/chip-presets', {
+    // 调用 Tier6 API 保存芯片预设（/tier6 前缀）
+    const response = await fetch('/tier6/api/presets/chips', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(config),
     });
 
     if (!response.ok) {
-      throw new Error(`保存失败: ${response.statusText}`);
+      const error = await response.json().catch(() => ({ detail: '未知错误' }));
+      throw new Error(error.detail || `保存失败: ${response.statusText}`);
     }
 
-    // 保存成功后重新加载预设
+    // 保存成功后重置缓存，下次会重新加载
+    backendPresetsLoaded = false;
     await loadBackendChipPresets();
   } catch (error) {
     console.error('保存芯片预设失败:', error);
@@ -474,4 +473,44 @@ export function createHardwareConfig(
     rack: { ...rack },
     pod: { ...pod },
   };
+}
+
+// ============================================
+// Tier6 预设加载辅助函数
+// ============================================
+
+import {
+  getBenchmarks,
+  getBenchmark,
+  getTopologies,
+  getTopology,
+} from '@/api/tier6';
+
+import type {
+  Tier6BenchmarkConfig,
+  Tier6TopologyConfig,
+} from '@/types/tier6';
+
+/**
+ * 加载 Tier6 Benchmark 预设列表
+ */
+export async function loadTier6BenchmarkPresets(): Promise<Tier6BenchmarkConfig[]> {
+  const { benchmarks } = await getBenchmarks();
+  // 逐个加载完整配置
+  const fullConfigs = await Promise.all(
+    benchmarks.map(b => getBenchmark(b.id))
+  );
+  return fullConfigs;
+}
+
+/**
+ * 加载 Tier6 Topology 预设列表
+ */
+export async function loadTier6TopologyPresets(): Promise<Tier6TopologyConfig[]> {
+  const { topologies } = await getTopologies();
+  // 逐个加载完整配置
+  const fullConfigs = await Promise.all(
+    topologies.map(t => getTopology(t.name))
+  );
+  return fullConfigs;
 }

@@ -17,6 +17,7 @@ const CONFIG_CACHE_KEY = 'tier6_topology_config_cache'
 // ============================================
 
 // Rack 配置类型（用于部署分析）
+// 芯片详细配置现在存储在 hardware_params.chips 中（使用 Tier6 ChipPreset 格式）
 export interface RackConfigForAnalysis {
   total_u: number
   boards: Array<{
@@ -28,10 +29,6 @@ export interface RackConfigForAnalysis {
       name: string
       count: number
       preset_id?: string
-      compute_tflops_fp16?: number
-      memory_gb?: number
-      memory_bandwidth_gbps?: number
-      memory_bandwidth_utilization?: number
     }>
   }>
 }

@@ -1,12 +1,14 @@
 """配置 Schema 定义模块
 
-定义配置验证和转换规则。
+定义配置验证和转换规则，以及与前端对齐的 Pydantic 请求/响应模型。
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Dict, List, Literal, Optional
+
+from pydantic import BaseModel, Field
 
 
 # ============================================
@@ -462,3 +464,279 @@ def normalize_evaluation_config(config: dict[str, Any]) -> dict[str, Any]:
         result["inference"] = dict(INFERENCE_DEFAULTS)
 
     return result
+
+
+# ============================================
+# Pydantic 请求/响应模型 (与前端对齐)
+# ============================================
+
+
+class ManualParallelism(BaseModel):
+    """手动并行配置 - 与前端 ManualParallelism 接口对齐"""
+
+    tp: int = Field(1, ge=1, description="Tensor Parallelism 并行度")
+    pp: int = Field(1, ge=1, description="Pipeline Parallelism 并行度")
+    dp: int = Field(1, ge=1, description="Data Parallelism 并行度")
+    ep: int = Field(1, ge=1, description="Expert Parallelism 并行度")
+    moe_tp: int = Field(1, ge=1, description="MoE Expert 内部 TP 并行度")
+    seq_len: int = Field(1, ge=1, description="序列长度分片")
+    batch_size: int = Field(1, ge=1, description="批次大小")
+    enable_tp_sp: bool = Field(False, description="是否启用 TP sequence parallelism")
+    embed_tp: int = Field(1, ge=1, description="Embedding 层 TP 并行度")
+    lmhead_tp: int = Field(1, ge=1, description="LMHead 层 TP 并行度")
+    comm_protocol: int = Field(1, ge=0, description="通信协议 (0=基础, 1=优化)")
+    kv_cache_rate: float = Field(0.0, ge=0.0, le=1.0, description="KV Cache 比例")
+    is_prefill: bool = Field(False, description="是否为 Prefill 阶段")
+
+
+class SearchConstraints(BaseModel):
+    """搜索约束配置"""
+
+    min_tp: int = Field(1, ge=1)
+    max_tp: int = Field(32, ge=1)
+    min_pp: int = Field(1, ge=1)
+    max_pp: int = Field(16, ge=1)
+    min_dp: int = Field(1, ge=1)
+    max_dp: int = Field(64, ge=1)
+    min_ep: int = Field(1, ge=1)
+    max_ep: int = Field(256, ge=1)
+    target_latency_ms: Optional[float] = Field(None, description="目标延迟约束 (ms)")
+    target_throughput_tps: Optional[float] = Field(None, description="目标吞吐约束 (tokens/s)")
+    memory_budget_gb: Optional[float] = Field(None, description="显存预算约束 (GB)")
+
+
+class EvaluationRequest(BaseModel):
+    """评估请求 - 与前端 EvaluationRequest 接口对齐"""
+
+    experiment_name: str = Field(..., description="实验名称")
+    description: str = Field("", description="实验描述 (简短)")
+    experiment_description: str = Field("", description="实验描述 (详细)")
+    benchmark_name: str = Field(..., description="Benchmark 名称")
+    topology_config_name: str = Field(..., description="拓扑配置名称")
+    benchmark_config: Dict[str, Any] = Field(..., description="Benchmark 配置 { model, inference }")
+    topology_config: Dict[str, Any] = Field(..., description="完整拓扑配置 (含 comm_latency_config)")
+    search_mode: Literal["manual", "auto", "sweep"] = Field("manual", description="搜索模式")
+    manual_parallelism: Optional[ManualParallelism] = Field(None, description="手动并行配置")
+    search_constraints: Optional[SearchConstraints] = Field(None, description="自动搜索约束")
+    max_workers: int = Field(4, ge=1, le=32, description="最大并行任务数")
+    enable_tile_search: bool = Field(True, description="是否启用 Tile 搜索")
+    enable_partition_search: bool = Field(True, description="是否启用分区搜索")
+    max_simulated_tokens: int = Field(4, ge=1, description="最大仿真 Token 数")
+
+
+class SimulateRequest(BaseModel):
+    """同步仿真请求"""
+
+    chip_preset: Optional[str] = Field(None, description="芯片预设名称")
+    model_preset: Optional[str] = Field(None, description="模型预设名称")
+    topology_preset: Optional[str] = Field(None, description="拓扑预设名称")
+    chip_config: Optional[Dict[str, Any]] = Field(None, description="芯片配置 (内联)")
+    model_params: Optional[Dict[str, Any]] = Field(None, description="模型配置 (内联)", alias="model_config")
+    topology_config: Optional[Dict[str, Any]] = Field(None, description="拓扑配置 (内联)")
+    parallelism: ManualParallelism = Field(default_factory=ManualParallelism)
+    inference: Dict[str, Any] = Field(default_factory=dict)
+
+
+class ValidateRequest(BaseModel):
+    """配置验证请求"""
+
+    chip_config: Optional[Dict[str, Any]] = None
+    model_params: Optional[Dict[str, Any]] = Field(None, alias="model_config")
+    topology_config: Optional[Dict[str, Any]] = None
+    parallelism: Optional[Dict[str, Any]] = None
+    inference: Optional[Dict[str, Any]] = None
+
+
+class CalculateParamsRequest(BaseModel):
+    """计算模型参数量请求"""
+
+    model_params: Dict[str, Any] = Field(..., description="模型配置", alias="model_config")
+
+
+class BenchmarkCreateRequest(BaseModel):
+    """创建 Benchmark 请求"""
+
+    id: str = Field(..., description="Benchmark ID")
+    name: str = Field(..., description="Benchmark 名称")
+    model: Dict[str, Any] = Field(..., description="模型配置")
+    inference: Dict[str, Any] = Field(..., description="推理配置")
+
+
+class BenchmarkUpdateRequest(BaseModel):
+    """更新 Benchmark 请求"""
+
+    name: Optional[str] = Field(None, description="Benchmark 名称")
+    model: Optional[Dict[str, Any]] = Field(None, description="模型配置")
+    inference: Optional[Dict[str, Any]] = Field(None, description="推理配置")
+
+
+class TopologyCreateRequest(BaseModel):
+    """创建拓扑请求 - 兼容前端 SavedConfig 格式"""
+    model_config = {"extra": "allow"}  # 允许额外字段
+
+    name: str = Field(..., description="拓扑名称")
+    description: Optional[str] = Field(None, description="描述")
+    pod_count: Optional[int] = Field(None, description="Pod 数量")
+    racks_per_pod: Optional[int] = Field(None, description="每 Pod 的 Rack 数量")
+    rack_config: Optional[Dict[str, Any]] = Field(None, description="Rack 配置")
+    switch_config: Optional[Dict[str, Any]] = Field(None, description="Switch 配置")
+    manual_connections: Optional[Dict[str, Any]] = Field(None, description="手动连接配置")
+    generated_topology: Optional[Dict[str, Any]] = Field(None, description="生成的拓扑")
+    hardware_params: Optional[Dict[str, Any]] = Field(None, description="硬件参数")
+
+
+class TopologyUpdateRequest(BaseModel):
+    """更新拓扑请求 - 兼容前端 SavedConfig 格式"""
+    model_config = {"extra": "allow"}  # 允许额外字段
+
+    name: Optional[str] = None
+    description: Optional[str] = None
+    pod_count: Optional[int] = None
+    racks_per_pod: Optional[int] = None
+    rack_config: Optional[Dict[str, Any]] = None
+    switch_config: Optional[Dict[str, Any]] = None
+    manual_connections: Optional[Dict[str, Any]] = None
+    generated_topology: Optional[Dict[str, Any]] = None
+    hardware_params: Optional[Dict[str, Any]] = None
+
+
+class ExecutorConfigRequest(BaseModel):
+    """执行器配置请求"""
+
+    max_workers: int = Field(4, ge=1, le=32, description="最大并行任务数")
+    max_queued: int = Field(100, ge=1, le=1000, description="最大排队任务数")
+
+
+class ExperimentUpdateRequest(BaseModel):
+    """更新实验请求"""
+
+    name: Optional[str] = Field(None, description="实验名称")
+    description: Optional[str] = Field(None, description="实验描述")
+
+
+class BatchDeleteRequest(BaseModel):
+    """批量删除请求"""
+
+    ids: List[str] = Field(..., description="要删除的 ID 列表")
+
+
+class ImportCheckResponse(BaseModel):
+    """导入检查响应"""
+
+    temp_file_id: str = Field(..., description="临时文件 ID")
+    experiments: List[Dict[str, Any]] = Field(..., description="实验预览列表")
+    conflicts: List[str] = Field(default_factory=list, description="冲突的实验名称")
+
+
+class ImportExecuteRequest(BaseModel):
+    """执行导入请求"""
+
+    temp_file_id: str = Field(..., description="临时文件 ID")
+    conflict_strategy: Literal["skip", "overwrite", "rename"] = Field(
+        "skip", description="冲突解决策略"
+    )
+
+
+# ============================================
+# 响应模型
+# ============================================
+
+
+class PresetInfo(BaseModel):
+    """预设信息"""
+
+    name: str
+    config: Dict[str, Any]
+
+
+class PresetListResponse(BaseModel):
+    """预设列表响应"""
+
+    presets: List[PresetInfo]
+
+
+class BenchmarkInfo(BaseModel):
+    """Benchmark 信息"""
+
+    id: str
+    name: str
+    format: str = "yaml"
+    filename: str
+
+
+class BenchmarkListResponse(BaseModel):
+    """Benchmark 列表响应"""
+
+    benchmarks: List[BenchmarkInfo]
+
+
+class TopologyInfo(BaseModel):
+    """拓扑信息"""
+
+    name: str
+    chip_count: int = 0
+    topology_type: str = ""
+
+
+class TopologyListResponse(BaseModel):
+    """拓扑列表响应"""
+
+    topologies: List[TopologyInfo]
+
+
+class TaskStatusResponse(BaseModel):
+    """任务状态响应"""
+
+    task_id: str
+    status: str
+    progress: float = 0.0
+    error: Optional[str] = None
+    created_at: Optional[str] = None
+    started_at: Optional[str] = None
+    completed_at: Optional[str] = None
+
+
+class TaskListResponse(BaseModel):
+    """任务列表响应"""
+
+    tasks: List[TaskStatusResponse]
+    total: int
+
+
+class ExperimentInfo(BaseModel):
+    """实验信息"""
+
+    id: str
+    name: str
+    description: str = ""
+    created_at: str
+    updated_at: Optional[str] = None
+    task_count: int = 0
+    status: str = "pending"
+
+
+class ExperimentListResponse(BaseModel):
+    """实验列表响应"""
+
+    experiments: List[ExperimentInfo]
+    total: int
+
+
+class ValidationResponse(BaseModel):
+    """验证响应"""
+
+    valid: bool
+    errors: List[str] = Field(default_factory=list)
+    warnings: List[str] = Field(default_factory=list)
+
+
+class CalculateParamsResponse(BaseModel):
+    """计算模型参数量响应"""
+
+    total_params: int = Field(..., description="总参数量")
+    total_params_b: float = Field(..., description="总参数量 (B)")
+    active_params: int = Field(0, description="激活参数量 (MoE)")
+    active_params_b: float = Field(0.0, description="激活参数量 (B)")
+    weight_size_bytes: int = Field(..., description="权重大小 (bytes)")
+    weight_size_gb: float = Field(..., description="权重大小 (GB)")
+    breakdown: Dict[str, Any] = Field(default_factory=dict, description="参数分解")

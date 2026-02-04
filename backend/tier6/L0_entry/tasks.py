@@ -1,16 +1,19 @@
 """任务管理模块
 
-提供异步任务队列和执行管理。
+提供异步任务队列和执行管理，集成 WebSocket 广播。
 """
 
 from __future__ import annotations
 
+import logging
 import uuid
 from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 from typing import Any, Callable
+
+logger = logging.getLogger(__name__)
 
 
 class TaskStatus(str, Enum):
@@ -68,26 +71,30 @@ class TaskInfo:
 class TaskManager:
     """任务管理器
 
-    管理异步任务的提交和执行。
+    管理异步任务的提交和执行，集成 WebSocket 广播。
     """
 
     def __init__(
         self,
         max_workers: int = 4,
         max_queued: int = 100,
+        enable_ws_broadcast: bool = True,
     ) -> None:
         """初始化
 
         Args:
             max_workers: 最大工作线程数
             max_queued: 最大排队任务数
+            enable_ws_broadcast: 是否启用 WebSocket 广播
         """
         self.max_workers = max_workers
         self.max_queued = max_queued
+        self._enable_ws_broadcast = enable_ws_broadcast
         self._executor = ThreadPoolExecutor(max_workers=max_workers)
         self._tasks: dict[str, TaskInfo] = {}
         self._futures: dict[str, Future] = {}
         self._callbacks: dict[str, list[Callable[[TaskInfo], None]]] = {}
+        self._global_callbacks: list[Callable[[TaskInfo], None]] = []
 
     def submit(
         self,
@@ -268,11 +275,62 @@ class TaskManager:
         if not task:
             return
 
+        # 通知任务特定回调
         for callback in self._callbacks.get(task_id, []):
             try:
                 callback(task)
             except Exception:
                 pass  # 忽略回调错误
+
+        # 通知全局回调
+        for callback in self._global_callbacks:
+            try:
+                callback(task)
+            except Exception:
+                pass
+
+        # WebSocket 广播
+        if self._enable_ws_broadcast:
+            self._broadcast_task_update(task)
+
+    def _broadcast_task_update(self, task: TaskInfo) -> None:
+        """通过 WebSocket 广播任务更新
+
+        Args:
+            task: 任务信息
+        """
+        try:
+            from tier6.L0_entry.websocket import get_ws_manager
+
+            ws_manager = get_ws_manager()
+            ws_manager.broadcast_task_update(
+                task_id=task.task_id,
+                status=task.status.value,
+                progress=task.progress,
+                error=task.error,
+                result=task.result if task.status == TaskStatus.COMPLETED else None,
+            )
+        except Exception as e:
+            logger.debug(f"Failed to broadcast task update: {e}")
+
+    def add_global_callback(self, callback: Callable[[TaskInfo], None]) -> None:
+        """添加全局回调函数（所有任务状态变更时触发）
+
+        Args:
+            callback: 回调函数
+        """
+        self._global_callbacks.append(callback)
+
+    def remove_global_callback(self, callback: Callable[[TaskInfo], None]) -> None:
+        """移除全局回调函数
+
+        Args:
+            callback: 回调函数
+        """
+        try:
+            self._global_callbacks.remove(callback)
+        except ValueError:
+            pass
 
     def list_tasks(
         self,

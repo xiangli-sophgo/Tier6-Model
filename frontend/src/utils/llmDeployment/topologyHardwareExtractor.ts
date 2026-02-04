@@ -5,8 +5,8 @@
  */
 
 import { HierarchicalTopology, ConnectionConfig } from '../../types'
-import { FlexBoardChipConfig } from '../../components/ConfigPanel/shared'
-import { ChipHardwareConfig, HardwareConfig, BoardConfig, RackConfig, PodConfig } from './types'
+import { FlexBoardChipConfig, createDefaultChipPreset } from '../../components/ConfigPanel/shared'
+import { ChipHardwareConfig, HardwareConfig } from './types'
 import { getChipConfig } from './presets'
 
 /**
@@ -194,31 +194,8 @@ export function extractChipGroupsFromConfig(
       // 从预设或默认值获取硬件参数
       let chipConfig: ChipHardwareConfig
 
-      // SG2260E 默认微架构参数
-      const defaultMicroArch = {
-        cube_m: 16,
-        cube_k: 32,
-        cube_n: 8,
-        sram_size_kb: 2048,
-        sram_utilization: 0.45,
-        lane_num: 16,
-        align_bytes: 32,
-        compute_dma_overlap_rate: 0.8,
-      }
-
-      // 默认芯片配置
-      const defaultChipConfig: ChipHardwareConfig = {
-        name: chip.name,
-        num_cores: 256,
-        compute_tflops_fp8: 1600, // 默认 1600 TFLOPs FP8
-        compute_tflops_bf16: 800, // 默认 800 TFLOPs BF16
-        memory_capacity_gb: 64,
-        memory_bandwidth_gbps: 1200,
-        memory_bandwidth_utilization: 0.85,
-        lmem_capacity_mb: 128,
-        lmem_bandwidth_gbps: 12000,
-        ...defaultMicroArch,
-      }
+      // 默认芯片配置 (使用 Tier6 格式)
+      const defaultChipConfig: ChipHardwareConfig = createDefaultChipPreset(chip.name)
 
       // 方案1: 从拓扑配置的 hardware_params.chips 直接获取（优先级最高）
       if (hardwareParams?.chips?.[chip.name]) {

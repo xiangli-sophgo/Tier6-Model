@@ -86,9 +86,10 @@ export function useTaskWebSocket(options: UseTaskWebSocketOptions = {}) {
       return // 已连接
     }
 
-    // 使用 Vite 代理路径，自动转发到后端
+    // 使用 Vite 代理路径，连接到 tier6 后端的 WebSocket
+    // tier6 路由：/tier6 (挂载前缀) + /api (router前缀) + /ws/tasks (端点)
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-    const wsUrl = `${protocol}//${window.location.host}/ws/tasks`
+    const wsUrl = `${protocol}//${window.location.host}/tier6/api/ws/tasks`
 
     try {
       const ws = new WebSocket(wsUrl)

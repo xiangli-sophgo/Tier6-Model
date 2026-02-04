@@ -32,6 +32,15 @@ export default defineConfig(({ mode }) => {
       strictPort: true,
       host: '127.0.0.1',
       proxy: {
+        '/tier6/api/ws': {
+          target: apiTarget,
+          changeOrigin: true,
+          ws: true,  // 启用 WebSocket 代理
+        },
+        '/tier6': {
+          target: apiTarget,
+          changeOrigin: true,
+        },
         '/api': {
           target: apiTarget,
           changeOrigin: true,

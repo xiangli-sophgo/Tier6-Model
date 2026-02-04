@@ -9,7 +9,6 @@
 
 import React, { useState, useEffect, useRef } from 'react'
 import {
-  ExternalLink,
   AlertTriangle,
   Save,
   RefreshCw,
@@ -42,7 +41,8 @@ import { NumberInput } from '@/components/ui/number-input'
 import { SavedConfig } from '../../../api/topology'
 import { HardwareConfig, CommLatencyConfig } from '../../../utils/llmDeployment/types'
 import { ChipGroupInfo } from '../../../utils/llmDeployment/topologyHardwareExtractor'
-import { HardwareParams, ChipHardwareParams, DEFAULT_CHIP_HARDWARE, DEFAULT_HARDWARE_PARAMS } from '../shared'
+import { HardwareParams, DEFAULT_HARDWARE_PARAMS, createDefaultChipPreset } from '../shared'
+import { ChipPreset } from '../../../types/tier6'
 
 // 信息项组件（单个条目）- 与 TaskDetailPanel 保持一致
 const InfoItem: React.FC<{
@@ -227,16 +227,44 @@ export const TopologyInfoCard: React.FC<TopologyInfoCardProps> = ({
     setOpenSections(newState)
   }
 
-  // 更新单个芯片参数
-  const updateChipParam = (chipName: string, field: string, value: any) => {
+  // 更新单个芯片参数（支持嵌套路径，如 "cores.count" 或 "memory.gmem.capacity_gb"）
+  const updateChipParam = (chipName: string, path: string, value: any) => {
     if (!hardwareParams || !onHardwareParamsChange) return
+    const chip = { ...hardwareParams.chips[chipName] } as any
+    const parts = path.split('.')
+
+    if (parts.length === 1) {
+      // 顶层字段
+      chip[path] = value
+    } else if (parts.length === 2) {
+      // 一级嵌套，如 cores.count
+      chip[parts[0]] = { ...chip[parts[0]], [parts[1]]: value }
+    } else if (parts.length === 3) {
+      // 二级嵌套，如 memory.gmem.capacity_gb
+      chip[parts[0]] = {
+        ...chip[parts[0]],
+        [parts[1]]: { ...chip[parts[0]]?.[parts[1]], [parts[2]]: value }
+      }
+    } else if (parts.length === 4) {
+      // 三级嵌套，如 compute_units.cube.mac_per_lane.BF16
+      chip[parts[0]] = {
+        ...chip[parts[0]],
+        [parts[1]]: {
+          ...chip[parts[0]]?.[parts[1]],
+          [parts[2]]: { ...chip[parts[0]]?.[parts[1]]?.[parts[2]], [parts[3]]: value }
+        }
+      }
+    }
+
     onHardwareParamsChange({
       ...hardwareParams,
-      chips: {
-        ...hardwareParams.chips,
-        [chipName]: { ...hardwareParams.chips[chipName], [field]: value }
-      }
+      chips: { ...hardwareParams.chips, [chipName]: chip }
     })
+  }
+
+  // 获取嵌套属性值
+  const getNestedValue = (obj: any, path: string): any => {
+    return path.split('.').reduce((acc, part) => acc?.[part], obj)
   }
 
   // 更新互联参数
@@ -269,19 +297,19 @@ export const TopologyInfoCard: React.FC<TopologyInfoCardProps> = ({
     return isModified
   }
 
-  // 检测芯片参数是否被修改
-  const isChipParamModified = (chipName: string, field: string): boolean => {
+  // 检测芯片参数是否被修改（支持嵌套路径）
+  const isChipParamModified = (chipName: string, path: string): boolean => {
     if (!originalConfig.hardwareParams || !hardwareParams) {
-      // console.log('[修改检测] 缺少配置:', { hasOriginal: !!originalConfig.hardwareParams, hasCurrent: !!hardwareParams })
       return false
     }
     const originalChip = originalConfig.hardwareParams.chips[chipName]
     const currentChip = hardwareParams.chips[chipName]
     if (!originalChip || !currentChip) {
-      // console.log('[修改检测] 缺少芯片配置:', { chipName, hasOriginal: !!originalChip, hasCurrent: !!currentChip })
       return false
     }
-    const isModified = (originalChip as any)[field] !== (currentChip as any)[field]
+    const originalValue = getNestedValue(originalChip, path)
+    const currentValue = getNestedValue(currentChip, path)
+    const isModified = originalValue !== currentValue
     // if (isModified) {
       // console.log(`[修改检测] ${chipName}.${field}: ${(originalChip as any)[field]} → ${(currentChip as any)[field]}`)
     // }
@@ -530,14 +558,14 @@ export const TopologyInfoCard: React.FC<TopologyInfoCardProps> = ({
               </div>
             </BaseCard>
 
-            {/* 芯片参数 - 显示所有拓扑中使用的芯片 */}
+            {/* 芯片参数 - 显示所有拓扑中使用的芯片 (Tier6 格式) */}
             {chipGroups.map((chipGroup, chipIndex) => {
               const chipName = chipGroup.chipType
               const sectionKey = `chip_${chipIndex}`
               // 获取芯片参数（可编辑模式从 hardwareParams 获取，否则从 hardwareConfig 获取）
               const chipParams = isEditable && hardwareParams?.chips[chipName]
-                ? hardwareParams.chips[chipName]
-                : (chipGroup.chipConfig || hardwareConfig.chip)
+                ? hardwareParams.chips[chipName] as ChipPreset
+                : ((chipGroup.chipConfig || createDefaultChipPreset(chipName)) as ChipPreset)
 
                 return (
                   <BaseCard
@@ -551,48 +579,33 @@ export const TopologyInfoCard: React.FC<TopologyInfoCardProps> = ({
                     contentClassName="p-2"
                   >
                     <div className="space-y-2">
-                      <SectionHeader title="算力" color="blue" />
+                      {/* 基础信息 */}
+                      <SectionHeader title="基础信息" color="blue" />
                       {isEditable ? (
                         <div className="grid grid-cols-3 gap-2">
-                          <div className={`p-2 rounded -m-2 mb-0 ${isChipParamModified(chipName, 'num_cores') ? 'bg-blue-50/50' : ''}`}>
-                            <div className="mb-1 flex items-center gap-1.5 text-xs text-gray-600">
-                              核心数
-                              {isChipParamModified(chipName, 'num_cores') && (
-                                <Badge variant="outline" className="text-[9px] px-1 py-0 h-3.5 bg-blue-100 text-blue-700 border-blue-300">已修改</Badge>
-                              )}
-                            </div>
-                            <NumberInput
-                              min={1}
-                              value={chipParams.num_cores}
-                              onChange={(v) => updateChipParam(chipName, 'num_cores', v ?? 64)}
-                              className="h-7"
+                          <div className={`p-2 rounded -m-2 mb-0 ${isChipParamModified(chipName, 'architecture') ? 'bg-blue-50/50' : ''}`}>
+                            <div className="mb-1 flex items-center gap-1.5 text-xs text-gray-600">架构</div>
+                            <Input
+                              value={chipParams.architecture || ''}
+                              onChange={(e) => updateChipParam(chipName, 'architecture', e.target.value)}
+                              className="h-7 text-xs"
                             />
                           </div>
-                          <div className={`p-2 rounded -m-2 mb-0 ${isChipParamModified(chipName, 'compute_tflops_bf16') ? 'bg-blue-50/50' : ''}`}>
-                            <div className="mb-1 flex items-center gap-1.5 text-xs text-gray-600">
-                              BF16 (TFLOPS)
-                              {isChipParamModified(chipName, 'compute_tflops_bf16') && (
-                                <Badge variant="outline" className="text-[9px] px-1 py-0 h-3.5 bg-blue-100 text-blue-700 border-blue-300">已修改</Badge>
-                              )}
-                            </div>
-                            <NumberInput
-                              min={0}
-                              value={chipParams.compute_tflops_bf16}
-                              onChange={(v) => updateChipParam(chipName, 'compute_tflops_bf16', v ?? 128)}
-                              className="h-7"
+                          <div className={`p-2 rounded -m-2 mb-0 ${isChipParamModified(chipName, 'process') ? 'bg-blue-50/50' : ''}`}>
+                            <div className="mb-1 flex items-center gap-1.5 text-xs text-gray-600">工艺</div>
+                            <Input
+                              value={chipParams.process || ''}
+                              onChange={(e) => updateChipParam(chipName, 'process', e.target.value)}
+                              className="h-7 text-xs"
                             />
                           </div>
-                          <div className={`p-2 rounded -m-2 mb-0 ${isChipParamModified(chipName, 'compute_tflops_fp8') ? 'bg-blue-50/50' : ''}`}>
-                            <div className="mb-1 flex items-center gap-1.5 text-xs text-gray-600">
-                              FP8 (TFLOPS)
-                              {isChipParamModified(chipName, 'compute_tflops_fp8') && (
-                                <Badge variant="outline" className="text-[9px] px-1 py-0 h-3.5 bg-blue-100 text-blue-700 border-blue-300">已修改</Badge>
-                              )}
-                            </div>
+                          <div className={`p-2 rounded -m-2 mb-0 ${isChipParamModified(chipName, 'frequency_ghz') ? 'bg-blue-50/50' : ''}`}>
+                            <div className="mb-1 flex items-center gap-1.5 text-xs text-gray-600">频率 (GHz)</div>
                             <NumberInput
-                              min={0}
-                              value={chipParams.compute_tflops_fp8}
-                              onChange={(v) => updateChipParam(chipName, 'compute_tflops_fp8', v ?? 256)}
+                              min={0.1}
+                              step={0.1}
+                              value={chipParams.frequency_ghz}
+                              onChange={(v) => updateChipParam(chipName, 'frequency_ghz', v ?? 1.0)}
                               className="h-7"
                             />
                           </div>
@@ -600,59 +613,33 @@ export const TopologyInfoCard: React.FC<TopologyInfoCardProps> = ({
                       ) : (
                         <InfoGrid
                           items={[
-                            { label: '核心数', value: chipParams.num_cores },
-                            { label: 'BF16 算力', value: `${chipParams.compute_tflops_bf16} TFLOPS` },
-                            { label: 'FP8 算力', value: `${chipParams.compute_tflops_fp8} TFLOPS` },
+                            { label: '架构', value: chipParams.architecture || '-' },
+                            { label: '工艺', value: chipParams.process || '-' },
+                            { label: '频率', value: chipParams.frequency_ghz ? `${chipParams.frequency_ghz} GHz` : '-' },
                           ]}
                           columns={3}
                         />
                       )}
 
-                      <SectionHeader title="显存" color="green" />
+                      {/* 核心配置 */}
+                      <SectionHeader title="核心配置" color="blue" />
                       {isEditable ? (
-                        <div className="grid grid-cols-3 gap-2">
-                          <div className={`p-2 rounded -m-2 mb-0 ${isChipParamModified(chipName, 'memory_capacity_gb') ? 'bg-blue-50/50' : ''}`}>
-                            <div className="mb-1 flex items-center gap-1.5 text-xs text-gray-600">
-                              容量 (GB)
-                              {isChipParamModified(chipName, 'memory_capacity_gb') && (
-                                <Badge variant="outline" className="text-[9px] px-1 py-0 h-3.5 bg-blue-100 text-blue-700 border-blue-300">已修改</Badge>
-                              )}
-                            </div>
+                        <div className="grid grid-cols-2 gap-2">
+                          <div className={`p-2 rounded -m-2 mb-0 ${isChipParamModified(chipName, 'cores.count') ? 'bg-blue-50/50' : ''}`}>
+                            <div className="mb-1 flex items-center gap-1.5 text-xs text-gray-600">核心数</div>
                             <NumberInput
                               min={1}
-                              value={chipParams.memory_capacity_gb}
-                              onChange={(v) => updateChipParam(chipName, 'memory_capacity_gb', v ?? 32)}
+                              value={chipParams.cores?.count}
+                              onChange={(v) => updateChipParam(chipName, 'cores.count', v ?? 4)}
                               className="h-7"
                             />
                           </div>
-                          <div className={`p-2 rounded -m-2 mb-0 ${isChipParamModified(chipName, 'memory_bandwidth_gbps') ? 'bg-blue-50/50' : ''}`}>
-                            <div className="mb-1 flex items-center gap-1.5 text-xs text-gray-600">
-                              带宽 (TB/s)
-                              {isChipParamModified(chipName, 'memory_bandwidth_gbps') && (
-                                <Badge variant="outline" className="text-[9px] px-1 py-0 h-3.5 bg-blue-100 text-blue-700 border-blue-300">已修改</Badge>
-                              )}
-                            </div>
+                          <div className={`p-2 rounded -m-2 mb-0 ${isChipParamModified(chipName, 'cores.lanes_per_core') ? 'bg-blue-50/50' : ''}`}>
+                            <div className="mb-1 flex items-center gap-1.5 text-xs text-gray-600">Lane/核心</div>
                             <NumberInput
-                              min={0}
-                              step={0.1}
-                              value={Number((chipParams.memory_bandwidth_gbps / 1000).toFixed(1))}
-                              onChange={(v) => updateChipParam(chipName, 'memory_bandwidth_gbps', v !== undefined ? v * 1000 : 800)}
-                              className="h-7"
-                            />
-                          </div>
-                          <div className={`p-2 rounded -m-2 mb-0 ${isChipParamModified(chipName, 'memory_bandwidth_utilization') ? 'bg-blue-50/50' : ''}`}>
-                            <div className="mb-1 flex items-center gap-1.5 text-xs text-gray-600">
-                              利用率
-                              {isChipParamModified(chipName, 'memory_bandwidth_utilization') && (
-                                <Badge variant="outline" className="text-[9px] px-1 py-0 h-3.5 bg-blue-100 text-blue-700 border-blue-300">已修改</Badge>
-                              )}
-                            </div>
-                            <NumberInput
-                              min={0}
-                              max={1}
-                              step={0.01}
-                              value={chipParams.memory_bandwidth_utilization}
-                              onChange={(v) => updateChipParam(chipName, 'memory_bandwidth_utilization', v ?? 0.85)}
+                              min={1}
+                              value={chipParams.cores?.lanes_per_core}
+                              onChange={(v) => updateChipParam(chipName, 'cores.lanes_per_core', v ?? 64)}
                               className="h-7"
                             />
                           </div>
@@ -660,195 +647,210 @@ export const TopologyInfoCard: React.FC<TopologyInfoCardProps> = ({
                       ) : (
                         <InfoGrid
                           items={[
-                            { label: '容量', value: `${chipParams.memory_capacity_gb} GB` },
-                            { label: '带宽', value: `${(chipParams.memory_bandwidth_gbps / 1000).toFixed(1)} TB/s` },
-                            { label: '利用率', value: formatNumber(chipParams.memory_bandwidth_utilization) },
+                            { label: '核心数', value: chipParams.cores?.count || '-' },
+                            { label: 'Lane/核心', value: chipParams.cores?.lanes_per_core || '-' },
+                          ]}
+                          columns={2}
+                        />
+                      )}
+
+                      {/* Cube MAC/Lane */}
+                      <SectionHeader title="Cube MAC/Lane" color="purple" />
+                      {isEditable ? (
+                        <div className="grid grid-cols-3 gap-2">
+                          {['INT8', 'FP8', 'BF16', 'FP16', 'TF32', 'INT4'].map(dtype => (
+                            <div key={dtype} className={`p-2 rounded -m-2 mb-0 ${isChipParamModified(chipName, `compute_units.cube.mac_per_lane.${dtype}`) ? 'bg-blue-50/50' : ''}`}>
+                              <div className="mb-1 flex items-center gap-1.5 text-xs text-gray-600">{dtype}</div>
+                              <NumberInput
+                                min={0}
+                                value={chipParams.compute_units?.cube?.mac_per_lane?.[dtype as keyof typeof chipParams.compute_units.cube.mac_per_lane]}
+                                onChange={(v) => updateChipParam(chipName, `compute_units.cube.mac_per_lane.${dtype}`, v ?? 0)}
+                                className="h-7"
+                              />
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <InfoGrid
+                          items={['INT8', 'FP8', 'BF16', 'FP16', 'TF32', 'INT4'].map(dtype => ({
+                            label: dtype,
+                            value: chipParams.compute_units?.cube?.mac_per_lane?.[dtype as keyof typeof chipParams.compute_units.cube.mac_per_lane] || '-'
+                          }))}
+                          columns={3}
+                        />
+                      )}
+
+                      {/* GMEM */}
+                      <SectionHeader title="GMEM (全局内存)" color="green" />
+                      {isEditable ? (
+                        <div className="grid grid-cols-3 gap-2">
+                          <div className={`p-2 rounded -m-2 mb-0 ${isChipParamModified(chipName, 'memory.gmem.capacity_gb') ? 'bg-blue-50/50' : ''}`}>
+                            <div className="mb-1 flex items-center gap-1.5 text-xs text-gray-600">容量 (GB)</div>
+                            <NumberInput
+                              min={1}
+                              value={chipParams.memory?.gmem?.capacity_gb}
+                              onChange={(v) => updateChipParam(chipName, 'memory.gmem.capacity_gb', v ?? 64)}
+                              className="h-7"
+                            />
+                          </div>
+                          <div className={`p-2 rounded -m-2 mb-0 ${isChipParamModified(chipName, 'memory.gmem.bandwidth_gbps') ? 'bg-blue-50/50' : ''}`}>
+                            <div className="mb-1 flex items-center gap-1.5 text-xs text-gray-600">带宽 (GB/s)</div>
+                            <NumberInput
+                              min={1}
+                              value={chipParams.memory?.gmem?.bandwidth_gbps}
+                              onChange={(v) => updateChipParam(chipName, 'memory.gmem.bandwidth_gbps', v ?? 273)}
+                              className="h-7"
+                            />
+                          </div>
+                          <div className={`p-2 rounded -m-2 mb-0 ${isChipParamModified(chipName, 'memory.gmem.latency_ns') ? 'bg-blue-50/50' : ''}`}>
+                            <div className="mb-1 flex items-center gap-1.5 text-xs text-gray-600">延迟 (ns)</div>
+                            <NumberInput
+                              min={0}
+                              value={chipParams.memory?.gmem?.latency_ns}
+                              onChange={(v) => updateChipParam(chipName, 'memory.gmem.latency_ns', v ?? 100)}
+                              className="h-7"
+                            />
+                          </div>
+                        </div>
+                      ) : (
+                        <InfoGrid
+                          items={[
+                            { label: '容量', value: chipParams.memory?.gmem?.capacity_gb ? `${chipParams.memory.gmem.capacity_gb} GB` : '-' },
+                            { label: '带宽', value: chipParams.memory?.gmem?.bandwidth_gbps ? `${chipParams.memory.gmem.bandwidth_gbps} GB/s` : '-' },
+                            { label: '延迟', value: chipParams.memory?.gmem?.latency_ns ? `${chipParams.memory.gmem.latency_ns} ns` : '-' },
                           ]}
                           columns={3}
                         />
                       )}
 
                       {/* LMEM */}
-                      {chipParams.lmem_capacity_mb && chipParams.lmem_capacity_mb > 0 && (
-                        <>
-                          <SectionHeader title="LMEM" color="purple" />
-                          {isEditable ? (
-                            <div className="grid grid-cols-2 gap-2">
-                              <div className={`p-2 rounded -m-2 mb-0 ${isChipParamModified(chipName, 'lmem_capacity_mb') ? 'bg-blue-50/50' : ''}`}>
-                                <div className="mb-1 flex items-center gap-1.5 text-xs text-gray-600">
-                                  容量 (MB)
-                                  {isChipParamModified(chipName, 'lmem_capacity_mb') && (
-                                    <Badge variant="outline" className="text-[9px] px-1 py-0 h-3.5 bg-blue-100 text-blue-700 border-blue-300">已修改</Badge>
-                                  )}
-                                </div>
-                                <NumberInput
-                                  min={1}
-                                  value={chipParams.lmem_capacity_mb}
-                                  onChange={(v) => updateChipParam(chipName, 'lmem_capacity_mb', v ?? 128)}
-                                  className="h-7"
-                                />
-                              </div>
-                              <div className={`p-2 rounded -m-2 mb-0 ${isChipParamModified(chipName, 'lmem_bandwidth_gbps') ? 'bg-blue-50/50' : ''}`}>
-                                <div className="mb-1 flex items-center gap-1.5 text-xs text-gray-600">
-                                  带宽 (GB/s)
-                                  {isChipParamModified(chipName, 'lmem_bandwidth_gbps') && (
-                                    <Badge variant="outline" className="text-[9px] px-1 py-0 h-3.5 bg-blue-100 text-blue-700 border-blue-300">已修改</Badge>
-                                  )}
-                                </div>
-                                <NumberInput
-                                  min={1}
-                                  value={chipParams.lmem_bandwidth_gbps}
-                                  onChange={(v) => updateChipParam(chipName, 'lmem_bandwidth_gbps', v ?? 12000)}
-                                  className="h-7"
-                                />
-                              </div>
-                            </div>
-                          ) : (
-                            <InfoGrid
-                              items={[
-                                { label: '容量', value: `${chipParams.lmem_capacity_mb} MB` },
-                                { label: '带宽', value: `${chipParams.lmem_bandwidth_gbps} GB/s` },
-                              ]}
-                              columns={2}
+                      <SectionHeader title="LMEM (本地内存)" color="green" />
+                      {isEditable ? (
+                        <div className="grid grid-cols-3 gap-2">
+                          <div className={`p-2 rounded -m-2 mb-0 ${isChipParamModified(chipName, 'memory.lmem.capacity_mb') ? 'bg-blue-50/50' : ''}`}>
+                            <div className="mb-1 flex items-center gap-1.5 text-xs text-gray-600">容量 (MB)</div>
+                            <NumberInput
+                              min={1}
+                              value={chipParams.memory?.lmem?.capacity_mb}
+                              onChange={(v) => updateChipParam(chipName, 'memory.lmem.capacity_mb', v ?? 64)}
+                              className="h-7"
                             />
-                          )}
-                        </>
+                          </div>
+                          <div className={`p-2 rounded -m-2 mb-0 ${isChipParamModified(chipName, 'memory.lmem.bandwidth_gbps') ? 'bg-blue-50/50' : ''}`}>
+                            <div className="mb-1 flex items-center gap-1.5 text-xs text-gray-600">带宽 (GB/s)</div>
+                            <NumberInput
+                              min={1}
+                              value={chipParams.memory?.lmem?.bandwidth_gbps}
+                              onChange={(v) => updateChipParam(chipName, 'memory.lmem.bandwidth_gbps', v ?? 2000)}
+                              className="h-7"
+                            />
+                          </div>
+                          <div className={`p-2 rounded -m-2 mb-0 ${isChipParamModified(chipName, 'memory.lmem.latency_ns') ? 'bg-blue-50/50' : ''}`}>
+                            <div className="mb-1 flex items-center gap-1.5 text-xs text-gray-600">延迟 (ns)</div>
+                            <NumberInput
+                              min={0}
+                              value={chipParams.memory?.lmem?.latency_ns}
+                              onChange={(v) => updateChipParam(chipName, 'memory.lmem.latency_ns', v ?? 1)}
+                              className="h-7"
+                            />
+                          </div>
+                        </div>
+                      ) : (
+                        <InfoGrid
+                          items={[
+                            { label: '容量', value: chipParams.memory?.lmem?.capacity_mb ? `${chipParams.memory.lmem.capacity_mb} MB` : '-' },
+                            { label: '带宽', value: chipParams.memory?.lmem?.bandwidth_gbps ? `${chipParams.memory.lmem.bandwidth_gbps} GB/s` : '-' },
+                            { label: '延迟', value: chipParams.memory?.lmem?.latency_ns ? `${chipParams.memory.lmem.latency_ns} ns` : '-' },
+                          ]}
+                          columns={3}
+                        />
                       )}
 
-                      {/* 微架构参数 */}
-                      {chipParams.cube_m && (
-                        <>
-                          <SectionHeader title="微架构" color="orange" />
-                          {isEditable ? (
-                            <>
-                              <div className="grid grid-cols-4 gap-2">
-                                <div className={`p-2 rounded -m-2 mb-0 ${isChipParamModified(chipName, 'cube_m') ? 'bg-blue-50/50' : ''}`}>
-                                  <div className="mb-1 flex items-center gap-1.5 text-xs text-gray-600">
-                                    Cube M
-                                    {isChipParamModified(chipName, 'cube_m') && (
-                                      <Badge variant="outline" className="text-[9px] px-1 py-0 h-3.5 bg-blue-100 text-blue-700 border-blue-300">已修改</Badge>
-                                    )}
-                                  </div>
-                                  <NumberInput
-                                    min={1}
-                                    value={chipParams.cube_m}
-                                    onChange={(v) => updateChipParam(chipName, 'cube_m', v ?? 16)}
-                                    className="h-7"
-                                  />
-                                </div>
-                                <div className={`p-2 rounded -m-2 mb-0 ${isChipParamModified(chipName, 'cube_k') ? 'bg-blue-50/50' : ''}`}>
-                                  <div className="mb-1 flex items-center gap-1.5 text-xs text-gray-600">
-                                    Cube K
-                                    {isChipParamModified(chipName, 'cube_k') && (
-                                      <Badge variant="outline" className="text-[9px] px-1 py-0 h-3.5 bg-blue-100 text-blue-700 border-blue-300">已修改</Badge>
-                                    )}
-                                  </div>
-                                  <NumberInput
-                                    min={1}
-                                    value={chipParams.cube_k}
-                                    onChange={(v) => updateChipParam(chipName, 'cube_k', v ?? 32)}
-                                    className="h-7"
-                                  />
-                                </div>
-                                <div className={`p-2 rounded -m-2 mb-0 ${isChipParamModified(chipName, 'cube_n') ? 'bg-blue-50/50' : ''}`}>
-                                  <div className="mb-1 flex items-center gap-1.5 text-xs text-gray-600">
-                                    Cube N
-                                    {isChipParamModified(chipName, 'cube_n') && (
-                                      <Badge variant="outline" className="text-[9px] px-1 py-0 h-3.5 bg-blue-100 text-blue-700 border-blue-300">已修改</Badge>
-                                    )}
-                                  </div>
-                                  <NumberInput
-                                    min={1}
-                                    value={chipParams.cube_n}
-                                    onChange={(v) => updateChipParam(chipName, 'cube_n', v ?? 8)}
-                                    className="h-7"
-                                  />
-                                </div>
-                                <div className={`p-2 rounded -m-2 mb-0 ${isChipParamModified(chipName, 'lane_num') ? 'bg-blue-50/50' : ''}`}>
-                                  <div className="mb-1 flex items-center gap-1.5 text-xs text-gray-600">
-                                    Lane
-                                    {isChipParamModified(chipName, 'lane_num') && (
-                                      <Badge variant="outline" className="text-[9px] px-1 py-0 h-3.5 bg-blue-100 text-blue-700 border-blue-300">已修改</Badge>
-                                    )}
-                                  </div>
-                                  <NumberInput
-                                    min={1}
-                                    value={chipParams.lane_num}
-                                    onChange={(v) => updateChipParam(chipName, 'lane_num', v ?? 16)}
-                                    className="h-7"
-                                  />
-                                </div>
-                              </div>
-                              <div className="grid grid-cols-3 gap-2 mt-2">
-                                <div className={`p-2 rounded -m-2 mb-0 ${isChipParamModified(chipName, 'sram_size_kb') ? 'bg-blue-50/50' : ''}`}>
-                                  <div className="mb-1 flex items-center gap-1.5 text-xs text-gray-600">
-                                    SRAM (KB)
-                                    {isChipParamModified(chipName, 'sram_size_kb') && (
-                                      <Badge variant="outline" className="text-[9px] px-1 py-0 h-3.5 bg-blue-100 text-blue-700 border-blue-300">已修改</Badge>
-                                    )}
-                                  </div>
-                                  <NumberInput
-                                    min={0}
-                                    value={chipParams.sram_size_kb}
-                                    onChange={(v) => updateChipParam(chipName, 'sram_size_kb', v ?? 2048)}
-                                    className="h-7"
-                                  />
-                                </div>
-                                <div className={`p-2 rounded -m-2 mb-0 ${isChipParamModified(chipName, 'sram_utilization') ? 'bg-blue-50/50' : ''}`}>
-                                  <div className="mb-1 flex items-center gap-1.5 text-xs text-gray-600">
-                                    SRAM利用率
-                                    {isChipParamModified(chipName, 'sram_utilization') && (
-                                      <Badge variant="outline" className="text-[9px] px-1 py-0 h-3.5 bg-blue-100 text-blue-700 border-blue-300">已修改</Badge>
-                                    )}
-                                  </div>
-                                  <NumberInput
-                                    min={0}
-                                    max={1}
-                                    step={0.01}
-                                    value={chipParams.sram_utilization}
-                                    onChange={(v) => updateChipParam(chipName, 'sram_utilization', v ?? 0.45)}
-                                    className="h-7"
-                                  />
-                                </div>
-                                <div className={`p-2 rounded -m-2 mb-0 ${isChipParamModified(chipName, 'compute_dma_overlap_rate') ? 'bg-blue-50/50' : ''}`}>
-                                  <div className="mb-1 flex items-center gap-1.5 text-xs text-gray-600">
-                                    重叠率
-                                    {isChipParamModified(chipName, 'compute_dma_overlap_rate') && (
-                                      <Badge variant="outline" className="text-[9px] px-1 py-0 h-3.5 bg-blue-100 text-blue-700 border-blue-300">已修改</Badge>
-                                    )}
-                                  </div>
-                                  <NumberInput
-                                    min={0}
-                                    max={1}
-                                    step={0.01}
-                                    value={chipParams.compute_dma_overlap_rate}
-                                    onChange={(v) => updateChipParam(chipName, 'compute_dma_overlap_rate', v ?? 0.8)}
-                                    className="h-7"
-                                  />
-                                </div>
-                              </div>
-                            </>
-                          ) : (
-                            <>
-                              <InfoGrid
-                                items={[
-                                  { label: 'Cube M', value: chipParams.cube_m },
-                                  { label: 'Cube K', value: chipParams.cube_k },
-                                  { label: 'Cube N', value: chipParams.cube_n },
-                                  { label: 'Lane', value: chipParams.lane_num },
-                                ]}
-                              />
-                              <InfoGrid
-                                items={[
-                                  { label: 'SRAM', value: chipParams.sram_size_kb ? `${chipParams.sram_size_kb} KB` : '-' },
-                                  { label: 'SRAM利用', value: formatNumber(chipParams.sram_utilization) },
-                                  { label: '重叠率', value: formatNumber(chipParams.compute_dma_overlap_rate) },
-                                ]}
-                                columns={3}
-                              />
-                            </>
-                          )}
-                        </>
+                      {/* DMA 引擎 - GDMA */}
+                      <SectionHeader title="DMA 引擎 - GDMA" color="orange" />
+                      {isEditable ? (
+                        <div className="grid grid-cols-3 gap-2">
+                          <div className={`p-2 rounded -m-2 mb-0 ${isChipParamModified(chipName, 'dma_engines.gdma.bandwidth_gbps') ? 'bg-blue-50/50' : ''}`}>
+                            <div className="mb-1 flex items-center gap-1.5 text-xs text-gray-600">带宽 (GB/s)</div>
+                            <NumberInput
+                              min={1}
+                              value={chipParams.dma_engines?.gdma?.bandwidth_gbps}
+                              onChange={(v) => updateChipParam(chipName, 'dma_engines.gdma.bandwidth_gbps', v ?? 68)}
+                              className="h-7"
+                            />
+                          </div>
+                          <div className={`p-2 rounded -m-2 mb-0 ${isChipParamModified(chipName, 'dma_engines.gdma.startup_latency_ns') ? 'bg-blue-50/50' : ''}`}>
+                            <div className="mb-1 flex items-center gap-1.5 text-xs text-gray-600">启动延迟 (ns)</div>
+                            <NumberInput
+                              min={0}
+                              value={chipParams.dma_engines?.gdma?.startup_latency_ns}
+                              onChange={(v) => updateChipParam(chipName, 'dma_engines.gdma.startup_latency_ns', v ?? 100)}
+                              className="h-7"
+                            />
+                          </div>
+                          <div className={`p-2 rounded -m-2 mb-0 ${isChipParamModified(chipName, 'dma_engines.gdma.efficiency') ? 'bg-blue-50/50' : ''}`}>
+                            <div className="mb-1 flex items-center gap-1.5 text-xs text-gray-600">效率</div>
+                            <NumberInput
+                              min={0}
+                              max={1}
+                              step={0.01}
+                              value={chipParams.dma_engines?.gdma?.efficiency}
+                              onChange={(v) => updateChipParam(chipName, 'dma_engines.gdma.efficiency', v ?? 0.9)}
+                              className="h-7"
+                            />
+                          </div>
+                        </div>
+                      ) : (
+                        <InfoGrid
+                          items={[
+                            { label: '带宽', value: chipParams.dma_engines?.gdma?.bandwidth_gbps ? `${chipParams.dma_engines.gdma.bandwidth_gbps} GB/s` : '-' },
+                            { label: '启动延迟', value: chipParams.dma_engines?.gdma?.startup_latency_ns ? `${chipParams.dma_engines.gdma.startup_latency_ns} ns` : '-' },
+                            { label: '效率', value: formatNumber(chipParams.dma_engines?.gdma?.efficiency) },
+                          ]}
+                          columns={3}
+                        />
+                      )}
+
+                      {/* NoC */}
+                      <SectionHeader title="片上互联 NoC" color="orange" />
+                      {isEditable ? (
+                        <div className="grid grid-cols-3 gap-2">
+                          <div className={`p-2 rounded -m-2 mb-0 ${isChipParamModified(chipName, 'interconnect.noc.topology') ? 'bg-blue-50/50' : ''}`}>
+                            <div className="mb-1 flex items-center gap-1.5 text-xs text-gray-600">拓扑</div>
+                            <Input
+                              value={chipParams.interconnect?.noc?.topology || ''}
+                              onChange={(e) => updateChipParam(chipName, 'interconnect.noc.topology', e.target.value)}
+                              className="h-7 text-xs"
+                            />
+                          </div>
+                          <div className={`p-2 rounded -m-2 mb-0 ${isChipParamModified(chipName, 'interconnect.noc.bandwidth_gbps') ? 'bg-blue-50/50' : ''}`}>
+                            <div className="mb-1 flex items-center gap-1.5 text-xs text-gray-600">带宽 (GB/s)</div>
+                            <NumberInput
+                              min={1}
+                              value={chipParams.interconnect?.noc?.bandwidth_gbps}
+                              onChange={(v) => updateChipParam(chipName, 'interconnect.noc.bandwidth_gbps', v ?? 1000)}
+                              className="h-7"
+                            />
+                          </div>
+                          <div className={`p-2 rounded -m-2 mb-0 ${isChipParamModified(chipName, 'interconnect.noc.latency_ns') ? 'bg-blue-50/50' : ''}`}>
+                            <div className="mb-1 flex items-center gap-1.5 text-xs text-gray-600">延迟 (ns)</div>
+                            <NumberInput
+                              min={0}
+                              value={chipParams.interconnect?.noc?.latency_ns}
+                              onChange={(v) => updateChipParam(chipName, 'interconnect.noc.latency_ns', v ?? 10)}
+                              className="h-7"
+                            />
+                          </div>
+                        </div>
+                      ) : (
+                        <InfoGrid
+                          items={[
+                            { label: '拓扑', value: chipParams.interconnect?.noc?.topology || '-' },
+                            { label: '带宽', value: chipParams.interconnect?.noc?.bandwidth_gbps ? `${chipParams.interconnect.noc.bandwidth_gbps} GB/s` : '-' },
+                            { label: '延迟', value: chipParams.interconnect?.noc?.latency_ns ? `${chipParams.interconnect.noc.latency_ns} ns` : '-' },
+                          ]}
+                          columns={3}
+                        />
                       )}
                     </div>
                   </BaseCard>

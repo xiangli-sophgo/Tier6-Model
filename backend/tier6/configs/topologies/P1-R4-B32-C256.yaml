@@ -84,6 +84,17 @@ hardware_params:
     p2p:
       bandwidth_gbps: 100
       latency_us: 5
+comm_latency_config:
+  rtt_tp_us: 0.35
+  rtt_ep_us: 0.85
+  bandwidth_utilization: 0.95
+  sync_latency_us: 0
+  switch_delay_us: 1
+  cable_delay_us: 0.025
+  memory_read_latency_us: 0.15
+  memory_write_latency_us: 0.01
+  noc_latency_us: 0.05
+  die_to_die_latency_us: 0.04
 connections:
 - source: pod_0/rack_0/board_0
   target: pod_0/rack_0/board_1
@@ -421,16 +432,3 @@ connections:
 - source: pod_0/rack_3/board_6
   target: pod_0/rack_3/board_7
   type: b2b
-comm_latency_config:
-  rtt_tp_us: 0.35
-  rtt_ep_us: 0.85
-  bandwidth_utilization: 0.95
-  sync_latency_us: 0
-  switch_delay_us: 1
-  cable_delay_us: 0.025
-  memory_read_latency_us: 0.15
-  memory_write_latency_us: 0.01
-  noc_latency_us: 0.05
-  die_to_die_latency_us: 0.04
-created_at: '2026-02-02T17:02:19.607644'
-updated_at: '2026-02-04T22:42:39.585479'

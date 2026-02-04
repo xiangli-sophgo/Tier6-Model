@@ -395,21 +395,33 @@ export const Results: React.FC = () => {
     if (!taskResults || !taskResults.top_k_plans) return []
 
     // 从任务配置快照中提取芯片容量
-    if (!selectedTask?.config_snapshot?.topology) {
+    // 兼容新旧格式：新格式用 topology_config，旧格式用 topology
+    const topology = (selectedTask?.config_snapshot?.topology ||
+                      selectedTask?.config_snapshot?.topology_config) as any
+    if (!topology) {
       console.error('无法获取任务配置快照中的拓扑信息')
       return []
     }
 
-    const topology = selectedTask.config_snapshot.topology as any
-    const chips = topology.hardware_params?.chips || {}
+    // 尝试多种路径获取芯片配置
+    // 1. hardware_params.chips (标准格式)
+    // 2. chips (简化格式)
+    const chips = topology.hardware_params?.chips || topology.chips || {}
     const firstChipName = Object.keys(chips)[0]
 
-    if (!firstChipName || !chips[firstChipName]?.memory_capacity_gb) {
-      console.error('无法从拓扑配置中获取芯片容量 (memory_capacity_gb)')
-      return []
+    // 尝试多种路径获取 memory_capacity_gb
+    let chipCapacityGB = 64  // 默认值
+    if (firstChipName && chips[firstChipName]) {
+      const chipConfig = chips[firstChipName]
+      chipCapacityGB = chipConfig.memory_capacity_gb ||
+                       chipConfig.memory?.gmem?.capacity_gb ||
+                       chipConfig.memory_gb ||
+                       64
     }
 
-    const chipCapacityGB = chips[firstChipName].memory_capacity_gb
+    if (!firstChipName) {
+      console.warn('无法从拓扑配置中获取芯片配置，使用默认值')
+    }
 
     return taskResults.top_k_plans.map(plan => {
       // 从 stats 中提取更多数据

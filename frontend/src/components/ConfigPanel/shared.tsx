@@ -9,6 +9,10 @@ import {
 } from '../../types'
 import { TopologyTrafficResult, PlanAnalysisResult, HardwareConfig, LLMModelConfig, InferenceConfig, ParallelismStrategy } from '../../utils/llmDeployment/types'
 import { InfeasibleResult } from '../../utils/llmDeployment'
+import type { ChipPreset, MemoryLevelConfig, DmaEngineConfig, ChipInterconnectConfig } from '../../types/tier6'
+
+// 重导出 Tier6 芯片类型
+export type { ChipPreset, MemoryLevelConfig, DmaEngineConfig, ChipInterconnectConfig }
 
 // 历史记录项
 export interface AnalysisHistoryItem {
@@ -211,33 +215,14 @@ export interface InterconnectParams {
   latency_us: number           // 延迟 (us)
 }
 
-// 芯片硬件参数（完整配置，与 types.ts 中的 ChipHardwareConfig 对齐）
-export interface ChipHardwareParams {
-  name: string                 // 芯片名称/型号
-  num_cores: number            // 核心数
-  compute_tflops_fp8: number   // FP8 算力 (TFLOPS)
-  compute_tflops_bf16: number  // BF16 算力 (TFLOPS)
-  memory_capacity_gb: number   // 显存容量 (GB)
-  memory_bandwidth_gbps: number // 显存带宽 (GB/s)
-  memory_bandwidth_utilization: number // 带宽利用率 (0-1)
-  lmem_capacity_mb: number     // 片上缓存容量 (MB)
-  lmem_bandwidth_gbps: number  // 片上缓存带宽 (GB/s)
-  cost_per_hour?: number       // 成本 ($/hour)
-  // 微架构参数
-  cube_m?: number              // 矩阵单元 M 维度
-  cube_k?: number              // 矩阵单元 K 维度
-  cube_n?: number              // 矩阵单元 N 维度
-  sram_size_kb?: number        // 每核 SRAM 大小 (KB)
-  sram_utilization?: number    // SRAM 可用比例 (0-1)
-  lane_num?: number            // SIMD lane 数量
-  align_bytes?: number         // 内存对齐字节数
-  compute_dma_overlap_rate?: number // 计算-搬运重叠率 (0-1)
-}
+// 芯片硬件参数 - 使用 Tier6 ChipPreset 格式
+// 保留别名以保持向后兼容
+export type ChipHardwareParams = ChipPreset
 
 // 完整硬件配置（用于保存）
 // 支持多芯片独立配置，key = chip.name
 export interface HardwareParams {
-  chips: Record<string, ChipHardwareParams>  // 按芯片名称分组的配置
+  chips: Record<string, ChipPreset>  // 按芯片名称分组的配置
   interconnect: {
     c2c: InterconnectParams    // Chip间（板内）
     b2b: InterconnectParams    // Board间（机架内）
@@ -334,25 +319,86 @@ export const DEFAULT_SWITCH_CONFIG: GlobalSwitchConfig = {
   inter_chip: { enabled: false, layers: [], downlink_redundancy: 1, connect_to_upper_level: true, keep_direct_topology: false },
 }
 
-// 默认芯片硬件参数
-export const DEFAULT_CHIP_HARDWARE: ChipHardwareParams = {
+// 默认芯片硬件参数 - Tier6 格式
+export const DEFAULT_CHIP_HARDWARE: ChipPreset = {
   name: 'SG2262',
-  num_cores: 64,
-  compute_tflops_fp8: 256,
-  compute_tflops_bf16: 128,
-  memory_capacity_gb: 32,
-  memory_bandwidth_gbps: 819,
-  memory_bandwidth_utilization: 0.85,
-  lmem_capacity_mb: 128,
-  lmem_bandwidth_gbps: 12000,
-  cube_m: 16,
-  cube_k: 32,
-  cube_n: 8,
-  sram_size_kb: 2048,
-  sram_utilization: 0.45,
-  lane_num: 16,
-  align_bytes: 32,
-  compute_dma_overlap_rate: 0.8,
+  architecture: 'TPU_V7',
+  process: '7nm',
+  frequency_ghz: 1.0,
+
+  cores: {
+    count: 4,
+    lanes_per_core: 64,
+  },
+
+  compute_units: {
+    cube: {
+      mac_per_lane: {
+        INT8: 1000,
+        FP8: 1000,
+        BF16: 500,
+        FP16: 500,
+        TF32: 250,
+        INT4: 2000,
+      },
+    },
+    vector: {
+      eu_per_lane: {
+        INT8: 64,
+        FP8: 64,
+        INT16: 32,
+        BF16: 32,
+        FP16: 32,
+        INT32: 16,
+        FP32: 16,
+      },
+    },
+  },
+
+  memory: {
+    gmem: {
+      type: 'LPDDR5',
+      capacity_gb: 64,
+      bandwidth_gbps: 273,
+      latency_ns: 100,
+    },
+    l2m: {
+      capacity_mb: 64,
+      bandwidth_gbps: 1000,
+      latency_ns: 10,
+    },
+    lmem: {
+      capacity_mb: 64,
+      bandwidth_gbps: 2000,
+      latency_ns: 1,
+    },
+    smem: {
+      capacity_kb: 256,
+      bandwidth_gbps: 2000,
+      latency_ns: 1,
+    },
+  },
+
+  dma_engines: {
+    gdma: {
+      bandwidth_gbps: 68,
+      startup_latency_ns: 100,
+      efficiency: 0.9,
+    },
+    sdma: {
+      bandwidth_gbps: 1000,
+      startup_latency_ns: 50,
+      efficiency: 0.95,
+    },
+  },
+
+  interconnect: {
+    noc: {
+      topology: 'mesh',
+      bandwidth_gbps: 1000,
+      latency_ns: 10,
+    },
+  },
 }
 
 // 默认互联参数
@@ -369,6 +415,23 @@ export const DEFAULT_HARDWARE_PARAMS: HardwareParams = {
     'SG2262': DEFAULT_CHIP_HARDWARE,
   },
   interconnect: DEFAULT_INTERCONNECT,
+}
+
+// ============================================
+// 芯片配置辅助函数
+// ============================================
+
+/**
+ * 创建默认的 ChipPreset
+ * @param name 芯片名称
+ * @param base 可选的基础配置
+ */
+export function createDefaultChipPreset(name: string, base?: Partial<ChipPreset>): ChipPreset {
+  return {
+    ...DEFAULT_CHIP_HARDWARE,
+    ...base,
+    name,
+  }
 }
 
 // ============================================

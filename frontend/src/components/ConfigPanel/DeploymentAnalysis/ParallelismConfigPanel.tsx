@@ -38,9 +38,9 @@ export const ParallelismConfigPanel: React.FC<ParallelismConfigPanelProps> = ({
   const [showConstraints, setShowConstraints] = React.useState(false)
 
   // 计算搜索约束范围
-  const isMoE = modelConfig.model_type === 'moe' && modelConfig.moe_config
-  const maxTP = Math.min(128, modelConfig.num_attention_heads, maxChips)
-  const maxEP = isMoE && modelConfig.moe_config ? modelConfig.moe_config.num_experts : 1
+  const isMoE = modelConfig?.model_type === 'moe' && modelConfig?.moe_config
+  const maxTP = Math.min(128, modelConfig?.num_attention_heads || 32, maxChips)
+  const maxEP = isMoE && modelConfig?.moe_config ? modelConfig.moe_config.num_experts : 1
 
   return (
     <div>

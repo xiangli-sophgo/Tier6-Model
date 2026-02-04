@@ -43,6 +43,9 @@ from ..tasks import manager as task_manager
 from ..tasks.deployment import count_topology_chips, calculate_required_chips
 from .column_presets import router as column_presets_router
 
+# 导入 Tier6 router（优先处理 Tier6 格式的预设 API）
+from tier6.L0_entry.api import router as tier6_router
+
 # 导入 Pydantic 模型（从 schemas.py）
 from .schemas import (
     ChipHardwareConfigRequest,
@@ -291,6 +294,9 @@ app.add_middleware(
     allow_headers=["Content-Type", "Authorization"],
 )
 
+# 注册 Tier6 路由（使用 /tier6 前缀避免与现有端点冲突）
+app.include_router(tier6_router, prefix="/tier6")
+
 # 注册列配置方案路由
 app.include_router(column_presets_router)
 
@@ -309,6 +315,17 @@ async def startup_event():
 
     logger.info("注册事件循环到任务管理器...")
     task_manager.set_main_loop(asyncio.get_running_loop())
+
+    # 初始化 tier6 WebSocket 管理器
+    logger.info("初始化 tier6 WebSocket 管理器...")
+    try:
+        from tier6.L0_entry.websocket import get_ws_manager as get_tier6_ws_manager
+        tier6_ws_manager = get_tier6_ws_manager()
+        tier6_ws_manager.set_event_loop(asyncio.get_running_loop())
+        logger.info("tier6 WebSocket 管理器初始化完成")
+    except Exception as e:
+        logger.warning(f"tier6 WebSocket 管理器初始化失败: {e}")
+
     print("[DEBUG STARTUP] Main event loop registered to task manager!")
     print("[DEBUG STARTUP] Application startup complete!")
     logger.info("应用启动完成")

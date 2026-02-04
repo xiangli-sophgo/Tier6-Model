@@ -275,6 +275,38 @@ class ConfigLoader:
             raise FileNotFoundError(f"Chip preset not found: {name}")
         return self.load_yaml(filepath)
 
+    def save_chip_preset(self, name: str, config: dict[str, Any]) -> None:
+        """保存芯片预设到 YAML 文件 (Tier6 格式)
+
+        Args:
+            name: 预设名称 (不含扩展名)
+            config: 芯片配置 (Tier6 ChipPreset 格式)
+        """
+        # 优先保存到新格式目录
+        if self.chips_dir.exists():
+            filepath = self.chips_dir / f"{name}.yaml"
+        else:
+            # 确保目录存在
+            self.chip_presets_dir.mkdir(parents=True, exist_ok=True)
+            filepath = self.chip_presets_dir / f"{name}.yaml"
+
+        with open(filepath, "w", encoding="utf-8") as f:
+            yaml.dump(config, f, allow_unicode=True, sort_keys=False, default_flow_style=False)
+
+    def delete_chip_preset(self, name: str) -> None:
+        """删除芯片预设
+
+        Args:
+            name: 预设名称 (不含扩展名)
+        """
+        # 优先在新格式目录查找
+        filepath = self.chips_dir / f"{name}.yaml"
+        if not filepath.exists():
+            filepath = self.chip_presets_dir / f"{name}.yaml"
+        if not filepath.exists():
+            raise FileNotFoundError(f"Chip preset not found: {name}")
+        filepath.unlink()
+
     def list_model_presets(self) -> list[str]:
         """列出所有模型预设 (兼容旧格式)
 
@@ -344,7 +376,7 @@ class ConfigLoader:
         return self.load_yaml(filepath)
 
     def list_benchmarks(self) -> list[str]:
-        """列出所有 Benchmark
+        """列出所有 Benchmark (JSON 格式)
 
         Returns:
             list[str]: Benchmark 名称列表
@@ -357,7 +389,7 @@ class ConfigLoader:
         ]
 
     def load_benchmark(self, name: str) -> dict[str, Any]:
-        """加载 Benchmark
+        """加载 Benchmark (JSON 格式)
 
         Args:
             name: Benchmark 名称 (不含扩展名)
@@ -369,6 +401,176 @@ class ConfigLoader:
         if not filepath.exists():
             raise FileNotFoundError(f"Benchmark not found: {name}")
         return self.load_json(filepath)
+
+    def list_benchmarks_yaml(self) -> list[str]:
+        """列出所有 Benchmark (YAML 格式)
+
+        Returns:
+            list[str]: Benchmark 名称列表
+        """
+        if not self.benchmarks_dir.exists():
+            return []
+        return [
+            f.stem
+            for f in self.benchmarks_dir.glob("*.yaml")
+            if not f.stem.startswith("_")
+        ]
+
+    def list_all_benchmarks(self) -> list[dict[str, Any]]:
+        """列出所有 Benchmark (包含 JSON 和 YAML 格式)
+
+        Returns:
+            list[dict]: Benchmark 信息列表，包含 id, name, format 字段
+        """
+        benchmarks: list[dict[str, Any]] = []
+
+        # 加载 JSON 格式
+        for name in self.list_benchmarks():
+            try:
+                config = self.load_benchmark(name)
+                benchmarks.append({
+                    "id": config.get("id", name),
+                    "name": config.get("name", name),
+                    "format": "json",
+                    "filename": name,
+                })
+            except Exception:
+                pass
+
+        # 加载 YAML 格式
+        for name in self.list_benchmarks_yaml():
+            try:
+                config = self.load_benchmark_yaml(name)
+                benchmarks.append({
+                    "id": config.get("id", name),
+                    "name": config.get("name", name),
+                    "format": "yaml",
+                    "filename": name,
+                })
+            except Exception:
+                pass
+
+        return benchmarks
+
+    def load_benchmark_yaml(self, name: str) -> dict[str, Any]:
+        """加载 Benchmark (YAML 格式)
+
+        支持模型预设引用解析。如果 model 字段是字符串，则从模型预设加载。
+
+        Args:
+            name: Benchmark 名称 (不含扩展名)
+
+        Returns:
+            dict: Benchmark 配置
+        """
+        filepath = self.benchmarks_dir / f"{name}.yaml"
+        if not filepath.exists():
+            raise FileNotFoundError(f"Benchmark YAML not found: {name}")
+
+        config = self.load_yaml(filepath)
+
+        # 解析模型预设引用
+        model_ref = config.get("model")
+        if isinstance(model_ref, str):
+            # 模型是引用，从预设加载
+            try:
+                model_config = self.load_model_preset(model_ref)
+                config["model"] = model_config
+                config["model_preset_ref"] = model_ref
+            except FileNotFoundError:
+                # 保持原样，允许后续处理
+                pass
+
+        return config
+
+    def load_benchmark_auto(self, name: str) -> dict[str, Any]:
+        """自动加载 Benchmark (优先 YAML，回退 JSON)
+
+        Args:
+            name: Benchmark 名称 (不含扩展名)
+
+        Returns:
+            dict: Benchmark 配置
+        """
+        # 优先尝试 YAML
+        yaml_path = self.benchmarks_dir / f"{name}.yaml"
+        if yaml_path.exists():
+            return self.load_benchmark_yaml(name)
+
+        # 回退到 JSON
+        json_path = self.benchmarks_dir / f"{name}.json"
+        if json_path.exists():
+            return self.load_benchmark(name)
+
+        raise FileNotFoundError(f"Benchmark not found: {name}")
+
+    def save_benchmark_yaml(self, name: str, config: dict[str, Any]) -> None:
+        """保存 Benchmark 为 YAML 格式
+
+        Args:
+            name: Benchmark 名称 (不含扩展名)
+            config: Benchmark 配置
+        """
+        if not self.benchmarks_dir.exists():
+            self.benchmarks_dir.mkdir(parents=True, exist_ok=True)
+
+        filepath = self.benchmarks_dir / f"{name}.yaml"
+        with open(filepath, "w", encoding="utf-8") as f:
+            yaml.dump(config, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
+
+    def delete_benchmark(self, name: str) -> bool:
+        """删除 Benchmark 文件
+
+        Args:
+            name: Benchmark 名称 (不含扩展名)
+
+        Returns:
+            bool: 是否成功删除
+        """
+        # 尝试删除 YAML
+        yaml_path = self.benchmarks_dir / f"{name}.yaml"
+        if yaml_path.exists():
+            yaml_path.unlink()
+            return True
+
+        # 尝试删除 JSON
+        json_path = self.benchmarks_dir / f"{name}.json"
+        if json_path.exists():
+            json_path.unlink()
+            return True
+
+        return False
+
+    # ==================== 拓扑配置 CRUD ====================
+
+    def save_topology(self, name: str, config: dict[str, Any]) -> None:
+        """保存拓扑配置为 YAML 格式
+
+        Args:
+            name: 拓扑名称 (不含扩展名)
+            config: 拓扑配置
+        """
+        if not self.topologies_dir.exists():
+            self.topologies_dir.mkdir(parents=True, exist_ok=True)
+
+        filepath = self.topologies_dir / f"{name}.yaml"
+        with open(filepath, "w", encoding="utf-8") as f:
+            yaml.dump(config, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
+
+    def delete_topology(self, name: str) -> bool:
+        """删除拓扑配置文件
+
+        Args:
+            name: 拓扑名称 (不含扩展名)
+
+        Returns:
+            bool: 是否成功删除
+        """
+        filepath = self.topologies_dir / f"{name}.yaml"
+        if filepath.exists():
+            filepath.unlink()
+            return True
+        return False
 
 
 # 全局配置加载器实例
@@ -512,3 +714,27 @@ def load_benchmark(name: str) -> dict[str, Any]:
         dict: Benchmark 配置
     """
     return get_config_loader().load_benchmark(name)
+
+
+def load_benchmark_yaml(name: str) -> dict[str, Any]:
+    """加载 Benchmark YAML (便捷函数)
+
+    Args:
+        name: Benchmark 名称
+
+    Returns:
+        dict: Benchmark 配置
+    """
+    return get_config_loader().load_benchmark_yaml(name)
+
+
+def load_benchmark_auto(name: str) -> dict[str, Any]:
+    """自动加载 Benchmark (便捷函数)
+
+    Args:
+        name: Benchmark 名称
+
+    Returns:
+        dict: Benchmark 配置
+    """
+    return get_config_loader().load_benchmark_auto(name)

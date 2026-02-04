@@ -7,6 +7,7 @@
 
 import { ManualConnectionConfig, GlobalSwitchConfig, HierarchicalTopology } from '../types';
 import { ChipHardwareConfig } from './llmDeployment/types';
+import { ChipPreset } from '../types/tier6';
 
 // ============================================
 // 类型定义
@@ -59,10 +60,7 @@ export interface SavedConfig {
         name: string;
         count: number;
         preset_id?: string;
-        compute_tflops_fp16?: number;
-        memory_gb?: number;
-        memory_bandwidth_gbps?: number;
-        memory_bandwidth_utilization?: number;
+        // 芯片详细配置现在存储在 hardware_params.chips 中（使用 Tier6 ChipPreset 格式）
       }>;
     }>;
   };
@@ -99,29 +97,10 @@ export interface SavedConfig {
     die_to_die_latency_us: number;
   };
 
-  /** 硬件参数配置 (芯片参数 + 互联参数) */
+  /** 硬件参数配置 (芯片参数 + 互联参数) - 使用 Tier6 ChipPreset 格式 */
   hardware_params?: {
-    // 多芯片独立配置，key = chip.name
-    chips: Record<string, {
-      name: string;
-      num_cores: number;
-      compute_tflops_fp8: number;
-      compute_tflops_bf16: number;
-      memory_capacity_gb: number;
-      memory_bandwidth_gbps: number;
-      memory_bandwidth_utilization: number;
-      lmem_capacity_mb: number;
-      lmem_bandwidth_gbps: number;
-      cost_per_hour?: number;
-      cube_m?: number;
-      cube_k?: number;
-      cube_n?: number;
-      sram_size_kb?: number;
-      sram_utilization?: number;
-      lane_num?: number;
-      align_bytes?: number;
-      compute_dma_overlap_rate?: number;
-    }>;
+    // 多芯片独立配置，key = chip.name，使用 Tier6 ChipPreset 格式
+    chips: Record<string, ChipPreset>;
     interconnect: {
       c2c: { bandwidth_gbps: number; latency_us: number };
       b2b: { bandwidth_gbps: number; latency_us: number };

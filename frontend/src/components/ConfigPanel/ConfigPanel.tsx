@@ -13,7 +13,6 @@ import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
-import { Label } from '@/components/ui/label'
 // Card导入已移除 - 使用BaseCard代替
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { BaseCard } from '@/components/common/BaseCard'
@@ -56,22 +55,18 @@ import {
   DEFAULT_RACK_CONFIG,
   DEFAULT_SWITCH_CONFIG,
   DEFAULT_HARDWARE_PARAMS,
-  DEFAULT_CHIP_HARDWARE,
   loadCachedConfig,
   saveCachedConfig,
   HardwareParams,
-  ChipHardwareParams,
-  InterconnectParams,
   configRowStyle,
+  createDefaultChipPreset,
 } from './shared'
 import { SwitchLevelConfig, ConnectionEditPanel } from './components'
-import { getChipList, getChipConfig, saveCustomChipPreset, deleteCustomChipPreset, getChipInterconnectConfig } from '../../utils/llmDeployment/presets'
-import { ChipHardwareConfig } from '../../utils/llmDeployment/types'
+import { getChipList, getChipConfig, saveCustomChipPreset, getChipInterconnectConfig } from '../../utils/llmDeployment/presets'
 
 // NumberInput 从公共组件导入
 import { NumberInput } from '@/components/ui/number-input'
 import { FormInputField } from '@/components/ui/form-input-field'
-import { TooltipLabel } from '@/components/ui/tooltip-label'
 
 export const ConfigPanel: React.FC<ConfigPanelProps> = ({
   topology,
@@ -186,7 +181,7 @@ export const ConfigPanel: React.FC<ConfigPanelProps> = ({
     if (cachedConfig?.hardwareParams?.chip) {
       const chipName = cachedConfig.hardwareParams.chip.name || 'SG2262'
       return {
-        chips: { [chipName]: { ...DEFAULT_CHIP_HARDWARE, ...cachedConfig.hardwareParams.chip } },
+        chips: { [chipName]: createDefaultChipPreset(chipName) },
         interconnect: {
           c2c: { ...DEFAULT_HARDWARE_PARAMS.interconnect.c2c, ...cachedConfig.hardwareParams.interconnect?.c2c },
           b2b: { ...DEFAULT_HARDWARE_PARAMS.interconnect.b2b, ...cachedConfig.hardwareParams.interconnect?.b2b },
@@ -290,34 +285,14 @@ export const ConfigPanel: React.FC<ConfigPanelProps> = ({
           const board = rackConfig.boards.find(b => b.chips.some(c => c.name === name))
           const chipItem = board?.chips.find(c => c.name === name)
           if (chipItem?.preset_id) {
-            const preset = getChipConfig(chipItem.preset_id)
-            if (preset) {
-              // getChipConfig 返回的已经是 ChipHardwareConfig 类型，直接使用
-              newChips[name] = {
-                name: preset.name,
-                num_cores: preset.num_cores || DEFAULT_CHIP_HARDWARE.num_cores,
-                compute_tflops_fp8: preset.compute_tflops_fp8 || DEFAULT_CHIP_HARDWARE.compute_tflops_fp8,
-                compute_tflops_bf16: preset.compute_tflops_bf16 || DEFAULT_CHIP_HARDWARE.compute_tflops_bf16,
-                memory_capacity_gb: preset.memory_capacity_gb || DEFAULT_CHIP_HARDWARE.memory_capacity_gb,
-                memory_bandwidth_gbps: preset.memory_bandwidth_gbps || DEFAULT_CHIP_HARDWARE.memory_bandwidth_gbps,
-                memory_bandwidth_utilization: preset.memory_bandwidth_utilization || DEFAULT_CHIP_HARDWARE.memory_bandwidth_utilization,
-                lmem_capacity_mb: preset.lmem_capacity_mb || DEFAULT_CHIP_HARDWARE.lmem_capacity_mb,
-                lmem_bandwidth_gbps: preset.lmem_bandwidth_gbps || DEFAULT_CHIP_HARDWARE.lmem_bandwidth_gbps,
-                cube_m: preset.cube_m,
-                cube_k: preset.cube_k,
-                cube_n: preset.cube_n,
-                sram_size_kb: preset.sram_size_kb,
-                sram_utilization: preset.sram_utilization,
-                lane_num: preset.lane_num,
-                align_bytes: preset.align_bytes,
-                compute_dma_overlap_rate: preset.compute_dma_overlap_rate,
-              }
-              changed = true
-              continue
-            }
+            // TODO: 从 Tier6 API 获取芯片预设
+            // 目前使用默认值，后续需要改为调用 tier6 API
+            newChips[name] = createDefaultChipPreset(name)
+            changed = true
+            continue
           }
           // 使用默认值
-          newChips[name] = { ...DEFAULT_CHIP_HARDWARE, name }
+          newChips[name] = createDefaultChipPreset(name)
           changed = true
         }
       }
@@ -450,7 +425,7 @@ export const ConfigPanel: React.FC<ConfigPanelProps> = ({
         // 旧格式兼容：单芯片配置转换为多芯片
         const chipName = hw.chip.name || 'SG2262'
         setHardwareParams({
-          chips: { [chipName]: { ...DEFAULT_CHIP_HARDWARE, ...hw.chip } },
+          chips: { [chipName]: createDefaultChipPreset(chipName) },
           interconnect: {
             c2c: { ...DEFAULT_HARDWARE_PARAMS.interconnect.c2c, ...hw.interconnect?.c2c },
             b2b: { ...DEFAULT_HARDWARE_PARAMS.interconnect.b2b, ...hw.interconnect?.b2b },
@@ -1231,7 +1206,7 @@ export const ConfigPanel: React.FC<ConfigPanelProps> = ({
 
             return uniqueChips.map(([chipName, info], chipIndex) => {
               // 获取该芯片的硬件参数（如果不存在则使用默认值）
-              const chipParams = hardwareParams.chips[chipName] || { ...DEFAULT_CHIP_HARDWARE, name: chipName }
+              const chipParams = hardwareParams.chips[chipName] || createDefaultChipPreset(chipName)
 
               return (
                 <div
@@ -1261,51 +1236,76 @@ export const ConfigPanel: React.FC<ConfigPanelProps> = ({
                     defaultExpanded={chipIndex === 0}
                     gradient
                   >
-                    {/* 核心数 + 算力 (3列) */}
-                    <div className="grid grid-cols-3 gap-3 mb-2">
+                    {/* 基础信息 (4列) */}
+                    <div className="grid grid-cols-4 gap-3 mb-2">
+                      <div>
+                        <span className="text-xs text-gray-600 block mb-1">架构</span>
+                        <Input
+                          value={chipParams.architecture || ''}
+                          onChange={(e) => updateChipParam(chipName, 'architecture', e.target.value)}
+                          placeholder="TPU_V7"
+                          className="h-7"
+                        />
+                      </div>
+                      <div>
+                        <span className="text-xs text-gray-600 block mb-1">工艺</span>
+                        <Input
+                          value={chipParams.process || ''}
+                          onChange={(e) => updateChipParam(chipName, 'process', e.target.value)}
+                          placeholder="7nm"
+                          className="h-7"
+                        />
+                      </div>
+                      <FormInputField
+                        label="频率 (GHz)"
+                        tooltip="芯片频率"
+                        min={0.1}
+                        max={10}
+                        step={0.1}
+                        value={chipParams.frequency_ghz || 1.0}
+                        onChange={(v) => updateChipParam(chipName, 'frequency_ghz', v)}
+                      />
+                      <div /> {/* 占位 */}
+                    </div>
+
+                    {/* 核心配置 */}
+                    <div className="border-t border-dashed my-2 pt-1.5">
+                      <span className="text-xs text-gray-500">核心配置</span>
+                    </div>
+                    <div className="grid grid-cols-2 gap-3 mb-2">
                       <FormInputField
                         label="核心数"
                         tooltip="计算核心数量"
                         min={1}
                         max={512}
-                        value={chipParams.num_cores}
-                        onChange={(v) => updateChipParam(chipName, 'num_cores', v ?? 64)}
-                      />
-                      <FormInputField
-                        label="FP8"
-                        tooltip="FP8 算力 (TFLOPS)"
-                        min={0}
-                        value={chipParams.compute_tflops_fp8}
+                        value={chipParams.cores?.count || 1}
                         onChange={(v) => {
-                          const newFP8 = v ?? 256
                           setHardwareParams(prev => ({
                             ...prev,
                             chips: {
                               ...prev.chips,
                               [chipName]: {
                                 ...prev.chips[chipName],
-                                compute_tflops_fp8: newFP8,
-                                compute_tflops_bf16: newFP8 / 2
+                                cores: { ...prev.chips[chipName]?.cores, count: v || 1, lanes_per_core: prev.chips[chipName]?.cores?.lanes_per_core || 64 }
                               }
                             }
                           }))
                         }}
                       />
                       <FormInputField
-                        label="BF16"
-                        tooltip="BF16 算力 (TFLOPS)"
-                        min={0}
-                        value={chipParams.compute_tflops_bf16}
+                        label="每核 Lane 数"
+                        tooltip="每个核心的 SIMD Lane 数量"
+                        min={1}
+                        max={256}
+                        value={chipParams.cores?.lanes_per_core || 64}
                         onChange={(v) => {
-                          const newBF16 = v ?? 128
                           setHardwareParams(prev => ({
                             ...prev,
                             chips: {
                               ...prev.chips,
                               [chipName]: {
                                 ...prev.chips[chipName],
-                                compute_tflops_bf16: newBF16,
-                                compute_tflops_fp8: newBF16 * 2
+                                cores: { ...prev.chips[chipName]?.cores, count: prev.chips[chipName]?.cores?.count || 1, lanes_per_core: v || 64 }
                               }
                             }
                           }))
@@ -1313,143 +1313,377 @@ export const ConfigPanel: React.FC<ConfigPanelProps> = ({
                       />
                     </div>
 
-                    {/* Memory (3列: 容量、带宽、利用率) */}
+                    {/* 计算单元 - Cube MAC */}
                     <div className="border-t border-dashed my-2 pt-1.5">
-                      <span className="text-xs text-gray-500">Memory</span>
+                      <span className="text-xs text-gray-500">计算单元 - Cube MAC/Lane</span>
+                    </div>
+                    <div className="grid grid-cols-3 gap-3 mb-2">
+                      <FormInputField
+                        label="BF16"
+                        tooltip="BF16 MAC 数量/Lane"
+                        min={0}
+                        value={chipParams.compute_units?.cube?.mac_per_lane?.BF16 || 0}
+                        onChange={(v) => {
+                          setHardwareParams(prev => ({
+                            ...prev,
+                            chips: {
+                              ...prev.chips,
+                              [chipName]: {
+                                ...prev.chips[chipName],
+                                compute_units: {
+                                  ...prev.chips[chipName]?.compute_units,
+                                  cube: {
+                                    ...prev.chips[chipName]?.compute_units?.cube,
+                                    mac_per_lane: { ...prev.chips[chipName]?.compute_units?.cube?.mac_per_lane, BF16: v || 0 }
+                                  }
+                                }
+                              }
+                            }
+                          }))
+                        }}
+                      />
+                      <FormInputField
+                        label="FP8"
+                        tooltip="FP8 MAC 数量/Lane"
+                        min={0}
+                        value={chipParams.compute_units?.cube?.mac_per_lane?.FP8 || 0}
+                        onChange={(v) => {
+                          setHardwareParams(prev => ({
+                            ...prev,
+                            chips: {
+                              ...prev.chips,
+                              [chipName]: {
+                                ...prev.chips[chipName],
+                                compute_units: {
+                                  ...prev.chips[chipName]?.compute_units,
+                                  cube: {
+                                    ...prev.chips[chipName]?.compute_units?.cube,
+                                    mac_per_lane: { ...prev.chips[chipName]?.compute_units?.cube?.mac_per_lane, FP8: v || 0 }
+                                  }
+                                }
+                              }
+                            }
+                          }))
+                        }}
+                      />
+                      <FormInputField
+                        label="INT8"
+                        tooltip="INT8 MAC 数量/Lane"
+                        min={0}
+                        value={chipParams.compute_units?.cube?.mac_per_lane?.INT8 || 0}
+                        onChange={(v) => {
+                          setHardwareParams(prev => ({
+                            ...prev,
+                            chips: {
+                              ...prev.chips,
+                              [chipName]: {
+                                ...prev.chips[chipName],
+                                compute_units: {
+                                  ...prev.chips[chipName]?.compute_units,
+                                  cube: {
+                                    ...prev.chips[chipName]?.compute_units?.cube,
+                                    mac_per_lane: { ...prev.chips[chipName]?.compute_units?.cube?.mac_per_lane, INT8: v || 0 }
+                                  }
+                                }
+                              }
+                            }
+                          }))
+                        }}
+                      />
+                    </div>
+
+                    {/* 内存 - GMEM */}
+                    <div className="border-t border-dashed my-2 pt-1.5">
+                      <span className="text-xs text-gray-500">全局内存 (GMEM)</span>
                     </div>
                     <div className="grid grid-cols-3 gap-3 mb-2">
                       <FormInputField
                         label="容量 (GB)"
-                        tooltip="显存容量"
+                        tooltip="全局内存容量"
                         min={1}
-                        max={512}
-                        value={chipParams.memory_capacity_gb}
-                        onChange={(v) => updateChipParam(chipName, 'memory_capacity_gb', v ?? 32)}
+                        max={1024}
+                        value={chipParams.memory?.gmem?.capacity_gb || 64}
+                        onChange={(v) => {
+                          setHardwareParams(prev => ({
+                            ...prev,
+                            chips: {
+                              ...prev.chips,
+                              [chipName]: {
+                                ...prev.chips[chipName],
+                                memory: {
+                                  ...prev.chips[chipName]?.memory,
+                                  gmem: { ...prev.chips[chipName]?.memory?.gmem, capacity_gb: v || 64, bandwidth_gbps: prev.chips[chipName]?.memory?.gmem?.bandwidth_gbps || 273 }
+                                }
+                              }
+                            }
+                          }))
+                        }}
                       />
                       <FormInputField
-                        label="带宽 (TB/s)"
-                        tooltip="显存总带宽 (理论峰值)"
+                        label="带宽 (GB/s)"
+                        tooltip="全局内存带宽"
+                        min={0}
+                        max={10000}
+                        value={chipParams.memory?.gmem?.bandwidth_gbps || 273}
+                        onChange={(v) => {
+                          setHardwareParams(prev => ({
+                            ...prev,
+                            chips: {
+                              ...prev.chips,
+                              [chipName]: {
+                                ...prev.chips[chipName],
+                                memory: {
+                                  ...prev.chips[chipName]?.memory,
+                                  gmem: { ...prev.chips[chipName]?.memory?.gmem, bandwidth_gbps: v || 273, capacity_gb: prev.chips[chipName]?.memory?.gmem?.capacity_gb || 64 }
+                                }
+                              }
+                            }
+                          }))
+                        }}
+                      />
+                      <FormInputField
+                        label="延迟 (ns)"
+                        tooltip="全局内存访问延迟"
                         min={0}
                         max={1000}
-                        step={0.1}
-                        value={Number((chipParams.memory_bandwidth_gbps / 1000).toFixed(1))}
-                        onChange={(v) => updateChipParam(chipName, 'memory_bandwidth_gbps', v !== undefined ? v * 1000 : 800)}
-                      />
-                      <FormInputField
-                        label="利用率"
-                        tooltip="显存带宽利用率 (0-1)"
-                        min={0}
-                        max={1}
-                        step={0.01}
-                        value={chipParams.memory_bandwidth_utilization}
-                        onChange={(v) => updateChipParam(chipName, 'memory_bandwidth_utilization', v ?? 0.85)}
-                      />
-                    </div>
-
-                    {/* LMEM (2列) */}
-                    <div className="border-t border-dashed my-2 pt-1.5">
-                      <span className="text-xs text-gray-500">LMEM</span>
-                    </div>
-                    <div className="grid grid-cols-2 gap-3 mb-2">
-                      <FormInputField
-                        label="LMEM (MB)"
-                        tooltip="LMEM 片上缓存容量"
-                        min={0}
-                        value={chipParams.lmem_capacity_mb}
-                        onChange={(v) => updateChipParam(chipName, 'lmem_capacity_mb', v ?? 128)}
-                      />
-                      <FormInputField
-                        label="L带宽 (GB/s)"
-                        tooltip="LMEM 缓存带宽"
-                        min={0}
-                        max={999999}
-                        value={chipParams.lmem_bandwidth_gbps}
-                        onChange={(v) => updateChipParam(chipName, 'lmem_bandwidth_gbps', v ?? 12000)}
+                        value={chipParams.memory?.gmem?.latency_ns || 100}
+                        onChange={(v) => {
+                          setHardwareParams(prev => ({
+                            ...prev,
+                            chips: {
+                              ...prev.chips,
+                              [chipName]: {
+                                ...prev.chips[chipName],
+                                memory: {
+                                  ...prev.chips[chipName]?.memory,
+                                  gmem: { ...prev.chips[chipName]?.memory?.gmem, latency_ns: v || 100, capacity_gb: prev.chips[chipName]?.memory?.gmem?.capacity_gb || 64, bandwidth_gbps: prev.chips[chipName]?.memory?.gmem?.bandwidth_gbps || 273 }
+                                }
+                              }
+                            }
+                          }))
+                        }}
                       />
                     </div>
 
-                    {/* 微架构参数 (4列) */}
+                    {/* 内存 - LMEM */}
                     <div className="border-t border-dashed my-2 pt-1.5">
-                      <span className="text-xs text-gray-500">微架构 / GEMM</span>
+                      <span className="text-xs text-gray-500">本地内存 (LMEM)</span>
                     </div>
-                    <div className="grid grid-cols-4 gap-3 mb-1.5">
+                    <div className="grid grid-cols-3 gap-3 mb-2">
                       <FormInputField
-                        label="Cube M"
-                        tooltip="矩阵单元 M 维度"
-                        min={1}
-                        value={chipParams.cube_m ?? 0}
-                        onChange={(v) => updateChipParam(chipName, 'cube_m', v)}
-                        inputClassName="placeholder:text-xs"
-                        placeholder="自动"
-                      />
-                      <FormInputField
-                        label="Cube K"
-                        tooltip="矩阵单元 K 维度"
-                        min={1}
-                        value={chipParams.cube_k ?? 0}
-                        onChange={(v) => updateChipParam(chipName, 'cube_k', v)}
-                        inputClassName="placeholder:text-xs"
-                        placeholder="自动"
-                      />
-                      <FormInputField
-                        label="Cube N"
-                        tooltip="矩阵单元 N 维度"
-                        min={1}
-                        value={chipParams.cube_n ?? 0}
-                        onChange={(v) => updateChipParam(chipName, 'cube_n', v)}
-                        inputClassName="placeholder:text-xs"
-                        placeholder="自动"
-                      />
-                      <FormInputField
-                        label="Lane 数"
-                        tooltip="SIMD lane 数量"
-                        min={1}
-                        value={chipParams.lane_num ?? 0}
-                        onChange={(v) => updateChipParam(chipName, 'lane_num', v)}
-                        inputClassName="placeholder:text-xs"
-                        placeholder="自动"
-                      />
-                    </div>
-                    <div className="grid grid-cols-4 gap-3">
-                      <FormInputField
-                        label="SRAM (KB)"
-                        tooltip="每核 SRAM 大小"
+                        label="容量 (MB)"
+                        tooltip="本地内存容量"
                         min={0}
-                        value={chipParams.sram_size_kb ?? 0}
-                        onChange={(v) => updateChipParam(chipName, 'sram_size_kb', v)}
-                        inputClassName="placeholder:text-xs"
-                        placeholder="自动"
+                        max={1024}
+                        value={chipParams.memory?.lmem?.capacity_mb || 64}
+                        onChange={(v) => {
+                          setHardwareParams(prev => ({
+                            ...prev,
+                            chips: {
+                              ...prev.chips,
+                              [chipName]: {
+                                ...prev.chips[chipName],
+                                memory: {
+                                  ...prev.chips[chipName]?.memory,
+                                  lmem: { ...prev.chips[chipName]?.memory?.lmem, capacity_mb: v || 64, bandwidth_gbps: prev.chips[chipName]?.memory?.lmem?.bandwidth_gbps || 2000 }
+                                }
+                              }
+                            }
+                          }))
+                        }}
                       />
                       <FormInputField
-                        label="SRAM利用"
-                        tooltip="SRAM 可用比例 (0-1)"
+                        label="带宽 (GB/s)"
+                        tooltip="本地内存带宽"
+                        min={0}
+                        max={100000}
+                        value={chipParams.memory?.lmem?.bandwidth_gbps || 2000}
+                        onChange={(v) => {
+                          setHardwareParams(prev => ({
+                            ...prev,
+                            chips: {
+                              ...prev.chips,
+                              [chipName]: {
+                                ...prev.chips[chipName],
+                                memory: {
+                                  ...prev.chips[chipName]?.memory,
+                                  lmem: { ...prev.chips[chipName]?.memory?.lmem, bandwidth_gbps: v || 2000, capacity_mb: prev.chips[chipName]?.memory?.lmem?.capacity_mb || 64 }
+                                }
+                              }
+                            }
+                          }))
+                        }}
+                      />
+                      <FormInputField
+                        label="延迟 (ns)"
+                        tooltip="本地内存访问延迟"
+                        min={0}
+                        max={100}
+                        value={chipParams.memory?.lmem?.latency_ns || 1}
+                        onChange={(v) => {
+                          setHardwareParams(prev => ({
+                            ...prev,
+                            chips: {
+                              ...prev.chips,
+                              [chipName]: {
+                                ...prev.chips[chipName],
+                                memory: {
+                                  ...prev.chips[chipName]?.memory,
+                                  lmem: { ...prev.chips[chipName]?.memory?.lmem, latency_ns: v || 1, capacity_mb: prev.chips[chipName]?.memory?.lmem?.capacity_mb || 64, bandwidth_gbps: prev.chips[chipName]?.memory?.lmem?.bandwidth_gbps || 2000 }
+                                }
+                              }
+                            }
+                          }))
+                        }}
+                      />
+                    </div>
+
+                    {/* DMA 引擎 */}
+                    <div className="border-t border-dashed my-2 pt-1.5">
+                      <span className="text-xs text-gray-500">DMA 引擎</span>
+                    </div>
+                    <div className="grid grid-cols-3 gap-3 mb-2">
+                      <FormInputField
+                        label="GDMA 带宽"
+                        tooltip="Global DMA 带宽 (GB/s)"
+                        min={0}
+                        max={10000}
+                        value={chipParams.dma_engines?.gdma?.bandwidth_gbps || 68}
+                        onChange={(v) => {
+                          setHardwareParams(prev => ({
+                            ...prev,
+                            chips: {
+                              ...prev.chips,
+                              [chipName]: {
+                                ...prev.chips[chipName],
+                                dma_engines: {
+                                  ...prev.chips[chipName]?.dma_engines,
+                                  gdma: { ...prev.chips[chipName]?.dma_engines?.gdma, bandwidth_gbps: v || 68 }
+                                }
+                              }
+                            }
+                          }))
+                        }}
+                      />
+                      <FormInputField
+                        label="SDMA 带宽"
+                        tooltip="Shared DMA 带宽 (GB/s)"
+                        min={0}
+                        max={10000}
+                        value={chipParams.dma_engines?.sdma?.bandwidth_gbps || 1000}
+                        onChange={(v) => {
+                          setHardwareParams(prev => ({
+                            ...prev,
+                            chips: {
+                              ...prev.chips,
+                              [chipName]: {
+                                ...prev.chips[chipName],
+                                dma_engines: {
+                                  ...prev.chips[chipName]?.dma_engines,
+                                  sdma: { ...prev.chips[chipName]?.dma_engines?.sdma, bandwidth_gbps: v || 1000 }
+                                }
+                              }
+                            }
+                          }))
+                        }}
+                      />
+                      <FormInputField
+                        label="GDMA 效率"
+                        tooltip="Global DMA 效率 (0-1)"
                         min={0}
                         max={1}
                         step={0.01}
-                        value={chipParams.sram_utilization ?? 0}
-                        onChange={(v) => updateChipParam(chipName, 'sram_utilization', v)}
-                        inputClassName="placeholder:text-xs"
-                        placeholder="自动"
+                        value={chipParams.dma_engines?.gdma?.efficiency || 0.9}
+                        onChange={(v) => {
+                          setHardwareParams(prev => ({
+                            ...prev,
+                            chips: {
+                              ...prev.chips,
+                              [chipName]: {
+                                ...prev.chips[chipName],
+                                dma_engines: {
+                                  ...prev.chips[chipName]?.dma_engines,
+                                  gdma: { ...prev.chips[chipName]?.dma_engines?.gdma, efficiency: v || 0.9, bandwidth_gbps: prev.chips[chipName]?.dma_engines?.gdma?.bandwidth_gbps || 68 }
+                                }
+                              }
+                            }
+                          }))
+                        }}
                       />
+                    </div>
+
+                    {/* 片上互联 NoC */}
+                    <div className="border-t border-dashed my-2 pt-1.5">
+                      <span className="text-xs text-gray-500">片上互联 (NoC)</span>
+                    </div>
+                    <div className="grid grid-cols-3 gap-3 mb-2">
+                      <div>
+                        <span className="text-xs text-gray-600 block mb-1">拓扑</span>
+                        <Input
+                          value={chipParams.interconnect?.noc?.topology || 'mesh'}
+                          onChange={(e) => {
+                            const topology = e.target.value
+                            setHardwareParams(prev => ({
+                              ...prev,
+                              chips: {
+                                ...prev.chips,
+                                [chipName]: {
+                                  ...prev.chips[chipName],
+                                  interconnect: {
+                                    ...prev.chips[chipName]?.interconnect,
+                                    noc: { ...prev.chips[chipName]?.interconnect?.noc, topology: topology || 'mesh', bandwidth_gbps: prev.chips[chipName]?.interconnect?.noc?.bandwidth_gbps || 1000 }
+                                  }
+                                }
+                              }
+                            }))
+                          }}
+                          placeholder="mesh"
+                          className="h-7"
+                        />
+                      </div>
                       <FormInputField
-                        label="对齐字节"
-                        tooltip="内存对齐字节数"
-                        min={1}
-                        value={chipParams.align_bytes ?? 0}
-                        onChange={(v) => updateChipParam(chipName, 'align_bytes', v)}
-                        inputClassName="placeholder:text-xs"
-                        placeholder="自动"
-                      />
-                      <FormInputField
-                        label="重叠率"
-                        tooltip="计算-搬运重叠率 (0-1)"
+                        label="带宽 (GB/s)"
+                        tooltip="NoC 带宽"
                         min={0}
-                        max={1}
-                        step={0.01}
-                        value={chipParams.compute_dma_overlap_rate ?? 0}
-                        onChange={(v) => updateChipParam(chipName, 'compute_dma_overlap_rate', v)}
-                        inputClassName="placeholder:text-xs"
-                        placeholder="自动"
+                        max={100000}
+                        value={chipParams.interconnect?.noc?.bandwidth_gbps || 1000}
+                        onChange={(v) => {
+                          setHardwareParams(prev => ({
+                            ...prev,
+                            chips: {
+                              ...prev.chips,
+                              [chipName]: {
+                                ...prev.chips[chipName],
+                                interconnect: {
+                                  ...prev.chips[chipName]?.interconnect,
+                                  noc: { ...prev.chips[chipName]?.interconnect?.noc, bandwidth_gbps: v || 1000, topology: prev.chips[chipName]?.interconnect?.noc?.topology || 'mesh' }
+                                }
+                              }
+                            }
+                          }))
+                        }}
+                      />
+                      <FormInputField
+                        label="延迟 (ns)"
+                        tooltip="NoC 延迟"
+                        min={0}
+                        max={1000}
+                        value={chipParams.interconnect?.noc?.latency_ns || 10}
+                        onChange={(v) => {
+                          setHardwareParams(prev => ({
+                            ...prev,
+                            chips: {
+                              ...prev.chips,
+                              [chipName]: {
+                                ...prev.chips[chipName],
+                                interconnect: {
+                                  ...prev.chips[chipName]?.interconnect,
+                                  noc: { ...prev.chips[chipName]?.interconnect?.noc, latency_ns: v || 10, bandwidth_gbps: prev.chips[chipName]?.interconnect?.noc?.bandwidth_gbps || 1000, topology: prev.chips[chipName]?.interconnect?.noc?.topology || 'mesh' }
+                                }
+                              }
+                            }
+                          }))
+                        }}
                       />
                     </div>
 

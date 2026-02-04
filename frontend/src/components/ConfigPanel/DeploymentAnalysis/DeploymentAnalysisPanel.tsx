@@ -52,7 +52,7 @@ import {
   submitEvaluation,
   getTaskResults,
   cancelTask as cancelBackendTask,
-} from '../../../api/tasks'
+} from '../../../api/tier6'
 import {
   extractChipGroupsFromConfig,
   generateHardwareConfigFromPanelConfig,

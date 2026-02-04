@@ -4,6 +4,8 @@
  * 定义模型参数、硬件配置、部署方案、分析结果等核心类型
  */
 
+import { ChipPreset } from '../../types/tier6';
+
 // ============================================
 // 数据类型
 // ============================================
@@ -196,47 +198,12 @@ export interface InferenceConfig {
 /** 算力精度类型 */
 export type FlopsDtype = 'BF16' | 'FP16' | 'FP8' | 'INT8';
 
-/** 芯片硬件配置 */
-export interface ChipHardwareConfig {
-  /** 芯片名称/型号 */
-  name: string;
-  /** 计算核心数 */
-  num_cores: number;
-  /** FP8 算力 (TFLOPs) */
-  compute_tflops_fp8: number;
-  /** BF16 算力 (TFLOPs) */
-  compute_tflops_bf16: number;
-  /** 内存容量 (GB) */
-  memory_capacity_gb: number;
-  /** 内存带宽 (GB/s) - 理论带宽 */
-  memory_bandwidth_gbps: number;
-  /** 内存带宽利用率 (0-1)，默认 0.85 */
-  memory_bandwidth_utilization: number;
-  /** LMEM/SRAM 片上缓存容量 (MB) */
-  lmem_capacity_mb: number;
-  /** LMEM 缓存带宽 (GB/s) */
-  lmem_bandwidth_gbps: number;
-  /** 成本 ($/hour) - 云服务商按需实例价格 */
-  cost_per_hour?: number;
-
-  // ========== 微架构参数（可选，用于精确 GEMM 评估） ==========
-  /** 矩阵单元 M 维度 (如 SG2260E=16, H100=16) */
-  cube_m?: number;
-  /** 矩阵单元 K 维度 - 累加维度 (如 SG2260E=32, H100=16) */
-  cube_k?: number;
-  /** 矩阵单元 N 维度 (如 SG2260E=8, H100=16) */
-  cube_n?: number;
-  /** 每核 SRAM 大小 (KB) (如 SG2260E=2048, H100=256) */
-  sram_size_kb?: number;
-  /** SRAM 可用比例 (0-1) (如 SG2260E=0.45, H100=0.5) */
-  sram_utilization?: number;
-  /** SIMD lane 数量 - 行对齐基数 (如 SG2260E=16, H100=32) */
-  lane_num?: number;
-  /** 内存对齐字节数 - 列对齐基数 (如 SG2260E=32, H100=128) */
-  align_bytes?: number;
-  /** 计算-搬运重叠率 (0-1) (如 SG2260E=0.8, H100=0.9) */
-  compute_dma_overlap_rate?: number;
-}
+/**
+ * 芯片硬件配置 - 使用 Tier6 ChipPreset 格式
+ *
+ * 参见 types/tier6.ts 中的 ChipPreset 接口定义
+ */
+export type ChipHardwareConfig = ChipPreset;
 
 /** 互联参数 */
 export interface InterconnectParams {

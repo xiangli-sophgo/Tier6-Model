@@ -144,17 +144,18 @@ export const ConfigSnapshotDisplay: React.FC<ConfigSnapshotDisplayProps> = ({
           {/* 芯片硬件信息（如果有） */}
           {(() => {
             const pods = (topology as any).pods || []
+            const hardwareParams = (topology as any).hardware_params
             if (pods.length > 0 && pods[0].racks && pods[0].racks[0].boards && pods[0].racks[0].boards[0].chips) {
-              const chip = pods[0].racks[0].boards[0].chips[0]
+              const chipInfo = pods[0].racks[0].boards[0].chips[0]
+              // 从 hardware_params.chips 获取详细芯片配置 (Tier6 ChipPreset 格式)
+              const chipConfig = hardwareParams?.chips?.[chipInfo.name]
               return (
                 <DescList className="mt-3">
-                  <DescItem label="芯片型号" span={2}>{chip.name || '-'}</DescItem>
-                  <DescItem label="算力 (TFLOPS FP16)">{chip.compute_tflops_fp16 || '-'}</DescItem>
-                  <DescItem label="显存 (GB)">{chip.memory_gb || '-'}</DescItem>
-                  <DescItem label="显存带宽 (GB/s)">{chip.memory_bandwidth_gbps || '-'}</DescItem>
-                  <DescItem label="显存带宽利用率">
-                    {chip.memory_bandwidth_utilization ? `${(chip.memory_bandwidth_utilization * 100).toFixed(0)}%` : '-'}
-                  </DescItem>
+                  <DescItem label="芯片型号" span={2}>{chipInfo.name || '-'}</DescItem>
+                  <DescItem label="核心数">{chipConfig?.cores?.count || '-'}</DescItem>
+                  <DescItem label="Lane/核心">{chipConfig?.cores?.lanes_per_core || '-'}</DescItem>
+                  <DescItem label="GMEM 容量">{chipConfig?.memory?.gmem?.capacity_gb ? `${chipConfig.memory.gmem.capacity_gb} GB` : '-'}</DescItem>
+                  <DescItem label="GMEM 带宽">{chipConfig?.memory?.gmem?.bandwidth_gbps ? `${chipConfig.memory.gmem.bandwidth_gbps} GB/s` : '-'}</DescItem>
                 </DescList>
               )
             }
