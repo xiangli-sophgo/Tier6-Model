@@ -366,9 +366,9 @@ export const GanttChartCanvas: React.FC<GanttChartCanvasProps> = ({
       const sw = Math.abs(selectionEnd.x - selectionStart.x)
       const sh = Math.abs(selectionEnd.y - selectionStart.y)
 
-      ctx.fillStyle = 'rgba(94, 106, 210, 0.1)'
+      ctx.fillStyle = 'rgba(96, 165, 250, 0.1)'
       ctx.fillRect(sx, sy, sw, sh)
-      ctx.strokeStyle = '#5E6AD2'
+      ctx.strokeStyle = '#60A5FA'
       ctx.lineWidth = 1
       ctx.strokeRect(sx, sy, sw, sh)
     }
@@ -520,16 +520,20 @@ export const GanttChartCanvas: React.FC<GanttChartCanvasProps> = ({
     }
   }, [data, isSelecting, selectionStart, selectionEnd, isDragging, tooltip, onTaskClick, visibleTimeRange, innerWidth, zoom])
 
-  // 滚轮事件
+  // 滚轮事件处理（在 DOM 级别强制拦截）
   useEffect(() => {
-    const canvas = canvasRef.current
-    if (!canvas || !data) return
+    const container = containerRef.current
+    if (!container || !data) return
 
     const handleWheel = (e: WheelEvent) => {
       const totalDuration = data.timeRange.end - data.timeRange.start
 
       if (e.ctrlKey || e.metaKey) {
+        // 强制阻止浏览器缩放
         e.preventDefault()
+        e.stopPropagation()
+        e.stopImmediatePropagation()
+
         if (e.deltaY < 0) {
           setZoom(z => Math.min(z * 1.2, 50))
         } else {
@@ -540,20 +544,23 @@ export const GanttChartCanvas: React.FC<GanttChartCanvasProps> = ({
             return newZoom
           })
         }
-        return
+        return false
       }
 
       if (e.shiftKey && zoom > 1) {
         e.preventDefault()
+        e.stopPropagation()
         const visibleDuration = totalDuration / zoom
         const panStep = visibleDuration * 0.1
         const delta = e.deltaY > 0 ? panStep : -panStep
         setPanOffset(offset => Math.max(0, Math.min(offset + delta, totalDuration - visibleDuration)))
+        return false
       }
     }
 
-    canvas.addEventListener('wheel', handleWheel, { passive: false })
-    return () => canvas.removeEventListener('wheel', handleWheel)
+    // 在容器上监听，使用捕获阶段 + passive: false
+    container.addEventListener('wheel', handleWheel, { passive: false, capture: true })
+    return () => container.removeEventListener('wheel', handleWheel, { capture: true })
   }, [data, zoom])
 
   // 缩放控制
@@ -599,11 +606,15 @@ export const GanttChartCanvas: React.FC<GanttChartCanvasProps> = ({
   }
 
   return (
-    <div ref={containerRef} style={{ width: '100%' }}>
+    <div
+      ref={containerRef}
+      tabIndex={0}
+      style={{ width: '100%', outline: 'none', touchAction: 'none' }}
+    >
       {/* 工具栏 */}
       <div style={{ marginBottom: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <span className="text-[10px] text-gray-500">
-          Ctrl+滚轮: 缩放 | Shift+滚轮: 平移 | Alt+拖拽: 框选放大
+          Ctrl+滚轮: 缩放 | Shift+滚轮: 平移 | 拖拽: 平移 | Alt+拖拽: 框选放大
         </span>
         <div className="flex items-center gap-1">
           {/* 类型过滤 */}
@@ -661,6 +672,7 @@ export const GanttChartCanvas: React.FC<GanttChartCanvasProps> = ({
           width: chartWidth,
           height: chartHeight + (zoom > 1 ? SCROLLBAR_HEIGHT + 6 : 0),
           cursor: isDragging ? 'grabbing' : zoom > 1 ? 'grab' : 'default',
+          touchAction: 'none',
         }}
         onMouseMove={handleCanvasMouseMove}
         onMouseDown={handleCanvasMouseDown}

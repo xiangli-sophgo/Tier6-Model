@@ -87,7 +87,7 @@ export const LEVEL_PAIR_CONFIGS = {
 export const DEFAULT_NODE_COLORS: Record<string, string> = {
   pod: '#1890ff',
   rack: '#52c41a',
-  board: '#722ed1',
+  board: '#3B82F6',
   chip: '#eb2f96',
   switch: '#666',
 }

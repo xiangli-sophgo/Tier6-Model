@@ -420,6 +420,7 @@ def create_and_submit_task(
     enable_tile_search: bool = True,
     enable_partition_search: bool = False,
     max_simulated_tokens: int = 4,
+    experiment_description: Optional[str] = None,
 ) -> str:
     """
     创建并提交评估任务
@@ -436,11 +437,17 @@ def create_and_submit_task(
         ).first()
 
         if not experiment:
+            # 创建新实验：优先使用 experiment_description，否则使用 description
             experiment = Experiment(
                 name=experiment_name,
-                description=description,
+                description=experiment_description or description,
             )
             db.add(experiment)
+            db.commit()
+            db.refresh(experiment)
+        elif experiment_description and experiment.description != experiment_description:
+            # 实验已存在：如果提供了 experiment_description 且与当前不同，则更新
+            experiment.description = experiment_description
             db.commit()
             db.refresh(experiment)
 

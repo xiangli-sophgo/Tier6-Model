@@ -5,8 +5,8 @@
 
 /** 主色调 */
 export const CHART_COLORS = {
-  /** 主色 - 品牌蓝 */
-  primary: '#5E6AD2',
+  /** 主色 - 淡蓝色 */
+  primary: '#60A5FA',
   /** 成功色 - 绿色 */
   success: '#52c41a',
   /** 警告色 - 橙色 */
@@ -15,8 +15,8 @@ export const CHART_COLORS = {
   danger: '#ff4d4f',
   /** 信息色 - 蓝色 */
   info: '#1890ff',
-  /** 紫色 */
-  purple: '#722ed1',
+  /** 蓝色 */
+  purple: '#3B82F6',
   /** 品红色 */
   magenta: '#eb2f96',
   /** 青色 */
@@ -25,10 +25,10 @@ export const CHART_COLORS = {
 
 /** 图表配色方案（用于多系列数据） */
 export const CHART_SERIES_COLORS = [
-  '#5E6AD2', // 品牌蓝
+  '#60A5FA', // 淡蓝色
   '#52c41a', // 绿色
   '#faad14', // 橙色
-  '#722ed1', // 紫色
+  '#3B82F6', // 蓝色
   '#eb2f96', // 品红
   '#13c2c2', // 青色
   '#1890ff', // 信息蓝
@@ -39,8 +39,8 @@ export const CHART_SERIES_COLORS = [
 export const CHART_GRADIENTS = {
   /** 蓝色渐变（主色调） */
   blue: {
-    start: '#5E6AD2',
-    end: '#8B93E8',
+    start: '#60A5FA',
+    end: '#93C5FD',
   },
   /** 绿色渐变（成功） */
   green: {
@@ -57,10 +57,10 @@ export const CHART_GRADIENTS = {
     start: '#ff4d4f',
     end: '#ff7875',
   },
-  /** 紫色渐变 */
+  /** 蓝色渐变 */
   purple: {
-    start: '#722ed1',
-    end: '#b37feb',
+    start: '#3B82F6',
+    end: '#60A5FA',
   },
 } as const
 
@@ -130,11 +130,11 @@ export const GANTT_CATEGORY_COLORS = {
     light: '#69c0ff',
     dark: '#096dd9',
   },
-  /** PP 通信 - 紫色 */
+  /** PP 通信 - 蓝色 */
   pp: {
-    primary: '#722ed1',
-    light: '#b37feb',
-    dark: '#531dab',
+    primary: '#3B82F6',
+    light: '#60A5FA',
+    dark: '#2563EB',
   },
   /** EP/MoE 通信 - 品红色 */
   ep: {
@@ -208,15 +208,15 @@ export const BOTTLENECK_COLORS = {
   memory: '#1890ff',    // 带宽受限 - 蓝色
   compute: '#52c41a',   // 算力受限 - 绿色
   communication: '#faad14', // 通信受限 - 橙色
-  balanced: '#722ed1',  // 均衡 - 紫色
+  balanced: '#3B82F6',  // 均衡 - 蓝色
 } as const
 
 /** 显存分解配色 */
 export const MEMORY_COMPONENT_COLORS = {
-  model: '#5E6AD2',      // 模型参数 - 品牌蓝
-  kv: '#52c41a',         // KV Cache - 绿色
-  activation: '#faad14', // 激活值 - 橙色
-  overhead: '#ff7a45',   // 其他开销 - 珊瑚橙
+  model: '#3B82F6',      // 模型参数 - 蓝色（最深）
+  kv: '#60A5FA',         // KV Cache - 淡蓝色（中等）
+  activation: '#93C5FD', // 激活值 - 浅蓝色（最浅）
+  overhead: '#BFDBFE',   // 其他开销 - 极浅蓝色
 } as const
 
 /** 空状态提示文字 */
@@ -229,15 +229,17 @@ export const EMPTY_STATE_TEXT = {
 
 /** 通用图表配置 */
 export const ECHARTS_COMMON_CONFIG = {
-  /** 工具提示通用配置 */
+  /** 工具提示通用配置 - 浅色风格 */
   tooltip: {
-    backgroundColor: 'rgba(0, 0, 0, 0.85)',
-    borderColor: 'transparent',
+    backgroundColor: 'rgba(255, 255, 255, 0.98)',
+    borderColor: '#e5e5e5',
+    borderWidth: 1,
     textStyle: {
-      color: '#fff',
+      color: '#333',
       fontSize: 12,
     },
     padding: [10, 14],
+    extraCssText: 'box-shadow: 0 4px 12px rgba(0,0,0,0.1);',
   },
   /** 网格通用配置 */
   grid: {

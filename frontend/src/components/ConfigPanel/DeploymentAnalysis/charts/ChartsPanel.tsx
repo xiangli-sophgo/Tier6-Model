@@ -193,10 +193,10 @@ export const ChartsPanel: React.FC<ChartsPanelProps> = ({
   return (
     <div>
       {/* ═══════════════════════════════════════════════════════════════ */}
-      {/* 四、性能分析与可视化 */}
+      {/* 四、结果可视化 */}
       {/* ═══════════════════════════════════════════════════════════════ */}
       <BaseCard
-        title="性能分析与可视化"
+        title="结果可视化"
         className="mb-4"
       >
         {/* 第一行：Roofline + 内存占用（网格布局） */}
@@ -266,28 +266,35 @@ export const ChartsPanel: React.FC<ChartsPanelProps> = ({
           </div>
         </div>
 
-        {/* 第二行：算子时间分解 + 层级时间分解（网格布局） */}
+        {/* 第二行：拓扑流量分析 + 层级时间分解（高度大） */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-          {/* 算子时间分解 */}
-          <div style={CHART_CARD_STYLE} className="transition-shadow hover:shadow-md">
-            <div style={CHART_TITLE_STYLE}>
-              <span className="font-semibold">算子时间分解</span>
-              <span className="text-[11px] text-gray-500">不同算子类型的时间占比</span>
+          {/* 拓扑流量分析 */}
+          <div style={{ ...CHART_CARD_STYLE, display: 'flex', flexDirection: 'column' }} className="transition-shadow hover:shadow-md">
+            <div style={{ ...CHART_TITLE_STYLE, flexShrink: 0 }}>
+              <span className="font-semibold">拓扑流量分析</span>
+              <span className="text-[11px] text-gray-500">
+                链路带宽利用率与通信热点可视化
+              </span>
             </div>
-            <div style={{ maxHeight: '500px', overflowY: 'auto', overflowX: 'hidden' }}>
-              <OperatorTimeBreakdownChart
-                data={externalGanttData ?? simulationResult?.ganttChart ?? null}
+            <div style={{ flex: 1, minHeight: 400 }}>
+              <TopologyTrafficChart
+                topology={topology ?? null}
+                linkTrafficStats={
+                  externalStats?.linkTrafficStats ??
+                  simulationResult?.stats?.linkTrafficStats ??
+                  null
+                }
               />
             </div>
           </div>
 
           {/* 层级时间分解 */}
-          <div style={CHART_CARD_STYLE} className="transition-shadow hover:shadow-md">
-            <div style={CHART_TITLE_STYLE}>
+          <div style={{ ...CHART_CARD_STYLE, display: 'flex', flexDirection: 'column', maxHeight: 800 }} className="transition-shadow hover:shadow-md">
+            <div style={{ ...CHART_TITLE_STYLE, flexShrink: 0 }}>
               <span className="font-semibold">层级时间分解</span>
               <span className="text-[11px] text-gray-500">每层的计算/访存/通信占比</span>
             </div>
-            <div style={{ maxHeight: '500px', overflowY: 'auto', overflowX: 'hidden' }}>
+            <div style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden' }}>
               <LayerWaterfallChart
                 data={externalGanttData ?? simulationResult?.ganttChart ?? null}
               />
@@ -295,51 +302,47 @@ export const ChartsPanel: React.FC<ChartsPanelProps> = ({
           </div>
         </div>
 
-        {/* 拓扑流量图（新增） */}
-        <div style={CHART_CARD_STYLE} className="mb-4">
-          <div style={CHART_TITLE_STYLE}>
-            <span className="font-semibold">拓扑流量分析</span>
-            <span className="text-[11px] text-gray-500">
-              链路带宽利用率与通信热点可视化
-            </span>
-          </div>
-          <div style={{ maxHeight: '650px', overflowY: 'auto' }}>
-            <TopologyTrafficChart
-              topology={topology ?? null}
-              linkTrafficStats={
-                externalStats?.linkTrafficStats ??
-                simulationResult?.stats?.linkTrafficStats ??
-                null
-              }
-              height={600}
-            />
-          </div>
-        </div>
-
-        {/* 第三行：时序甘特图（全宽） */}
-        <div style={CHART_CARD_STYLE} className="mb-4">
-          <div style={CHART_TITLE_STYLE}>
-            <span className="font-semibold">Prefill + Decode 时序甘特图</span>
-            <div className="flex items-center gap-2">
-              <span className="text-[11px] text-gray-500">点击任务查看详情</span>
-              {(externalStats || simulationResult?.stats) && (
-                <span className="text-[11px] text-gray-500">
-                  | TTFT: {(externalStats?.ttft ?? simulationResult?.stats.ttft ?? 0).toFixed(2)}ms
-                  | Avg TPOT: {(externalStats?.avgTpot ?? simulationResult?.stats.avgTpot ?? 0).toFixed(2)}ms
-                  | 动态MFU: {((externalStats?.dynamicMfu ?? simulationResult?.stats.dynamicMfu ?? 0) * 100).toFixed(1)}%
-                </span>
-              )}
+        {/* 第三行：算子时间分解 + 甘特图（高度小） */}
+        <div className="flex gap-4 mb-4">
+          {/* 算子时间分解 */}
+          <div style={CHART_CARD_STYLE} className="flex-1 min-w-0">
+            <div style={CHART_TITLE_STYLE}>
+              <span className="font-semibold">算子时间分解</span>
+              <span className="text-[11px] text-gray-500">不同算子类型的时间占比</span>
+            </div>
+            <div>
+              <OperatorTimeBreakdownChart
+                data={externalGanttData ?? simulationResult?.ganttChart ?? null}
+                height={250}
+              />
             </div>
           </div>
-          <div style={{ maxHeight: '500px', overflowY: 'auto', overflowX: 'hidden' }}>
-            <GanttChart
-              data={externalGanttData ?? simulationResult?.ganttChart ?? null}
-              showLegend
-              onTaskClick={(task) => {
-                setSelectedTask(task)
-                setIsDrawerOpen(true)
-              }}
-            />
+
+          {/* 时序甘特图 */}
+          <div style={CHART_CARD_STYLE} className="flex-1 min-w-0">
+            <div style={CHART_TITLE_STYLE}>
+              <span className="font-semibold">Prefill + Decode 时序甘特图</span>
+              <div className="flex items-center gap-2">
+                <span className="text-[11px] text-gray-500">点击任务查看详情</span>
+                {(externalStats || simulationResult?.stats) && (
+                  <span className="text-[11px] text-gray-500">
+                    | TTFT: {(externalStats?.ttft ?? simulationResult?.stats.ttft ?? 0).toFixed(2)}ms
+                    | Avg TPOT: {(externalStats?.avgTpot ?? simulationResult?.stats.avgTpot ?? 0).toFixed(2)}ms
+                    | 动态MFU: {((externalStats?.dynamicMfu ?? simulationResult?.stats.dynamicMfu ?? 0) * 100).toFixed(1)}%
+                  </span>
+                )}
+              </div>
+            </div>
+            <div className="flex items-center justify-center" style={{ height: '280px', overflowX: 'auto' }}>
+              <GanttChart
+                data={externalGanttData ?? simulationResult?.ganttChart ?? null}
+                showLegend
+                onTaskClick={(task) => {
+                  setSelectedTask(task)
+                  setIsDrawerOpen(true)
+                }}
+              />
+            </div>
           </div>
         </div>
       </BaseCard>

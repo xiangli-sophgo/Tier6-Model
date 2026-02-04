@@ -1,0 +1,95 @@
+# SG2260E 芯片配置
+# 基于 TPU V7.1 架构
+
+chip:
+  name: SG2260E
+  architecture: TPU_V7.1
+  process: 7nm
+  frequency_ghz: 1.0
+
+  # 核心配置
+  cores:
+    count: 8  # 8 个计算核心
+    lanes_per_core: 64  # 每核 64 Lane
+
+  # 计算单元
+  compute_units:
+    cube:
+      mac_per_lane:
+        INT8: 256
+        FP8: 256
+        BF16: 128
+        FP16: 128
+        TF32: 64
+        INT4: 512
+
+    vector:
+      eu_per_lane:
+        INT8: 64
+        FP8: 64
+        INT16: 32
+        BF16: 32
+        FP16: 32
+        INT32: 16
+        FP32: 16
+
+  # 内存层级
+  memory:
+    gmem:
+      type: LPDDR5
+      channels: 16
+      rate_mt: 8533
+      width_bits: 16
+      capacity_gb: 64
+      bandwidth_gbps: 273  # 16 * 8533 * 16 / 8 / 1000 * 0.8
+      latency_ns: 100
+
+    l2m:
+      capacity_mb: 64  # 8 cores × 8MB
+      bandwidth_gbps: 1000
+      latency_ns: 10
+
+    lmem:
+      capacity_mb: 64  # 8 cores × 8MB per core
+      bandwidth_gbps: 2000
+      latency_ns: 1
+
+    smem:
+      capacity_kb: 512  # 8 cores × 64KB per core
+      bandwidth_gbps: 2000
+      latency_ns: 1
+
+  # DMA 引擎
+  dma_engines:
+    gdma:
+      bandwidth_gbps: 34  # dram_bw / 8 cores
+      startup_latency_ns: 100
+      efficiency: 0.9
+
+    sdma:
+      bandwidth_gbps: 1000
+      startup_latency_ns: 50
+      efficiency: 0.95
+
+    cdma:
+      bandwidth_gbps: 112
+      startup_latency_ns: 200
+      efficiency: 0.85
+
+  # 互联
+  interconnect:
+    noc:
+      topology: mesh
+      bandwidth_gbps: 1000
+      latency_ns: 10
+
+    c2c:
+      topology: ring
+      links: 10
+      bandwidth_gbps: 112  # per link
+      # total_bandwidth_gbps: 1120  # 10 * 112
+
+# 派生参数（供参考）
+# cube_peak_bf16_tflops: 131.0  # 8 * 64 * 128 * 2 * 1.0 / 1000
+# vector_peak_fp32_tflops: 8.2  # 8 * 64 * 16 * 1.0 / 1000
+# ridge_point_bf16: 480  # 131.0 * 1000 / 273

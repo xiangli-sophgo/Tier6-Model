@@ -99,6 +99,8 @@ export const TopologyGraph: React.FC<TopologyGraphProps> = ({
   // 视图切换
   viewMode,
   onViewModeChange,
+  // 是否显示控制面板
+  showControls = true,
 }) => {
   void _onNavigateBack
   void _canGoBack
@@ -110,7 +112,7 @@ export const TopologyGraph: React.FC<TopologyGraphProps> = ({
   void onMultiLevelOptionsChange
   const svgRef = useRef<SVGSVGElement>(null)
   const [zoom, setZoom] = useState(1)
-  const [tooltip, setTooltip] = useState<{ x: number; y: number; content: string } | null>(null)
+  const [tooltip, setTooltip] = useState<{ x: number; y: number; content: React.ReactNode } | null>(null)
   const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null)
 
   // 力导向布局动态模拟
@@ -344,9 +346,9 @@ export const TopologyGraph: React.FC<TopologyGraphProps> = ({
           <rect x={-halfW} y={-halfH} width={size.w} height={size.h} rx={6} fill={node.color} stroke="#fff" strokeWidth={1.5} />
         )}
 
-        {/* 统一标签渲染 */}
+        {/* 统一标签渲染 - chip 类型直接显示芯片型号，其他类型格式化 */}
         <text y={size.labelY} textAnchor="middle" fill="#fff" fontSize={size.fontSize} fontWeight={600} style={{ pointerEvents: 'none' }}>
-          {formatNodeLabel(node.label)}
+          {nodeType === 'chip' ? node.label : formatNodeLabel(node.label)}
         </text>
       </>
     )
@@ -970,7 +972,7 @@ export const TopologyGraph: React.FC<TopologyGraphProps> = ({
       )}
 
       {/* 右上角控制面板悬浮框 */}
-      {embedded && (
+      {embedded && showControls && (
         <ControlPanel
           multiLevelOptions={multiLevelOptions}
           onMultiLevelOptionsChange={onMultiLevelOptionsChange}
@@ -1214,23 +1216,24 @@ export const TopologyGraph: React.FC<TopologyGraphProps> = ({
           </span>
         </div>
 
-        {/* 悬停提示 */}
+        {/* 悬停提示 - 统一浅色风格 */}
         {tooltip && (
           <div style={{
             position: 'absolute',
             left: tooltip.x,
             top: tooltip.y,
             transform: 'translateX(-50%)',
-            background: '#171717',
-            color: '#fff',
-            padding: '6px 10px',
+            background: 'rgba(255, 255, 255, 0.98)',
+            color: '#333',
+            padding: '8px 12px',
             borderRadius: 6,
-            boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)',
+            border: '1px solid #e5e5e5',
+            boxShadow: '0 4px 12px rgba(0, 0, 0, 0.1)',
             fontSize: 11,
             fontFamily: "'JetBrains Mono', monospace",
-            whiteSpace: 'nowrap',
             pointerEvents: 'none',
             zIndex: 1000,
+            minWidth: 140,
           }}>
             {tooltip.content}
           </div>

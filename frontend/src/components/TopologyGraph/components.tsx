@@ -50,7 +50,7 @@ export const ManualConnectionLine: React.FC<AnimatedManualConnectionProps> = ({
 }) => {
   if (!sourcePos || !targetPos) return null
 
-  const strokeColor = isSelected ? '#52c41a' : (isCrossContainer ? '#722ed1' : '#b0b0b0')
+  const strokeColor = isSelected ? '#52c41a' : (isCrossContainer ? '#3B82F6' : '#b0b0b0')
   const strokeWidth = isSelected ? 3 : 2
   const transitionStyle = { transition: 'all 0.3s ease-out' }
 
@@ -178,8 +178,8 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
   onLayoutChange,
 }) => {
   return (
-    <div className="absolute right-4 top-4 z-[50] rounded-lg border border-border bg-white p-3.5 shadow-md">
-      <div className="flex items-center gap-3">
+    <div className="absolute right-4 top-4 z-[50] rounded-lg border border-border bg-white p-2.5 shadow-md">
+      <div className="flex items-center gap-2">
         <Tabs
           value={multiLevelOptions?.enabled ? 'multi' : 'single'}
           onValueChange={(value) => {
@@ -210,13 +210,13 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
             }
           }}
         >
-          <TabsList>
-            <TabsTrigger value="single">单层级</TabsTrigger>
-            <TabsTrigger value="multi">多层级</TabsTrigger>
+          <TabsList className="h-7">
+            <TabsTrigger value="single" className="text-xs h-6 px-2">单层级</TabsTrigger>
+            <TabsTrigger value="multi" className="text-xs h-6 px-2">多层级</TabsTrigger>
           </TabsList>
         </Tabs>
 
-        <div className="h-5 w-px bg-border" />
+        <div className="h-4 w-px bg-border" />
 
         <Tabs
           value={layoutType}
@@ -225,17 +225,17 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
             onLayoutChange?.()
           }}
         >
-          <TabsList>
-            <TabsTrigger value="auto">自动</TabsTrigger>
-            <TabsTrigger value="circle">环形</TabsTrigger>
-            <TabsTrigger value="grid">网格</TabsTrigger>
-            <TabsTrigger value="force">力导向</TabsTrigger>
+          <TabsList className="h-7">
+            <TabsTrigger value="auto" className="text-xs h-6 px-2">自动</TabsTrigger>
+            <TabsTrigger value="circle" className="text-xs h-6 px-2">环形</TabsTrigger>
+            <TabsTrigger value="grid" className="text-xs h-6 px-2">网格</TabsTrigger>
+            <TabsTrigger value="force" className="text-xs h-6 px-2">力导向</TabsTrigger>
           </TabsList>
         </Tabs>
 
         {isForceMode && (
           <InfoTooltip content={isForceSimulating ? '物理模拟进行中，可直接拖拽节点' : '物理模拟已稳定'}>
-            <span className="flex items-center gap-1 text-[11px]" style={{
+            <span className="flex items-center gap-1 text-[10px]" style={{
               color: isForceSimulating ? '#52c41a' : '#8c8c8c',
             }}>
               <span className="h-1.5 w-1.5 rounded-full" style={{
@@ -247,16 +247,17 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
           </InfoTooltip>
         )}
 
-        <div className="h-5 w-px bg-border" />
+        <div className="h-4 w-px bg-border" />
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5">
           <Checkbox
             checked={isManualMode}
             onCheckedChange={setIsManualMode}
             disabled={multiLevelOptions?.enabled || isForceMode}
             id="manual-mode"
+            className="h-3.5 w-3.5"
           />
-          <label htmlFor="manual-mode" className="text-xs cursor-pointer">
+          <label htmlFor="manual-mode" className="text-[10px] cursor-pointer">
             手动调整
           </label>
         </div>
@@ -269,9 +270,9 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
                 size="sm"
                 onClick={onUndo}
                 disabled={historyIndex < 0}
-                className="h-8 w-8 p-0"
+                className="h-6 w-6 p-0"
               >
-                <Undo className="h-4 w-4" />
+                <Undo className="h-3 w-3" />
               </Button>
             </InfoTooltip>
 
@@ -281,9 +282,9 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
                 size="sm"
                 onClick={onRedo}
                 disabled={historyIndex >= historyLength - 1}
-                className="h-8 w-8 p-0"
+                className="h-6 w-6 p-0"
               >
-                <Redo className="h-4 w-4" />
+                <Redo className="h-3 w-3" />
               </Button>
             </InfoTooltip>
 
@@ -293,9 +294,9 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
                   variant="ghost"
                   size="sm"
                   onClick={onReset}
-                  className="h-8 w-8 p-0"
+                  className="h-6 w-6 p-0"
                 >
-                  <RotateCw className="h-4 w-4" />
+                  <RotateCw className="h-3 w-3" />
                 </Button>
               </InfoTooltip>
             )}
@@ -304,7 +305,7 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
       </div>
 
       {isManualMode && (
-        <div className="mt-2.5 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-xs font-medium text-blue-600">
+        <div className="mt-2 rounded-md border border-blue-200 bg-blue-50 px-2 py-1.5 text-[10px] font-medium text-blue-600">
           Shift+拖动 · 自动吸附对齐 · 自动保存
         </div>
       )}
@@ -325,7 +326,7 @@ export interface EdgeRendererProps {
   connectionMode: 'view' | 'select' | 'connect' | 'select_source' | 'select_target'
   isManualMode: boolean
   onLinkClick?: (link: LinkDetail | null) => void
-  setTooltip: (tooltip: { x: number; y: number; content: string } | null) => void
+  setTooltip: (tooltip: { x: number; y: number; content: React.ReactNode } | null) => void
   svgRef: React.RefObject<SVGSVGElement>
   getTrafficHeatmapStyle: (source: string, target: string) => { stroke: string; strokeWidth: number; utilization: number; trafficMb: number } | null
   directTopology?: string
@@ -478,13 +479,13 @@ export const renderIndirectEdge = (
         strokeOpacity={0.08} style={{ pointerEvents: 'none' }} />
       <path d={pathD} fill="none" stroke="transparent" strokeWidth={12}
         style={{ cursor: 'pointer' }} onClick={handleClick} />
-      <path d={pathD} fill="none" stroke={isLinkSelected ? '#52c41a' : '#722ed1'}
+      <path d={pathD} fill="none" stroke={isLinkSelected ? '#52c41a' : '#3B82F6'}
         strokeWidth={isLinkSelected ? 2 : 1.5}
         strokeOpacity={isLinkSelected ? 0.9 : 0.5}
         strokeDasharray="3,3"
         style={{ pointerEvents: 'none' }} />
       <g transform={`translate(${ctrlX}, ${ctrlY})`}>
-        <circle r={5} fill={isLinkSelected ? '#52c41a' : '#722ed1'} opacity={0.7} />
+        <circle r={5} fill={isLinkSelected ? '#52c41a' : '#3B82F6'} opacity={0.7} />
         <text y={-8} textAnchor="middle" fontSize={11} fill="#666" fontWeight={500}>
           via {edge.viaNodeLabel || '上层'}
         </text>

@@ -21,30 +21,30 @@ interface OperatorTimeBreakdownChartProps {
   height?: number
 }
 
-/** 算子类型颜色映射 - 超低饱和度浅色配色，与主题色 #5E6AD2 搭配 */
+/** 算子类型颜色映射 - 超低饱和度浅色配色，与主题色 #60A5FA 搭配 */
 const OPERATOR_COLORS: Record<string, string> = {
-  // 计算类算子 - 浅蓝紫色系（接近主题色）
-  compute: '#A5AEE8',           // 浅蓝紫
-  embedding: '#B8C0ED',         // 更浅蓝紫
-  layernorm: '#CAD0F2',         // 极浅蓝紫
-  attention_qkv: '#9DA7E3',     // 稍深蓝紫
-  attention_score: '#AFB8EA',   // 浅蓝紫
-  attention_softmax: '#C0C8EF',  // 更浅蓝紫
-  attention_output: '#D1D8F4',  // 极浅蓝紫
-  ffn_gate: '#98A2E0',          // 稍深蓝紫
-  ffn_up: '#A9B3E6',            // 浅蓝紫
-  ffn_down: '#BAC3EC',          // 更浅蓝紫
-  lm_head: '#8F99DC',           // 中蓝紫
+  // 计算类算子 - 浅蓝色系（接近主题色）
+  compute: '#93C5FD',           // 淡蓝色
+  embedding: '#BFDBFE',         // 更浅蓝色
+  layernorm: '#DBEAFE',         // 极浅蓝色
+  attention_qkv: '#7DD3FC',     // 稍深蓝色
+  attention_score: '#A5B4FC',   // 淡蓝色
+  attention_softmax: '#C7D2FE',  // 更浅蓝色
+  attention_output: '#E0E7FF',  // 极浅蓝色
+  ffn_gate: '#6EE7B7',          // 稍深青蓝
+  ffn_up: '#A7F3D0',            // 浅青蓝
+  ffn_down: '#CCFBF1',          // 更浅青蓝
+  lm_head: '#60A5FA',           // 中蓝色
 
-  // MLA - 浅紫色系
-  rmsnorm_q_lora: '#C4B8E8',    // 浅紫
-  rmsnorm_kv_lora: '#D0C7ED',   // 更浅紫
-  mm_q_lora_a: '#DBD5F2',       // 极浅紫
-  mm_q_lora_b: '#E6E0F7',       // 淡紫
-  mm_kv_lora_a: '#EFEAF9',      // 极淡紫
-  attn_fc: '#BDB0E5',           // 浅紫
-  bmm_qk: '#B5A9E0',            // 稍深浅紫
-  bmm_sv: '#AFA3DD',            // 中浅紫
+  // MLA - 浅蓝色系
+  rmsnorm_q_lora: '#BAE6FD',    // 浅蓝
+  rmsnorm_kv_lora: '#D0E7FF',   // 更浅蓝
+  mm_q_lora_a: '#E0F2FE',       // 极浅蓝
+  mm_q_lora_b: '#F0F9FF',       // 淡蓝
+  mm_kv_lora_a: '#F5FBFF',      // 极淡蓝
+  attn_fc: '#A5D8FF',           // 浅蓝
+  bmm_qk: '#8FCDFF',            // 稍深浅蓝
+  bmm_sv: '#7CC2FF',            // 中浅蓝
 
   // MoE - 浅橙色系（互补色）
   moe_gate: '#F0C4B8',          // 浅橙
@@ -59,13 +59,13 @@ const OPERATOR_COLORS: Record<string, string> = {
   hbm_write: '#F7EBDC',         // 中浅金
 
   // 通信 - 浅蓝色系（与主题色同色系）
-  tp_comm: '#B8D5E8',           // 浅蓝
-  pp_comm: '#C4B8E8',           // 浅紫（与MLA呼应）
+  tp_comm: '#BAE6FD',           // 浅蓝
+  pp_comm: '#93C5FD',           // 淡蓝色（统一为蓝色）
   ep_comm: '#F0C4B8',           // 浅橙（与MoE呼应）
-  ep_dispatch: '#D0C7ED',       // 更浅紫
-  ep_combine: '#C9BFE9',        // 浅紫
-  sp_allgather: '#AECCE0',      // 稍深浅蓝
-  sp_reduce_scatter: '#A5C3D9', // 中浅蓝
+  ep_dispatch: '#BFDBFE',       // 更浅蓝
+  ep_combine: '#A5D8FF',        // 浅蓝
+  sp_allgather: '#7DD3FC',      // 稍深浅蓝
+  sp_reduce_scatter: '#6EC1F7', // 中浅蓝
 }
 
 /** 算子类型标签映射 */
@@ -187,14 +187,17 @@ export const OperatorTimeBreakdownChart: React.FC<OperatorTimeBreakdownChartProp
 
     return {
       tooltip: {
-        backgroundColor: 'rgba(0, 0, 0, 0.85)',
-        borderColor: 'transparent',
+        backgroundColor: 'rgba(255, 255, 255, 0.98)',
+        borderColor: '#e5e5e5',
+        borderWidth: 1,
         textStyle: {
-          color: '#fff',
+          color: '#333',
           fontSize: 12,
         },
         padding: [10, 14],
-        confine: true,
+        extraCssText: 'box-shadow: 0 4px 12px rgba(0,0,0,0.1);',
+        confine: false,
+        appendToBody: true,
         formatter: (params: any) => {
           const { name, treePathInfo } = params
           const rootValue = treePathInfo[0]?.value || 0
@@ -213,8 +216,8 @@ export const OperatorTimeBreakdownChart: React.FC<OperatorTimeBreakdownChartProp
           // 显示所有算子的时间
           if (!treemapData.children) return ''
 
-          let html = '<div style="font-size: 12px; max-height: 400px; overflow-y: auto;">'
-          html += '<div style="font-weight: 600; margin-bottom: 8px; padding-bottom: 4px; border-bottom: 1px solid rgba(255,255,255,0.2);">算子时间分解</div>'
+          let html = '<div style="font-size: 12px; max-height: 400px; overflow-y: auto; color: #333;">'
+          html += '<div style="font-weight: 600; margin-bottom: 8px; padding-bottom: 4px; border-bottom: 1px solid #e5e5e5;">算子时间分解</div>'
 
           // 按时间排序（已经排序过了）
           treemapData.children.forEach((child) => {
@@ -224,14 +227,14 @@ export const OperatorTimeBreakdownChart: React.FC<OperatorTimeBreakdownChartProp
 
             // 判断是否为当前悬停的算子
             const isHovered = child.name === name
-            const bgColor = isHovered ? 'rgba(24, 144, 255, 0.2)' : 'transparent'
+            const bgColor = isHovered ? 'rgba(96, 165, 250, 0.15)' : 'transparent'
             const fontWeight = isHovered ? '600' : '400'
 
             html += `
               <div style="display: flex; align-items: center; gap: 6px; margin-bottom: 2px; padding: 4px 6px; border-radius: 4px; background: ${bgColor}; font-weight: ${fontWeight};">
                 <span style="width: 10px; height: 10px; border-radius: 2px; background: ${color}; flex-shrink: 0;"></span>
                 <span style="flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${child.name}</span>
-                <span style="color: rgba(255,255,255,0.7); white-space: nowrap;">${timeStr} (${percentage}%)</span>
+                <span style="color: #666; white-space: nowrap;">${timeStr} (${percentage}%)</span>
               </div>
             `
           })
@@ -332,11 +335,8 @@ export const OperatorTimeBreakdownChart: React.FC<OperatorTimeBreakdownChartProp
 
   return (
     <div>
-      {/* 工具栏 */}
-      <div style={{ marginBottom: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <span className="text-[11px] text-gray-500">
-          矩形面积代表时间占比 | 鼠标悬停查看详情
-        </span>
+      {/* 工具栏 - 仅保留阶段选择器 */}
+      <div style={{ marginBottom: 4, display: 'flex', justifyContent: 'flex-end', alignItems: 'center' }}>
         <Select
           value={selectedPhase}
           onValueChange={(value) => setSelectedPhase(value as 'prefill' | 'decode' | 'all')}

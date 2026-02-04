@@ -638,12 +638,19 @@ async def simulate(request: SimulationRequest):
         parallelism_dict = request.parallelism.model_dump()
         hardware_dict = request.hardware.model_dump()
 
+        # 拓扑格式转换：如果是 rack_config 格式，转换为 pods 格式
+        topology_dict = request.topology
+        logger.info(f"[DEBUG] simulate: topology has rack_config={('rack_config' in topology_dict)}, has pods={('pods' in topology_dict)}")
+        if "rack_config" in topology_dict and "pods" not in topology_dict:
+            topology_dict = _convert_rack_config_to_pods(topology_dict)
+            logger.info(f"[DEBUG] 拓扑格式转换完成: pods count={len(topology_dict.get('pods', []))}")
+
         logger.info(f"开始模拟: model={model_dict['model_name']}, use_event_driven={request.use_event_driven}")
 
         if request.use_event_driven:
             # 使用事件驱动仿真器
             result = _run_event_driven_simulation(
-                topology_dict=request.topology,
+                topology_dict=topology_dict,
                 model_dict=model_dict,
                 inference_dict=inference_dict,
                 parallelism_dict=parallelism_dict,
@@ -653,7 +660,7 @@ async def simulate(request: SimulationRequest):
         else:
             # 使用静态仿真器（现有逻辑）
             result = run_simulation(
-                topology_dict=request.topology,
+                topology_dict=topology_dict,
                 model_dict=model_dict,
                 inference_dict=inference_dict,
                 parallelism_dict=parallelism_dict,
@@ -1070,6 +1077,7 @@ async def submit_evaluation(request: EvaluationRequest):
         task_id = task_manager.create_and_submit_task(
             experiment_name=request.experiment_name,
             description=request.description,
+            experiment_description=request.experiment_description,
             topology=topology_config,
             model_config=model_config,
             inference_config=inference_config,
@@ -1168,7 +1176,7 @@ async def list_tasks(
                 "status": task.status.value,
                 "progress": task.progress,
                 "message": task.message,
-                "created_at": task.created_at.isoformat() if task.created_at else None,
+                "created_at": task.created_at.isoformat() + 'Z' if task.created_at else None,
                 "started_at": task.started_at.isoformat() if task.started_at else None,
                 "completed_at": task.completed_at.isoformat() if task.completed_at else None,
             }
@@ -1241,7 +1249,7 @@ async def list_experiments(db: Session = Depends(get_db)):
                 "total_tasks": sum(len(t.results) for t in exp.tasks),
                 # 统计已完成任务的结果数量
                 "completed_tasks": sum(len(t.results) for t in exp.tasks if t.status == TaskStatus.COMPLETED),
-                "created_at": exp.created_at.isoformat() if exp.created_at else None,
+                "created_at": exp.created_at.isoformat() + 'Z' if exp.created_at else None,
             }
             for exp in experiments
         ]
@@ -1324,7 +1332,7 @@ async def export_experiments(experiment_ids: str = "", db: Session = Depends(get
                     "description": exp.description,
                     "total_tasks": exp.total_tasks,
                     "completed_tasks": exp.completed_tasks,
-                    "created_at": exp.created_at.isoformat() if exp.created_at else None,
+                    "created_at": exp.created_at.isoformat() + 'Z' if exp.created_at else None,
                 }
                 for exp in experiments
             ],
@@ -1538,9 +1546,9 @@ async def get_experiment_details(experiment_id: int, db: Session = Depends(get_d
                         "progress": task.progress,
                         "message": task.message,
                         "error": task.error,
-                        "created_at": result.created_at.isoformat() if result.created_at else (task.created_at.isoformat() if task.created_at else None),
-                        "started_at": task.started_at.isoformat() if task.started_at else None,
-                        "completed_at": task.completed_at.isoformat() if task.completed_at else None,
+                        "created_at": result.created_at.isoformat() + 'Z' if result.created_at else (task.created_at.isoformat() + 'Z' if task.created_at else None),
+                        "started_at": task.started_at.isoformat() + 'Z' if task.started_at else None,
+                        "completed_at": task.completed_at.isoformat() + 'Z' if task.completed_at else None,
                         "config_snapshot": task.config_snapshot,
                         "benchmark_name": task.benchmark_name,
                         "topology_config_name": task.topology_config_name,
@@ -1580,8 +1588,8 @@ async def get_experiment_details(experiment_id: int, db: Session = Depends(get_d
             "description": experiment.description,
             "total_tasks": experiment.total_tasks,
             "completed_tasks": experiment.completed_tasks,
-            "created_at": experiment.created_at.isoformat() if experiment.created_at else None,
-            "updated_at": experiment.updated_at.isoformat() if experiment.updated_at else None,
+            "created_at": experiment.created_at.isoformat() + 'Z' if experiment.created_at else None,
+            "updated_at": experiment.updated_at.isoformat() + 'Z' if experiment.updated_at else None,
             "tasks": tasks_with_results
         }
     except HTTPException:
@@ -1615,8 +1623,8 @@ async def update_experiment(
             "id": experiment.id,
             "name": experiment.name,
             "description": experiment.description,
-            "created_at": experiment.created_at.isoformat() if experiment.created_at else None,
-            "updated_at": experiment.updated_at.isoformat() if experiment.updated_at else None,
+            "created_at": experiment.created_at.isoformat() + 'Z' if experiment.created_at else None,
+            "updated_at": experiment.updated_at.isoformat() + 'Z' if experiment.updated_at else None,
         }
     except Exception as e:
         db.rollback()

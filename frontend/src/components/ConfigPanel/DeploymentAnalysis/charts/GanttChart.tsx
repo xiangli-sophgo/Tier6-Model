@@ -21,18 +21,18 @@ interface GanttChartProps {
 
 /** 任务类型颜色映射 */
 const TASK_COLORS: Record<string, string> = {
-  // 计算任务 - 浅蓝紫色系
-  compute: '#A5AEE8',
-  embedding: '#B8C0ED',
-  layernorm: '#CAD0F2',
-  attention_qkv: '#9DA7E3',
-  attention_score: '#AFB8EA',
-  attention_softmax: '#C0C8EF',
-  attention_output: '#D1D8F4',
-  ffn_gate: '#98A2E0',
-  ffn_up: '#A9B3E6',
-  ffn_down: '#BAC3EC',
-  lm_head: '#8F99DC',
+  // 计算任务 - 浅蓝色系
+  compute: '#93C5FD',
+  embedding: '#BFDBFE',
+  layernorm: '#DBEAFE',
+  attention_qkv: '#7DD3FC',
+  attention_score: '#A5B4FC',
+  attention_softmax: '#C7D2FE',
+  attention_output: '#E0E7FF',
+  ffn_gate: '#6EE7B7',
+  ffn_up: '#A7F3D0',
+  ffn_down: '#CCFBF1',
+  lm_head: '#60A5FA',
   // 数据搬运 - 浅金色系
   pcie_h2d: '#F0E0C4',
   pcie_d2h: '#F5E8D5',
@@ -41,24 +41,24 @@ const TASK_COLORS: Record<string, string> = {
   weight_load: '#F0E0C4',
   kv_cache_read: '#F5E8D5',
   kv_cache_write: '#F7EBDC',
-  // 通信 - 浅蓝/紫色系
-  tp_comm: '#C4B8E8',
-  pp_comm: '#D0C7ED',
+  // 通信 - 浅蓝色系
+  tp_comm: '#BAE6FD',
+  pp_comm: '#93C5FD',
   ep_comm: '#F0C4B8',
   // SP 通信 - 浅蓝色系
-  sp_allgather: '#B8D5E8',
-  sp_reduce_scatter: '#AECCE0',
-  // DP 通信 - 浅紫色
-  dp_gradient_sync: '#C9BFE9',
-  // MLA - 浅紫色系
-  rmsnorm_q_lora: '#C4B8E8',
-  rmsnorm_kv_lora: '#D0C7ED',
-  mm_q_lora_a: '#DBD5F2',
-  mm_q_lora_b: '#E6E0F7',
-  mm_kv_lora_a: '#EFEAF9',
-  attn_fc: '#BDB0E5',
-  bmm_qk: '#B5A9E0',
-  bmm_sv: '#AFA3DD',
+  sp_allgather: '#BAE6FD',
+  sp_reduce_scatter: '#7DD3FC',
+  // DP 通信 - 浅蓝色
+  dp_gradient_sync: '#A5D8FF',
+  // MLA - 浅蓝色系
+  rmsnorm_q_lora: '#BAE6FD',
+  rmsnorm_kv_lora: '#D0E7FF',
+  mm_q_lora_a: '#E0F2FE',
+  mm_q_lora_b: '#F0F9FF',
+  mm_kv_lora_a: '#F5FBFF',
+  attn_fc: '#A5D8FF',
+  bmm_qk: '#8FCDFF',
+  bmm_sv: '#7CC2FF',
   // MoE - 浅橙色系
   moe_gate: '#F0C4B8',
   moe_expert: '#F5D0C7',
@@ -137,19 +137,20 @@ interface AggregatedSegment {
   tasks: GanttTask[] // 原始任务引用
 }
 
-/** 悬浮提示框样式 */
+/** 悬浮提示框样式 - 统一浅色风格 */
 const tooltipStyle: React.CSSProperties = {
   position: 'fixed',
-  background: 'rgba(0, 0, 0, 0.9)',
-  color: '#fff',
+  background: 'rgba(255, 255, 255, 0.98)',
+  color: '#333',
   padding: '10px 14px',
   borderRadius: 8,
+  border: '1px solid #e5e5e5',
   fontSize: 12,
   lineHeight: 1.6,
   pointerEvents: 'none',
   zIndex: 1000,
   maxWidth: 300,
-  boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+  boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
 }
 
 export const GanttChart: React.FC<GanttChartProps> = ({
@@ -720,10 +721,10 @@ export const GanttChart: React.FC<GanttChartProps> = ({
         )}
       </svg>
 
-      {/* 悬浮提示框 */}
+      {/* 悬浮提示框 - 统一浅色风格 */}
       {tooltip && (
         <div style={{ ...tooltipStyle, left: tooltip.x, top: tooltip.y }}>
-          <div style={{ fontWeight: 600, marginBottom: 6, borderBottom: '1px solid rgba(255,255,255,0.2)', paddingBottom: 4 }}>
+          <div style={{ fontWeight: 600, marginBottom: 6, borderBottom: '1px solid #e5e5e5', paddingBottom: 4 }}>
             时间段: {formatTime(tooltip.segment.startTime)} - {formatTime(tooltip.segment.endTime)}
           </div>
           <div style={{ marginBottom: 4 }}>任务数: {tooltip.segment.taskCount}</div>
@@ -739,7 +740,7 @@ export const GanttChart: React.FC<GanttChartProps> = ({
                   <div key={type} style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
                     <span style={{ width: 10, height: 10, borderRadius: 2, backgroundColor: TASK_COLORS[type] || '#999', flexShrink: 0 }} />
                     <span style={{ flex: 1 }}>{TASK_LABELS[type] || type}</span>
-                    <span style={{ color: 'rgba(255,255,255,0.7)' }}>{pct}%</span>
+                    <span style={{ color: '#666' }}>{pct}%</span>
                   </div>
                 )
               })}

@@ -2,11 +2,13 @@
  * 拓扑流量图表组件
  *
  * 在拓扑图上可视化链路流量和带宽利用率
+ * 复用 TopologyGraph 组件实现 2D 拓扑可视化
  */
 
-import React, { useState, useMemo } from 'react'
-import type { HierarchicalTopology } from '@/types'
-import type { LinkTrafficStats } from '@/utils/llmDeployment/types'
+import React, { useMemo } from 'react'
+import type { HierarchicalTopology, PodConfig, RackConfig, BoardConfig } from '@/types'
+import type { LinkTrafficStats, TopologyTrafficResult } from '@/utils/llmDeployment/types'
+import { TopologyGraph } from '@/components/TopologyGraph'
 
 interface TopologyTrafficChartProps {
   topology: HierarchicalTopology | null
@@ -17,9 +19,72 @@ interface TopologyTrafficChartProps {
 export const TopologyTrafficChart: React.FC<TopologyTrafficChartProps> = ({
   topology,
   linkTrafficStats,
-  height = 600,
+  height,
 }) => {
-  const [viewMode, setViewMode] = useState<'2d' | '3d'>('2d')
+  // 构建芯片 ID 到 label 的映射（用于显示友好名称）
+  // 同时为芯片设置正确的 label（芯片型号，如 SG2262）
+  const { topologyWithConnections, chipIdToLabel } = useMemo(() => {
+    if (!topology) return { topologyWithConnections: null, chipIdToLabel: {} as Record<string, string> }
+
+    // 深拷贝 topology 以修改芯片 label
+    const updatedTopology = JSON.parse(JSON.stringify(topology)) as HierarchicalTopology
+
+    // 全局芯片计数器（按芯片型号分组）
+    const chipCounters: Record<string, number> = {}
+    // 芯片 ID 到 label 的映射
+    const idToLabel: Record<string, string> = {}
+
+    // 遍历所有芯片，设置正确的 label
+    updatedTopology.pods?.forEach((pod) => {
+      pod.racks?.forEach((rack) => {
+        rack.boards?.forEach((board) => {
+          board.chips?.forEach((chip) => {
+            // 获取芯片型号名称（后端存储在 name 字段，如 SG2262）
+            const chipAny = chip as any
+            const chipName = chipAny.name || chip.type || 'Chip'
+            // 获取该型号的当前计数
+            const count = chipCounters[chipName] || 0
+            // 节点显示只用芯片型号（不带编号）
+            chip.label = chipName
+            // 详细列表和 tooltip 用 型号-编号 格式区分
+            idToLabel[chip.id] = `${chipName}-${count}`
+            // 递增计数器
+            chipCounters[chipName] = count + 1
+          })
+        })
+      })
+    })
+
+    // 如果没有 connections，从 linkTrafficStats 生成
+    if (!updatedTopology.connections || updatedTopology.connections.length === 0) {
+      if (linkTrafficStats && linkTrafficStats.length > 0) {
+        updatedTopology.connections = linkTrafficStats.map(stat => ({
+          source: stat.source,
+          target: stat.target,
+          type: (stat.linkType || 'c2c') as 'c2c' | 'b2b' | 'r2r' | 'p2p' | 'custom' | 'switch',
+          bandwidth: stat.bandwidthGbps,
+          latency: stat.latencyUs,
+        }))
+      }
+    }
+
+    return { topologyWithConnections: updatedTopology, chipIdToLabel: idToLabel }
+  }, [topology, linkTrafficStats])
+
+  // 从修改后的拓扑中提取层级信息（确保使用修改后的 chip.label）
+  const { currentPod, currentRack, currentBoard } = useMemo(() => {
+    if (!topologyWithConnections?.pods?.[0]) {
+      return { currentPod: null, currentRack: null, currentBoard: null }
+    }
+    const pod = topologyWithConnections.pods[0] as PodConfig
+    const rack = pod.racks?.[0] as RackConfig | undefined
+    const board = rack?.boards?.[0] as BoardConfig | undefined
+    return {
+      currentPod: pod,
+      currentRack: rack ?? null,
+      currentBoard: board ?? null,
+    }
+  }, [topologyWithConnections])
 
   // 检查数据有效性
   if (!topology || !linkTrafficStats || linkTrafficStats.length === 0) {
@@ -33,15 +98,36 @@ export const TopologyTrafficChart: React.FC<TopologyTrafficChartProps> = ({
     )
   }
 
-  // 构建流量映射 (source-target -> LinkTrafficStats)
-  const trafficMap = useMemo(() => {
-    const map = new Map<string, LinkTrafficStats>()
-    linkTrafficStats.forEach(stat => {
-      // 双向映射（无向图）
-      map.set(`${stat.source}-${stat.target}`, stat)
-      map.set(`${stat.target}-${stat.source}`, stat)
-    })
-    return map
+  // 将 LinkTrafficStats 转换为 TopologyTrafficResult 格式
+  // 注意：TopologyGraph 组件只使用 linkTraffic 字段
+  const trafficResult = useMemo((): Partial<TopologyTrafficResult> & { linkTraffic: TopologyTrafficResult['linkTraffic'] } => {
+    // 转换链路流量数据
+    const linkTraffic: TopologyTrafficResult['linkTraffic'] = linkTrafficStats.map(stat => ({
+      source: stat.source,
+      target: stat.target,
+      trafficMb: stat.trafficMb,
+      bandwidthGbps: stat.bandwidthGbps,
+      utilizationPercent: stat.utilizationPercent, // 已经是 0-100 范围
+      contributingGroups: stat.contributingTasks || [],
+    }))
+
+    // 计算瓶颈链路（利用率 > 80%）
+    const bottleneckLinks = linkTrafficStats
+      .filter(stat => stat.utilizationPercent > 80)
+      .map(stat => `${stat.source}-${stat.target}`)
+
+    // 计算最大和平均利用率
+    const maxUtilization = Math.max(...linkTrafficStats.map(s => s.utilizationPercent))
+    const avgUtilization = linkTrafficStats.reduce((sum, s) => sum + s.utilizationPercent, 0) / linkTrafficStats.length
+
+    return {
+      chipMapping: [], // TopologyGraph 不使用此字段
+      communicationGroups: [],
+      linkTraffic,
+      bottleneckLinks,
+      maxUtilization,
+      avgUtilization,
+    }
   }, [linkTrafficStats])
 
   // 热力图颜色函数
@@ -57,12 +143,6 @@ export const TopologyTrafficChart: React.FC<TopologyTrafficChartProps> = ({
     } else {
       return '#f5222d' // 红色：瓶颈
     }
-  }
-
-  // 计算连线宽度（2-6px）
-  const getLineWidth = (utilizationPercent: number): number => {
-    const u = Math.min(Math.max(utilizationPercent, 0), 100)
-    return 2 + (u / 100) * 4
   }
 
   // 统计信息
@@ -84,145 +164,63 @@ export const TopologyTrafficChart: React.FC<TopologyTrafficChartProps> = ({
   }, [linkTrafficStats])
 
   return (
-    <div style={{ height }}>
-      {/* 顶部控制栏 */}
-      <div className="flex items-center justify-between mb-3 px-1">
-        {/* 视图切换 */}
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => setViewMode('2d')}
-            className={`px-3 py-1 text-sm rounded transition-colors ${
-              viewMode === '2d'
-                ? 'bg-blue-500 text-white'
-                : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-            }`}
-          >
-            2D 视图
-          </button>
-          <button
-            onClick={() => setViewMode('3d')}
-            className={`px-3 py-1 text-sm rounded transition-colors ${
-              viewMode === '3d'
-                ? 'bg-blue-500 text-white'
-                : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-            }`}
-          >
-            3D 视图
-          </button>
-        </div>
-
+    <div style={{ height: height || '100%', display: 'flex', flexDirection: 'column' }}>
+      {/* 顶部控制栏 + 统计摘要（合并为一行） */}
+      <div className="flex items-center justify-between mb-2 px-1 flex-shrink-0">
         {/* 图例 */}
-        <div className="flex items-center gap-3 text-xs">
-          <div className="flex items-center gap-1">
-            <div className="w-6 h-2" style={{ backgroundColor: '#52c41a' }} />
+        <div className="flex items-center gap-2 text-[11px]">
+          <span className="text-gray-500">利用率:</span>
+          <div className="flex items-center gap-0.5">
+            <div className="w-4 h-1.5 rounded-sm" style={{ backgroundColor: '#52c41a' }} />
             <span>0-30%</span>
           </div>
-          <div className="flex items-center gap-1">
-            <div className="w-6 h-2" style={{ backgroundColor: '#faad14' }} />
+          <div className="flex items-center gap-0.5">
+            <div className="w-4 h-1.5 rounded-sm" style={{ backgroundColor: '#faad14' }} />
             <span>30-60%</span>
           </div>
-          <div className="flex items-center gap-1">
-            <div className="w-6 h-2" style={{ backgroundColor: '#fa8c16' }} />
+          <div className="flex items-center gap-0.5">
+            <div className="w-4 h-1.5 rounded-sm" style={{ backgroundColor: '#fa8c16' }} />
             <span>60-80%</span>
           </div>
-          <div className="flex items-center gap-1">
-            <div className="w-6 h-2" style={{ backgroundColor: '#f5222d' }} />
-            <span>80-100%</span>
+          <div className="flex items-center gap-0.5">
+            <div className="w-4 h-1.5 rounded-sm" style={{ backgroundColor: '#f5222d' }} />
+            <span>80%+</span>
           </div>
         </div>
+        {/* 统计摘要 */}
+        {statsInfo && (
+          <div className="flex items-center gap-4 text-[11px] text-gray-600">
+            <span>
+              流量: <span className="text-blue-600 font-medium">{statsInfo.totalTraffic.toFixed(0)} MB</span>
+            </span>
+            <span>
+              平均: <span className="text-blue-600 font-medium">{statsInfo.avgUtilization.toFixed(0)}%</span>
+            </span>
+            <span>
+              峰值: <span className="font-medium" style={{ color: getHeatmapColor(statsInfo.maxUtilization) }}>{statsInfo.maxUtilization.toFixed(0)}%</span>
+            </span>
+            <span>
+              瓶颈: <span className="text-red-600 font-medium">{statsInfo.bottleneckLinks}/{statsInfo.totalLinks}</span>
+            </span>
+          </div>
+        )}
       </div>
 
-      {/* 统计摘要 */}
-      {statsInfo && (
-        <div className="mb-3 px-1">
-          <div className="flex items-center gap-6 text-sm text-gray-600">
-            <div>
-              <span className="font-medium">总流量:</span>{' '}
-              <span className="text-blue-600 font-semibold">
-                {statsInfo.totalTraffic.toFixed(1)} MB
-              </span>
-            </div>
-            <div>
-              <span className="font-medium">平均利用率:</span>{' '}
-              <span className="text-blue-600 font-semibold">
-                {statsInfo.avgUtilization.toFixed(1)}%
-              </span>
-            </div>
-            <div>
-              <span className="font-medium">峰值利用率:</span>{' '}
-              <span
-                className="font-semibold"
-                style={{ color: getHeatmapColor(statsInfo.maxUtilization) }}
-              >
-                {statsInfo.maxUtilization.toFixed(1)}%
-              </span>
-            </div>
-            <div>
-              <span className="font-medium">瓶颈链路:</span>{' '}
-              <span className="text-red-600 font-semibold">
-                {statsInfo.bottleneckLinks} / {statsInfo.totalLinks}
-              </span>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* 拓扑图占位符 - 待与 TopologyGraph 集成 */}
-      <div className="border border-gray-200 rounded-lg bg-gray-50 flex items-center justify-center" style={{ height: height - 120 }}>
-        <div className="text-center text-gray-500">
-          <div className="mb-2 text-lg font-medium">拓扑流量可视化</div>
-          <div className="text-sm">
-            {linkTrafficStats.length} 条链路 | {viewMode === '2d' ? '2D' : '3D'} 模式
-          </div>
-          <div className="mt-4 text-xs text-gray-400">
-            （需要集成 TopologyGraph 组件并实现自定义边渲染器）
-          </div>
-        </div>
+      {/* 2D 拓扑流量图 - 使用 TopologyGraph 组件，flex-grow 填满剩余空间 */}
+      <div className="border border-gray-200 rounded-lg overflow-hidden flex-grow">
+        <TopologyGraph
+          visible={true}
+          onClose={() => {}}
+          topology={topologyWithConnections}
+          currentLevel="board"
+          currentPod={currentPod}
+          currentRack={currentRack}
+          currentBoard={currentBoard}
+          embedded={true}
+          trafficResult={trafficResult as TopologyTrafficResult}
+          layoutType="auto"
+        />
       </div>
-
-      {/* 详细列表（折叠） */}
-      <details className="mt-3">
-        <summary className="cursor-pointer text-sm font-medium text-gray-700 hover:text-gray-900">
-          详细链路列表 ({linkTrafficStats.length} 条)
-        </summary>
-        <div className="mt-2 max-h-60 overflow-y-auto">
-          <table className="w-full text-xs border-collapse">
-            <thead className="bg-gray-100 sticky top-0">
-              <tr>
-                <th className="px-2 py-1 text-left border">源芯片</th>
-                <th className="px-2 py-1 text-left border">目标芯片</th>
-                <th className="px-2 py-1 text-right border">流量 (MB)</th>
-                <th className="px-2 py-1 text-right border">带宽 (Gbps)</th>
-                <th className="px-2 py-1 text-right border">利用率</th>
-                <th className="px-2 py-1 text-center border">类型</th>
-              </tr>
-            </thead>
-            <tbody>
-              {linkTrafficStats
-                .sort((a, b) => b.utilizationPercent - a.utilizationPercent)
-                .map((stat, idx) => (
-                  <tr key={idx} className="hover:bg-gray-50">
-                    <td className="px-2 py-1 border font-mono text-[10px]">{stat.source}</td>
-                    <td className="px-2 py-1 border font-mono text-[10px]">{stat.target}</td>
-                    <td className="px-2 py-1 border text-right">{stat.trafficMb.toFixed(1)}</td>
-                    <td className="px-2 py-1 border text-right">{stat.bandwidthGbps.toFixed(0)}</td>
-                    <td
-                      className="px-2 py-1 border text-right font-semibold"
-                      style={{ color: getHeatmapColor(stat.utilizationPercent) }}
-                    >
-                      {stat.utilizationPercent.toFixed(1)}%
-                    </td>
-                    <td className="px-2 py-1 border text-center">
-                      <span className="px-1.5 py-0.5 rounded text-[10px] bg-gray-200">
-                        {stat.linkType.toUpperCase()}
-                      </span>
-                    </td>
-                  </tr>
-                ))}
-            </tbody>
-          </table>
-        </div>
-      </details>
     </div>
   )
 }

@@ -823,7 +823,7 @@ function computeRackLevel(topology: HierarchicalTopology, currentRack: RackConfi
     type: 'board',
     x: 0,
     y: 0,
-    color: BOARD_U_COLORS[board.u_height] || '#722ed1',
+    color: BOARD_U_COLORS[board.u_height] || '#3B82F6',
     uHeight: board.u_height,
   }))
 

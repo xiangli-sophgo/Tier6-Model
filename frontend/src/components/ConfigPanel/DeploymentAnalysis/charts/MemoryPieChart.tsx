@@ -14,9 +14,9 @@ interface MemoryPieChartProps {
 }
 
 const MEMORY_COMPONENTS = [
-  { key: 'model', name: '模型参数', color: '#5E6AD2' },
-  { key: 'kv', name: 'KV Cache', color: '#52c41a' },
-  { key: 'activation', name: '激活值', color: '#faad14' },
+  { key: 'model', name: '模型参数', color: '#3B82F6' },
+  { key: 'kv', name: 'KV Cache', color: '#60A5FA' },
+  { key: 'activation', name: '激活值', color: '#93C5FD' },
 ] as const
 
 export const MemoryPieChart: React.FC<MemoryPieChartProps> = React.memo(({

@@ -87,8 +87,8 @@ export const ScoringRulesCard: React.FC<ScoringRulesCardProps> = ({
       key: 'balance',
       name: '均衡评分',
       weight: weights.balance,
-      icon: <Target className="h-4 w-4 text-purple-500" />,
-      color: 'purple' as const,
+      icon: <Target className="h-4 w-4 text-blue-500" />,
+      color: 'blue' as const,
       description: '负载均衡程度评估',
       formula: 'score = load_balance_score × 100',
       details: [
@@ -102,7 +102,6 @@ export const ScoringRulesCard: React.FC<ScoringRulesCardProps> = ({
     blue: 'bg-blue-100 text-blue-800 border-blue-200',
     green: 'bg-green-100 text-green-800 border-green-200',
     yellow: 'bg-yellow-100 text-yellow-800 border-yellow-200',
-    purple: 'bg-purple-100 text-purple-800 border-purple-200',
   } as const
 
   return (

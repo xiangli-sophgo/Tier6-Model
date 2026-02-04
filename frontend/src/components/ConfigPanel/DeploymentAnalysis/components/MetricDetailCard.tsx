@@ -604,7 +604,7 @@ export const MetricDetailCard: React.FC<MetricDetailCardProps> = ({ metric, resu
             description="实际带宽利用 / 硬件峰值带宽"
             result={(throughput.memory_bandwidth_utilization * 100).toFixed(1)}
             unit="%"
-            resultColor="#722ed1"
+            resultColor="#3B82F6"
           />
 
           <VariableList
@@ -872,7 +872,7 @@ export const MetricDetailCard: React.FC<MetricDetailCardProps> = ({ metric, resu
         },
         communication: {
           name: '通信瓶颈',
-          color: '#722ed1',
+          color: '#3B82F6',
           desc: '芯片间通信延迟过高，集合通信成为限制因素',
           solution: '减小TP/PP并行度，或使用更高带宽的互联',
         },
@@ -1061,7 +1061,7 @@ export const MetricDetailCard: React.FC<MetricDetailCardProps> = ({ metric, resu
                 { label: 'DP', value: dp, color: '#1890ff' },
                 { label: 'TP', value: tp, color: '#52c41a' },
                 { label: 'PP', value: pp, color: '#fa8c16' },
-                { label: 'EP', value: ep, color: '#722ed1' },
+                { label: 'EP', value: ep, color: '#3B82F6' },
               ].map((item) => (
                 <div key={item.label} style={{
                   padding: 12,

@@ -188,6 +188,7 @@ class EvaluationRequest(BaseModel):
     """
     experiment_name: str
     description: str = ""
+    experiment_description: Optional[str] = None  # 实验级别的描述（用于参数扫描）
 
     # 配置来源标记（必填，用于显示和追溯）
     benchmark_name: str           # Benchmark 名称（如 DeepSeek-V3-671B-S32K-O1K-W8A8-B1）

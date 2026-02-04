@@ -71,8 +71,8 @@ const METRIC_CONFIG: Record<MetricType, {
     name: 'MBU',
     unit: '%',
     accessor: (p) => p.throughput.memory_bandwidth_utilization * 100,
-    colorStart: '#b37feb',
-    colorEnd: '#722ed1',
+    colorStart: '#93C5FD',
+    colorEnd: '#3B82F6',
   },
   cost: {
     name: '总成本',
@@ -102,8 +102,8 @@ const METRIC_CONFIG: Record<MetricType, {
     name: '综合评分',
     unit: '分',
     accessor: (p) => p.score.overall_score,
-    colorStart: '#8B93DC',
-    colorEnd: '#5E6AD2',
+    colorStart: '#93C5FD',
+    colorEnd: '#60A5FA',
   },
 }
 

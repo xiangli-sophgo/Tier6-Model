@@ -18,6 +18,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from '@/components/ui/dialog'
 import { InfoTooltip, HelpTooltip } from '@/components/ui/info-tooltip'
 import { BaseCard } from '@/components/common/BaseCard'
 import {
@@ -507,6 +514,10 @@ export const BenchmarkConfigSelector: React.FC<BenchmarkConfigSelectorProps> = (
   })
   const [paramsStr, setParamsStr] = useState<string>('--')
 
+  // 另存为弹窗状态
+  const [saveAsDialogOpen, setSaveAsDialogOpen] = useState(false)
+  const [saveAsName, setSaveAsName] = useState('')
+
   // 原始配置快照（用于修改追踪）
   const [originalConfig, setOriginalConfig] = useState<{
     model: LLMModelConfig | null
@@ -613,11 +624,22 @@ export const BenchmarkConfigSelector: React.FC<BenchmarkConfigSelectorProps> = (
     }
   }
 
-  const handleSaveAs = async () => {
-    const newBenchmark: CustomBenchmark = { id: currentBenchmarkName, name: currentBenchmarkName, model: { ...modelConfig }, inference: { ...inferenceConfig } }
-    const success = await createBenchmark({ id: currentBenchmarkName, name: currentBenchmarkName, model: modelConfig as unknown as Record<string, unknown>, inference: inferenceConfig as unknown as Record<string, unknown> })
+  // 打开另存为弹窗
+  const handleOpenSaveAsDialog = () => {
+    setSaveAsName(currentBenchmarkName)
+    setSaveAsDialogOpen(true)
+  }
+
+  // 确认另存为
+  const handleConfirmSaveAs = async () => {
+    if (!saveAsName.trim()) {
+      toast.warning('请输入配置名称')
+      return
+    }
+    const newBenchmark: CustomBenchmark = { id: saveAsName.trim(), name: saveAsName.trim(), model: { ...modelConfig }, inference: { ...inferenceConfig } }
+    const success = await createBenchmark({ id: saveAsName.trim(), name: saveAsName.trim(), model: modelConfig as unknown as Record<string, unknown>, inference: inferenceConfig as unknown as Record<string, unknown> })
     if (success) {
-      const existingIndex = customBenchmarks.findIndex(b => b.id === currentBenchmarkName)
+      const existingIndex = customBenchmarks.findIndex(b => b.id === saveAsName.trim())
       if (existingIndex >= 0) {
         const updated = [...customBenchmarks]
         updated[existingIndex] = newBenchmark
@@ -625,11 +647,13 @@ export const BenchmarkConfigSelector: React.FC<BenchmarkConfigSelectorProps> = (
       } else {
         setCustomBenchmarks([...customBenchmarks, newBenchmark])
       }
-      setPresetId(currentBenchmarkName)
-      localStorage.setItem(LAST_BENCHMARK_KEY, currentBenchmarkName)
+      setPresetId(saveAsName.trim())
+      localStorage.setItem(LAST_BENCHMARK_KEY, saveAsName.trim())
       // 通知父组件选中的 Benchmark
-      onBenchmarkSelect?.(currentBenchmarkName)
-      toast.success(`已保存: ${currentBenchmarkName}`)
+      onBenchmarkSelect?.(saveAsName.trim())
+      toast.success(`已保存: ${saveAsName.trim()}`)
+      setSaveAsDialogOpen(false)
+      setSaveAsName('')
     } else {
       toast.error('保存失败')
     }
@@ -1035,9 +1059,42 @@ export const BenchmarkConfigSelector: React.FC<BenchmarkConfigSelectorProps> = (
         {/* 操作按钮 */}
         <div className="flex gap-2">
           <Button variant="outline" size="sm" onClick={handleSave}><Save className="h-3.5 w-3.5 mr-1" />保存</Button>
-          <Button variant="outline" size="sm" onClick={handleSaveAs}><Copy className="h-3.5 w-3.5 mr-1" />另存为</Button>
+          <Button variant="outline" size="sm" onClick={handleOpenSaveAsDialog}><Copy className="h-3.5 w-3.5 mr-1" />另存为</Button>
           <Button variant="outline" size="sm" onClick={handleReset}><RefreshCw className="h-3.5 w-3.5 mr-1" />重置</Button>
         </div>
+
+        {/* 另存为弹窗 */}
+        <Dialog open={saveAsDialogOpen} onOpenChange={setSaveAsDialogOpen}>
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle>另存为新配置</DialogTitle>
+            </DialogHeader>
+            <div className="py-4">
+              <label className="text-sm font-medium mb-2 block">配置名称</label>
+              <Input
+                value={saveAsName}
+                onChange={(e) => setSaveAsName(e.target.value)}
+                placeholder="请输入配置名称"
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && saveAsName.trim()) {
+                    handleConfirmSaveAs()
+                  }
+                }}
+              />
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => {
+                setSaveAsDialogOpen(false)
+                setSaveAsName('')
+              }}>
+                取消
+              </Button>
+              <Button onClick={handleConfirmSaveAs} disabled={!saveAsName.trim()}>
+                保存
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
   )
 }

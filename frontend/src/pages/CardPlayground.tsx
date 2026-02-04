@@ -127,7 +127,7 @@ const CircularProgress: React.FC<{
   color?: string
   label?: string
   sublabel?: string
-}> = ({ value, max = 100, size = 80, strokeWidth = 8, color = '#5E6AD2', label, sublabel }) => {
+}> = ({ value, max = 100, size = 80, strokeWidth = 8, color = '#60A5FA', label, sublabel }) => {
   const radius = (size - strokeWidth) / 2
   const circumference = radius * 2 * Math.PI
   const progress = Math.min(value, max) / max

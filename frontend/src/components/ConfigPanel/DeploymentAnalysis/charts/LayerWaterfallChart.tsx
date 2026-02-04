@@ -38,20 +38,21 @@ const ROW_HEIGHT = 24
 /** 条形高度 */
 const BAR_HEIGHT = 18
 
-/** 悬浮提示框样式 */
+/** 悬浮提示框样式 - 统一浅色风格 */
 const tooltipStyle: React.CSSProperties = {
   position: 'fixed',
-  background: 'rgba(0, 0, 0, 0.9)',
-  color: '#fff',
+  background: 'rgba(255, 255, 255, 0.98)',
+  color: '#333',
   padding: '10px 14px',
   borderRadius: 8,
+  border: '1px solid #e5e5e5',
   fontSize: 12,
   lineHeight: 1.6,
   pointerEvents: 'none',
   zIndex: 1000,
   minWidth: 220,
   maxWidth: 300,
-  boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+  boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
 }
 
 export const LayerWaterfallChart: React.FC<LayerWaterfallChartProps> = ({
@@ -375,25 +376,25 @@ export const LayerWaterfallChart: React.FC<LayerWaterfallChartProps> = ({
         </g>
       </svg>
 
-      {/* 悬浮提示框 */}
+      {/* 悬浮提示框 - 统一浅色风格 */}
       {tooltip && (
         <div style={{ ...tooltipStyle, left: tooltip.x, top: tooltip.y }}>
-          <div style={{ fontWeight: 600, marginBottom: 6, borderBottom: '1px solid rgba(255,255,255,0.2)', paddingBottom: 4 }}>
+          <div style={{ fontWeight: 600, marginBottom: 6, borderBottom: '1px solid #e5e5e5', paddingBottom: 4 }}>
             Layer {tooltip.layer.layerIndex}
             {tooltip.layer.phase && (
-              <span style={{ marginLeft: 8, fontWeight: 400, color: 'rgba(255,255,255,0.7)' }}>
+              <span style={{ marginLeft: 8, fontWeight: 400, color: '#666' }}>
                 ({tooltip.layer.phase})
               </span>
             )}
           </div>
           <div style={{ marginBottom: 4 }}>总时间: {formatTime(tooltip.layer.totalTime)}</div>
           <div style={{ marginBottom: 4 }}>任务数: {tooltip.layer.taskCount}</div>
-          <div style={{ borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: 4, marginTop: 4 }}>
+          <div style={{ borderTop: '1px solid #f0f0f0', paddingTop: 4, marginTop: 4 }}>
             {tooltip.layer.computeTime > 0 && (
               <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
                 <span style={{ width: 10, height: 10, borderRadius: 2, backgroundColor: TIME_BREAKDOWN_COLORS.compute, flexShrink: 0 }} />
                 <span style={{ minWidth: 60, whiteSpace: 'nowrap' }}>计算</span>
-                <span style={{ color: 'rgba(255,255,255,0.7)', textAlign: 'right', flex: 1, whiteSpace: 'nowrap' }}>
+                <span style={{ color: '#666', textAlign: 'right', flex: 1, whiteSpace: 'nowrap' }}>
                   {formatTime(tooltip.layer.computeTime)} ({formatPercent(tooltip.layer.computeTime / tooltip.layer.totalTime)})
                 </span>
               </div>
@@ -402,7 +403,7 @@ export const LayerWaterfallChart: React.FC<LayerWaterfallChartProps> = ({
               <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
                 <span style={{ width: 10, height: 10, borderRadius: 2, backgroundColor: TIME_BREAKDOWN_COLORS.memory, flexShrink: 0 }} />
                 <span style={{ minWidth: 60, whiteSpace: 'nowrap' }}>访存</span>
-                <span style={{ color: 'rgba(255,255,255,0.7)', textAlign: 'right', flex: 1, whiteSpace: 'nowrap' }}>
+                <span style={{ color: '#666', textAlign: 'right', flex: 1, whiteSpace: 'nowrap' }}>
                   {formatTime(tooltip.layer.memoryTime)} ({formatPercent(tooltip.layer.memoryTime / tooltip.layer.totalTime)})
                 </span>
               </div>
@@ -411,7 +412,7 @@ export const LayerWaterfallChart: React.FC<LayerWaterfallChartProps> = ({
               <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
                 <span style={{ width: 10, height: 10, borderRadius: 2, backgroundColor: TIME_BREAKDOWN_COLORS.tp, flexShrink: 0 }} />
                 <span style={{ minWidth: 60, whiteSpace: 'nowrap' }}>TP通信</span>
-                <span style={{ color: 'rgba(255,255,255,0.7)', textAlign: 'right', flex: 1, whiteSpace: 'nowrap' }}>
+                <span style={{ color: '#666', textAlign: 'right', flex: 1, whiteSpace: 'nowrap' }}>
                   {formatTime(tooltip.layer.commTime.tp)} ({formatPercent(tooltip.layer.commTime.tp / tooltip.layer.totalTime)})
                 </span>
               </div>
@@ -420,7 +421,7 @@ export const LayerWaterfallChart: React.FC<LayerWaterfallChartProps> = ({
               <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
                 <span style={{ width: 10, height: 10, borderRadius: 2, backgroundColor: TIME_BREAKDOWN_COLORS.pp, flexShrink: 0 }} />
                 <span style={{ minWidth: 60, whiteSpace: 'nowrap' }}>PP通信</span>
-                <span style={{ color: 'rgba(255,255,255,0.7)', textAlign: 'right', flex: 1, whiteSpace: 'nowrap' }}>
+                <span style={{ color: '#666', textAlign: 'right', flex: 1, whiteSpace: 'nowrap' }}>
                   {formatTime(tooltip.layer.commTime.pp)} ({formatPercent(tooltip.layer.commTime.pp / tooltip.layer.totalTime)})
                 </span>
               </div>
@@ -429,7 +430,7 @@ export const LayerWaterfallChart: React.FC<LayerWaterfallChartProps> = ({
               <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
                 <span style={{ width: 10, height: 10, borderRadius: 2, backgroundColor: TIME_BREAKDOWN_COLORS.ep, flexShrink: 0 }} />
                 <span style={{ minWidth: 60, whiteSpace: 'nowrap' }}>EP通信</span>
-                <span style={{ color: 'rgba(255,255,255,0.7)', textAlign: 'right', flex: 1, whiteSpace: 'nowrap' }}>
+                <span style={{ color: '#666', textAlign: 'right', flex: 1, whiteSpace: 'nowrap' }}>
                   {formatTime(tooltip.layer.commTime.ep)} ({formatPercent(tooltip.layer.commTime.ep / tooltip.layer.totalTime)})
                 </span>
               </div>
@@ -438,7 +439,7 @@ export const LayerWaterfallChart: React.FC<LayerWaterfallChartProps> = ({
               <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
                 <span style={{ width: 10, height: 10, borderRadius: 2, backgroundColor: TIME_BREAKDOWN_COLORS.sp, flexShrink: 0 }} />
                 <span style={{ minWidth: 60, whiteSpace: 'nowrap' }}>SP通信</span>
-                <span style={{ color: 'rgba(255,255,255,0.7)', textAlign: 'right', flex: 1, whiteSpace: 'nowrap' }}>
+                <span style={{ color: '#666', textAlign: 'right', flex: 1, whiteSpace: 'nowrap' }}>
                   {formatTime(tooltip.layer.commTime.sp)} ({formatPercent(tooltip.layer.commTime.sp / tooltip.layer.totalTime)})
                 </span>
               </div>

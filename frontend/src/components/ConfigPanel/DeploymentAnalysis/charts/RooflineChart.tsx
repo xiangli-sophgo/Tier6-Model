@@ -21,7 +21,7 @@ interface RooflineChartProps {
   simulationStats?: SimulationStats
 }
 
-const COLORS = ['#5E6AD2', '#52c41a', '#faad14', '#722ed1']
+const COLORS = ['#60A5FA', '#52c41a', '#faad14', '#3B82F6']
 
 export const RooflineChart: React.FC<RooflineChartProps> = React.memo(({
   result,

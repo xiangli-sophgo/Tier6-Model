@@ -16,7 +16,7 @@ interface ModelInfoCardProps {
 // 浅色配色 - 与整体风格搭配
 const COLORS = {
   embedding: { bg: '#e6f4ff', border: '#91caff', text: '#0958d9' },
-  attention: { bg: '#f9f0ff', border: '#d3adf7', text: '#722ed1' },
+  attention: { bg: '#e0f2fe', border: '#93c5fd', text: '#3B82F6' },
   ffn: { bg: '#f6ffed', border: '#b7eb8f', text: '#389e0d' },
   moe: { bg: '#fff0f6', border: '#ffadd2', text: '#c41d7f' },
   output: { bg: '#fff7e6', border: '#ffd591', text: '#d46b08' },

@@ -18,7 +18,7 @@ export type { TopologyTrafficResult }
 // 根据板卡U高度区分颜色
 export const BOARD_U_COLORS: Record<number, string> = {
   1: '#13c2c2',  // 1U - 青色
-  2: '#722ed1',  // 2U - 紫色
+  2: '#3B82F6',  // 2U - 蓝色
   4: '#eb2f96',  // 4U - 洋红色
 }
 
@@ -115,6 +115,8 @@ export interface TopologyGraphProps {
   // 视图切换
   viewMode?: '3d' | 'topology'
   onViewModeChange?: (mode: '3d' | 'topology') => void
+  // 是否显示控制面板（默认 true）
+  showControls?: boolean
 }
 
 export interface Node {

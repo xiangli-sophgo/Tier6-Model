@@ -64,6 +64,7 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { listExperiments, deleteExperiment, deleteExperimentsBatch, deleteResultsBatch, getExperimentDetail, getTaskResults, updateExperiment, downloadExperimentJSON, checkImportFile, executeImport, Experiment, EvaluationTask, TaskResultsResponse } from '@/api/results'
 import { AnalysisResultDisplay } from '@/components/ConfigPanel/DeploymentAnalysis/AnalysisResultDisplay'
 import { ChartsPanel } from '@/components/ConfigPanel/DeploymentAnalysis/charts'
@@ -71,6 +72,7 @@ import { PlanAnalysisResult, HardwareConfig, LLMModelConfig, InferenceConfig, is
 import { calculateScores, extractScoreInputFromPlan } from '@/utils/llmDeployment/scoreCalculator'
 import TaskTable from './components/TaskTable'
 import TaskDetailPanel from './components/TaskDetailPanel'
+import { ParameterAnalysisPanel } from './components/ParameterAnalysisPanel'
 import { useWorkbench } from '@/contexts/WorkbenchContext'
 
 // 分页组件
@@ -155,6 +157,9 @@ export const Results: React.FC = () => {
   // 任务详情面板相关状态
   const [detailTask, setDetailTask] = useState<EvaluationTask | null>(null)
   const [detailExpanded, setDetailExpanded] = useState(true)
+
+  // 实验详情页 Tab 状态
+  const [activeTab, setActiveTab] = useState<'tasks' | 'analysis'>('tasks')
 
   // 编辑状态
   const [editingId, setEditingId] = useState<number | null>(null)
@@ -658,6 +663,7 @@ export const Results: React.FC = () => {
                       hardware={hardwareConfig!}
                       model={modelConfig as unknown as LLMModelConfig}
                       inference={inferenceConfig as unknown as InferenceConfig}
+                      topology={topology as any}
                       externalGanttData={taskResults?.top_k_plans?.[0]?.gantt_chart as any}
                       externalStats={taskResults?.top_k_plans?.[0]?.stats as any}
                     />
@@ -717,106 +723,122 @@ export const Results: React.FC = () => {
 
           {/* 内容区 - 内部滚动 */}
           <div className="flex-1 overflow-auto p-6">
-            <div className="w-full">
-              {/* 任务列表表格 */}
-              <Card className="mb-4 shadow-none hover:shadow-md transition-shadow duration-300">
-                <CardHeader className="pb-3">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <CardTitle className="text-base">任务列表 ({selectedExperiment.tasks?.length || 0})</CardTitle>
-                      <span className="text-xs text-gray-500 font-normal">
-                        双击任务查看详细分析结果
-                      </span>
-                    </div>
-                    <Button size="sm" variant="outline" onClick={() => loadExperimentDetail(selectedExperimentId!)}>
-                      <RefreshCw className="h-3 w-3 mr-1" /> 刷新
-                    </Button>
-                  </div>
-                </CardHeader>
-                <CardContent>
-                  <TaskTable
-                    tasks={selectedExperiment.tasks || []}
-                    loading={false}
-                    experimentId={selectedExperiment.id}
-                    onTaskSelect={(task) => {
-                      // 只要任务有结果就可以查看（包括取消前已保存的结果）
-                      if (task.result) {
-                        loadTaskResults(task)
-                      } else {
-                        toast.info('该任务暂无可查看的结果')
-                      }
-                    }}
-                    onTaskDoubleClick={(task) => {
-                      setDetailTask(task)
-                      setDetailExpanded(true)
-                    }}
-                    onResultsDelete={async (resultIds) => {
-                      try {
-                        await deleteResultsBatch(selectedExperiment.id, resultIds)
-                        toast.success(`成功删除 ${resultIds.length} 个结果`)
-                        // 刷新实验详情
-                        const detail = await getExperimentDetail(selectedExperiment.id)
-                        setSelectedExperiment(detail)
-                      } catch (error) {
-                        console.error('删除结果失败:', error)
-                        toast.error('删除失败')
-                      }
-                    }}
-                  />
-                </CardContent>
-              </Card>
+            <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'tasks' | 'analysis')}>
+              <TabsList className="mb-4">
+                <TabsTrigger value="tasks">任务列表</TabsTrigger>
+                <TabsTrigger value="analysis">参数分析</TabsTrigger>
+              </TabsList>
 
-              {/* 任务详情面板 - 在 Card 外面独立渲染 */}
-              {detailTask && (
-                <Card className="mt-4 mb-8 shadow-none hover:shadow-md transition-shadow duration-300">
-                  {/* 标题栏 */}
-                  <div className="flex items-center justify-between bg-gradient-to-r from-blue-50 to-white px-4 py-3 border-b border-blue-100 rounded-t-lg">
-                    <div className="flex items-center gap-2">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => setDetailExpanded(!detailExpanded)}
-                        className="h-8 w-8 p-0"
-                      >
-                        {detailExpanded ? (
-                          <ChevronDown className="h-4 w-4" />
-                        ) : (
-                          <ChevronRight className="h-4 w-4" />
-                        )}
-                      </Button>
-                      <span className="font-semibold text-text-primary">
-                        任务详情 - {detailTask.benchmark_name}
-                      </span>
-                    </div>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => setDetailTask(null)}
-                      className="h-8 w-8 p-0"
-                    >
-                      <X className="h-4 w-4" />
-                    </Button>
-                  </div>
-
-                  {/* 详情内容 */}
-                  {detailExpanded && (
-                    <div className="p-4 bg-gradient-to-b from-gray-50 to-white rounded-b-lg">
-                      <TaskDetailPanel
-                        task={detailTask}
-                        onAnalyze={() => {
-                          // 点击性能分析按钮，检查任务是否有结果
-                          if (detailTask.result) {
-                            loadTaskResults(detailTask)
+              <TabsContent value="tasks">
+                <div className="w-full">
+                  {/* 任务列表表格 */}
+                  <Card className="mb-4 shadow-none hover:shadow-md transition-shadow duration-300">
+                    <CardHeader className="pb-3">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <CardTitle className="text-base">任务列表 ({selectedExperiment.tasks?.length || 0})</CardTitle>
+                          <span className="text-xs text-gray-500 font-normal">
+                            双击任务查看详细分析结果
+                          </span>
+                        </div>
+                        <Button size="sm" variant="outline" onClick={() => loadExperimentDetail(selectedExperimentId!)}>
+                          <RefreshCw className="h-3 w-3 mr-1" /> 刷新
+                        </Button>
+                      </div>
+                    </CardHeader>
+                    <CardContent>
+                      <TaskTable
+                        tasks={selectedExperiment.tasks || []}
+                        loading={false}
+                        experimentId={selectedExperiment.id}
+                        onTaskSelect={(task) => {
+                          // 只要任务有结果就可以查看（包括取消前已保存的结果）
+                          if (task.result) {
+                            loadTaskResults(task)
                           } else {
                             toast.info('该任务暂无可查看的结果')
                           }
                         }}
+                        onTaskDoubleClick={(task) => {
+                          setDetailTask(task)
+                          setDetailExpanded(true)
+                        }}
+                        onResultsDelete={async (resultIds) => {
+                          try {
+                            await deleteResultsBatch(selectedExperiment.id, resultIds)
+                            toast.success(`成功删除 ${resultIds.length} 个结果`)
+                            // 刷新实验详情
+                            const detail = await getExperimentDetail(selectedExperiment.id)
+                            setSelectedExperiment(detail)
+                          } catch (error) {
+                            console.error('删除结果失败:', error)
+                            toast.error('删除失败')
+                          }
+                        }}
                       />
-                    </div>
+                    </CardContent>
+                  </Card>
+
+                  {/* 任务详情面板 - 在 Card 外面独立渲染 */}
+                  {detailTask && (
+                    <Card className="mt-4 mb-8 shadow-none hover:shadow-md transition-shadow duration-300">
+                      {/* 标题栏 */}
+                      <div className="flex items-center justify-between bg-gradient-to-r from-blue-50 to-white px-4 py-3 border-b border-blue-100 rounded-t-lg">
+                        <div className="flex items-center gap-2">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => setDetailExpanded(!detailExpanded)}
+                            className="h-8 w-8 p-0"
+                          >
+                            {detailExpanded ? (
+                              <ChevronDown className="h-4 w-4" />
+                            ) : (
+                              <ChevronRight className="h-4 w-4" />
+                            )}
+                          </Button>
+                          <span className="font-semibold text-text-primary">
+                            任务详情 - {detailTask.benchmark_name}
+                          </span>
+                        </div>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => setDetailTask(null)}
+                          className="h-8 w-8 p-0"
+                        >
+                          <X className="h-4 w-4" />
+                        </Button>
+                      </div>
+
+                      {/* 详情内容 */}
+                      {detailExpanded && (
+                        <div className="p-4 bg-gradient-to-b from-gray-50 to-white rounded-b-lg">
+                          <TaskDetailPanel
+                            task={detailTask}
+                            onAnalyze={() => {
+                              // 点击性能分析按钮，检查任务是否有结果
+                              if (detailTask.result) {
+                                loadTaskResults(detailTask)
+                              } else {
+                                toast.info('该任务暂无可查看的结果')
+                              }
+                            }}
+                          />
+                        </div>
+                      )}
+                    </Card>
                   )}
-                </Card>
-              )}
-            </div>
+                </div>
+              </TabsContent>
+
+              <TabsContent value="analysis">
+                <ParameterAnalysisPanel
+                  experimentId={selectedExperiment.id}
+                  tasks={selectedExperiment.tasks || []}
+                />
+              </TabsContent>
+            </Tabs>
           </div>
         </div>
       </TooltipProvider>
@@ -931,7 +953,7 @@ export const Results: React.FC = () => {
                             <TableHead className="w-[280px]">实验名称</TableHead>
                             <TableHead className="w-20 text-center">任务数</TableHead>
                             <TableHead className="w-40 text-center">创建时间</TableHead>
-                            <TableHead className="w-[200px]">描述</TableHead>
+                            <TableHead className="w-[450px] text-center">描述</TableHead>
                             <TableHead className="w-40 text-center">操作</TableHead>
                           </TableRow>
                         </TableHeader>
@@ -972,7 +994,7 @@ export const Results: React.FC = () => {
                               <TableCell className="text-center">
                                 {record.created_at ? new Date(record.created_at).toLocaleString('zh-CN') : '-'}
                               </TableCell>
-                              <TableCell>
+                              <TableCell className="text-center">
                                 {editingId === record.id ? (
                                   <Textarea
                                     value={editingDescription}
@@ -983,7 +1005,7 @@ export const Results: React.FC = () => {
                                 ) : (
                                   <Tooltip>
                                     <TooltipTrigger asChild>
-                                      <span className="truncate block max-w-[180px]">{record.description || '-'}</span>
+                                      <span className="truncate block max-w-[430px] mx-auto">{record.description || '-'}</span>
                                     </TooltipTrigger>
                                     <TooltipContent>{record.description || '无描述'}</TooltipContent>
                                   </Tooltip>

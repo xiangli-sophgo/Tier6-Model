@@ -29,7 +29,7 @@ export interface SingleLevelViewProps {
   onNodeClick?: (node: any) => void
   onNodeDoubleClick?: (nodeId: string, nodeType: string) => void
   onLinkClick?: (link: any) => void
-  setTooltip: (tooltip: { x: number; y: number; content: string } | null) => void
+  setTooltip: (tooltip: { x: number; y: number; content: React.ReactNode } | null) => void
   svgRef: React.RefObject<SVGSVGElement>
   // 拖拽
   draggingNode: string | null
@@ -122,12 +122,56 @@ export const SingleLevelView: React.FC<SingleLevelViewProps> = ({
       const edgeId = `${edge.source}-${edge.target}`
       const isLinkSelected = selectedLinkId === edgeId || selectedLinkId === `${edge.target}-${edge.source}`
 
-      const bandwidthStr = edge.bandwidth ? `${edge.bandwidth} GB/s` : ''
-      const latencyStr = edge.latency ? `${edge.latency} us` : ''
       const trafficStyle = getTrafficHeatmapStyle(edge.source, edge.target)
-      const trafficStr = trafficStyle ? `流量: ${formatNumber(trafficStyle.trafficMb, 1)}MB, 利用率: ${formatNumber(trafficStyle.utilization * 100, 0)}%` : ''
-      const propsStr = [bandwidthStr, latencyStr, trafficStr].filter(Boolean).join(', ')
-      const tooltipContent = `${sourceNode?.label || edge.source} ↔ ${targetNode?.label || edge.target}${propsStr ? ` (${propsStr})` : ''}`
+      // 构建友好的节点标签：芯片型号-编号（如 SG2262-5）
+      const getChipLabel = (nodeLabel: string | undefined, edgeId: string) => {
+        if (!nodeLabel) return edgeId
+        // 从 edge id 提取编号（如 pod_0/rack_0/board_0/chip_5 -> 5）
+        const chipMatch = edgeId.match(/chip_(\d+)/)
+        if (chipMatch) {
+          return `${nodeLabel}-${chipMatch[1]}`
+        }
+        return nodeLabel
+      }
+      const sourceLabel = getChipLabel(sourceNode?.label, edge.source)
+      const targetLabel = getChipLabel(targetNode?.label, edge.target)
+      // 构建结构化的 tooltip 内容
+      const tooltipContent = (
+        <div style={{ fontSize: 11, lineHeight: 1.5 }}>
+          <div style={{ fontWeight: 600, marginBottom: 4, paddingBottom: 4, borderBottom: '1px solid #e5e5e5' }}>
+            {sourceLabel} ↔ {targetLabel}
+          </div>
+          {edge.bandwidth && (
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12 }}>
+              <span style={{ color: '#666' }}>带宽</span>
+              <span style={{ fontWeight: 500 }}>{edge.bandwidth} GB/s</span>
+            </div>
+          )}
+          {edge.latency && (
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12 }}>
+              <span style={{ color: '#666' }}>延迟</span>
+              <span style={{ fontWeight: 500 }}>{edge.latency} µs</span>
+            </div>
+          )}
+          {trafficStyle && (
+            <>
+              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12 }}>
+                <span style={{ color: '#666' }}>流量</span>
+                <span style={{ fontWeight: 500 }}>{formatNumber(trafficStyle.trafficMb, 1)} MB</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12 }}>
+                <span style={{ color: '#666' }}>利用率</span>
+                <span style={{
+                  fontWeight: 500,
+                  color: trafficStyle.utilization > 80 ? '#f5222d' : trafficStyle.utilization > 60 ? '#fa8c16' : '#333'
+                }}>
+                  {formatNumber(trafficStyle.utilization, 1)}%
+                </span>
+              </div>
+            </>
+          )}
+        </div>
+      )
 
       const handleLinkClick = (e: React.MouseEvent) => {
         e.stopPropagation()

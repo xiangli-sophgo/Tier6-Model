@@ -1136,7 +1136,7 @@ export default function TaskTable({
               </PopoverTrigger>
               <PopoverContent
                 align="start"
-                className="w-auto p-4"
+                className="w-auto p-4 z-[9999]"
                 onInteractOutside={(e) => {
                   // 防止点击内部元素时关闭
                   const target = e.target as HTMLElement

@@ -1,0 +1,51 @@
+# DeepSeek V3 on SG2262 场景配置
+# 用于 L0/L4/L5 demo 的默认单次运行配置
+
+name: deepseek_v3_sg2262
+description: DeepSeek V3 inference on SG2262
+
+# 引用芯片配置
+chip: sg2262
+
+# 引用模型配置
+model: deepseek_v3
+
+# 部署配置
+deployment:
+  # 批次参数
+  batch_size: 2048
+  seq_len: 1
+  kv_seq_len: 4096
+
+  # 并行配置
+  tp: 2
+  dp: 16
+  pp: 1
+  ep: 16
+  moe_tp: 2
+  enable_tp_sp: true
+  embed_tp: 1
+  lmhead_tp: 2
+  sp: false
+  comm_protocol: 1
+  kv_cache_rate: 0.0
+
+  # 推理阶段（与 sample/l5_reporting_demo.py 对齐 decode 口径）
+  is_prefill: false
+  is_decode: true
+
+# 板级配置（与 output/l5_reporting_demo.json 对齐）
+board:
+  num_chips: 32
+  inter_chip_bw_gbps: 400.0
+
+# 输出配置
+output:
+  formats:
+    - console
+    - json
+  metrics:
+    - tps
+    - ftl
+    - latency
+    - utilization
