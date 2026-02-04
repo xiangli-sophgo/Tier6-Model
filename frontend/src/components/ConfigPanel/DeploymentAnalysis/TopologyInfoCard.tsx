@@ -209,7 +209,7 @@ export const TopologyInfoCard: React.FC<TopologyInfoCardProps> = ({
         hardwareParams: JSON.parse(JSON.stringify(hardwareParams)),
         commLatency: commLatencyConfig ? { ...commLatencyConfig } : null,
       })
-      console.log('[TopologyInfoCard] 保存原始快照:', { hardwareParams, commLatencyConfig })
+      // console.log('[TopologyInfoCard] 保存原始快照:', { hardwareParams, commLatencyConfig })
     }
   }, [hardwareParams, commLatencyConfig, selectedConfigName])
 
@@ -263,28 +263,28 @@ export const TopologyInfoCard: React.FC<TopologyInfoCardProps> = ({
     const originalValue = originalConfig.hardwareParams.interconnect[level][field]
     const currentValue = hardwareParams.interconnect[level][field]
     const isModified = originalValue !== currentValue
-    if (isModified) {
-      console.log(`[修改检测] ${level}.${field}: ${originalValue} → ${currentValue}`)
-    }
+    // if (isModified) {
+      // console.log(`[修改检测] ${level}.${field}: ${originalValue} → ${currentValue}`)
+    // }
     return isModified
   }
 
   // 检测芯片参数是否被修改
   const isChipParamModified = (chipName: string, field: string): boolean => {
     if (!originalConfig.hardwareParams || !hardwareParams) {
-      console.log('[修改检测] 缺少配置:', { hasOriginal: !!originalConfig.hardwareParams, hasCurrent: !!hardwareParams })
+      // console.log('[修改检测] 缺少配置:', { hasOriginal: !!originalConfig.hardwareParams, hasCurrent: !!hardwareParams })
       return false
     }
     const originalChip = originalConfig.hardwareParams.chips[chipName]
     const currentChip = hardwareParams.chips[chipName]
     if (!originalChip || !currentChip) {
-      console.log('[修改检测] 缺少芯片配置:', { chipName, hasOriginal: !!originalChip, hasCurrent: !!currentChip })
+      // console.log('[修改检测] 缺少芯片配置:', { chipName, hasOriginal: !!originalChip, hasCurrent: !!currentChip })
       return false
     }
     const isModified = (originalChip as any)[field] !== (currentChip as any)[field]
-    if (isModified) {
-      console.log(`[修改检测] ${chipName}.${field}: ${(originalChip as any)[field]} → ${(currentChip as any)[field]}`)
-    }
+    // if (isModified) {
+      // console.log(`[修改检测] ${chipName}.${field}: ${(originalChip as any)[field]} → ${(currentChip as any)[field]}`)
+    // }
     return isModified
   }
 

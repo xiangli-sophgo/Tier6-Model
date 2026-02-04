@@ -49,6 +49,7 @@ const tooltipStyle: React.CSSProperties = {
   lineHeight: 1.6,
   pointerEvents: 'none',
   zIndex: 1000,
+  minWidth: 220,
   maxWidth: 300,
   boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
 }
@@ -83,6 +84,20 @@ export const LayerWaterfallChart: React.FC<LayerWaterfallChartProps> = ({
     return aggregateTasksByLayer(data.tasks, phase)
   }, [data, selectedPhase])
 
+  // 计算实际使用的类型（用于图例显示）
+  const usedTypes = useMemo(() => {
+    const types = new Set<string>()
+    layerData.forEach(layer => {
+      if (layer.computeTime > 0) types.add('compute')
+      if (layer.memoryTime > 0) types.add('memory')
+      if (layer.commTime.tp > 0) types.add('tp')
+      if (layer.commTime.pp > 0) types.add('pp')
+      if (layer.commTime.ep > 0) types.add('ep')
+      if (layer.commTime.sp > 0) types.add('sp')
+    })
+    return types
+  }, [layerData])
+
   // 计算最大时间用于比例尺
   const maxTime = useMemo(() => {
     if (layerData.length === 0) return 1
@@ -104,9 +119,21 @@ export const LayerWaterfallChart: React.FC<LayerWaterfallChartProps> = ({
     return MARGIN.top + index * ROW_HEIGHT
   }, [])
 
-  // 悬浮处理
+  // 悬浮处理（智能定位：右侧放不下时放到左侧）
   const handleLayerHover = useCallback((layer: LayerBreakdown, e: React.MouseEvent) => {
-    setTooltip({ layer, x: e.clientX + 10, y: e.clientY + 10 })
+    const tooltipWidth = 240 // 预估 tooltip 宽度
+    const offset = 10
+    const windowWidth = window.innerWidth
+
+    // 检测是否会超出右侧边界
+    const wouldOverflowRight = e.clientX + tooltipWidth + offset > windowWidth
+
+    // 如果超出右侧，放到鼠标左侧；否则放到右侧
+    const x = wouldOverflowRight
+      ? e.clientX - tooltipWidth - offset
+      : e.clientX + offset
+
+    setTooltip({ layer, x, y: e.clientY + offset })
     setHoveredLayer(layer.layerIndex)
   }, [])
 
@@ -364,54 +391,54 @@ export const LayerWaterfallChart: React.FC<LayerWaterfallChartProps> = ({
           <div style={{ borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: 4, marginTop: 4 }}>
             {tooltip.layer.computeTime > 0 && (
               <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
-                <span style={{ width: 10, height: 10, borderRadius: 2, backgroundColor: TIME_BREAKDOWN_COLORS.compute }} />
-                <span style={{ flex: 1 }}>计算</span>
-                <span style={{ color: 'rgba(255,255,255,0.7)' }}>
+                <span style={{ width: 10, height: 10, borderRadius: 2, backgroundColor: TIME_BREAKDOWN_COLORS.compute, flexShrink: 0 }} />
+                <span style={{ minWidth: 60, whiteSpace: 'nowrap' }}>计算</span>
+                <span style={{ color: 'rgba(255,255,255,0.7)', textAlign: 'right', flex: 1, whiteSpace: 'nowrap' }}>
                   {formatTime(tooltip.layer.computeTime)} ({formatPercent(tooltip.layer.computeTime / tooltip.layer.totalTime)})
                 </span>
               </div>
             )}
             {tooltip.layer.memoryTime > 0 && (
               <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
-                <span style={{ width: 10, height: 10, borderRadius: 2, backgroundColor: TIME_BREAKDOWN_COLORS.memory }} />
-                <span style={{ flex: 1 }}>访存</span>
-                <span style={{ color: 'rgba(255,255,255,0.7)' }}>
+                <span style={{ width: 10, height: 10, borderRadius: 2, backgroundColor: TIME_BREAKDOWN_COLORS.memory, flexShrink: 0 }} />
+                <span style={{ minWidth: 60, whiteSpace: 'nowrap' }}>访存</span>
+                <span style={{ color: 'rgba(255,255,255,0.7)', textAlign: 'right', flex: 1, whiteSpace: 'nowrap' }}>
                   {formatTime(tooltip.layer.memoryTime)} ({formatPercent(tooltip.layer.memoryTime / tooltip.layer.totalTime)})
                 </span>
               </div>
             )}
             {tooltip.layer.commTime.tp > 0 && (
               <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
-                <span style={{ width: 10, height: 10, borderRadius: 2, backgroundColor: TIME_BREAKDOWN_COLORS.tp }} />
-                <span style={{ flex: 1 }}>TP通信</span>
-                <span style={{ color: 'rgba(255,255,255,0.7)' }}>
+                <span style={{ width: 10, height: 10, borderRadius: 2, backgroundColor: TIME_BREAKDOWN_COLORS.tp, flexShrink: 0 }} />
+                <span style={{ minWidth: 60, whiteSpace: 'nowrap' }}>TP通信</span>
+                <span style={{ color: 'rgba(255,255,255,0.7)', textAlign: 'right', flex: 1, whiteSpace: 'nowrap' }}>
                   {formatTime(tooltip.layer.commTime.tp)} ({formatPercent(tooltip.layer.commTime.tp / tooltip.layer.totalTime)})
                 </span>
               </div>
             )}
             {tooltip.layer.commTime.pp > 0 && (
               <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
-                <span style={{ width: 10, height: 10, borderRadius: 2, backgroundColor: TIME_BREAKDOWN_COLORS.pp }} />
-                <span style={{ flex: 1 }}>PP通信</span>
-                <span style={{ color: 'rgba(255,255,255,0.7)' }}>
+                <span style={{ width: 10, height: 10, borderRadius: 2, backgroundColor: TIME_BREAKDOWN_COLORS.pp, flexShrink: 0 }} />
+                <span style={{ minWidth: 60, whiteSpace: 'nowrap' }}>PP通信</span>
+                <span style={{ color: 'rgba(255,255,255,0.7)', textAlign: 'right', flex: 1, whiteSpace: 'nowrap' }}>
                   {formatTime(tooltip.layer.commTime.pp)} ({formatPercent(tooltip.layer.commTime.pp / tooltip.layer.totalTime)})
                 </span>
               </div>
             )}
             {tooltip.layer.commTime.ep > 0 && (
               <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
-                <span style={{ width: 10, height: 10, borderRadius: 2, backgroundColor: TIME_BREAKDOWN_COLORS.ep }} />
-                <span style={{ flex: 1 }}>EP通信</span>
-                <span style={{ color: 'rgba(255,255,255,0.7)' }}>
+                <span style={{ width: 10, height: 10, borderRadius: 2, backgroundColor: TIME_BREAKDOWN_COLORS.ep, flexShrink: 0 }} />
+                <span style={{ minWidth: 60, whiteSpace: 'nowrap' }}>EP通信</span>
+                <span style={{ color: 'rgba(255,255,255,0.7)', textAlign: 'right', flex: 1, whiteSpace: 'nowrap' }}>
                   {formatTime(tooltip.layer.commTime.ep)} ({formatPercent(tooltip.layer.commTime.ep / tooltip.layer.totalTime)})
                 </span>
               </div>
             )}
             {tooltip.layer.commTime.sp > 0 && (
               <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
-                <span style={{ width: 10, height: 10, borderRadius: 2, backgroundColor: TIME_BREAKDOWN_COLORS.sp }} />
-                <span style={{ flex: 1 }}>SP通信</span>
-                <span style={{ color: 'rgba(255,255,255,0.7)' }}>
+                <span style={{ width: 10, height: 10, borderRadius: 2, backgroundColor: TIME_BREAKDOWN_COLORS.sp, flexShrink: 0 }} />
+                <span style={{ minWidth: 60, whiteSpace: 'nowrap' }}>SP通信</span>
+                <span style={{ color: 'rgba(255,255,255,0.7)', textAlign: 'right', flex: 1, whiteSpace: 'nowrap' }}>
                   {formatTime(tooltip.layer.commTime.sp)} ({formatPercent(tooltip.layer.commTime.sp / tooltip.layer.totalTime)})
                 </span>
               </div>
@@ -420,33 +447,37 @@ export const LayerWaterfallChart: React.FC<LayerWaterfallChartProps> = ({
         </div>
       )}
 
-      {/* 图例 */}
-      <div style={{
-        marginTop: 8,
-        padding: '8px 0',
-        borderTop: '1px solid #f0f0f0',
-        display: 'flex',
-        gap: 16,
-        flexWrap: 'wrap',
-        justifyContent: 'center',
-      }}>
-        {Object.entries(TIME_BREAKDOWN_LABELS).map(([key, label]) => (
-          <span
-            key={key}
-            style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11 }}
-          >
-            <span
-              style={{
-                width: 12,
-                height: 12,
-                borderRadius: 2,
-                backgroundColor: TIME_BREAKDOWN_COLORS[key as keyof typeof TIME_BREAKDOWN_COLORS],
-              }}
-            />
-            <span style={{ color: '#666' }}>{label}</span>
-          </span>
-        ))}
-      </div>
+      {/* 图例 - 只显示实际使用的类型 */}
+      {usedTypes.size > 0 && (
+        <div style={{
+          marginTop: 8,
+          padding: '8px 0',
+          borderTop: '1px solid #f0f0f0',
+          display: 'flex',
+          gap: 16,
+          flexWrap: 'wrap',
+          justifyContent: 'center',
+        }}>
+          {Object.entries(TIME_BREAKDOWN_LABELS)
+            .filter(([key]) => usedTypes.has(key))
+            .map(([key, label]) => (
+              <span
+                key={key}
+                style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11 }}
+              >
+                <span
+                  style={{
+                    width: 12,
+                    height: 12,
+                    borderRadius: 2,
+                    backgroundColor: TIME_BREAKDOWN_COLORS[key as keyof typeof TIME_BREAKDOWN_COLORS],
+                  }}
+                />
+                <span style={{ color: '#666' }}>{label}</span>
+              </span>
+            ))}
+        </div>
+      )}
     </div>
   )
 }

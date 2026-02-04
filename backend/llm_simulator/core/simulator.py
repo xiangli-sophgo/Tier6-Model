@@ -294,6 +294,9 @@ class LLMInferenceSimulator:
         self.prefill_stats = PhaseTimeStats()
         self.decode_stats = PhaseTimeStats()
 
+        # 链路流量累加器: (source_chip, target_chip) -> {traffic_mb, bandwidth_gbps, latency_us, ...}
+        self._link_traffic_accumulator: dict[tuple[str, str], dict[str, Any]] = {}
+
     def _init_chip_states(self):
         """初始化芯片状态"""
         for assignment in self.group_assignment.assignments:
@@ -302,6 +305,196 @@ class LLMInferenceSimulator:
                 pp_stage=assignment.pp_rank,
                 tp_rank=assignment.tp_rank,
             )
+
+    def _accumulate_link_traffic(
+        self,
+        source_chip: str,
+        target_chip: str,
+        traffic_mb: float,
+        task_id: str,
+        task_type: GanttTaskType,
+        bandwidth_gbps: float,
+        latency_us: float,
+        link_type: str,
+    ):
+        """累加链路流量
+
+        Args:
+            source_chip: 源芯片ID
+            target_chip: 目标芯片ID
+            traffic_mb: 流量（MB）
+            task_id: 任务ID
+            task_type: 任务类型
+            bandwidth_gbps: 链路带宽（Gbps）
+            latency_us: 链路延迟（微秒）
+            link_type: 链路类型（c2c/b2b/r2r/p2p）
+        """
+        # 使用有序的键（按字典序），避免重复计数
+        sorted_chips = sorted([source_chip, target_chip])
+        key: tuple[str, str] = (sorted_chips[0], sorted_chips[1])
+
+        if key not in self._link_traffic_accumulator:
+            self._link_traffic_accumulator[key] = {
+                'source': key[0],
+                'target': key[1],
+                'traffic_mb': 0.0,
+                'bandwidth_gbps': bandwidth_gbps,
+                'latency_us': latency_us,
+                'link_type': link_type,
+                'contributing_tasks': [],
+                'task_type_breakdown': {}
+            }
+
+        acc = self._link_traffic_accumulator[key]
+        acc['traffic_mb'] += traffic_mb
+        acc['contributing_tasks'].append(task_id)
+
+        task_type_str = task_type.value if isinstance(task_type, GanttTaskType) else str(task_type)
+        acc['task_type_breakdown'][task_type_str] = \
+            acc['task_type_breakdown'].get(task_type_str, 0.0) + traffic_mb
+
+    def _accumulate_pp_comm_traffic(
+        self,
+        from_stage: int,
+        to_stage: int,
+        num_tokens: int,
+        task_id: str,
+        task_type: GanttTaskType,
+    ):
+        """累加 PP 通信流量
+
+        Args:
+            from_stage: 源 PP stage
+            to_stage: 目标 PP stage
+            num_tokens: Token 数量
+            task_id: 任务ID
+            task_type: 任务类型
+        """
+        # 计算数据量
+        bytes_per_elem = get_bytes_per_element(self.model.dtype)
+        data_size_bytes = self.inference.batch_size * num_tokens * self.model.hidden_size * bytes_per_elem
+        traffic_mb = data_size_bytes / (1024 ** 2)
+
+        # 获取源和目标 stage 的芯片列表
+        if from_stage >= len(self.group_assignment.pp_groups) or to_stage >= len(self.group_assignment.pp_groups):
+            return
+
+        from_chips = self.group_assignment.pp_groups[from_stage]
+        to_chips = self.group_assignment.pp_groups[to_stage]
+
+        # 累加每对芯片之间的流量
+        for from_chip in from_chips:
+            for to_chip in to_chips:
+                self._accumulate_link_traffic(
+                    source_chip=from_chip,
+                    target_chip=to_chip,
+                    traffic_mb=traffic_mb / (len(from_chips) * len(to_chips)),  # 平均分配
+                    task_id=task_id,
+                    task_type=task_type,
+                    bandwidth_gbps=self.pp_bandwidth,
+                    latency_us=self.pp_latency,
+                    link_type='pp',
+                )
+
+    def _accumulate_tp_comm_traffic(
+        self,
+        chip_id: str,
+        data_size_gb: float,
+        task_id: str,
+        task_type: GanttTaskType,
+    ):
+        """累加 TP 通信流量（AllReduce）
+
+        Args:
+            chip_id: 当前芯片ID（用于查找其所属的 TP 组）
+            data_size_gb: 数据量（GB）
+            task_id: 任务ID
+            task_type: 任务类型
+        """
+        import logging
+        logger = logging.getLogger(__name__)
+
+        # 查找芯片所属的 TP 组
+        tp_chips = None
+        tp_group_idx = -1
+        for idx, group in enumerate(self.group_assignment.tp_groups):
+            if chip_id in group:
+                tp_chips = group
+                tp_group_idx = idx
+                break
+
+        if tp_chips is None or len(tp_chips) <= 1:
+            logger.debug(f"芯片 {chip_id} 无 TP 通信（TP 组大小 <= 1）")
+            return
+
+        logger.debug(f"芯片 {chip_id} 属于 TP 组 {tp_group_idx}，组大小: {len(tp_chips)}")
+
+        # Ring AllReduce: 每个芯片与相邻芯片通信
+        # 简化：累加环上所有相邻芯片对的流量
+        traffic_mb = data_size_gb * 1024  # GB -> MB
+        tp = len(tp_chips)
+
+        # Ring AllReduce 中，每条链路传输 (N-1)/N 的数据量（两个方向）
+        per_link_traffic = traffic_mb * 2 * (tp - 1) / tp / tp
+
+        for i in range(len(tp_chips)):
+            next_i = (i + 1) % len(tp_chips)
+            self._accumulate_link_traffic(
+                source_chip=tp_chips[i],
+                target_chip=tp_chips[next_i],
+                traffic_mb=per_link_traffic,
+                task_id=task_id,
+                task_type=task_type,
+                bandwidth_gbps=self.tp_bandwidth,
+                latency_us=self.tp_latency,
+                link_type='tp',
+            )
+
+    def _generate_link_traffic_stats(self) -> list:
+        """生成链路流量统计
+
+        Returns:
+            LinkTrafficStats 列表
+        """
+        from ..config.types import LinkTrafficStats
+        import logging
+        logger = logging.getLogger(__name__)
+
+        stats = []
+
+        # 获取仿真总时长（从 gantt 任务中计算）
+        if not self.gantt_builder.tasks:
+            logger.warning("📊 链路流量统计: 无 Gantt 任务数据")
+            return stats
+
+        # 添加调试日志
+        logger.info(f"📊 链路流量累加器: {len(self._link_traffic_accumulator)} 条链路")
+
+        total_time_us = max(task.end for task in self.gantt_builder.tasks)
+        total_time_s = total_time_us / 1_000_000
+
+        for (source, target), acc in self._link_traffic_accumulator.items():
+            # 计算利用率 = 实际流量 / (带宽 × 时间)
+            # 带宽单位: Gbps -> MBps 需要乘以 1000 / 8 = 125
+            bandwidth_mbps = acc['bandwidth_gbps'] * 125
+            max_capacity_mb = bandwidth_mbps * total_time_s
+            utilization = (acc['traffic_mb'] / max_capacity_mb) * 100 if max_capacity_mb > 0 else 0
+
+            stats.append(LinkTrafficStats(
+                source=acc['source'],
+                target=acc['target'],
+                traffic_mb=acc['traffic_mb'],
+                bandwidth_gbps=acc['bandwidth_gbps'],
+                latency_us=acc['latency_us'],
+                utilization_percent=min(utilization, 100),
+                link_type=acc['link_type'],
+                contributing_tasks=acc['contributing_tasks'],
+                task_type_breakdown=acc['task_type_breakdown']
+            ))
+
+        # 按流量大小排序
+        stats.sort(key=lambda s: s.traffic_mb, reverse=True)
+        return stats
 
     def _map_compute_op_to_task_type(self, op_type: ComputeOpType, op_name: str = "") -> GanttTaskType:
         """将计算算子类型映射到 Gantt 任务类型"""
@@ -734,9 +927,15 @@ class LLMInferenceSimulator:
 
         logger.info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
+        # 生成链路流量统计
+        link_traffic_stats = self._generate_link_traffic_stats()
+        if link_traffic_stats:
+            logger.info(f"📊 链路流量统计: {len(link_traffic_stats)} 条链路")
+
         return SimulationResult(
             gantt_chart=gantt_data,
             stats=stats,
+            link_traffic_stats=link_traffic_stats,
             timestamp=time.time(),
         )
 
@@ -868,6 +1067,17 @@ class LLMInferenceSimulator:
                         pp_stage=pp_stage,
                         layer_index=layer,
                     )
+
+                    # 累加 PP 通信流量
+                    task_id = f"pp_comm_prefill_layer{layer}_stage{pp_stage}"
+                    self._accumulate_pp_comm_traffic(
+                        from_stage=pp_stage - 1,
+                        to_stage=pp_stage,
+                        num_tokens=num_tokens,
+                        task_id=task_id,
+                        task_type=GanttTaskType.PP_COMM,
+                    )
+
                     current_time += pp_comm_latency
 
             # 模拟单层
@@ -962,6 +1172,17 @@ class LLMInferenceSimulator:
                             layer_index=layer,
                             token_index=token_idx,
                         )
+
+                        # 累加 PP 通信流量
+                        task_id = f"pp_comm_decode_token{token_idx}_layer{layer}_stage{pp_stage}"
+                        self._accumulate_pp_comm_traffic(
+                            from_stage=pp_stage - 1,
+                            to_stage=pp_stage,
+                            num_tokens=1,
+                            task_id=task_id,
+                            task_type=GanttTaskType.PP_COMM,
+                        )
+
                         layer_start += pp_comm
 
                 # 模拟单层 (Decode: 1 token)
@@ -1213,6 +1434,21 @@ class LLMInferenceSimulator:
                     }
 
                     self.gantt_builder.add_comm_task(task_type, current_time, latency_ms, phase, chip_id, pp_stage, layer_index, token_index, **comm_extra)
+
+                    # 累加 TP 通信流量（AllReduce）
+                    if "tp" in op.comm_kind or "allreduce" in op.comm_kind.lower():
+                        data_size_gb = op.comm_size / (1024 ** 3)
+                        task_id_comm = f"tp_comm_{phase.value}_layer{layer_index}_token{token_index}_{chip_id}"
+                        import logging
+                        logger = logging.getLogger(__name__)
+                        logger.debug(f"累加 TP 流量: {data_size_gb:.4f} GB, chip={chip_id}")
+                        self._accumulate_tp_comm_traffic(
+                            chip_id=chip_id,
+                            data_size_gb=data_size_gb,
+                            task_id=task_id_comm,
+                            task_type=task_type,
+                        )
+
                     current_time += latency_ms
         else:
             # 粗粒度：聚合整层
@@ -1308,6 +1544,19 @@ class LLMInferenceSimulator:
         if self.parallelism.tp > 1:
             tp_comm_latency = self._calc_tp_allreduce_latency(num_tokens)
             self.gantt_builder.add_comm_task(GanttTaskType.TP_COMM, current_time, tp_comm_latency, phase, chip_id, pp_stage, layer_index, token_index)
+
+            # 累加 TP 通信流量
+            bytes_per_elem = get_bytes_per_element(self.model.dtype)
+            data_size_bytes = self.inference.batch_size * num_tokens * self.model.hidden_size * bytes_per_elem
+            data_size_gb = data_size_bytes / (1024 ** 3)
+            task_id_tp = f"tp_comm_coarse_{phase.value}_layer{layer_index}_token{token_index}_{chip_id}"
+            self._accumulate_tp_comm_traffic(
+                chip_id=chip_id,
+                data_size_gb=data_size_gb,
+                task_id=task_id_tp,
+                task_type=GanttTaskType.TP_COMM,
+            )
+
             current_time += tp_comm_latency
 
         return current_time
@@ -1847,6 +2096,22 @@ def run_simulation(
     # 在持续decode场景下，每个请求占用一个batch slot
     requests_per_second = tokens_per_second / inference.output_seq_length if inference.output_seq_length > 0 else 0.0
 
+    # 转换链路流量统计为前端格式（将 snake_case 转换为 camelCase）
+    from dataclasses import asdict
+    link_traffic_stats_dict = []
+    for stat in result.link_traffic_stats:
+        link_traffic_stats_dict.append({
+            "source": stat.source,
+            "target": stat.target,
+            "trafficMb": stat.traffic_mb,
+            "bandwidthGbps": stat.bandwidth_gbps,
+            "latencyUs": stat.latency_us,
+            "utilizationPercent": stat.utilization_percent,
+            "linkType": stat.link_type,
+            "contributingTasks": stat.contributing_tasks,
+            "taskTypeBreakdown": stat.task_type_breakdown,
+        })
+
     return {
         "ganttChart": convert_to_frontend_format(result.gantt_chart),
         "stats": {
@@ -1875,6 +2140,7 @@ def run_simulation(
             "maxPPBubbleRatio": result.stats.max_pp_bubble_ratio,
             "totalEvents": result.stats.total_events,
             "totalChips": total_chips,
+            "linkTrafficStats": link_traffic_stats_dict,  # 新增：链路流量统计
         },
         # 吞吐量指标（独立对象，与前端 ThroughputAnalysis 对应）
         "throughput": {

@@ -175,8 +175,6 @@ export function extractChipGroupsFromConfig(
   boards: Array<{ chips: FlexBoardChipConfig[], count: number }>,
   hardwareParams?: { chips?: Record<string, any> }
 ): ChipGroupInfo[] {
-  console.log('[DEBUG] extractChipGroupsFromConfig: hardwareParams =', hardwareParams)
-  console.log('[DEBUG] extractChipGroupsFromConfig: hardwareParams.chips =', hardwareParams?.chips)
   const chipGroupMap = new Map<string, {
     chipType: string
     presetId?: string
@@ -225,11 +223,9 @@ export function extractChipGroupsFromConfig(
       // 方案1: 从拓扑配置的 hardware_params.chips 直接获取（优先级最高）
       if (hardwareParams?.chips?.[chip.name]) {
         chipConfig = hardwareParams.chips[chip.name] as ChipHardwareConfig
-        console.log(`[DEBUG] extractChipGroupsFromConfig: 从hardwareParams获取芯片'${chip.name}'配置:`, chipConfig)
       }
       // 方案2: 从预设获取（后端预设 + 自定义预设）
       else if (chip.preset_id) {
-        console.log(`[DEBUG] extractChipGroupsFromConfig: hardwareParams中没有'${chip.name}',尝试从preset获取`)
         const preset = getChipConfig(chip.preset_id)
         if (preset) {
           chipConfig = preset
@@ -310,7 +306,6 @@ export function generateHardwareConfig(
     [chipGroup.chipType]: chipGroup.chipConfig
   }
 
-  console.log(`[DEBUG] generateHardwareConfig: 构建chips字典, 主芯片='${chipGroup.chipType}'`, chipGroup.chipConfig)
 
   // 如果有多种芯片类型，都添加进去
   if (summary.chipGroups.length > 1) {
@@ -321,7 +316,7 @@ export function generateHardwareConfig(
     })
   }
 
-  console.log('[DEBUG] generateHardwareConfig: 最终chips字典 =', chips)
+  // console.log(' generateHardwareConfig: 最终chips字典 =', chips)
 
   // 构建互联配置
   const interconnect = {
@@ -350,7 +345,6 @@ export function generateHardwareConfig(
     }
   }
 
-  console.log('[DEBUG] generateHardwareConfig: 返回结果 =', result)
 
   return result
 }

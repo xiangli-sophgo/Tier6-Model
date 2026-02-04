@@ -493,7 +493,7 @@ def convert_to_frontend_format(gantt_data: GanttChartData) -> dict:
             "phase": t.phase.value,
             "chipId": t.chip_id,
             "ppStage": t.pp_stage,
-            "layerIndex": t.layer_index,
+            "layer": t.layer_index,
             "tokenIndex": t.token_index,
             "color": t.color,
         })

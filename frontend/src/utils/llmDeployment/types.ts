@@ -909,6 +909,28 @@ export interface PhaseTimeStats {
 }
 
 /** 模拟统计数据 */
+/** 链路流量统计 */
+export interface LinkTrafficStats {
+  /** 源芯片ID */
+  source: string;
+  /** 目标芯片ID */
+  target: string;
+  /** 累计流量（MB） */
+  trafficMb: number;
+  /** 链路带宽（Gbps） */
+  bandwidthGbps: number;
+  /** 链路延迟（微秒） */
+  latencyUs: number;
+  /** 带宽利用率（0-100） */
+  utilizationPercent: number;
+  /** 链路类型 */
+  linkType: string;
+  /** 贡献流量的任务ID列表 */
+  contributingTasks: string[];
+  /** 按任务类型分解的流量 */
+  taskTypeBreakdown: Record<string, number>;
+}
+
 export interface SimulationStats {
   prefill: PhaseTimeStats;
   decode: PhaseTimeStats;
@@ -924,6 +946,8 @@ export interface SimulationStats {
   totalChips?: number;
   /** 错误原因（仅当模拟失败时存在） */
   errorReason?: string;
+  /** 链路流量统计 */
+  linkTrafficStats?: LinkTrafficStats[];
 }
 
 /** 模拟结果 */

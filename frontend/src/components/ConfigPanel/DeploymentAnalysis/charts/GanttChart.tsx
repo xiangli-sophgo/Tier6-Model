@@ -21,53 +21,53 @@ interface GanttChartProps {
 
 /** 任务类型颜色映射 */
 const TASK_COLORS: Record<string, string> = {
-  // 计算任务 - 绿色系
-  compute: '#52c41a',
-  embedding: '#73d13d',
-  layernorm: '#95de64',
-  attention_qkv: '#389e0d',
-  attention_score: '#52c41a',
-  attention_softmax: '#73d13d',
-  attention_output: '#95de64',
-  ffn_gate: '#237804',
-  ffn_up: '#389e0d',
-  ffn_down: '#52c41a',
-  lm_head: '#135200',
-  // 数据搬运 - 橙色系
-  pcie_h2d: '#fa8c16',
-  pcie_d2h: '#ffa940',
-  hbm_write: '#ffc53d',
-  hbm_read: '#ffd666',
-  weight_load: '#d48806',
-  kv_cache_read: '#faad14',
-  kv_cache_write: '#ffc53d',
-  // 通信 - 蓝/紫色系
-  tp_comm: '#1890ff',
-  pp_comm: '#722ed1',
-  ep_comm: '#eb2f96',
-  // SP 通信 - 蓝色系 (序列并行)
-  sp_allgather: '#2f54eb',
-  sp_reduce_scatter: '#1d39c4',
-  // DP 通信 - 深紫色 (数据并行梯度同步)
-  dp_gradient_sync: '#531dab',
-  // MLA - 青色系
-  rmsnorm_q_lora: '#13c2c2',
-  rmsnorm_kv_lora: '#36cfc9',
-  mm_q_lora_a: '#5cdbd3',
-  mm_q_lora_b: '#87e8de',
-  mm_kv_lora_a: '#b5f5ec',
-  attn_fc: '#08979c',
-  bmm_qk: '#006d75',
-  bmm_sv: '#00474f',
-  // MoE - 品红色系
-  moe_gate: '#f759ab',
-  moe_expert: '#eb2f96',
-  moe_shared_expert: '#c41d7f',
-  ep_dispatch: '#9254de',
-  ep_combine: '#722ed1',
+  // 计算任务 - 浅蓝紫色系
+  compute: '#A5AEE8',
+  embedding: '#B8C0ED',
+  layernorm: '#CAD0F2',
+  attention_qkv: '#9DA7E3',
+  attention_score: '#AFB8EA',
+  attention_softmax: '#C0C8EF',
+  attention_output: '#D1D8F4',
+  ffn_gate: '#98A2E0',
+  ffn_up: '#A9B3E6',
+  ffn_down: '#BAC3EC',
+  lm_head: '#8F99DC',
+  // 数据搬运 - 浅金色系
+  pcie_h2d: '#F0E0C4',
+  pcie_d2h: '#F5E8D5',
+  hbm_write: '#FAF0E5',
+  hbm_read: '#FDF5ED',
+  weight_load: '#F0E0C4',
+  kv_cache_read: '#F5E8D5',
+  kv_cache_write: '#F7EBDC',
+  // 通信 - 浅蓝/紫色系
+  tp_comm: '#C4B8E8',
+  pp_comm: '#D0C7ED',
+  ep_comm: '#F0C4B8',
+  // SP 通信 - 浅蓝色系
+  sp_allgather: '#B8D5E8',
+  sp_reduce_scatter: '#AECCE0',
+  // DP 通信 - 浅紫色
+  dp_gradient_sync: '#C9BFE9',
+  // MLA - 浅紫色系
+  rmsnorm_q_lora: '#C4B8E8',
+  rmsnorm_kv_lora: '#D0C7ED',
+  mm_q_lora_a: '#DBD5F2',
+  mm_q_lora_b: '#E6E0F7',
+  mm_kv_lora_a: '#EFEAF9',
+  attn_fc: '#BDB0E5',
+  bmm_qk: '#B5A9E0',
+  bmm_sv: '#AFA3DD',
+  // MoE - 浅橙色系
+  moe_gate: '#F0C4B8',
+  moe_expert: '#F5D0C7',
+  moe_shared_expert: '#FADCD5',
+  ep_dispatch: '#F8E5DF',
+  ep_combine: '#F3D8D0',
   // 其他
-  bubble: '#ff4d4f',
-  idle: '#d9d9d9',
+  bubble: '#FFD4D4',
+  idle: '#E8E8E8',
 }
 
 /** 任务类型标签 */
@@ -754,25 +754,36 @@ export const GanttChart: React.FC<GanttChartProps> = ({
         borderTop: '1px solid #f0f0f0',
         overflow: 'hidden',
       }}>
-        {/* 图例 */}
-        {showLegend && (
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 6 }}>
-            {LEGEND_GROUPS.map((group) => (
-              <div key={group.name} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                <span style={{ fontSize: 10, color: '#999' }}>{group.name}:</span>
-                {group.types.map((type) => (
-                  <span
-                    key={type}
-                    style={{ display: 'inline-flex', alignItems: 'center', gap: 2, fontSize: 10 }}
-                  >
-                    <span style={{ width: 10, height: 10, borderRadius: 2, backgroundColor: TASK_COLORS[type], flexShrink: 0 }} />
-                    <span style={{ color: '#666' }}>{TASK_LABELS[type]}</span>
-                  </span>
-                ))}
-              </div>
-            ))}
-          </div>
-        )}
+        {/* 图例 - 只显示实际使用的类型 */}
+        {showLegend && (() => {
+          // 统计实际使用的任务类型
+          const usedTypes = new Set(data.tasks.map(task => task.type))
+
+          // 过滤出有实际使用类型的分组
+          const filteredGroups = LEGEND_GROUPS.map(group => ({
+            ...group,
+            types: group.types.filter(type => usedTypes.has(type))
+          })).filter(group => group.types.length > 0)
+
+          return (
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 6 }}>
+              {filteredGroups.map((group) => (
+                <div key={group.name} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                  <span style={{ fontSize: 10, color: '#999' }}>{group.name}:</span>
+                  {group.types.map((type) => (
+                    <span
+                      key={type}
+                      style={{ display: 'inline-flex', alignItems: 'center', gap: 2, fontSize: 10 }}
+                    >
+                      <span style={{ width: 10, height: 10, borderRadius: 2, backgroundColor: TASK_COLORS[type], flexShrink: 0 }} />
+                      <span style={{ color: '#666' }}>{TASK_LABELS[type]}</span>
+                    </span>
+                  ))}
+                </div>
+              ))}
+            </div>
+          )
+        })()}
 
         {/* 统计信息 */}
         <div style={{ display: 'flex', gap: 12, fontSize: 10, color: '#666', flexWrap: 'wrap' }}>

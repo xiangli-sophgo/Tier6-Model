@@ -16,6 +16,10 @@ export { GanttChartCanvas } from './GanttChartCanvas'
 export { TimeBreakdownChart } from './TimeBreakdownChart'
 export { WaterfallChart } from './WaterfallChart'
 export { CostBreakdownChart } from './CostBreakdownChart'
+export { LayerWaterfallChart } from './LayerWaterfallChart'
+export { CommunicationBreakdownChart } from './CommunicationBreakdownChart'
+export { OperatorTimeBreakdownChart } from './OperatorTimeBreakdownChart'
+export { TopologyTrafficChart } from './TopologyTrafficChart'
 
 // 主题配置导出
 export * from './chartTheme'

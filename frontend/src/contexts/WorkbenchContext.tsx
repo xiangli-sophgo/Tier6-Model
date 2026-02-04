@@ -161,7 +161,7 @@ export const WorkbenchProvider: React.FC<WorkbenchProviderProps> = ({ children }
       loadBackendChipPresets(),
       loadBackendModelPresets(),
     ]).then(() => {
-      console.log('后端预设加载完成')
+      // console.log('后端预设加载完成')
     })
   }, [])
 

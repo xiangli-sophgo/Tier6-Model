@@ -443,6 +443,24 @@ class GanttChartData:
 
 
 # ============================================
+# 链路流量统计
+# ============================================
+
+@dataclass
+class LinkTrafficStats:
+    """链路流量统计"""
+    source: str                      # 源芯片ID（如 "chip_0"）
+    target: str                      # 目标芯片ID
+    traffic_mb: float                # 累计流量（MB）
+    bandwidth_gbps: float            # 链路带宽（Gbps）
+    latency_us: float                # 链路延迟（微秒）
+    utilization_percent: float       # 带宽利用率（0-100）
+    link_type: str                   # 链路类型（c2c/b2b/r2r/p2p）
+    contributing_tasks: list[str] = field(default_factory=list)    # 贡献流量的任务ID列表
+    task_type_breakdown: dict[str, float] = field(default_factory=dict)  # 按任务类型分解的流量
+
+
+# ============================================
 # 模拟统计
 # ============================================
 
@@ -482,6 +500,7 @@ class SimulationResult:
     """模拟结果"""
     gantt_chart: GanttChartData
     stats: SimulationStats
+    link_traffic_stats: list[LinkTrafficStats] = field(default_factory=list)  # 新增：链路流量统计
     timestamp: float = 0.0
 
 
@@ -687,8 +706,6 @@ def validate_hardware_config(hardware_dict: dict) -> None:
     Raises:
         ValueError: 配置无效或缺少必需字段时抛出
     """
-    logger.warning(f"[DEBUG] validate_hardware_config: hardware_dict keys = {hardware_dict.keys()}")
-    logger.warning(f"[DEBUG] validate_hardware_config: hardware_dict content = {hardware_dict}")
 
     # 检查新格式: hardware_params.chips
     if "hardware_params" not in hardware_dict:
@@ -696,14 +713,12 @@ def validate_hardware_config(hardware_dict: dict) -> None:
         raise ValueError("硬件配置缺少 'hardware_params' 字段")
 
     hardware_params = hardware_dict["hardware_params"]
-    logger.warning(f"[DEBUG] validate_hardware_config: hardware_params keys = {hardware_params.keys()}")
 
     if "chips" not in hardware_params:
         logger.error("[DEBUG] hardware_params缺少chips字段!")
         raise ValueError("硬件配置中 'hardware_params' 缺少 'chips' 字段")
 
     chips_dict = hardware_params["chips"]
-    logger.warning(f"[DEBUG] validate_hardware_config: chips_dict = {chips_dict}")
 
     # 验证至少有一个芯片配置
     if not chips_dict:
@@ -712,7 +727,6 @@ def validate_hardware_config(hardware_dict: dict) -> None:
 
     # 验证每个芯片的必需字段
     for chip_name, chip_config in chips_dict.items():
-        logger.warning(f"[DEBUG] validate_hardware_config: validating chip '{chip_name}', config keys = {chip_config.keys() if isinstance(chip_config, dict) else type(chip_config)}")
         _validate_chip_fields(chip_config, chip_name)
 
 

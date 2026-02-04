@@ -248,16 +248,16 @@ export const ConfigPanel: React.FC<ConfigPanelProps> = ({
     }
 
     const timer = setTimeout(() => {
-      console.log('🔧 [ConfigPanel] 生成拓扑配置:', {
-        podCount,
-        racksPerPod,
-        rackConfig: {
-          total_u: rackConfig.total_u,
-          boards: rackConfig.boards,
-          boardsCount: rackConfig.boards.length,
-        },
-        switchConfig: switchConfig?.inter_board,
-      })
+      // console.log('🔧 [ConfigPanel] 生成拓扑配置:', {
+      //   podCount,
+      //   racksPerPod,
+      //   rackConfig: {
+      //     total_u: rackConfig.total_u,
+      //     boards: rackConfig.boards,
+      //     boardsCount: rackConfig.boards.length,
+      //   },
+      //   switchConfig: switchConfig?.inter_board,
+      // })
       onGenerate({
         pod_count: podCount,
         racks_per_pod: racksPerPod,

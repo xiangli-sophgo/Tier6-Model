@@ -201,13 +201,13 @@ export class HierarchicalTopologyGenerator {
 
         // 使用 rack_config 生成板卡配置
         if (rack_config && rack_config.boards && rack_config.boards.length > 0) {
-          console.log(`🏗️ [TopologyGen] Rack ${rackIdx}: 使用rack_config配置`, {
-            rackTotalU,
-            boardStartU,
-            switchReservedU,
-            switchPosition,
-            boards: rack_config.boards,
-          })
+          // console.log(`🏗️ [TopologyGen] Rack ${rackIdx}: 使用rack_config配置`, {
+          //   rackTotalU,
+          //   boardStartU,
+          //   switchReservedU,
+          //   switchPosition,
+          //   boards: rack_config.boards,
+          // })
           let currentU = boardStartU;
           let boardIdxLocal = 0;
 
@@ -217,7 +217,7 @@ export class HierarchicalTopologyGenerator {
             const boardCount = flexBoard.count ?? 1;
             const flexChips = flexBoard.chips ?? [];
 
-            console.log(`  📦 [Board配置] ${boardName}: count=${boardCount}, uHeight=${uHeight}, currentU=${currentU}`)
+            // console.log(`  📦 [Board配置] ${boardName}: count=${boardCount}, uHeight=${uHeight}, currentU=${currentU}`)
 
             for (let i = 0; i < boardCount; i++) {
               if (currentU + uHeight - 1 > rackTotalU) {

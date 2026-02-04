@@ -809,6 +809,12 @@ def _transform_to_ds_tpu_format(
 
     stats = sim_result.get("stats", {})
 
+    # 调试：检查 linkTrafficStats 是否存在
+    import logging
+    logger = logging.getLogger(__name__)
+    link_traffic_stats = stats.get("linkTrafficStats")
+    logger.info(f"🔍 [DEBUG] linkTrafficStats in stats: {link_traffic_stats is not None}, count: {len(link_traffic_stats) if link_traffic_stats else 0}")
+
     # 提取基础性能指标
     avg_tpot = stats.get("avgTpot", 0)  # 微秒/token
     ttft = stats.get("ttft", 0)  # 微秒
@@ -990,11 +996,8 @@ def _extract_hardware_config(topology: dict) -> dict:
         hardware_params = topology["hardware_params"]
         chips_dict = hardware_params.get("chips", {})
 
-        logger.warning(f"[DEBUG] _extract_hardware_config: hardware_params keys = {hardware_params.keys()}")
-        logger.warning(f"[DEBUG] _extract_hardware_config: chips_dict keys = {chips_dict.keys() if chips_dict else 'EMPTY'}")
         if chips_dict:
             first_chip_name = next(iter(chips_dict))
-            logger.warning(f"[DEBUG] _extract_hardware_config: first chip '{first_chip_name}' = {chips_dict[first_chip_name]}")
 
         if chips_dict:
             result = {
@@ -1004,7 +1007,6 @@ def _extract_hardware_config(topology: dict) -> dict:
                     "comm_latency_config": hardware_params.get("comm_latency_config", {}),
                 }
             }
-            logger.warning(f"[DEBUG] _extract_hardware_config: returning result with keys = {result.keys()}")
             return result
 
     # 格式3：展开后的 pods/racks/boards/chips 结构 -> 转换为新格式

@@ -187,20 +187,20 @@ export const SWITCH_LAYER = {
 // ============================================
 
 /**
- * LLM推理任务时间分解颜色
- * 用于甘特图、性能分析图表等
+ * LLM推理任务时间分解颜色（超低饱和度浅色版）
+ * 用于甘特图、性能分析图表等，与主题色 #5E6AD2 搭配
  */
 export const TASK_TYPE = {
-  // 计算任务
-  compute: PALETTE.green.main,      // 绿色 - 计算密集型
-  // 访存任务
-  memory: PALETTE.blue.main,        // 蓝色 - 内存访问
+  // 计算任务 - 浅蓝紫色系
+  compute: '#A5AEE8',               // 浅蓝紫 - 计算密集型
+  // 访存任务 - 浅金色系
+  memory: '#F0E0C4',                // 浅金 - 内存访问
   // 通信任务
   communication: {
-    tp: PALETTE.purple.main,        // 紫色 - 张量并行通信
-    pp: PALETTE.magenta.main,       // 品红 - 流水线并行通信
-    ep: PALETTE.pink.main,          // 粉色 - 专家并行通信
-    sp: PALETTE.deepBlue.main,      // 深蓝 - 序列并行通信
+    tp: '#C4B8E8',                  // 浅紫 - 张量并行通信
+    pp: '#D0C7ED',                  // 更浅紫 - 流水线并行通信
+    ep: '#F0C4B8',                  // 浅橙 - 专家并行通信
+    sp: '#B8D5E8',                  // 浅蓝 - 序列并行通信
   },
 } as const
 
