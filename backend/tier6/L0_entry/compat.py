@@ -356,7 +356,7 @@ def convert_to_stats(
     link_traffic_stats = []
     if step_metrics and parallelism:
         link_traffic_stats = generate_link_traffic_stats(
-            step_metrics, parallelism, topology_config
+            step_metrics, parallelism, topology_config, aggregates
         )
 
     return {
@@ -536,6 +536,7 @@ def generate_link_traffic_stats(
     step_metrics: list[dict[str, Any]],
     parallelism: dict[str, Any],
     topology_config: dict[str, Any] | None = None,
+    aggregates: dict[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
     """生成链路流量统计数据
 
@@ -543,6 +544,7 @@ def generate_link_traffic_stats(
         step_metrics: tier6 的 step 级指标列表
         parallelism: 并行配置 {tp, pp, dp, ep, ...}
         topology_config: 拓扑配置（可选）
+        aggregates: 聚合指标（可选，用于获取总时间和数据量）
 
     Returns:
         前端兼容的 linkTrafficStats 格式:
@@ -570,19 +572,26 @@ def generate_link_traffic_stats(
         return []
 
     # 从拓扑配置中获取带宽和延迟信息
-    default_bandwidth = 400.0  # Gbps
-    default_latency = 2.0  # us
+    c2c_bandwidth = 448.0  # Gbps
+    c2c_latency = 0.2  # us
+    b2b_bandwidth = 450.0  # Gbps
+    b2b_latency = 0.35  # us
 
     if topology_config:
         hw = topology_config.get("hardware_params", {})
         interconnect = hw.get("interconnect", {})
         c2c = interconnect.get("c2c", {})
-        default_bandwidth = c2c.get("bandwidth_gbps", default_bandwidth)
-        default_latency = c2c.get("latency_us", default_latency)
+        b2b = interconnect.get("b2b", {})
+        c2c_bandwidth = c2c.get("bandwidth_gbps", c2c_bandwidth)
+        c2c_latency = c2c.get("latency_us", c2c_latency)
+        b2b_bandwidth = b2b.get("bandwidth_gbps", b2b_bandwidth)
+        b2b_latency = b2b.get("latency_us", b2b_latency)
 
     # 统计通信任务的流量
     link_traffic: dict[str, dict[str, Any]] = {}
+    has_comm_data = False
 
+    # 先尝试从 step_metrics 中提取通信数据
     for i, step in enumerate(step_metrics):
         op_id = step.get("op_id", f"op_{i}")
         t_comm_ms = step.get("t_comm_ms", step.get("t_comm", 0.0))
@@ -592,12 +601,12 @@ def generate_link_traffic_stats(
         if t_comm_ms <= 0:
             continue
 
-        # 估计通信数据量（如果没有直接数据，使用带宽 * 时间估算）
+        has_comm_data = True
+
+        # 估计通信数据量
         comm_bytes = bytes_read + bytes_write
         if comm_bytes == 0:
-            # 使用带宽估算：bandwidth (Gbps) * time (ms) = bits
-            # 转换: Gbps * ms = Mb, Mb / 8 = MB, MB * 1024 * 1024 = bytes
-            comm_bytes = int(default_bandwidth * t_comm_ms * 1024 * 1024 / 8 * 0.8)
+            comm_bytes = int(c2c_bandwidth * t_comm_ms * 1024 * 1024 / 8 * 0.8)
 
         comm_mb = comm_bytes / (1024 * 1024)
 
@@ -606,60 +615,139 @@ def generate_link_traffic_stats(
         comm_type = comm_type_info["type"]
 
         # 根据通信类型确定链路
-        if "tp" in comm_type:
-            # TP 通信：同一 TP 组内的芯片
-            for src_rank in range(tp - 1):
-                link_key = f"chip_{src_rank}_chip_{src_rank + 1}"
-                _add_link_traffic(
-                    link_traffic, link_key,
-                    f"chip_{src_rank}", f"chip_{src_rank + 1}",
-                    comm_mb / (tp - 1), default_bandwidth, default_latency,
-                    "c2c", f"task_{i}_comm", comm_type
-                )
-        elif "ep" in comm_type:
-            # EP 通信：All-to-All，每对芯片之间都有流量
-            for src_rank in range(ep):
-                for dst_rank in range(ep):
-                    if src_rank != dst_rank:
-                        link_key = f"chip_{src_rank}_chip_{dst_rank}"
-                        _add_link_traffic(
-                            link_traffic, link_key,
-                            f"chip_{src_rank}", f"chip_{dst_rank}",
-                            comm_mb / (ep * (ep - 1)), default_bandwidth, default_latency,
-                            "b2b" if src_rank // 8 != dst_rank // 8 else "c2c",
-                            f"task_{i}_comm", comm_type
-                        )
-        elif "pp" in comm_type:
-            # PP 通信：相邻 PP stage 之间
-            for stage in range(pp - 1):
-                src_chip = stage * (total_chips // pp)
-                dst_chip = (stage + 1) * (total_chips // pp)
-                link_key = f"chip_{src_chip}_chip_{dst_chip}"
-                _add_link_traffic(
-                    link_traffic, link_key,
-                    f"chip_{src_chip}", f"chip_{dst_chip}",
-                    comm_mb / (pp - 1), default_bandwidth, default_latency,
-                    "b2b", f"task_{i}_comm", comm_type
+        _distribute_traffic_by_comm_type(
+            link_traffic, comm_type, comm_mb, tp, pp, ep, total_chips,
+            c2c_bandwidth, c2c_latency, b2b_bandwidth, b2b_latency,
+            f"task_{i}_comm"
+        )
+
+    # 如果没有通信数据，基于并行配置和模型数据量估算
+    if not has_comm_data and step_metrics:
+        # 估算总数据量（从所有 step 的 bytes 累加）
+        total_bytes = sum(
+            step.get("bytes_read", 0) + step.get("bytes_write", 0)
+            for step in step_metrics
+        )
+
+        # 如果有 aggregates，使用其中的数据
+        if aggregates:
+            total_bytes = max(total_bytes, aggregates.get("total_bytes", 0))
+
+        if total_bytes > 0:
+            # 估算通信量：假设 TP 通信约占总数据量的 10-20%
+            if tp > 1:
+                tp_comm_mb = total_bytes * 0.15 / (1024 * 1024)
+                _distribute_traffic_by_comm_type(
+                    link_traffic, "tp_comm", tp_comm_mb, tp, pp, ep, total_chips,
+                    c2c_bandwidth, c2c_latency, b2b_bandwidth, b2b_latency,
+                    "estimated_tp_comm"
                 )
 
-    # 转换为列表格式
+            if ep > 1:
+                ep_comm_mb = total_bytes * 0.1 / (1024 * 1024)
+                _distribute_traffic_by_comm_type(
+                    link_traffic, "ep_comm", ep_comm_mb, tp, pp, ep, total_chips,
+                    c2c_bandwidth, c2c_latency, b2b_bandwidth, b2b_latency,
+                    "estimated_ep_comm"
+                )
+
+            if pp > 1:
+                pp_comm_mb = total_bytes * 0.05 / (1024 * 1024)
+                _distribute_traffic_by_comm_type(
+                    link_traffic, "pp_comm", pp_comm_mb, tp, pp, ep, total_chips,
+                    c2c_bandwidth, c2c_latency, b2b_bandwidth, b2b_latency,
+                    "estimated_pp_comm"
+                )
+
+    # 获取总运行时间用于利用率计算
+    total_time_ms = 100.0  # 默认 100ms
+    if aggregates:
+        total_time_ms = aggregates.get("total_time_ms", aggregates.get("total_time", 100.0))
+
+    # 转换为列表格式并计算利用率
     result = []
     for link_data in link_traffic.values():
-        # 计算利用率 (假设总时间为所有通信时间之和)
-        # 简化：根据流量和带宽估算
         traffic_mb = link_data["trafficMb"]
         bandwidth_gbps = link_data["bandwidthGbps"]
-        # 假设仿真时间为 100ms，计算利用率
-        # traffic (MB) / (bandwidth (Gbps) * time (s)) = utilization
-        # MB / (Gbps * s) = MB / (Gb/8 * s) = MB / (GB/8 * s) = 8 * MB / (GB * s)
-        estimated_time_s = 0.1  # 100ms
-        max_traffic_mb = bandwidth_gbps / 8 * 1000 * estimated_time_s  # Gbps -> MB/s -> MB
+        # 计算利用率：traffic (MB) / (bandwidth (GB/s) * time (s))
+        # bandwidth_gbps / 8 = bandwidth_GBps
+        total_time_s = total_time_ms / 1000.0
+        max_traffic_mb = (bandwidth_gbps / 8) * 1000 * total_time_s  # GB/s -> MB/s -> MB
         utilization = min(100.0, traffic_mb / max_traffic_mb * 100) if max_traffic_mb > 0 else 0
 
         link_data["utilizationPercent"] = round(utilization, 2)
         result.append(link_data)
 
     return result
+
+
+def _distribute_traffic_by_comm_type(
+    link_traffic: dict[str, dict[str, Any]],
+    comm_type: str,
+    comm_mb: float,
+    tp: int,
+    pp: int,
+    ep: int,
+    total_chips: int,
+    c2c_bandwidth: float,
+    c2c_latency: float,
+    b2b_bandwidth: float,
+    b2b_latency: float,
+    task_id: str,
+) -> None:
+    """根据通信类型分配流量到各链路"""
+    if "tp" in comm_type and tp > 1:
+        # TP 通信：Ring AllReduce，同一 TP 组内的芯片
+        traffic_per_link = comm_mb * 2 * (tp - 1) / tp / (tp - 1)  # Ring AllReduce 系数
+        for src_rank in range(tp - 1):
+            link_key = f"chip_{src_rank}_chip_{src_rank + 1}"
+            _add_link_traffic(
+                link_traffic, link_key,
+                f"chip_{src_rank}", f"chip_{src_rank + 1}",
+                traffic_per_link, c2c_bandwidth, c2c_latency,
+                "c2c", task_id, comm_type
+            )
+        # Ring 是双向的，添加反向链路
+        for src_rank in range(1, tp):
+            link_key = f"chip_{src_rank}_chip_{src_rank - 1}"
+            _add_link_traffic(
+                link_traffic, link_key,
+                f"chip_{src_rank}", f"chip_{src_rank - 1}",
+                traffic_per_link, c2c_bandwidth, c2c_latency,
+                "c2c", task_id, comm_type
+            )
+
+    elif "ep" in comm_type and ep > 1:
+        # EP 通信：All-to-All
+        traffic_per_link = comm_mb / (ep * (ep - 1))
+        for src_rank in range(ep):
+            for dst_rank in range(ep):
+                if src_rank != dst_rank:
+                    link_key = f"chip_{src_rank}_chip_{dst_rank}"
+                    link_type = "b2b" if abs(src_rank - dst_rank) > 1 else "c2c"
+                    bw = b2b_bandwidth if link_type == "b2b" else c2c_bandwidth
+                    lat = b2b_latency if link_type == "b2b" else c2c_latency
+                    _add_link_traffic(
+                        link_traffic, link_key,
+                        f"chip_{src_rank}", f"chip_{dst_rank}",
+                        traffic_per_link, bw, lat,
+                        link_type, task_id, comm_type
+                    )
+
+    elif "pp" in comm_type and pp > 1:
+        # PP 通信：相邻 stage 之间的 P2P
+        chips_per_stage = total_chips // pp
+        traffic_per_link = comm_mb / (pp - 1)
+        for stage in range(pp - 1):
+            src_chip = stage * chips_per_stage + chips_per_stage - 1
+            dst_chip = (stage + 1) * chips_per_stage
+            link_key = f"chip_{src_chip}_chip_{dst_chip}"
+            _add_link_traffic(
+                link_traffic, link_key,
+                f"chip_{src_chip}", f"chip_{dst_chip}",
+                traffic_per_link, b2b_bandwidth, b2b_latency,
+                "b2b", task_id, comm_type
+            )
 
 
 def _add_link_traffic(

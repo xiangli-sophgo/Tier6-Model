@@ -549,8 +549,9 @@ export const Results: React.FC = () => {
       const inferenceConfig = selectedTask.config_snapshot?.inference as Record<string, unknown> || {}
       const topology = selectedTask.config_snapshot?.topology as Record<string, unknown> || {}
 
-      // 从拓扑中提取硬件配置（新格式 v2.1.0+）
+      // 从拓扑中提取硬件配置（支持多种格式）
       const hardwareConfig: HardwareConfig | undefined = (() => {
+        // 格式1: llm_simulator 格式 (pods 数组结构)
         const pods = (topology.pods as any[]) || []
         if (pods.length > 0 && pods[0].racks && pods[0].racks[0].boards && pods[0].racks[0].boards[0].chips) {
           const board = pods[0].racks[0].boards[0]
@@ -579,33 +580,76 @@ export const Results: React.FC = () => {
             }
           }
 
-          // 构建互联配置
           const interconnect = {
-            c2c: {
-              bandwidth_gbps: 448,
-              latency_us: 0.2
-            },
-            b2b: {
-              bandwidth_gbps: 900,
-              latency_us: 1
-            },
-            r2r: {
-              bandwidth_gbps: 400,
-              latency_us: 2
-            },
-            p2p: {
-              bandwidth_gbps: 400,
-              latency_us: 2
-            }
+            c2c: { bandwidth_gbps: 448, latency_us: 0.2 },
+            b2b: { bandwidth_gbps: 900, latency_us: 1 },
+            r2r: { bandwidth_gbps: 400, latency_us: 2 },
+            p2p: { bandwidth_gbps: 400, latency_us: 2 }
           }
 
-          return {
-            hardware_params: {
-              chips,
-              interconnect
-            }
-          } as HardwareConfig
+          return { hardware_params: { chips, interconnect } } as HardwareConfig
         }
+
+        // 格式2: tier6 格式 (hardware_params.chips 结构)
+        const hwParams = topology.hardware_params as any
+        if (hwParams?.chips) {
+          const tier6Chips = hwParams.chips as Record<string, any>
+          const firstChipName = Object.keys(tier6Chips)[0]
+          const tier6Chip = tier6Chips[firstChipName]
+
+          if (tier6Chip) {
+            // 转换 tier6 芯片格式到前端期望的格式
+            const chips: Record<string, any> = {
+              [firstChipName]: {
+                name: firstChipName,
+                num_cores: tier6Chip.cores?.count || 256,
+                // 计算 TFLOPS: cores * lanes * mac_per_lane * frequency / 1000
+                compute_tflops_fp8: tier6Chip.compute_units?.cube?.mac_per_lane?.FP8
+                  ? (tier6Chip.cores?.count || 4) * (tier6Chip.cores?.lanes_per_core || 64) * tier6Chip.compute_units.cube.mac_per_lane.FP8 * (tier6Chip.frequency_ghz || 1) / 1000
+                  : 256,
+                compute_tflops_bf16: tier6Chip.compute_units?.cube?.mac_per_lane?.BF16
+                  ? (tier6Chip.cores?.count || 4) * (tier6Chip.cores?.lanes_per_core || 64) * tier6Chip.compute_units.cube.mac_per_lane.BF16 * (tier6Chip.frequency_ghz || 1) / 1000
+                  : 128,
+                memory_capacity_gb: tier6Chip.memory?.gmem?.capacity_gb || 64,
+                memory_bandwidth_gbps: tier6Chip.memory?.gmem?.bandwidth_gbps || 273,
+                memory_bandwidth_utilization: 0.85,
+                lmem_capacity_mb: tier6Chip.memory?.lmem?.capacity_mb || 64,
+                lmem_bandwidth_gbps: tier6Chip.memory?.lmem?.bandwidth_gbps || 2000,
+                sram_size_kb: tier6Chip.memory?.smem?.capacity_kb || 256,
+                sram_utilization: 0.45,
+              }
+            }
+
+            // 从 tier6 获取互联配置
+            const tier6Interconnect = hwParams.interconnect || {}
+            const interconnect = {
+              c2c: {
+                bandwidth_gbps: tier6Interconnect.c2c?.bandwidth_gbps || 448,
+                latency_us: tier6Interconnect.c2c?.latency_us || 0.2
+              },
+              b2b: {
+                bandwidth_gbps: tier6Interconnect.b2b?.bandwidth_gbps || 450,
+                latency_us: tier6Interconnect.b2b?.latency_us || 0.35
+              },
+              r2r: {
+                bandwidth_gbps: tier6Interconnect.r2r?.bandwidth_gbps || 200,
+                latency_us: tier6Interconnect.r2r?.latency_us || 2
+              },
+              p2p: {
+                bandwidth_gbps: tier6Interconnect.p2p?.bandwidth_gbps || 100,
+                latency_us: tier6Interconnect.p2p?.latency_us || 5
+              }
+            }
+
+            return { hardware_params: { chips, interconnect } } as HardwareConfig
+          }
+        }
+
+        // 格式3: 已经是 hardware_params 格式（直接返回）
+        if (topology.hardware_params) {
+          return { hardware_params: topology.hardware_params } as HardwareConfig
+        }
+
         return undefined
       })()
 
