@@ -1,0 +1,105 @@
+# ============================================================
+# Chip Configuration Template
+# ============================================================
+# 复制此文件并重命名为芯片型号 (如 SG2262.yaml) 来创建新配置。
+# 所有参数均为必填，加载时找不到会报错。
+#
+# 单位约定:
+#   频率: GHz | 容量: GB/MB/KB | 带宽: GB/s | 延迟: ns
+#   利用率/效率: 0~1 的浮点数 | 对齐: bytes
+# ============================================================
+
+# 芯片基本信息
+name: 'CHIP_NAME'               # 芯片型号名称，需与文件名一致
+architecture: TPU_V7            # 架构代号
+process: 7nm                    # 制程工艺
+frequency_ghz: 1.0              # 芯片工作频率 (GHz)
+
+# ------------------------------------------------------------
+# 核心配置
+# ------------------------------------------------------------
+cores:
+  count: 4                      # 核心数量
+  lanes_per_core: 64            # 每核心 SIMD Lane 数量
+
+# ------------------------------------------------------------
+# 计算单元
+# ------------------------------------------------------------
+compute_units:
+
+  # Cube: 矩阵计算单元，用于 GEMM 等密集矩阵运算
+  cube:
+    m: 16                       # 矩阵计算单元 M 维度 (行)
+    k: 32                       # 矩阵计算单元 K 维度 (缩减维)
+    n: 8                        # 矩阵计算单元 N 维度 (列)
+    # 每 Lane 每周期 MAC (Multiply-Accumulate) 操作数，按数据类型
+    # 峰值算力推导: TFLOPS = cores * lanes_per_core * mac_per_lane * freq_ghz * 2 / 1000
+    mac_per_lane:
+      INT4: 2000                # 4-bit 整数
+      INT8: 1000                # 8-bit 整数
+      FP8: 1000                 # 8-bit 浮点 (推理主力精度)
+      BF16: 500                 # Brain Float 16
+      FP16: 500                 # IEEE Float 16
+      TF32: 250                 # TensorFloat-32
+
+  # Vector: 向量计算单元，用于激活函数、LayerNorm、Softmax 等逐元素运算
+  vector:
+    # 每 Lane 的 EU (Execution Unit) 数量，按数据类型
+    eu_per_lane:
+      INT8: 64
+      FP8: 64
+      INT16: 32
+      BF16: 32
+      FP16: 32
+      INT32: 16
+      FP32: 16
+
+# ------------------------------------------------------------
+# 存储层级
+# ------------------------------------------------------------
+# 两级存储模型: gmem (片外 DRAM) <-> lmem (核内 SRAM)
+# 数据搬运路径: gmem --GDMA--> lmem --> 计算单元 --> lmem --GDMA--> gmem
+memory:
+
+  # gmem: Global Memory - 片外主存
+  gmem:
+    type: LPDDR5                # 存储类型 (LPDDR5/HBM2e/HBM3/HBM3e/DDR5/GDDR6/GDDR7)
+    capacity_gb: 64             # 总容量 (GB)
+    bandwidth_gbps: 273         # 理论峰值带宽 (GB/s)
+    bandwidth_utilization: 0.85 # 实际带宽利用率 (0~1)，实际可达 = bandwidth * utilization
+    latency_ns: 100             # 访问延迟 (ns)
+
+  # lmem: Local Memory - 核内本地 SRAM (芯片总量，代码会按 core_count 均分)
+  lmem:
+    capacity_mb: 64             # 芯片总容量 (MB)，每核 = capacity / cores.count
+    bandwidth_gbps: 2000        # 带宽 (GB/s)
+    latency_ns: 1               # 访问延迟 (ns)
+    sram_utilization: 0.45      # SRAM 利用率 (0~1)，可用于 tiling 的比例
+
+# ------------------------------------------------------------
+# DMA 引擎
+# ------------------------------------------------------------
+# GDMA 负责 gmem <-> lmem 之间的数据搬运
+dma_engines:
+  gdma:
+    bandwidth_gbps: 68          # 单引擎带宽 (GB/s)
+    startup_latency_ns: 100     # 启动延迟 (ns)，每次搬运的固定开销
+    efficiency: 0.9             # 传输效率 (0~1)，有效带宽 = bandwidth * efficiency
+
+# ------------------------------------------------------------
+# 芯片级参数
+# ------------------------------------------------------------
+align_bytes: 32                 # 内存对齐要求 (bytes)，影响 tiling 时的 padding
+compute_dma_overlap_rate: 0.8   # 计算-DMA 重叠率 (0~1)，流水线隐藏搬运延迟的能力
+                                # 0 = 完全串行，1 = 完全重叠
+                                # 总时间 = max(t_comp, t_dma) + min(t_comp, t_dma) * (1 - overlap)
+
+# ------------------------------------------------------------
+# 片内互联 (NoC)
+# ------------------------------------------------------------
+# 核与核之间的片内网络，片间互联 (c2c/b2b/r2r/p2p) 在拓扑配置中定义
+interconnect:
+  NoC:
+    topology: Mesh              # 拓扑类型 (Mesh/CrossRing)
+    bandwidth_gbps: 1000        # NoC 带宽 (GB/s)
+    latency_ns: 10              # 单跳延迟 (ns)

@@ -28,7 +28,13 @@ def main():
     load_env()
 
     # 从环境变量读取端口配置（与前端共用 VITE_API_PORT）
-    port = int(os.getenv("VITE_API_PORT", "8001"))
+    port_str = os.getenv("VITE_API_PORT")
+    if not port_str:
+        raise RuntimeError(
+            "VITE_API_PORT is not set. "
+            "Please create .env file in project root with VITE_API_PORT=<port>"
+        )
+    port = int(port_str)
 
     print(f"启动后端服务，端口: {port}")
 

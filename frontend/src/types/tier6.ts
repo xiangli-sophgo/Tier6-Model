@@ -6,17 +6,21 @@
 
 // ==================== 预设类型 ====================
 
-/** 内存层级配置 */
-export interface MemoryLevelConfig {
+/** GMEM 内存配置 */
+export interface GmemConfig {
   type?: string;           // 内存类型 (LPDDR5, HBM3, etc.)
-  channels?: number;       // 通道数
-  rate_mt?: number;        // 传输速率 (MT/s)
-  width_bits?: number;     // 位宽
-  capacity_gb?: number;    // 容量 (GB) - gmem/l2m
-  capacity_mb?: number;    // 容量 (MB) - lmem
-  capacity_kb?: number;    // 容量 (KB) - smem
+  capacity_gb: number;     // 容量 (GB)
+  bandwidth_gbps: number;  // 带宽 (GB/s)
+  bandwidth_utilization?: number; // 带宽利用率 (0-1)
+  latency_ns?: number;     // 延迟 (ns)
+}
+
+/** LMEM 内存配置 */
+export interface LmemConfig {
+  capacity_mb: number;     // 容量 (MB)
   bandwidth_gbps: number;  // 带宽 (GB/s)
   latency_ns?: number;     // 延迟 (ns)
+  sram_utilization?: number; // SRAM 利用率 (0-1)
 }
 
 /** DMA 引擎配置 */
@@ -34,112 +38,89 @@ export interface ChipInterconnectConfig {
   latency_ns?: number;     // 延迟 (ns)
 }
 
-/** 芯片预设 - 完整 Tier6 格式 */
+/** MAC/Lane 按数据类型 */
+export interface MacPerLaneConfig {
+  INT8?: number;
+  FP8?: number;
+  BF16?: number;
+  FP16?: number;
+  TF32?: number;
+  INT4?: number;
+}
+
+/** EU/Lane 按数据类型 */
+export interface EuPerLaneConfig {
+  INT8?: number;
+  FP8?: number;
+  INT16?: number;
+  BF16?: number;
+  FP16?: number;
+  INT32?: number;
+  FP32?: number;
+}
+
+/** 芯片预设 - Tier6 结构化格式 */
 export interface ChipPreset {
   name: string;
-  architecture?: string;   // 架构 (TPU_V7, TPU_V7.1, etc.)
+  architecture?: string;   // 架构 (TPU_V7, etc.)
   process?: string;        // 工艺 (7nm, 5nm, etc.)
-  frequency_ghz?: number;  // 频率 (GHz)
+  frequency_ghz: number;   // 频率 (GHz)
 
   // 核心配置
-  cores?: {
+  cores: {
     count: number;         // 核心数
     lanes_per_core: number; // 每核 Lane 数
   };
 
   // 计算单元
-  compute_units?: {
-    cube?: {
-      // MAC 数量/Lane (按数据类型)
-      mac_per_lane?: {
-        INT8?: number;
-        FP8?: number;
-        BF16?: number;
-        FP16?: number;
-        TF32?: number;
-        INT4?: number;
-        [key: string]: number | undefined;
-      };
+  compute_units: {
+    cube: {
+      m?: number;          // 矩阵计算 M 维度
+      k?: number;          // 矩阵计算 K 维度
+      n?: number;          // 矩阵计算 N 维度
+      mac_per_lane: MacPerLaneConfig;
     };
     vector?: {
-      // EU 数量/Lane (按数据类型)
-      eu_per_lane?: {
-        INT8?: number;
-        FP8?: number;
-        INT16?: number;
-        BF16?: number;
-        FP16?: number;
-        INT32?: number;
-        FP32?: number;
-        [key: string]: number | undefined;
-      };
+      eu_per_lane: EuPerLaneConfig;
     };
   };
 
-  // 内存层级
-  memory?: {
-    gmem?: MemoryLevelConfig;  // 全局内存 (DDR/HBM)
-    l2m?: MemoryLevelConfig;   // L2 缓存
-    lmem?: MemoryLevelConfig;  // 本地内存 (每核)
-    smem?: MemoryLevelConfig;  // 共享内存
+  // 内存层级 (两级模型: gmem + lmem)
+  memory: {
+    gmem: GmemConfig;
+    lmem: LmemConfig;
   };
 
-  // DMA 引擎
-  dma_engines?: {
-    gdma?: DmaEngineConfig;    // Global DMA
-    sdma?: DmaEngineConfig;    // Shared DMA
-    cdma?: DmaEngineConfig;    // C2C DMA
+  // DMA 引擎 (单 GDMA)
+  dma_engines: {
+    gdma: DmaEngineConfig;
   };
+
+  // 其他参数
+  align_bytes: number;
+  compute_dma_overlap_rate: number;
 
   // 片上互联 (NoC)
   interconnect?: {
-    noc?: ChipInterconnectConfig;  // 片上网络
+    noc?: ChipInterconnectConfig;
   };
-
-  // 兼容 llm_simulator 旧格式字段
-  num_cores?: number;              // 核心数 (兼容)
-  compute_tflops_fp8?: number;     // FP8 算力
-  compute_tflops_bf16?: number;    // BF16 算力
-  memory_capacity_gb?: number;     // 显存容量
-  memory_bandwidth_gbps?: number;  // 显存带宽
-  memory_bandwidth_utilization?: number;
-  lmem_capacity_mb?: number;
-  lmem_bandwidth_gbps?: number;
-  cube_m?: number;
-  cube_k?: number;
-  cube_n?: number;
-  sram_size_kb?: number;
-  sram_utilization?: number;
-  lane_num?: number;
-  align_bytes?: number;
-  compute_dma_overlap_rate?: number;
-  [key: string]: unknown;  // 允许额外字段
-}
-
-/** 模型预设 */
-export interface ModelPreset {
-  name: string;
-  hidden_size: number;
-  num_layers: number;
-  num_dense_layers?: number;
-  num_moe_layers?: number;
-  num_heads: number;
-  vocab_size: number;
-  dtype: string;
-  moe?: MoEConfig;
-  mla?: MLAConfig;
-  ffn?: FFNConfig;
 }
 
 /** MoE 配置 */
 export interface MoEConfig {
   num_routed_experts: number;
-  num_shared_experts: number;
+  num_shared_experts?: number;
   num_activated_experts: number;
   intermediate_size: number;
+  num_expert_groups?: number;
+  num_limited_groups?: number;
+  route_scale?: number;
+  decoder_sparse_step?: number;
+  norm_topk_prob?: boolean;
+  router_aux_loss_coef?: number;
 }
 
-/** MLA 配置 */
+/** MLA (Multi-head Latent Attention) 配置 */
 export interface MLAConfig {
   q_lora_rank: number;
   kv_lora_rank: number;
@@ -148,9 +129,57 @@ export interface MLAConfig {
   v_head_dim: number;
 }
 
-/** FFN 配置 */
-export interface FFNConfig {
+/** DSA (Dynamic Sparse Attention) 配置 */
+export interface DSAConfig {
+  num_index_heads: number;
+  index_head_dim: number;
+  topk_index: number;
+}
+
+/** NSA (Native Sparse Attention) 配置 */
+export interface NSAConfig {
+  l: number;
+  d: number;
+  sl: number;
+  sn: number;
+  w: number;
+}
+
+/** RoPE 位置编码配置 */
+export interface RoPEConfig {
+  theta?: number;
+  factor?: number;
+  original_seq_len?: number;
+  max_position_embeddings?: number;
+  beta_fast?: number;
+  beta_slow?: number;
+  mscale?: number;
+}
+
+/** 模型预设 (混合结构: 核心参数扁平 + 特性模块嵌套) */
+export interface ModelPreset {
+  name: string;
+  // 核心参数 (扁平)
+  vocab_size: number;
+  hidden_size: number;
   intermediate_size: number;
+  num_layers: number;
+  num_dense_layers?: number;
+  num_moe_layers?: number;
+  num_attention_heads: number;
+  num_key_value_heads?: number;
+  v_head_dim?: number;
+  max_seq_len?: number;
+  hidden_act?: string;
+  rms_norm_eps?: number;
+  attention_bias?: boolean;
+  attention_dropout?: number;
+  // 特性模块 (嵌套，可选 -- 省略 = 不使用该特性)
+  MoE?: MoEConfig;
+  MLA?: MLAConfig;
+  DSA?: DSAConfig;
+  NSA?: NSAConfig;
+  RoPE?: RoPEConfig;
 }
 
 // ==================== Benchmark 类型 ====================
@@ -169,23 +198,9 @@ export interface BenchmarkListItem {
 export interface Tier6BenchmarkConfig {
   id?: string;
   name?: string;
-  model: Tier6ModelConfig | Record<string, unknown>;
+  model: string | ModelPreset | Record<string, unknown>;
+  model_preset_ref?: string;
   inference: Tier6InferenceConfig | Record<string, unknown>;
-}
-
-/** Tier6 模型配置 */
-export interface Tier6ModelConfig {
-  name: string;
-  hidden_size: number;
-  num_layers: number;
-  num_dense_layers?: number;
-  num_moe_layers?: number;
-  num_heads: number;
-  vocab_size: number;
-  dtype: string;
-  moe?: MoEConfig;
-  mla?: MLAConfig;
-  ffn?: FFNConfig;
 }
 
 /** Tier6 推理配置 */
@@ -204,7 +219,7 @@ export interface TopologyListItem {
   chip_count?: number;
 }
 
-/** Tier6 拓扑配置 - 宽松类型以兼容前端现有代码 */
+/** Tier6 拓扑配置 */
 export interface Tier6TopologyConfig {
   name?: string;
   description?: string;
@@ -212,12 +227,15 @@ export interface Tier6TopologyConfig {
   racks_per_pod?: number;
   rack_config?: Record<string, unknown>;
   topology?: Record<string, unknown>;
-  chips?: Record<string, unknown>;
   hardware_params?: {
-    chips?: Record<string, unknown>;
-    interconnect?: Record<string, unknown>;
+    chips?: Record<string, ChipPreset>;
+    interconnect?: {
+      c2c?: { bandwidth_gbps: number; latency_us: number };
+      b2b?: { bandwidth_gbps: number; latency_us: number };
+      r2r?: { bandwidth_gbps: number; latency_us: number };
+      p2p?: { bandwidth_gbps: number; latency_us: number };
+    };
   };
-  interconnect?: Record<string, unknown>;
   comm_latency_config?: CommLatencyConfig | Record<string, unknown>;
   [key: string]: unknown;  // 允许额外字段
 }
@@ -288,7 +306,7 @@ export interface Tier6TaskStatus {
   completed_at?: string;
 }
 
-/** 任务结果 - 兼容 llm_simulator 格式 */
+/** 任务结果 */
 export interface Tier6TaskResults {
   top_k_plans: Tier6PlanResult[];
   infeasible_plans: Tier6InfeasiblePlan[];

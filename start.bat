@@ -110,9 +110,15 @@ if not exist "frontend\node_modules" (
 :: 清理旧进程
 echo [0/2] Cleaning up old processes...
 
-:: 读取 .env 中的端口配置
-set API_PORT=8001
+:: 从 .env 文件读取端口配置
+set API_PORT=
 for /f "tokens=2 delims==" %%a in ('findstr /r "^VITE_API_PORT=" .env 2^>nul') do set API_PORT=%%a
+if "%API_PORT%"=="" (
+    echo [ERROR] VITE_API_PORT not found in .env file
+    echo Please create .env file with VITE_API_PORT=^<port^>
+    pause
+    exit /b 1
+)
 
 :: 清理旧的 PID 记录
 if exist "%PID_FILE%" del /f /q "%PID_FILE%" >nul 2>&1
@@ -138,7 +144,7 @@ echo.
 echo.
 echo Starting backend service (port %API_PORT%)...
 cd /d %SCRIPT_DIR%backend
-start /B python3 -m llm_simulator.main
+start /B python3 -m math_model.main
 echo Backend started in background
 
 :: 等待后端启动并记录 PID

@@ -12,7 +12,10 @@ const version = fs.existsSync(versionFile)
 export default defineConfig(({ mode }) => {
   // 从父目录 (Tier6+model) 加载 .env 文件
   const env = loadEnv(mode, path.resolve(__dirname, '..'), '')
-  const apiPort = env.VITE_API_PORT || '8001'
+  const apiPort = env.VITE_API_PORT
+  if (!apiPort) {
+    throw new Error('VITE_API_PORT is not set. Please create a .env file in project root with VITE_API_PORT=<port>')
+  }
   const apiTarget = `http://127.0.0.1:${apiPort}`
 
   return {
@@ -32,21 +35,17 @@ export default defineConfig(({ mode }) => {
       strictPort: true,
       host: '127.0.0.1',
       proxy: {
-        '/tier6/api/ws': {
+        '/api/ws': {
           target: apiTarget,
           changeOrigin: true,
           ws: true,  // 启用 WebSocket 代理
-        },
-        '/tier6': {
-          target: apiTarget,
-          changeOrigin: true,
         },
         '/api': {
           target: apiTarget,
           changeOrigin: true,
         },
         '/ws': {
-          target: apiTarget,  // 保持 HTTP 协议，Vite 会自动处理 WebSocket 升级
+          target: apiTarget,
           changeOrigin: true,
           ws: true,  // 启用 WebSocket 代理
         },

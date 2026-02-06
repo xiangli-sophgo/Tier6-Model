@@ -13,8 +13,8 @@ import {
   SimulationStats,
 } from './types';
 
-// API 基础地址
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8001';
+// API 基础地址（通过 vite proxy 转发）
+const API_BASE_URL = '';
 
 /**
  * 调用后端模拟 API

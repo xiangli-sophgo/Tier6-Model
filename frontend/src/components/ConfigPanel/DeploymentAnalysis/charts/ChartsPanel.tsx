@@ -31,8 +31,8 @@ import {
 } from '../../../../utils/llmDeployment/types'
 import { HierarchicalTopology } from '../../../../types'
 
-/** 后端模拟 API 地址 */
-const SIMULATION_API_URL = 'http://localhost:8001/api/simulate'
+/** 后端模拟 API 地址（通过 vite proxy 转发）*/
+const SIMULATION_API_URL = '/api/simulate'
 
 /** 后端模拟结果 */
 interface BackendSimulationResult {

@@ -15,7 +15,7 @@ import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { NumberInput } from '@/components/ui/number-input'
-import { Label } from '@/components/ui/label'
+// Label 保留用于未来扩展
 import { Switch } from '@/components/ui/switch'
 import {
   Tooltip,
@@ -23,14 +23,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip'
-import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog'
-import { Textarea } from '@/components/ui/textarea'
+// Dialog/Textarea 已移到各独立编辑器组件中
 import {
   LLMModelConfig,
   InferenceConfig,
@@ -73,10 +66,13 @@ import {
 } from '../shared'
 import { AnalysisTaskList } from './AnalysisTaskList'
 import { listConfigs, getConfig, saveConfig, SavedConfig } from '../../../api/topology'
-import {
-  BenchmarkConfigSelector,
-  colors,
-} from './ConfigSelectors'
+// BenchmarkConfigSelector 已拆分为 ModelPresetEditor + 推理参数内联编辑
+import { ModelPresetEditor } from './ModelPresetEditor'
+import { ChipPresetEditor } from './ChipPresetEditor'
+import { TopologyEditor } from './TopologyEditor'
+import { colors } from './ConfigSelectors'
+import type { ModelPreset, ChipPreset, Tier6TopologyConfig } from '@/types/tier6'
+import { modelPresetToLLMConfig, llmConfigToModelPreset } from '@/utils/llmDeployment/configAdapters'
 import {
   generateBenchmarkName,
   generateTopologyName,
@@ -85,7 +81,7 @@ import { BaseCard } from '@/components/common/BaseCard'
 import { ParallelismConfigPanel } from './ParallelismConfigPanel'
 import { AnalysisResultDisplay } from './AnalysisResultDisplay'
 import { useTaskWebSocket, TaskUpdate } from '../../../hooks/useTaskWebSocket'
-import { TopologyInfoCard } from './TopologyInfoCard'
+// TopologyInfoCard 已替换为 TopologyEditor + ChipPresetEditor
 import { SweepConfigPanel } from './ParameterSweep/SweepConfigPanel'
 import { extractSweepableParameters } from './ParameterSweep/parameterExtractors'
 import {
@@ -572,6 +568,90 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
   // 通信延迟配置 (统一配置：协议、网络基础设施、芯片延迟)
   const [commLatencyConfig, setCommLatencyConfig] = useState<CommLatencyConfig>({ ...DEFAULT_COMM_LATENCY_CONFIG })
 
+  // ==========================================
+  // 新编辑器 State & Sync Handlers
+  // ==========================================
+
+  // ModelPreset state (与 modelConfig 双向同步)
+  const [modelPreset, setModelPreset] = useState<ModelPreset>(() =>
+    llmConfigToModelPreset(modelConfig)
+  )
+
+  // 当 ModelPresetEditor 变化时，同步到 modelConfig (旧格式)
+  const handleModelPresetChange = useCallback((preset: ModelPreset) => {
+    setModelPreset(preset)
+    setModelConfig(modelPresetToLLMConfig(preset))
+  }, [])
+
+  // 构造 Tier6TopologyConfig 供 TopologyEditor 使用
+  const topologyConfigForEditor = useMemo<Tier6TopologyConfig>(() => ({
+    name: selectedTopologyConfig || '',
+    pod_count: localPodCount,
+    racks_per_pod: localRacksPerPod,
+    rack_config: localRackConfig as unknown as Record<string, unknown>,
+    hardware_params: localHardwareParams ? {
+      chips: localHardwareParams.chips as unknown as Record<string, ChipPreset>,
+      interconnect: localHardwareParams.interconnect,
+    } : undefined,
+    comm_latency_config: commLatencyConfig,
+  }), [selectedTopologyConfig, localPodCount, localRacksPerPod, localRackConfig, localHardwareParams, commLatencyConfig])
+
+  // 当 TopologyEditor 变化时，分解回各个独立 state
+  const handleTopologyConfigChange = useCallback((config: Tier6TopologyConfig) => {
+    if (config.pod_count !== undefined) setLocalPodCount(config.pod_count)
+    if (config.racks_per_pod !== undefined) setLocalRacksPerPod(config.racks_per_pod)
+    if (config.rack_config) setLocalRackConfig(config.rack_config as unknown as RackConfig)
+    if (config.hardware_params) {
+      const hp = config.hardware_params
+      setLocalHardwareParams({
+        chips: (hp.chips || {}) as Record<string, ChipPreset>,
+        interconnect: {
+          c2c: hp.interconnect?.c2c || { bandwidth_gbps: 0, latency_us: 0 },
+          b2b: hp.interconnect?.b2b || { bandwidth_gbps: 0, latency_us: 0 },
+          r2r: hp.interconnect?.r2r || { bandwidth_gbps: 0, latency_us: 0 },
+          p2p: hp.interconnect?.p2p || { bandwidth_gbps: 0, latency_us: 0 },
+        },
+      })
+    }
+    if (config.comm_latency_config) {
+      setCommLatencyConfig(config.comm_latency_config as CommLatencyConfig)
+    }
+    if (config.name) setSelectedTopologyConfig(config.name)
+  }, [])
+
+  // 提取当前 ChipPreset 供 ChipPresetEditor 使用
+  const currentChipPreset = useMemo<ChipPreset>(() => {
+    if (localHardwareParams?.chips) {
+      const chipNames = Object.keys(localHardwareParams.chips)
+      const selected = selectedChipType || chipNames[0]
+      if (selected && localHardwareParams.chips[selected]) {
+        return localHardwareParams.chips[selected]
+      }
+    }
+    return DEFAULT_CHIP_HARDWARE
+  }, [localHardwareParams, selectedChipType])
+
+  // 当 ChipPresetEditor 变化时，更新 localHardwareParams
+  const handleChipPresetChange = useCallback((chip: ChipPreset) => {
+    setLocalHardwareParams(prev => {
+      if (!prev) {
+        return {
+          chips: { [chip.name]: chip },
+          interconnect: DEFAULT_HARDWARE_PARAMS.interconnect,
+        }
+      }
+      // 如果芯片名称变了，需要移除旧的 key
+      const newChips = { ...prev.chips }
+      const oldName = selectedChipType || Object.keys(prev.chips)[0]
+      if (oldName && oldName !== chip.name) {
+        delete newChips[oldName]
+      }
+      newChips[chip.name] = chip
+      return { ...prev, chips: newChips }
+    })
+    setSelectedChipType(chip.name)
+  }, [selectedChipType])
+
   // 计算拓扑层级统计
   const topologyStats = React.useMemo(() => {
     const boardCount = localRackConfig
@@ -1037,16 +1117,6 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
 
   // 运行分析（提交到后端执行）
   const handleRunAnalysis = useCallback(async () => {
-    // 验证：必须选择配置文件
-    if (!selectedTopologyConfig) {
-      toast.error('请先选择拓扑配置文件')
-      return
-    }
-    if (!selectedBenchmark) {
-      toast.error('请先选择 Benchmark 配置')
-      return
-    }
-
     const strategy = parallelismMode === 'manual' ? manualStrategy : { dp: 1, tp: 1, pp: 1, ep: 1, sp: 1, moe_tp: 1 }
 
     // 基于当前配置内容生成名称
@@ -1148,15 +1218,6 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
 
   // 运行参数遍历（批量提交任务）
   const handleRunSweep = useCallback(async () => {
-    // 验证：必须选择配置文件
-    if (!selectedTopologyConfig) {
-      toast.error('请先选择拓扑配置文件')
-      return
-    }
-    if (!selectedBenchmark) {
-      toast.error('请先选择 Benchmark 配置')
-      return
-    }
     if (sweepParams.length === 0) {
       toast.error('请至少添加一个遍历参数')
       return
@@ -1323,21 +1384,54 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
   return (
     <>
       <div>
-        {/* 上方：Benchmark 设置和部署设置（左右两列） */}
+        {/* 上方：配置面板（左右两列） */}
         <div className="grid grid-cols-2 gap-8 mb-4">
-          {/* 左列：Benchmark 设置 + 并行策略 */}
+          {/* 左列：模型配置 + 推理参数 + 部署策略 */}
           <div>
-            <BaseCard title="Benchmark 设置" collapsible gradient>
-              <BenchmarkConfigSelector
-                modelConfig={modelConfig}
-                onModelChange={setModelConfig}
-                inferenceConfig={inferenceConfig}
-                onInferenceChange={setInferenceConfig}
-                onBenchmarkSelect={setSelectedBenchmark}
+            {/* 模型配置 */}
+            <BaseCard title="模型配置" collapsible gradient>
+              <ModelPresetEditor
+                value={modelPreset}
+                onChange={handleModelPresetChange}
               />
             </BaseCard>
 
-            {/* 部署策略卡片 */}
+            {/* 推理参数 */}
+            <BaseCard title="推理参数" collapsible gradient className="mt-4">
+              <div className="space-y-3">
+                <div className="grid grid-cols-3 gap-3">
+                  <div>
+                    <div className="mb-1 text-[13px] text-gray-600">Batch Size</div>
+                    <NumberInput
+                      min={1}
+                      value={inferenceConfig.batch_size}
+                      onChange={(v) => setInferenceConfig(prev => ({ ...prev, batch_size: v || 1 }))}
+                      className="h-7"
+                    />
+                  </div>
+                  <div>
+                    <div className="mb-1 text-[13px] text-gray-600">输入序列长度</div>
+                    <NumberInput
+                      min={1}
+                      value={inferenceConfig.input_seq_length}
+                      onChange={(v) => setInferenceConfig(prev => ({ ...prev, input_seq_length: v || 512 }))}
+                      className="h-7"
+                    />
+                  </div>
+                  <div>
+                    <div className="mb-1 text-[13px] text-gray-600">输出序列长度</div>
+                    <NumberInput
+                      min={1}
+                      value={inferenceConfig.output_seq_length}
+                      onChange={(v) => setInferenceConfig(prev => ({ ...prev, output_seq_length: v || 256 }))}
+                      className="h-7"
+                    />
+                  </div>
+                </div>
+              </div>
+            </BaseCard>
+
+            {/* 部署策略 */}
             <BaseCard collapsible title="部署策略" gradient className="mt-4">
               <ParallelismConfigPanel
                 mode={parallelismMode}
@@ -1361,14 +1455,12 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
                       topologyName={selectedTopologyConfig}
                     />
                   </div>
-                  {/* 分割线 */}
                   <div className="my-6 border-t border-gray-200" />
                 </>
               )}
 
-              {/* Tile 搜索、分区搜索、最大模拟 Token 数 - 横向排列 */}
+              {/* Tile 搜索、分区搜索、最大模拟 Token 数 */}
               <div className="grid grid-cols-3 gap-4 mt-4">
-                {/* Tile 搜索开关 */}
                 <div>
                   <div className="mb-1.5 text-[13px] text-gray-600 flex items-center">
                     启用 Tile 搜索
@@ -1381,13 +1473,8 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
                       </Tooltip>
                     </TooltipProvider>
                   </div>
-                  <Switch
-                    checked={enableTileSearch}
-                    onCheckedChange={setEnableTileSearch}
-                  />
+                  <Switch checked={enableTileSearch} onCheckedChange={setEnableTileSearch} />
                 </div>
-
-                {/* 分区搜索开关 */}
                 <div>
                   <div className="mb-1.5 text-[13px] text-gray-600 flex items-center">
                     启用分区搜索
@@ -1396,17 +1483,12 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
                         <TooltipTrigger asChild>
                           <Info className="h-3.5 w-3.5 ml-1 text-gray-400 cursor-help" />
                         </TooltipTrigger>
-                        <TooltipContent>开启时搜索最优分区策略（极慢，单个GEMM需100+秒），关闭时使用固定分区（推荐，速度提升100倍）</TooltipContent>
+                        <TooltipContent>开启时搜索最优分区策略（极慢），关闭时使用固定分区（推荐）</TooltipContent>
                       </Tooltip>
                     </TooltipProvider>
                   </div>
-                  <Switch
-                    checked={enablePartitionSearch}
-                    onCheckedChange={setEnablePartitionSearch}
-                  />
+                  <Switch checked={enablePartitionSearch} onCheckedChange={setEnablePartitionSearch} />
                 </div>
-
-                {/* 最大模拟 Token 数 */}
                 <div>
                   <div className="mb-1.5 text-[13px] text-gray-600 flex items-center">
                     最大模拟 Token 数
@@ -1415,17 +1497,11 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
                         <TooltipTrigger asChild>
                           <Info className="h-3.5 w-3.5 ml-1 text-gray-400 cursor-help" />
                         </TooltipTrigger>
-                        <TooltipContent>Decode 阶段模拟的 token 数量，值越小评估越快但精度略降。推荐：快速评估用 1-2，精确评估用 4-8</TooltipContent>
+                        <TooltipContent>Decode 阶段模拟的 token 数量。推荐：快速评估用 1-2，精确评估用 4-8</TooltipContent>
                       </Tooltip>
                     </TooltipProvider>
                   </div>
-                  <NumberInput
-                    min={1}
-                    max={16}
-                    value={maxSimulatedTokens}
-                    onChange={(value) => setMaxSimulatedTokens(value || 4)}
-                    className="w-full"
-                  />
+                  <NumberInput min={1} max={16} value={maxSimulatedTokens} onChange={(v) => setMaxSimulatedTokens(v || 4)} className="w-full" />
                 </div>
               </div>
 
@@ -1433,11 +1509,7 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
               <div className="grid grid-cols-2 gap-4 mt-4">
                 <div>
                   <div className="mb-1.5 text-[13px] text-gray-600">实验名称</div>
-                  <Input
-                    placeholder="留空则使用 Benchmark 名称"
-                    value={experimentName}
-                    onChange={(e) => setExperimentName(e.target.value)}
-                  />
+                  <Input placeholder="留空则自动生成" value={experimentName} onChange={(e) => setExperimentName(e.target.value)} />
                 </div>
                 <div>
                   <div className="mb-1.5 text-[13px] text-gray-600 flex items-center">
@@ -1451,124 +1523,53 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
                       </Tooltip>
                     </TooltipProvider>
                   </div>
-                  <NumberInput
-                    min={1}
-                    max={16}
-                    value={taskMaxWorkers}
-                    onChange={(value) => setTaskMaxWorkers(value || 4)}
-                    className="w-full"
-                  />
+                  <NumberInput min={1} max={16} value={taskMaxWorkers} onChange={(v) => setTaskMaxWorkers(v || 4)} className="w-full" />
                 </div>
               </div>
 
               {/* 实验描述 */}
               <div className="mt-4">
                 <div className="mb-1.5 text-[13px] text-gray-600">实验描述</div>
-                <Input
-                  placeholder="留空则自动生成（参数扫描会显示扫描范围）"
-                  value={experimentDescription}
-                  onChange={(e) => setExperimentDescription(e.target.value)}
-                />
+                <Input placeholder="留空则自动生成" value={experimentDescription} onChange={(e) => setExperimentDescription(e.target.value)} />
               </div>
 
               {/* 运行按钮 */}
               <Button
-                onClick={
-                  parallelismMode === 'sweep'
-                    ? handleRunSweep
-                    : handleRunAnalysis
-                }
+                onClick={parallelismMode === 'sweep' ? handleRunSweep : handleRunAnalysis}
                 disabled={parallelismMode === 'sweep' && (sweepParams.length === 0 || totalCombinations > 500)}
                 className="w-full mt-4 h-11 rounded-lg"
-                style={{
-                  background: colors.primary,
-                  boxShadow: '0 2px 8px rgba(94, 106, 210, 0.3)',
-                }}
+                style={{ background: colors.primary, boxShadow: '0 2px 8px rgba(94, 106, 210, 0.3)' }}
               >
                 {parallelismMode === 'auto' ? (
-                  <>
-                    <Search className="h-4 w-4 mr-2" />
-                    开始方案评估
-                  </>
+                  <><Search className="h-4 w-4 mr-2" />开始方案评估</>
                 ) : parallelismMode === 'manual' ? (
-                  <>
-                    <PlayCircle className="h-4 w-4 mr-2" />
-                    运行分析
-                  </>
+                  <><PlayCircle className="h-4 w-4 mr-2" />运行分析</>
                 ) : (
-                  <>
-                    <PlayCircle className="h-4 w-4 mr-2" />
-                    批量评估 ({totalCombinations} 组)
-                  </>
+                  <><PlayCircle className="h-4 w-4 mr-2" />批量评估 ({totalCombinations} 组)</>
                 )}
               </Button>
             </BaseCard>
           </div>
 
-          {/* 右列：拓扑配置（可编辑） */}
+          {/* 右列：拓扑配置 + 芯片配置 */}
           <div>
-            <TopologyInfoCard
-              topologyConfigs={topologyConfigs}
-              selectedConfigName={selectedTopologyConfig}
-              onSelectConfig={handleSelectTopologyConfig}
-              onNavigateToTopology={handleNavigateToTopology}
-              chipGroups={chipGroups}
-              selectedChipType={selectedChipType}
-              onSelectChipType={setSelectedChipType}
-              hardwareConfig={hardwareConfig}
-              topologyStats={topologyStats}
-              interconnectParams={localHardwareParams?.interconnect || interconnectParams}
-              commLatencyConfig={commLatencyConfig}
-              // 可编辑模式 props
-              hardwareParams={localHardwareParams || undefined}
-              onHardwareParamsChange={setLocalHardwareParams}
-              onCommLatencyChange={setCommLatencyConfig}
-              onSaveConfig={handleSaveTopologyConfig}
-              onSaveAsConfig={handleSaveAsTopologyConfig}
-              allConfigs={topologyConfigs}
-            />
+            {/* 拓扑配置 */}
+            <BaseCard title="拓扑配置" collapsible gradient>
+              <TopologyEditor
+                value={topologyConfigForEditor}
+                onChange={handleTopologyConfigChange}
+              />
+            </BaseCard>
+
+            {/* 芯片配置 */}
+            <BaseCard title="芯片配置" collapsible gradient className="mt-4">
+              <ChipPresetEditor
+                value={currentChipPreset}
+                onChange={handleChipPresetChange}
+              />
+            </BaseCard>
           </div>
         </div>
-
-        {/* 另存为弹窗 */}
-        <Dialog open={saveAsModalOpen} onOpenChange={setSaveAsModalOpen}>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>另存为新配置</DialogTitle>
-            </DialogHeader>
-            <div className="space-y-4 py-4">
-              <div>
-                <Label className="block mb-2">配置名称 <span className="text-red-500">*</span></Label>
-                <Input
-                  value={newConfigName}
-                  onChange={(e) => setNewConfigName(e.target.value)}
-                  placeholder="请输入配置名称"
-                />
-              </div>
-              <div>
-                <Label className="block mb-2">描述 (可选)</Label>
-                <Textarea
-                  value={newConfigDesc}
-                  onChange={(e) => setNewConfigDesc(e.target.value)}
-                  placeholder="请输入配置描述"
-                  rows={3}
-                />
-              </div>
-            </div>
-            <DialogFooter>
-              <Button variant="outline" onClick={() => {
-                setSaveAsModalOpen(false)
-                setNewConfigName('')
-                setNewConfigDesc('')
-              }}>
-                取消
-              </Button>
-              <Button onClick={handleSaveAsConfig} disabled={saveLoading}>
-                {saveLoading ? '保存中...' : '保存'}
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
 
         {/* 分析任务列表 */}
         <BaseCard collapsible title="分析任务" gradient className="mt-4">

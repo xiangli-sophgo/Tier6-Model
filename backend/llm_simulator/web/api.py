@@ -43,8 +43,7 @@ from ..tasks import manager as task_manager
 from ..tasks.deployment import count_topology_chips, calculate_required_chips
 from .column_presets import router as column_presets_router
 
-# 导入 Tier6 router（优先处理 Tier6 格式的预设 API）
-from tier6.L0_entry.api import router as tier6_router
+# tier6 router 已迁移到 math_model，不再从此处加载
 
 # 导入 Pydantic 模型（从 schemas.py）
 from .schemas import (
@@ -294,8 +293,7 @@ app.add_middleware(
     allow_headers=["Content-Type", "Authorization"],
 )
 
-# 注册 Tier6 路由（使用 /tier6 前缀避免与现有端点冲突）
-app.include_router(tier6_router, prefix="/tier6")
+# tier6 路由已迁移到 math_model.main，不再在此处挂载
 
 # 注册列配置方案路由
 app.include_router(column_presets_router)
@@ -316,15 +314,7 @@ async def startup_event():
     logger.info("注册事件循环到任务管理器...")
     task_manager.set_main_loop(asyncio.get_running_loop())
 
-    # 初始化 tier6 WebSocket 管理器
-    logger.info("初始化 tier6 WebSocket 管理器...")
-    try:
-        from tier6.L0_entry.websocket import get_ws_manager as get_tier6_ws_manager
-        tier6_ws_manager = get_tier6_ws_manager()
-        tier6_ws_manager.set_event_loop(asyncio.get_running_loop())
-        logger.info("tier6 WebSocket 管理器初始化完成")
-    except Exception as e:
-        logger.warning(f"tier6 WebSocket 管理器初始化失败: {e}")
+    # tier6 WebSocket 管理器已迁移到 math_model.main
 
     print("[DEBUG STARTUP] Main event loop registered to task manager!")
     print("[DEBUG STARTUP] Application startup complete!")
@@ -1984,6 +1974,12 @@ if __name__ == "__main__":
     if env_path.exists():
         load_dotenv(env_path)
 
-    port = int(os.environ.get("VITE_API_PORT", "8001"))
+    port_str = os.environ.get("VITE_API_PORT")
+    if not port_str:
+        raise RuntimeError(
+            "VITE_API_PORT is not set. "
+            "Please create .env file in project root with VITE_API_PORT=<port>"
+        )
+    port = int(port_str)
     print(f"Tier6+互联建模平台启动在端口: {port}")
     uvicorn.run("llm_simulator.web.api:app", host="0.0.0.0", port=port, reload=True)

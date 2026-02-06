@@ -12,52 +12,49 @@ import {
   PodConfig,
   HardwareConfig,
 } from './types';
+import { modelPresetToLLMConfig } from './configAdapters';
 import { getChipPresets as tier6GetChipPresets } from '../../api/tier6';
+import type { ModelPreset } from '../../types/tier6';
 
 // ============================================
 // 模型预设（全部从后端获取）
 // ============================================
 
-/** 获取模型列表（优先使用后端预设） */
+/** 获取模型列表 */
 export function getModelList(): Array<{ id: string; name: string; params: string }> {
-  // 后端预设优先
-  const models = Object.entries(backendModelPresetsCache).map(([id, config]) => {
-    // 如果模型名称中已经包含参数量（如 671B, 70B），就不再显示
-    const hasParamsInName = /\d+\.?\d*[BMK]/.test(config.model_name);
+  const models = Object.entries(backendModelPresetsCache).map(([id, preset]) => {
+    const hasParamsInName = /\d+\.?\d*[BMK]/.test(preset.name);
     return {
       id,
-      name: config.model_name,
-      params: hasParamsInName ? '' : estimateModelParams(config),
+      name: preset.name,
+      params: hasParamsInName ? '' : estimateModelParamsFromPreset(preset),
     };
   });
-
   return models;
 }
 
-/** 估算模型参数量 */
-function estimateModelParams(config: LLMModelConfig): string {
-  const H = config.hidden_size;
-  const L = config.num_layers;
-  const V = config.vocab_size;
-  const I = config.intermediate_size;
+/** 从 ModelPreset 估算模型参数量 */
+function estimateModelParamsFromPreset(preset: ModelPreset): string {
+  const H = preset.hidden_size;
+  const L = preset.num_layers;
+  const V = preset.vocab_size;
+  const I = preset.intermediate_size;
 
-  // 各部分参数量
   const embedding = V * H;
-  const attention = 4 * H * H * L;  // Q, K, V, O 投影
+  const attention = 4 * H * H * L;
   const layerNorm = 2 * H * L;
 
   let total: number;
 
-  if (config.model_type === 'moe' && config.moe_config) {
-    const E = config.moe_config.num_experts;
-    const S = config.moe_config.num_shared_experts || 0;
-    // 使用 expert_intermediate_size（如有），否则使用 intermediate_size
-    const expertI = config.moe_config.expert_intermediate_size || I;
+  if (preset.moe) {
+    const E = preset.moe.num_routed_experts;
+    const S = preset.moe.num_shared_experts || 0;
+    const expertI = preset.moe.intermediate_size;
     const ffn = 3 * H * expertI * L * (E + S);
     const router = E * H * L;
     total = embedding + attention + ffn + layerNorm + router;
   } else {
-    const ffn = 3 * H * I * L;  // gate, up, down (SwiGLU)
+    const ffn = 3 * H * I * L;
     total = embedding + attention + ffn + layerNorm;
   }
 
@@ -80,52 +77,51 @@ export const DEFAULT_CHIP_ID = 'sg2260e';
 // 后端模型预设管理
 // ============================================
 
-/** 后端模型预设缓存 */
-let backendModelPresetsCache: Record<string, LLMModelConfig> = {};
+/** 后端模型预设缓存 (ModelPreset 格式) */
+let backendModelPresetsCache: Record<string, ModelPreset> = {};
 let backendModelPresetsLoaded = false;
 
-/** 从后端加载模型预设 */
+/** 从后端加载模型预设 (math_model API 格式) */
 export async function loadBackendModelPresets(): Promise<void> {
   if (backendModelPresetsLoaded) return;
 
   try {
     const response = await fetch('/api/presets/models');
     if (!response.ok) {
-      console.warn('后端模型预设加载失败，使用本地预设');
+      console.warn('Backend model presets load failed');
       return;
     }
     const data = await response.json();
-    const models = data.models || [];
+    // math_model 返回: { presets: [{ name: string, config: ModelPreset }] }
+    const presets = data.presets || [];
 
-    // 存储到缓存
     backendModelPresetsCache = {};
-    for (const model of models) {
-      backendModelPresetsCache[model.id] = {
-        model_name: model.model_name,
-        model_type: model.model_type,
-        hidden_size: model.hidden_size,
-        num_layers: model.num_layers,
-        num_attention_heads: model.num_attention_heads,
-        num_kv_heads: model.num_kv_heads,
-        intermediate_size: model.intermediate_size,
-        vocab_size: model.vocab_size,
-        weight_dtype: model.weight_dtype,
-        activation_dtype: model.activation_dtype,
-        max_seq_length: model.max_seq_length,
-        norm_type: model.norm_type || 'rmsnorm',
-        attention_type: model.attention_type,
-        moe_config: model.moe_config,
-        mla_config: model.mla_config,
-      };
+    for (const preset of presets) {
+      backendModelPresetsCache[preset.name] = preset.config;
     }
     backendModelPresetsLoaded = true;
   } catch (error) {
-    console.warn('后端模型预设加载失败:', error);
+    console.warn('Backend model presets load failed:', error);
   }
 }
 
-/** 获取后端模型预设（同步，需先调用 loadBackendModelPresets） */
+/** 强制重新加载模型预设 */
+export async function reloadBackendModelPresets(): Promise<void> {
+  backendModelPresetsLoaded = false;
+  await loadBackendModelPresets();
+}
+
+/** 获取后端模型预设 (LLMModelConfig 格式, 向后兼容) */
 export function getBackendModelPresets(): Record<string, LLMModelConfig> {
+  const result: Record<string, LLMModelConfig> = {};
+  for (const [id, preset] of Object.entries(backendModelPresetsCache)) {
+    result[id] = modelPresetToLLMConfig(preset);
+  }
+  return result;
+}
+
+/** 获取后端模型预设 (ModelPreset 原始格式) */
+export function getBackendModelPresetsRaw(): Record<string, ModelPreset> {
   return backendModelPresetsCache;
 }
 
@@ -236,8 +232,8 @@ export function getCustomChipPresets(): Record<string, ChipHardwareConfig> {
 /** 保存自定义芯片预设（调用 Tier6 API，保存到 YAML）*/
 export async function saveCustomChipPreset(config: ChipHardwareConfig): Promise<void> {
   try {
-    // 调用 Tier6 API 保存芯片预设（/tier6 前缀）
-    const response = await fetch('/tier6/api/presets/chips', {
+    // 调用 API 保存芯片预设
+    const response = await fetch('/api/presets/chips', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(config),
@@ -420,11 +416,20 @@ export const HARDWARE_PRESETS: Record<string, HardwareConfig> = {};
 // 辅助函数
 // ============================================
 
-/** 获取模型预设（从后端预设获取） */
+/** 获取模型预设 (LLMModelConfig 格式, 向后兼容) */
 export function getModelPreset(modelId: string): LLMModelConfig {
   const preset = backendModelPresetsCache[modelId];
   if (!preset) {
-    throw new Error(`未找到模型预设: ${modelId}`);
+    throw new Error(`Model preset not found: ${modelId}`);
+  }
+  return modelPresetToLLMConfig(preset);
+}
+
+/** 获取模型预设 (ModelPreset 原始格式) */
+export function getModelPresetRaw(modelId: string): ModelPreset {
+  const preset = backendModelPresetsCache[modelId];
+  if (!preset) {
+    throw new Error(`Model preset not found: ${modelId}`);
   }
   return { ...preset };
 }

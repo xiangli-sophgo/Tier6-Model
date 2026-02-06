@@ -162,7 +162,7 @@ export type { SavedConfig, NetworkConfig, SavedChipConfig };
  */
 export async function listConfigs(): Promise<SavedConfig[]> {
   try {
-    const response = await fetch('/tier6/api/topologies');
+    const response = await fetch('/api/topologies');
     if (!response.ok) {
       throw new Error(`HTTP error! status: ${response.status}`);
     }
@@ -178,7 +178,7 @@ export async function listConfigs(): Promise<SavedConfig[]> {
  * 获取指定名称的拓扑配置
  */
 export async function getConfig(name: string): Promise<SavedConfig> {
-  const response = await fetch(`/tier6/api/topologies/${encodeURIComponent(name)}`);
+  const response = await fetch(`/api/topologies/${encodeURIComponent(name)}`);
   if (!response.ok) {
     if (response.status === 404) {
       throw new Error(`配置 '${name}' 不存在`);
@@ -193,7 +193,7 @@ export async function getConfig(name: string): Promise<SavedConfig> {
  */
 export async function saveConfig(config: SavedConfig): Promise<SavedConfig> {
   // 先尝试 PUT（更新），如果返回 404 则 POST（创建）
-  let response = await fetch(`/tier6/api/topologies/${encodeURIComponent(config.name)}`, {
+  let response = await fetch(`/api/topologies/${encodeURIComponent(config.name)}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(config),
@@ -201,7 +201,7 @@ export async function saveConfig(config: SavedConfig): Promise<SavedConfig> {
 
   if (response.status === 404) {
     // 配置不存在，创建新的
-    response = await fetch('/tier6/api/topologies', {
+    response = await fetch('/api/topologies', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(config),
@@ -220,7 +220,7 @@ export async function saveConfig(config: SavedConfig): Promise<SavedConfig> {
  * 删除拓扑配置
  */
 export async function deleteConfig(name: string): Promise<void> {
-  const response = await fetch(`/tier6/api/topologies/${encodeURIComponent(name)}`, {
+  const response = await fetch(`/api/topologies/${encodeURIComponent(name)}`, {
     method: 'DELETE',
   });
 
@@ -254,7 +254,7 @@ export interface BackendChipPreset {
  */
 export async function getBackendChipPresets(): Promise<BackendChipPreset[]> {
   try {
-    const response = await fetch('/tier6/api/presets/chips');
+    const response = await fetch('/api/presets/chips');
     if (!response.ok) {
       throw new Error(`HTTP error! status: ${response.status}`);
     }
@@ -294,7 +294,7 @@ export interface BenchmarkConfig {
  */
 export async function listBenchmarks(): Promise<BenchmarkConfig[]> {
   try {
-    const response = await fetch('/tier6/api/benchmarks');
+    const response = await fetch('/api/benchmarks');
     if (!response.ok) {
       throw new Error(`HTTP error! status: ${response.status}`);
     }
@@ -364,7 +364,7 @@ function convertTier6Benchmark(data: any): BenchmarkConfig {
  */
 export async function getBenchmark(id: string): Promise<BenchmarkConfig | null> {
   try {
-    const response = await fetch(`/tier6/api/benchmarks/${id}`);
+    const response = await fetch(`/api/benchmarks/${id}`);
     if (!response.ok) {
       if (response.status === 404) return null;
       throw new Error(`HTTP error! status: ${response.status}`);
@@ -382,7 +382,7 @@ export async function getBenchmark(id: string): Promise<BenchmarkConfig | null> 
  */
 export async function createBenchmark(benchmark: BenchmarkConfig): Promise<boolean> {
   try {
-    const response = await fetch('/tier6/api/benchmarks', {
+    const response = await fetch('/api/benchmarks', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(benchmark),
@@ -402,7 +402,7 @@ export async function createBenchmark(benchmark: BenchmarkConfig): Promise<boole
  */
 export async function updateBenchmark(id: string, benchmark: BenchmarkConfig): Promise<boolean> {
   try {
-    const response = await fetch(`/tier6/api/benchmarks/${id}`, {
+    const response = await fetch(`/api/benchmarks/${id}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(benchmark),
@@ -422,7 +422,7 @@ export async function updateBenchmark(id: string, benchmark: BenchmarkConfig): P
  */
 export async function deleteBenchmark(id: string): Promise<boolean> {
   try {
-    const response = await fetch(`/tier6/api/benchmarks/${id}`, {
+    const response = await fetch(`/api/benchmarks/${id}`, {
       method: 'DELETE',
     });
     if (!response.ok) {

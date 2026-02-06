@@ -1,0 +1,56 @@
+# DeepSeek V3.2 模型配置
+name: "DeepSeek-V3.2"
+
+# 核心参数
+max_seq_len: 4096
+vocab_size: 129280
+hidden_size: 7168
+intermediate_size: 18432
+num_layers: 61
+num_dense_layers: 3
+num_moe_layers: 58
+num_attention_heads: 128
+v_head_dim: 128
+hidden_act: "silu"
+rms_norm_eps: 1.0e-6
+
+# MoE 配置
+MoE:
+  num_routed_experts: 256
+  num_shared_experts: 1
+  num_activated_experts: 8
+  intermediate_size: 2048
+  num_expert_groups: 8
+  num_limited_groups: 4
+  route_scale: 2.5
+
+# MLA (Multi-head Latent Attention) 配置
+MLA:
+  q_lora_rank: 1536
+  kv_lora_rank: 512
+  qk_nope_head_dim: 128
+  qk_rope_head_dim: 64
+  v_head_dim: 128
+
+# DSA (Dynamic Sparse Attention) 配置
+DSA:
+  num_index_heads: 64
+  index_head_dim: 128
+  topk_index: 2048
+
+# NSA (Native Sparse Attention) 配置
+NSA:
+  compress_layers: 32
+  compress_ratio: 16
+  select_length: 64
+  select_num: 16
+  window_size: 512
+
+# RoPE (YARN) 配置
+RoPE:
+  theta: 10000.0
+  factor: 40
+  original_seq_len: 4096
+  beta_fast: 32
+  beta_slow: 1
+  mscale: 1.0

@@ -1,0 +1,162 @@
+# ============================================================
+# Model Configuration Template
+# ============================================================
+# 复制此文件并重命名为模型名称 (如 DeepSeek-v3.yaml) 来创建新配置。
+# 命名规范: HuggingFace 风格 snake_case，与 transformers config.json 字段对齐。
+#
+# 结构说明:
+#   核心参数 (必填)    -- 所有模型通用的基础架构参数，扁平结构
+#   特性模块 (可选)    -- 按需启用，省略整个 key 表示模型不使用该特性
+#     MoE:  Mixture of Experts   -- 稀疏专家混合 (如 DeepSeek-V3, Qwen3-235B)
+#     MLA:  Multi-head Latent Attention -- 压缩 KV Cache 的注意力 (如 DeepSeek-V3)
+#     DSA:  Dynamic Sparse Attention    -- 动态稀疏注意力 (如 DeepSeek-V3)
+#     NSA:  Native Sparse Attention     -- 原生稀疏注意力 (如 DeepSeek-V3.2)
+#     RoPE: Rotary Position Embedding   -- 旋转位置编码 (几乎所有现代模型)
+#
+# 模型类型示例:
+#   Dense 模型 (LLaMA-7B):         只需核心参数 + rope
+#   Dense + GQA (Qwen3-32B):       核心参数 (num_key_value_heads < num_attention_heads) + rope
+#   MoE + GQA (Qwen3-235B):        核心参数 + moe + rope
+#   MoE + MLA (DeepSeek-V3):       核心参数 + moe + mla + dsa + nsa + rope
+# ============================================================
+
+# 模型名称，需与文件名一致 (不含 .yaml 后缀)
+name: "MODEL_NAME"
+
+# ============================================================
+# 核心参数 (必填)
+# ============================================================
+# 所有 Transformer 模型通用的基础架构参数
+
+max_seq_len: 4096               # 最大序列长度 (tokens)，决定 KV Cache 大小
+                                # 常见值: 2048 (LLaMA), 4096 (DeepSeek), 40960 (Qwen3)
+
+vocab_size: 32000               # 词表大小，影响 Embedding 和 LM Head 参数量
+                                # 常见值: 32000 (LLaMA), 129280 (DeepSeek), 151936 (Qwen)
+
+hidden_size: 4096               # 隐藏层维度 (d_model)，模型的核心宽度
+                                # 决定注意力和 FFN 的输入输出维度
+                                # 常见值: 4096 (7B), 5120 (32B), 7168 (671B)
+
+intermediate_size: 11008        # FFN 中间层维度 (Dense 层的 FFN)
+                                # 对于 MoE 模型，这是 Dense 层的 FFN 维度
+                                # 通常为 hidden_size 的 2.67x ~ 3.5x
+                                # 常见值: 11008 (LLaMA-7B), 18432 (DeepSeek-V3)
+
+num_layers: 32                  # Transformer 层数 (总层数 = Dense 层 + MoE 层)
+                                # 常见值: 32 (7B), 64 (32B), 94 (235B), 61 (DeepSeek-V3)
+
+num_attention_heads: 32         # 注意力头数 (Query 头数)
+                                # 注意力维度 = hidden_size / num_attention_heads
+                                # 常见值: 32 (7B), 64 (32B/235B), 128 (DeepSeek-V3)
+
+# ---------- 以下为可选核心参数 ----------
+
+# num_key_value_heads: 32       # KV 头数，小于 num_attention_heads 时启用 GQA (Grouped Query Attention)
+                                # 省略或等于 num_attention_heads = MHA (标准多头注意力)
+                                # 常见值: 4 (Qwen3-235B), 8 (Qwen3-32B), 32 (LLaMA-7B MHA)
+
+# v_head_dim: 128               # Value 头维度，默认 = hidden_size / num_attention_heads
+                                # MLA 模型通常显式指定
+
+# num_dense_layers: 3           # Dense 层数量 (仅 MoE 模型需要)
+                                # MoE 模型的前几层通常是 Dense 层
+
+# num_moe_layers: 58            # MoE 层数量 (仅 MoE 模型需要)
+                                # num_dense_layers + num_moe_layers = num_layers
+
+hidden_act: "silu"              # 激活函数: "silu" (SwiGLU), "gelu", "relu"
+                                # 现代 LLM 几乎都用 "silu"
+
+rms_norm_eps: 1.0e-6            # RMSNorm epsilon，防止除零的极小值
+                                # 标准值: 1e-6
+
+# attention_bias: false         # 注意力层是否使用 bias，大多数现代模型不使用
+# attention_dropout: 0.0        # 注意力 dropout 率，推理时通常为 0
+
+
+# ============================================================
+# 特性模块 (可选) -- 省略整个 key 表示不使用该特性
+# ============================================================
+
+# ------------------------------------------------------------
+# MoE (Mixture of Experts) -- 稀疏专家混合
+# ------------------------------------------------------------
+# 将 FFN 替换为多个专家网络，每个 token 只激活少量专家，
+# 在大幅增加参数量的同时保持计算量可控。
+# 典型模型: DeepSeek-V3 (256 experts, top-8), Qwen3-235B (128 experts, top-8)
+#
+# MoE:
+#   num_routed_experts: 256     # 路由专家总数 (总 expert 数量)
+#   num_shared_experts: 1       # 共享专家数 (所有 token 都经过的专家，提升稳定性)
+#                               # 0 = 无共享专家 (Qwen3), 1 = 有 (DeepSeek-V3)
+#   num_activated_experts: 8    # 每 token 激活的路由专家数 (top-K)
+#                               # 激活比 = num_activated / num_routed (如 8/256 = 3.1%)
+#   intermediate_size: 2048     # 每个专家的 FFN 中间层维度
+#                               # 注意: 这与顶层 intermediate_size 不同
+#   num_expert_groups: 8        # 专家分组数 (仅 DeepSeek 的分组限制路由)
+#   num_limited_groups: 4       # 受限分组数 (每 token 最多从几个组选专家)
+#   route_scale: 2.5            # 路由缩放因子
+#   decoder_sparse_step: 1      # 每隔几层使用一次 MoE (1 = 每层都用)
+#   norm_topk_prob: true        # 是否归一化 top-K 概率
+#   router_aux_loss_coef: 0.001 # 路由辅助损失系数 (负载均衡)
+
+# ------------------------------------------------------------
+# MLA (Multi-head Latent Attention) -- 多头潜在注意力
+# ------------------------------------------------------------
+# DeepSeek 提出的注意力压缩机制，通过低秩投影压缩 KV Cache，
+# 相比标准 MHA 可节省 5-8x KV Cache 内存。
+# 典型模型: DeepSeek-V3, DeepSeek-V3.2
+#
+# MLA:
+#   q_lora_rank: 1536           # Query 低秩投影的秩 (压缩 Q 的中间维度)
+#   kv_lora_rank: 512           # KV 低秩投影的秩 (压缩 KV Cache 的关键参数)
+#                               # 越小 = 压缩越多 = 内存越省，但精度可能下降
+#   qk_nope_head_dim: 128       # QK 非位置编码部分的头维度
+#   qk_rope_head_dim: 64        # QK 中 RoPE 编码部分的头维度
+#                               # 总 QK 头维度 = qk_nope + qk_rope = 192
+#   v_head_dim: 128             # Value 的头维度
+
+# ------------------------------------------------------------
+# DSA (Dynamic Sparse Attention) -- 动态稀疏注意力
+# ------------------------------------------------------------
+# 通过索引头动态选择需要关注的 token，减少长序列注意力计算量。
+# 典型模型: DeepSeek-V3
+#
+# DSA:
+#   num_index_heads: 64         # 索引头数量 (用于选择关键 token)
+#   index_head_dim: 128         # 索引头维度
+#   topk_index: 2048            # 每个头选择的 top-K token 数
+
+# ------------------------------------------------------------
+# NSA (Native Sparse Attention) -- 原生稀疏注意力
+# ------------------------------------------------------------
+# 结合压缩注意力和选择性注意力的混合稀疏方案，
+# 支持硬件友好的块稀疏实现。
+# 典型模型: DeepSeek-V3.2
+#
+# NSA:
+#   compress_layers: 32         # 压缩注意力的层数
+#   compress_ratio: 16          # 压缩比 (每 compress_ratio 个 token 压缩为 1 个)
+#   select_length: 64           # 选择性注意力的块长度
+#   select_num: 16              # 选择的块数量
+#   window_size: 512            # 滑动窗口大小 (局部注意力范围)
+
+# ------------------------------------------------------------
+# RoPE (Rotary Position Embedding) -- 旋转位置编码
+# ------------------------------------------------------------
+# 几乎所有现代 LLM 都使用 RoPE 做位置编码，
+# 支持通过 YARN/NTK 等方法扩展上下文长度。
+#
+# RoPE:
+#   theta: 10000.0              # RoPE base frequency
+#                               # 标准值: 10000 (原始 RoPE)
+#                               # 长上下文: 1000000 (Qwen3 系列)
+#   max_position_embeddings: 40960  # 最大位置编码长度 (通常 >= max_seq_len)
+#
+#   # --- 以下为 YARN 扩展参数 (仅长上下文扩展时需要) ---
+#   factor: 40                  # 上下文扩展倍数
+#   original_seq_len: 4096      # 原始训练序列长度 (扩展前)
+#   beta_fast: 32               # YARN 高频衰减参数
+#   beta_slow: 1                # YARN 低频衰减参数
+#   mscale: 1.0                 # YARN 缩放因子

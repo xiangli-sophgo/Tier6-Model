@@ -9,10 +9,10 @@ import {
 } from '../../types'
 import { TopologyTrafficResult, PlanAnalysisResult, HardwareConfig, LLMModelConfig, InferenceConfig, ParallelismStrategy } from '../../utils/llmDeployment/types'
 import { InfeasibleResult } from '../../utils/llmDeployment'
-import type { ChipPreset, MemoryLevelConfig, DmaEngineConfig, ChipInterconnectConfig } from '../../types/tier6'
+import type { ChipPreset, GmemConfig, LmemConfig, DmaEngineConfig, ChipInterconnectConfig } from '../../types/tier6'
 
 // 重导出 Tier6 芯片类型
-export type { ChipPreset, MemoryLevelConfig, DmaEngineConfig, ChipInterconnectConfig }
+export type { ChipPreset, GmemConfig, LmemConfig, DmaEngineConfig, ChipInterconnectConfig }
 
 // 历史记录项
 export interface AnalysisHistoryItem {

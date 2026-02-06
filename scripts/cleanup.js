@@ -8,7 +8,11 @@ const path = require('path');
 const os = require('os');
 
 const PID_FILE = path.join(__dirname, '..', '.backend.pid');
-const PORT = process.env.VITE_API_PORT || '8003';
+const PORT = process.env.VITE_API_PORT;
+if (!PORT) {
+  console.error('[ERROR] VITE_API_PORT is not set. Please create .env file with VITE_API_PORT=<port>');
+  process.exit(1);
+}
 
 console.log('🧹 开始清理...\n');
 

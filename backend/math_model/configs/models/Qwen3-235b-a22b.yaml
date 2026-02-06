@@ -1,0 +1,31 @@
+# Qwen3-235B-A22B MoE 模型配置
+name: "Qwen3-235B-A22B"
+
+# 核心参数
+max_seq_len: 40960
+vocab_size: 151936
+hidden_size: 4096
+intermediate_size: 12288
+num_layers: 94
+num_attention_heads: 64
+num_key_value_heads: 4
+v_head_dim: 128
+hidden_act: "silu"
+rms_norm_eps: 1.0e-6
+attention_bias: false
+attention_dropout: 0.0
+
+# MoE 配置
+MoE:
+  num_routed_experts: 128
+  num_shared_experts: 0
+  num_activated_experts: 8
+  intermediate_size: 1536
+  decoder_sparse_step: 1
+  norm_topk_prob: true
+  router_aux_loss_coef: 0.001
+
+# RoPE 配置
+RoPE:
+  theta: 1000000.0
+  max_position_embeddings: 40960

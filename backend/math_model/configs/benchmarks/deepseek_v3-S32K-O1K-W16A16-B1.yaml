@@ -1,0 +1,7 @@
+id: deepseek_v3-S32K-O1K-W16A16-B1
+name: DeepSeek-V3 S32K O1K BF16 Batch1
+model: deepseek-v3
+inference:
+  batch_size: 1
+  input_seq_length: 32768
+  output_seq_length: 1024

@@ -4,10 +4,15 @@
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 
-API_PORT=8001
+# 从 .env 文件读取端口配置
+API_PORT=""
 if [ -f "$PROJECT_ROOT/.env" ]; then
     API_PORT=$(grep "^VITE_API_PORT=" "$PROJECT_ROOT/.env" | cut -d'=' -f2 | tr -d ' ')
-    API_PORT=${API_PORT:-8001}
+fi
+if [ -z "$API_PORT" ]; then
+    echo "[ERROR] VITE_API_PORT not found in .env file"
+    echo "Please create .env file with VITE_API_PORT=<port>"
+    exit 1
 fi
 
 # 查找可用的 Python
@@ -27,4 +32,4 @@ fi
 echo "启动后端服务 (端口: $API_PORT)..."
 echo "使用 Python: $PYTHON_CMD"
 cd "$PROJECT_ROOT/backend"
-$PYTHON_CMD -m uvicorn llm_simulator.web.api:app --reload --host 0.0.0.0 --port $API_PORT
+$PYTHON_CMD -m math_model.main

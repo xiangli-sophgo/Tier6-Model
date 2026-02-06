@@ -20,10 +20,10 @@ import type {
   Tier6Experiment,
 } from '../types/tier6';
 
-// Tier6 API 使用 /tier6 前缀（通过 vite proxy 转发）
-const API_BASE = '/tier6';
+// API 统一使用 /api 前缀（通过 vite proxy 转发）
+const API_BASE = '';
 
-// ==================== 预设接口 ====================
+// ==================== 芯片预设接口 ====================
 
 /**
  * 获取芯片预设列表（含完整配置）
@@ -44,9 +44,48 @@ export async function getChipPreset(name: string): Promise<ChipPreset> {
 }
 
 /**
+ * 创建芯片预设（另存为）
+ */
+export async function saveChipPreset(config: ChipPreset): Promise<{ message: string }> {
+  const res = await fetch(`${API_BASE}/api/presets/chips`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(config),
+  });
+  if (!res.ok) throw new Error(`Failed to save chip preset: ${res.statusText}`);
+  return res.json();
+}
+
+/**
+ * 更新芯片预设（保存）
+ */
+export async function updateChipPreset(name: string, config: ChipPreset): Promise<{ message: string }> {
+  const res = await fetch(`${API_BASE}/api/presets/chips/${encodeURIComponent(name)}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ config }),
+  });
+  if (!res.ok) throw new Error(`Failed to update chip preset: ${res.statusText}`);
+  return res.json();
+}
+
+/**
+ * 删除芯片预设
+ */
+export async function deleteChipPreset(name: string): Promise<{ message: string }> {
+  const res = await fetch(`${API_BASE}/api/presets/chips/${encodeURIComponent(name)}`, {
+    method: 'DELETE',
+  });
+  if (!res.ok) throw new Error(`Failed to delete chip preset: ${res.statusText}`);
+  return res.json();
+}
+
+// ==================== 模型预设接口 ====================
+
+/**
  * 获取模型预设列表（含完整配置）
  */
-export async function getModelPresets(): Promise<{ models: ModelPreset[] }> {
+export async function getModelPresets(): Promise<{ presets: Array<{ name: string; config: ModelPreset }> }> {
   const res = await fetch(`${API_BASE}/api/presets/models`);
   if (!res.ok) throw new Error(`Failed to fetch model presets: ${res.statusText}`);
   return res.json();
@@ -58,6 +97,43 @@ export async function getModelPresets(): Promise<{ models: ModelPreset[] }> {
 export async function getModelPreset(name: string): Promise<ModelPreset> {
   const res = await fetch(`${API_BASE}/api/presets/models/${encodeURIComponent(name)}`);
   if (!res.ok) throw new Error(`Failed to fetch model preset: ${res.statusText}`);
+  return res.json();
+}
+
+/**
+ * 创建模型预设（另存为）
+ */
+export async function saveModelPreset(name: string, config: ModelPreset): Promise<{ message: string }> {
+  const res = await fetch(`${API_BASE}/api/presets/models`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name, config }),
+  });
+  if (!res.ok) throw new Error(`Failed to save model preset: ${res.statusText}`);
+  return res.json();
+}
+
+/**
+ * 更新模型预设（保存）
+ */
+export async function updateModelPreset(name: string, config: ModelPreset): Promise<{ message: string }> {
+  const res = await fetch(`${API_BASE}/api/presets/models/${encodeURIComponent(name)}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ config }),
+  });
+  if (!res.ok) throw new Error(`Failed to update model preset: ${res.statusText}`);
+  return res.json();
+}
+
+/**
+ * 删除模型预设
+ */
+export async function deleteModelPreset(name: string): Promise<{ message: string }> {
+  const res = await fetch(`${API_BASE}/api/presets/models/${encodeURIComponent(name)}`, {
+    method: 'DELETE',
+  });
+  if (!res.ok) throw new Error(`Failed to delete model preset: ${res.statusText}`);
   return res.json();
 }
 
@@ -128,7 +204,7 @@ export async function getTopologies(): Promise<{ topologies: TopologyListItem[] 
 }
 
 /**
- * 获取拓扑详情
+ * 获取拓扑详情（含解析后的芯片参数）
  */
 export async function getTopology(name: string): Promise<Tier6TopologyConfig> {
   const res = await fetch(`${API_BASE}/api/topologies/${encodeURIComponent(name)}`);
@@ -314,13 +390,18 @@ export async function exportExperiments(ids: number[]): Promise<Blob> {
 
 export type {
   ChipPreset,
+  GmemConfig,
+  LmemConfig,
+  MacPerLaneConfig,
+  EuPerLaneConfig,
   ModelPreset,
   MoEConfig,
   MLAConfig,
-  FFNConfig,
+  DSAConfig,
+  NSAConfig,
+  RoPEConfig,
   BenchmarkListItem,
   Tier6BenchmarkConfig,
-  Tier6ModelConfig,
   Tier6InferenceConfig,
   TopologyListItem,
   Tier6TopologyConfig,

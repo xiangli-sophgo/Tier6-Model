@@ -8,7 +8,11 @@ const path = require('path');
 const os = require('os');
 
 const PID_FILE = path.join(__dirname, '..', '.backend.pid');
-const PORT = process.env.VITE_API_PORT || '8003';
+const PORT = process.env.VITE_API_PORT;
+if (!PORT) {
+  console.error('[ERROR] VITE_API_PORT is not set. Please create .env file with VITE_API_PORT=<port>');
+  process.exit(1);
+}
 
 // 清理函数
 function cleanup() {
@@ -57,7 +61,7 @@ async function start() {
 
   // 启动新进程
   const python = process.platform === 'win32' ? 'python' : 'python3';
-  const backend = spawn(python, ['-m', 'llm_simulator.main'], {
+  const backend = spawn(python, ['-m', 'math_model.main'], {
     cwd: path.join(__dirname, '..', 'backend'),
     stdio: 'inherit',
     env: { ...process.env }
