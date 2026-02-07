@@ -30,6 +30,7 @@ import { sharedGeometries, sharedBasicMaterials, CameraAnimationTarget } from '.
 import { CameraController } from './materials'
 import { BoardModel, SwitchModel, PodLabel, AnimatedRack } from './models'
 import { useNodePositions } from '../../hooks/useNodePositions'
+import { GPUPicker, PickableObjectInfo, GPUPickerContext } from './gpuPicker'
 
 // ============================================
 // 渲染控制组件 - 在页面隐藏时暂停渲染
@@ -44,6 +45,52 @@ const RenderController: React.FC<{ pageVisible: boolean }> = ({ pageVisible }) =
     }
     // 页面隐藏时不需要特殊处理，frameloop="demand" 模式下不调用 invalidate 就不会渲染
   }, [pageVisible, invalidate])
+
+  return null
+}
+
+// GPU Picking 事件管理器 - 仅用于 hover 光标优化（节流 50ms）
+// click/dblclick 导航由 R3F 原生事件处理（在各组件的交互 mesh 上）
+const GPUPickerManager: React.FC<{
+  picker: GPUPicker
+  onHoverChange?: (info: PickableObjectInfo | null) => void
+}> = ({ picker, onHoverChange }) => {
+  const { gl, camera, size } = useThree()
+  const lastHoverRef = useRef<PickableObjectInfo | null>(null)
+  const lastPickTimeRef = useRef(0)
+  const mouseRef = useRef(new THREE.Vector2())
+
+  // pointer move 处理 - 节流 50ms
+  const handlePointerMove = useCallback((event: PointerEvent) => {
+    const now = performance.now()
+    if (now - lastPickTimeRef.current < 50) return
+    lastPickTimeRef.current = now
+
+    const rect = gl.domElement.getBoundingClientRect()
+    mouseRef.current.x = ((event.clientX - rect.left) / rect.width) * 2 - 1
+    mouseRef.current.y = -((event.clientY - rect.top) / rect.height) * 2 + 1
+
+    const hit = picker.pick(mouseRef.current, camera, gl, size.width, size.height)
+
+    // 只在 hover 目标变化时更新
+    const prevId = lastHoverRef.current?.id
+    const newId = hit?.id
+    if (prevId !== newId) {
+      gl.domElement.style.cursor = hit ? 'pointer' : 'auto'
+      lastHoverRef.current = hit
+      onHoverChange?.(hit)
+    }
+  }, [picker, gl, camera, size, onHoverChange])
+
+  // 仅注册 pointermove 事件
+  useEffect(() => {
+    const canvas = gl.domElement
+    canvas.addEventListener('pointermove', handlePointerMove)
+
+    return () => {
+      canvas.removeEventListener('pointermove', handlePointerMove)
+    }
+  }, [gl, handlePointerMove])
 
   return null
 }
@@ -90,7 +137,8 @@ const UnifiedScene: React.FC<{
   onNavigateToBoard: (boardId: string) => void
   onNodeClick?: (nodeType: 'pod' | 'rack' | 'board' | 'chip' | 'switch', nodeId: string, label: string, info: Record<string, string | number>, subType?: string) => void
   visible?: boolean  // 是否可见，隐藏时跳过动画
-}> = ({ topology, focusPath, onNavigateToPod, onNavigateToRack, onNavigateToBoard, onNodeClick }) => {
+  gpuHoveredId?: string | null  // GPU Picker hover 的节点 ID
+}> = ({ topology, focusPath, onNavigateToPod, onNavigateToRack, onNavigateToBoard, onNodeClick, gpuHoveredId }) => {
   const [hoveredPodId, setHoveredPodId] = useState<string | null>(null)
   const [hoveredRackId, setHoveredRackId] = useState<string | null>(null)
 
@@ -228,14 +276,20 @@ const UnifiedScene: React.FC<{
               />
             )}
 
-            {/* 渲染该Pod下的所有Rack - 使用动画组件 */}
-            {pod.racks.map(rack => {
+            {/* 渲染该Pod下的所有Rack - 提前过滤不可见节点避免组件实例化 */}
+            {pod.racks
+              .filter(rack => (targetOpacities.get(rack.id) ?? 1.0) >= 0.01)
+              .map(rack => {
               const rackPos = nodePositions.racks.get(rack.id)
               if (!rackPos) return null
 
               const rackTargetOpacity = targetOpacities.get(rack.id) ?? 1.0
-              // 只在顶层和Pod层级时才高亮Rack，在Rack层级及更深时不高亮
-              const isRackHighlighted = focusLevel === 0 ? isPodHighlighted : (focusLevel === 1 && hoveredRackId === rack.id)
+              // 高亮逻辑：GPU Picker hover 或原有 R3F hover
+              // 顶层：hover rack 高亮整个 pod；Pod层级：hover 高亮单个 rack
+              const isGpuHovered = gpuHoveredId === rack.id
+              const isRackHighlighted = focusLevel === 0
+                ? (isPodHighlighted || (isGpuHovered && nodeIndex.rackToPod.get(rack.id) === nodeIndex.rackToPod.get(gpuHoveredId ?? '')))
+                : (focusLevel === 1 && (hoveredRackId === rack.id || isGpuHovered))
 
               return (
                 <AnimatedRack
@@ -263,7 +317,7 @@ const UnifiedScene: React.FC<{
         )
       })}
 
-      {/* 独立渲染所有Board - 不受Rack透明度影响 */}
+      {/* 独立渲染所有Board - 提前过滤不可见节点避免组件实例化 */}
       {topology.pods.map(pod => (
         <group key={`boards-${pod.id}`}>
           {pod.racks.map(rack => {
@@ -273,14 +327,15 @@ const UnifiedScene: React.FC<{
             // 是否显示Board详情（聚焦到Rack级别或更深）
             const showBoardDetails = focusLevel >= 2 && focusPath[1] === rack.id
 
-            return rack.boards.map(board => {
+            return rack.boards
+              .filter(board => (targetOpacities.get(board.id) ?? 1.0) >= 0.01)
+              .map(board => {
               const boardY = (board.u_position - 1) * uHeight + (board.u_height * uHeight) / 2 - rackHeight / 2
               const boardOpacity = targetOpacities.get(board.id) ?? 1.0
 
               // 是否显示芯片（聚焦到Board级别）
               const showChips = focusLevel >= 3 && focusPath[2] === board.id
 
-              // BoardModel 内部处理动画完成后的隐藏
               return (
                 <group key={`${board.id}-${board.label}`} position={[rackPos.x, rackPos.y + boardY, rackPos.z]}>
                   <BoardModel
@@ -314,10 +369,10 @@ const UnifiedScene: React.FC<{
             const rackPos = nodePositions.racks.get(rack.id)
             if (!rackPos) return null
 
-            // 使用统一的targetOpacities获取Switch透明度（支持动画）
+            // 使用统一的targetOpacities获取Switch透明度，提前过滤不可见节点
             const switchId = `${rack.id}/switch`
             const switchTargetOpacity = targetOpacities.get(switchId) ?? 0
-            // 注意：不在这里检查透明度，让SwitchModel内部处理动画完成后的隐藏
+            if (switchTargetOpacity < 0.01) return null
 
             // 获取该Rack下的所有Switch（使用后端计算的u_position）
             const rackSwitches = topology.switches?.filter(
@@ -491,6 +546,25 @@ export const Scene3D: React.FC<Scene3DProps> = ({
   // WebGL 上下文状态
   const [webglContextLost, setWebglContextLost] = useState(false)
 
+  // GPU Picker 实例 - 在组件生命周期内保持一致
+  const gpuPickerRef = useRef<GPUPicker | null>(null)
+  if (!gpuPickerRef.current) {
+    gpuPickerRef.current = new GPUPicker()
+  }
+
+  // GPU Picker hover 状态 - 存储当前 hover 的节点 ID
+  const [gpuHoveredId, setGpuHoveredId] = useState<string | null>(null)
+  const handleGpuHoverChange = useCallback((info: PickableObjectInfo | null) => {
+    setGpuHoveredId(info?.id ?? null)
+  }, [])
+
+  // 清理 GPU Picker 资源
+  useEffect(() => {
+    return () => {
+      gpuPickerRef.current?.dispose()
+    }
+  }, [])
+
   // 重置视图（相机位置）
   const handleResetView = useCallback(() => {
     setResetKey(k => k + 1)
@@ -662,17 +736,26 @@ export const Scene3D: React.FC<Scene3DProps> = ({
 
         <color attach="background" args={['#f0f2f5']} />
 
+        {/* GPU Picking 管理器 - 仅用于 hover 光标优化 */}
+        <GPUPickerManager
+          picker={gpuPickerRef.current}
+          onHoverChange={handleGpuHoverChange}
+        />
+
         {/* 使用统一场景渲染所有层级，通过相机移动和透明度控制实现层级切换 */}
         {topology && (
-          <UnifiedScene
-            topology={topology}
-            focusPath={viewState.path}
-            onNavigateToPod={onNavigateToPod}
-            onNavigateToRack={onNavigateToRack}
-            onNavigateToBoard={onNavigate}
-            onNodeClick={onNodeSelect}
-            visible={visible}
-          />
+          <GPUPickerContext.Provider value={{ picker: gpuPickerRef.current }}>
+            <UnifiedScene
+              topology={topology}
+              focusPath={viewState.path}
+              onNavigateToPod={onNavigateToPod}
+              onNavigateToRack={onNavigateToRack}
+              onNavigateToBoard={onNavigate}
+              onNodeClick={onNodeSelect}
+              visible={visible}
+              gpuHoveredId={gpuHoveredId}
+            />
+          </GPUPickerContext.Provider>
         )}
 
         {/* Bloom 后处理效果 - 实现高级发光 */}

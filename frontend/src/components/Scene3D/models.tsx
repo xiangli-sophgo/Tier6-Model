@@ -1,7 +1,8 @@
-import React, { useRef, useState, useMemo } from 'react'
-import { ThreeEvent } from '@react-three/fiber'
+import React, { useRef, useState, useMemo, useEffect } from 'react'
+import { ThreeEvent, useFrame } from '@react-three/fiber'
 import { Text, Html } from '@react-three/drei'
 import * as THREE from 'three'
+import { useGPUPicker } from './gpuPicker'
 import {
   ChipConfig,
   BoardConfig,
@@ -13,6 +14,7 @@ import {
   CHIP_DIMENSIONS,
   CHIP_TYPE_NAMES,
   LODLevel,
+  LOD_DISTANCES,
 } from '../../types'
 import { sharedMaterials, sharedGeometries, ChipPinData } from './shared'
 import { FadingMaterial, FadingBasicMaterial, InstancedPins, InstancedCircuitTraces } from './materials'
@@ -158,22 +160,202 @@ const BOARD_U_COLORS: Record<number, { main: string; mainHover: string; front: s
   4: { main: '#553c9a', mainHover: '#38b2ac', front: '#322659', accent: '#b794f4' },  // 紫色 - 4U GPU服务器
 }
 
+// PCB LOD 高细节层 - 完整 PCB + 走线 + 过孔 + 引脚 + 电路纹理
+const PCBHighDetail: React.FC<{
+  board: BoardConfig
+  width: number
+  depth: number
+  chipPinData: ChipPinData[]
+  focusLevel: number
+  onChipClick?: (chip: ChipConfig) => void
+}> = ({ board, width, depth, chipPinData, focusLevel, onChipClick }) => (
+  <group>
+    {/* PCB基板 - 多层结构 */}
+    <mesh position={[0, -0.002, 0]} castShadow receiveShadow material={sharedMaterials.pcbBase}>
+      <boxGeometry args={[width, 0.004, depth]} />
+    </mesh>
+    <mesh position={[0, 0.001, 0]} castShadow receiveShadow material={sharedMaterials.pcbMiddle}>
+      <boxGeometry args={[width - 0.002, 0.004, depth - 0.002]} />
+    </mesh>
+    <mesh position={[0, 0.0035, 0]} material={sharedMaterials.pcbTop}>
+      <boxGeometry args={[width - 0.004, 0.001, depth - 0.004]} />
+    </mesh>
+
+    {/* 铜走线 */}
+    {Array.from({ length: 6 }).map((_, i) => {
+      const zPos = -depth / 2 + 0.05 + i * (depth / 7)
+      const lineWidth = i % 2 === 0 ? 0.004 : 0.002
+      return (
+        <mesh key={`trace-h-${i}`} position={[0, 0.0042, zPos]} material={sharedMaterials.copperTrace}>
+          <boxGeometry args={[width - 0.06, 0.0008, lineWidth]} />
+        </mesh>
+      )
+    })}
+    {Array.from({ length: 5 }).map((_, i) => {
+      const xPos = -width / 2 + 0.06 + i * (width / 6)
+      const lineWidth = i % 2 === 0 ? 0.003 : 0.0015
+      return (
+        <mesh key={`trace-v-${i}`} position={[xPos, 0.0042, 0]} material={sharedMaterials.copperTrace}>
+          <boxGeometry args={[lineWidth, 0.0008, depth - 0.06]} />
+        </mesh>
+      )
+    })}
+
+    {/* 过孔(Via) */}
+    {Array.from({ length: 8 }).map((_, i) => {
+      const viaX = (Math.sin(i * 2.5) * 0.35) * width / 2
+      const viaZ = (Math.cos(i * 3.1) * 0.35) * depth / 2
+      return (
+        <mesh key={`via-${i}`} position={[viaX, 0.0043, viaZ]} rotation={[-Math.PI / 2, 0, 0]} geometry={sharedGeometries.via} material={sharedMaterials.via} />
+      )
+    })}
+
+    {/* 边缘金手指接口 */}
+    <mesh position={[0, 0, -depth / 2 + 0.012]} material={sharedMaterials.goldFinger}>
+      <boxGeometry args={[width * 0.6, 0.005, 0.018]} />
+    </mesh>
+
+    {/* 安装孔 */}
+    {[[-1, -1], [-1, 1], [1, -1], [1, 1]].map(([dx, dz], i) => (
+      <mesh key={`mount-${i}`} position={[dx * (width / 2 - 0.025), 0.0042, dz * (depth / 2 - 0.025)]} rotation={[-Math.PI / 2, 0, 0]} geometry={sharedGeometries.mountHole} material={sharedMaterials.mountHole} />
+    ))}
+
+    {/* 引脚 + 电路纹理 */}
+    <InstancedPins chips={chipPinData} lodLevel="high" />
+    <InstancedCircuitTraces chips={chipPinData} lodLevel="high" />
+
+    {/* 芯片 */}
+    {board.chips.map(chip => (
+      <ChipModel
+        key={chip.id}
+        chip={chip}
+        baseY={0.004}
+        totalChips={board.chips.length}
+        lodLevel="high"
+        focusLevel={focusLevel}
+        onClick={() => onChipClick?.(chip)}
+      />
+    ))}
+
+    {/* 板卡丝印标识 */}
+    <Text
+      position={[width / 2 - 0.06, 0.005, depth / 2 - 0.03]}
+      fontSize={0.015}
+      color="#c0c0c0"
+      anchorX="center"
+      anchorY="middle"
+      rotation={[-Math.PI / 2, 0, 0]}
+      material-depthTest={false}
+    >
+      {board.label}
+    </Text>
+    <Text
+      position={[-width / 2 + 0.05, 0.005, depth / 2 - 0.03]}
+      fontSize={0.008}
+      color="#888888"
+      anchorX="center"
+      anchorY="middle"
+      rotation={[-Math.PI / 2, 0, 0]}
+      material-depthTest={false}
+    >
+      REV 1.0
+    </Text>
+  </group>
+)
+
+// PCB LOD 中细节层 - PCB + 减少的引脚，无走线/过孔/电路纹理
+const PCBMediumDetail: React.FC<{
+  board: BoardConfig
+  width: number
+  depth: number
+  chipPinData: ChipPinData[]
+  focusLevel: number
+  onChipClick?: (chip: ChipConfig) => void
+}> = ({ board, width, depth, chipPinData, focusLevel, onChipClick }) => (
+  <group>
+    {/* PCB基板 - 多层结构 */}
+    <mesh position={[0, -0.002, 0]} castShadow receiveShadow material={sharedMaterials.pcbBase}>
+      <boxGeometry args={[width, 0.004, depth]} />
+    </mesh>
+    <mesh position={[0, 0.001, 0]} castShadow receiveShadow material={sharedMaterials.pcbMiddle}>
+      <boxGeometry args={[width - 0.002, 0.004, depth - 0.002]} />
+    </mesh>
+    <mesh position={[0, 0.0035, 0]} material={sharedMaterials.pcbTop}>
+      <boxGeometry args={[width - 0.004, 0.001, depth - 0.004]} />
+    </mesh>
+
+    {/* 边缘金手指接口 */}
+    <mesh position={[0, 0, -depth / 2 + 0.012]} material={sharedMaterials.goldFinger}>
+      <boxGeometry args={[width * 0.6, 0.005, 0.018]} />
+    </mesh>
+
+    {/* 减少的引脚 */}
+    <InstancedPins chips={chipPinData} lodLevel="medium" />
+
+    {/* 芯片 */}
+    {board.chips.map(chip => (
+      <ChipModel
+        key={chip.id}
+        chip={chip}
+        baseY={0.004}
+        totalChips={board.chips.length}
+        lodLevel="medium"
+        focusLevel={focusLevel}
+        onClick={() => onChipClick?.(chip)}
+      />
+    ))}
+  </group>
+)
+
+// PCB LOD 低细节层 - 仅 PCB 基板 + 芯片主体，无引脚
+const PCBLowDetail: React.FC<{
+  board: BoardConfig
+  width: number
+  depth: number
+  focusLevel: number
+  onChipClick?: (chip: ChipConfig) => void
+}> = ({ board, width, depth, focusLevel, onChipClick }) => (
+  <group>
+    {/* PCB基板 - 简化为单层 */}
+    <mesh position={[0, 0, 0]} castShadow receiveShadow material={sharedMaterials.pcbBase}>
+      <boxGeometry args={[width, 0.008, depth]} />
+    </mesh>
+
+    {/* 芯片 - 低细节 */}
+    {board.chips.map(chip => (
+      <ChipModel
+        key={chip.id}
+        chip={chip}
+        baseY={0.004}
+        totalChips={board.chips.length}
+        lodLevel="low"
+        focusLevel={focusLevel}
+        onClick={() => onChipClick?.(chip)}
+      />
+    ))}
+  </group>
+)
+
 // Board模型 - 服务器/板卡，根据U高度显示不同样式
+// PCB 模式使用 THREE.LOD 根据相机距离自动切换细节级别
 const BoardModelComponent: React.FC<{
   board: BoardConfig
   showChips?: boolean
   interactive?: boolean  // 是否可以交互（高亮和点击）
   targetOpacity?: number  // 目标透明度
-  lodLevel?: LODLevel  // LOD 级别
+  lodLevel?: LODLevel  // LOD 级别（仅用于非 PCB 模式的兼容）
   focusLevel?: number  // 聚焦层级，传递给 ChipModel
   onDoubleClick?: () => void
   onClick?: () => void  // 单击显示详情
   onChipClick?: (chip: ChipConfig) => void  // 芯片点击
-}> = ({ board, showChips = false, interactive = true, targetOpacity = 1.0, lodLevel = 'high', focusLevel = 0, onDoubleClick, onClick, onChipClick }) => {
+}> = ({ board, showChips = false, interactive = true, targetOpacity = 1.0, focusLevel = 0, onDoubleClick, onClick, onChipClick }) => {
   const groupRef = useRef<THREE.Group>(null)
   const hoveredRef = useRef(false)
   const [, forceRender] = useState(0)
   const canHover = interactive  // 可交互时才能高亮
+
+  // THREE.LOD 实例 - 在 PCB 模式下根据相机距离自动切换细节级别
+  const lodObject = useMemo(() => new THREE.LOD(), [])
 
   // 计算所有芯片的位置数据（供 InstancedMesh 使用）- 必须在 early return 之前
   const chipPinData = useMemo((): ChipPinData[] => {
@@ -186,6 +368,25 @@ const BoardModelComponent: React.FC<{
       }
     })
   }, [board.chips, showChips])
+
+  // 当前激活的 LOD 级别，用于控制 React 子组件的渲染
+  const [activeLod, setActiveLod] = useState<LODLevel>('high')
+
+  // 每帧更新 LOD 级别（基于相机距离自动切换）
+  useFrame(({ camera }) => {
+    if (!showChips) return
+    // 计算相机到 LOD 对象的距离
+    const dist = camera.position.distanceTo(lodObject.position)
+    let newLevel: LODLevel = 'high'
+    if (dist >= LOD_DISTANCES.low) {
+      newLevel = 'low'
+    } else if (dist >= LOD_DISTANCES.medium) {
+      newLevel = 'medium'
+    }
+    if (newLevel !== activeLod) {
+      setActiveLod(newLevel)
+    }
+  })
 
   // 所有 hooks 调用完毕后才能 early return
   if (targetOpacity < 0.01) return null
@@ -212,117 +413,39 @@ const BoardModelComponent: React.FC<{
   return (
     <group>
       {showChips ? (
-        // 显示芯片时：拟物化PCB板卡
-        <>
-          {/* PCB基板 - 多层结构 */}
-          {/* 底层 - FR4基材 */}
-          <mesh position={[0, -0.002, 0]} castShadow receiveShadow material={sharedMaterials.pcbBase}>
-            <boxGeometry args={[width, 0.004, depth]} />
-          </mesh>
-          {/* 中间层 - 主PCB */}
-          <mesh position={[0, 0.001, 0]} castShadow receiveShadow material={sharedMaterials.pcbMiddle}>
-            <boxGeometry args={[width - 0.002, 0.004, depth - 0.002]} />
-          </mesh>
-          {/* 顶层 - 阻焊层(绿油) */}
-          <mesh position={[0, 0.0035, 0]} material={sharedMaterials.pcbTop}>
-            <boxGeometry args={[width - 0.004, 0.001, depth - 0.004]} />
-          </mesh>
-
-          {/* 铜走线 - 仅在高细节模式下显示 */}
-          {lodLevel === 'high' && (
-            <>
-              {/* 横向走线 */}
-              {Array.from({ length: 6 }).map((_, i) => {
-                const zPos = -depth / 2 + 0.05 + i * (depth / 7)
-                const lineWidth = i % 2 === 0 ? 0.004 : 0.002
-                return (
-                  <mesh key={`trace-h-${i}`} position={[0, 0.0042, zPos]} material={sharedMaterials.copperTrace}>
-                    <boxGeometry args={[width - 0.06, 0.0008, lineWidth]} />
-                  </mesh>
-                )
-              })}
-              {/* 纵向走线 */}
-              {Array.from({ length: 5 }).map((_, i) => {
-                const xPos = -width / 2 + 0.06 + i * (width / 6)
-                const lineWidth = i % 2 === 0 ? 0.003 : 0.0015
-                return (
-                  <mesh key={`trace-v-${i}`} position={[xPos, 0.0042, 0]} material={sharedMaterials.copperTrace}>
-                    <boxGeometry args={[lineWidth, 0.0008, depth - 0.06]} />
-                  </mesh>
-                )
-              })}
-            </>
-          )}
-
-          {/* 过孔(Via) - 仅在高细节模式下显示 */}
-          {lodLevel === 'high' && Array.from({ length: 8 }).map((_, i) => {
-            const viaX = (Math.sin(i * 2.5) * 0.35) * width / 2
-            const viaZ = (Math.cos(i * 3.1) * 0.35) * depth / 2
-            return (
-              <mesh key={`via-${i}`} position={[viaX, 0.0043, viaZ]} rotation={[-Math.PI / 2, 0, 0]} geometry={sharedGeometries.via} material={sharedMaterials.via} />
-            )
-          })}
-
-          {/* 边缘金手指接口 - 中等及以上细节 */}
-          {lodLevel !== 'low' && (
-            <mesh position={[0, 0, -depth / 2 + 0.012]} material={sharedMaterials.goldFinger}>
-              <boxGeometry args={[width * 0.6, 0.005, 0.018]} />
-            </mesh>
-          )}
-
-          {/* 安装孔 - 仅在高细节模式下显示 */}
-          {lodLevel === 'high' && [[-1, -1], [-1, 1], [1, -1], [1, 1]].map(([dx, dz], i) => (
-            <mesh key={`mount-${i}`} position={[dx * (width / 2 - 0.025), 0.0042, dz * (depth / 2 - 0.025)]} rotation={[-Math.PI / 2, 0, 0]} geometry={sharedGeometries.mountHole} material={sharedMaterials.mountHole} />
-          ))}
-
-          {/* 使用 InstancedMesh 批量渲染引脚 */}
-          <InstancedPins chips={chipPinData} lodLevel={lodLevel} />
-
-          {/* 使用 InstancedMesh 批量渲染电路纹理 */}
-          <InstancedCircuitTraces chips={chipPinData} lodLevel={lodLevel} />
-
-          {/* 渲染芯片 - 放在PCB上，居中排布 */}
-          {board.chips.map(chip => (
-            <ChipModel
-              key={chip.id}
-              chip={chip}
-              baseY={0.004}
-              totalChips={board.chips.length}
-              lodLevel={lodLevel}
+        // 显示芯片时：基于相机距离自动切换 PCB 细节级别
+        // lodObject 用于 useFrame 中计算世界坐标到相机的距离
+        <primitive object={lodObject}>
+          {activeLod === 'high' && (
+            <PCBHighDetail
+              board={board}
+              width={width}
+              depth={depth}
+              chipPinData={chipPinData}
               focusLevel={focusLevel}
-              onClick={() => onChipClick?.(chip)}
+              onChipClick={onChipClick}
             />
-          ))}
-
-          {/* 板卡丝印标识 - 高细节模式 */}
-          {lodLevel === 'high' && (
-            <Text
-              position={[width / 2 - 0.06, 0.005, depth / 2 - 0.03]}
-              fontSize={0.015}
-              color="#c0c0c0"
-              anchorX="center"
-              anchorY="middle"
-              rotation={[-Math.PI / 2, 0, 0]}
-              material-depthTest={false}
-            >
-              {board.label}
-            </Text>
           )}
-          {/* 版本号丝印 - 高细节模式 */}
-          {lodLevel === 'high' && (
-            <Text
-              position={[-width / 2 + 0.05, 0.005, depth / 2 - 0.03]}
-              fontSize={0.008}
-              color="#888888"
-              anchorX="center"
-              anchorY="middle"
-              rotation={[-Math.PI / 2, 0, 0]}
-              material-depthTest={false}
-            >
-              REV 1.0
-            </Text>
+          {activeLod === 'medium' && (
+            <PCBMediumDetail
+              board={board}
+              width={width}
+              depth={depth}
+              chipPinData={chipPinData}
+              focusLevel={focusLevel}
+              onChipClick={onChipClick}
+            />
           )}
-        </>
+          {activeLod === 'low' && (
+            <PCBLowDetail
+              board={board}
+              width={width}
+              depth={depth}
+              focusLevel={focusLevel}
+              onChipClick={onChipClick}
+            />
+          )}
+        </primitive>
       ) : (
         // 不显示芯片时：封闭的服务器盒子
         <>
@@ -426,7 +549,6 @@ export const BoardModel = React.memo(BoardModelComponent, (prevProps, nextProps)
     prevProps.targetOpacity === nextProps.targetOpacity &&
     prevProps.showChips === nextProps.showChips &&
     prevProps.interactive === nextProps.interactive &&
-    prevProps.lodLevel === nextProps.lodLevel &&
     prevProps.focusLevel === nextProps.focusLevel
   )
 })
@@ -685,6 +807,30 @@ const AnimatedRackComponent: React.FC<AnimatedRackProps> = ({
   onNodeClick,
   onHoverChange,
 }) => {
+  // GPU Picking 注册 - 在顶层和 Pod 层级注册 Rack 为可交互物体
+  const gpuPickerCtx = useGPUPicker()
+  useEffect(() => {
+    if (!gpuPickerCtx || focusLevel > 1 || targetOpacity < 0.01) return
+    const objectKey = `rack:${rack.id}`
+    const geometry = new THREE.BoxGeometry(rackWidth, rackHeight, rackDepth)
+    const worldMatrix = new THREE.Matrix4().makeTranslation(position[0], position[1], position[2])
+    gpuPickerCtx.picker.register(objectKey, {
+      type: 'rack',
+      id: rack.id,
+      label: rack.label,
+      info: {
+        '__podId': podId,
+        '位置': `(${rack.position[0]}, ${rack.position[1]})`,
+        '总U数': rack.total_u,
+        '板卡数': rack.boards.length,
+      },
+    }, geometry, worldMatrix)
+    return () => {
+      gpuPickerCtx.picker.unregisterByKey(objectKey)
+      geometry.dispose()
+    }
+  }, [gpuPickerCtx, rack.id, rack.label, podId, rackWidth, rackHeight, rackDepth, position, focusLevel, targetOpacity, rack.position, rack.total_u, rack.boards.length])
+
   // 简化：直接根据 targetOpacity 决定是否渲染
   if (targetOpacity < 0.01) return null
 
@@ -816,7 +962,7 @@ const AnimatedRackComponent: React.FC<AnimatedRackProps> = ({
           </Text>
         )}
 
-        {/* 交互层 - 用于点击和双击，只在顶层和Pod层级有效 */}
+        {/* R3F 隐形交互 mesh - 用于 click/dblclick 导航（GPU Picker 仅用于 hover 光标） */}
         {focusLevel <= 1 && (
           <mesh
             visible={false}
@@ -825,21 +971,27 @@ const AnimatedRackComponent: React.FC<AnimatedRackProps> = ({
               onNodeClick?.('rack', rack.id, rack.label, {
                 '位置': `(${rack.position[0]}, ${rack.position[1]})`,
                 '总U数': rack.total_u,
-                '板卡数': rack.boards.length
+                '板卡数': rack.boards.length,
               })
             }}
-            onDoubleClick={() => {
+            onDoubleClick={(e) => {
+              e.stopPropagation()
               if (focusLevel === 0) {
                 onNavigateToPod(podId)
               } else if (focusLevel === 1) {
                 onNavigateToRack(podId, rack.id)
               }
             }}
-            onPointerOver={() => onHoverChange(true)}
-            onPointerOut={() => onHoverChange(false)}
+            onPointerOver={(e) => {
+              e.stopPropagation()
+              onHoverChange(true)
+            }}
+            onPointerOut={(e) => {
+              e.stopPropagation()
+              onHoverChange(false)
+            }}
           >
             <boxGeometry args={[rackWidth, rackHeight, rackDepth]} />
-            <meshBasicMaterial transparent opacity={0} />
           </mesh>
         )}
       </group>

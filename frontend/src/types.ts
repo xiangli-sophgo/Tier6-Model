@@ -285,11 +285,18 @@ export const CAMERA_DISTANCE: Record<ViewLevel, { min: number; max: number }> = 
 // LOD 级别
 export type LODLevel = 'high' | 'medium' | 'low';
 
-// LOD 距离阈值（单位：3D世界单位）
+// LOD 距离阈值（单位：3D世界单位）- 供手动 LOD 使用
 export const LOD_THRESHOLDS = {
   high: 2,      // 距离 < 2: 高细节（完整引脚、电路纹理、文字）
   medium: 5,    // 距离 2-5: 中细节（简化引脚）
   low: Infinity // 距离 > 5: 低细节（仅 Box）
+};
+
+// THREE.LOD 原生距离阈值 - 用于 BoardModel PCB 模式的自动 LOD 切换
+export const LOD_DISTANCES = {
+  high: 0,      // 0 ~ 1.5: 完整 PCB + 走线 + 过孔 + 引脚 + 电路纹理
+  medium: 1.5,  // 1.5 ~ 3.0: PCB + 减少的引脚，无走线/过孔/电路纹理
+  low: 3.0,     // 3.0+: 仅 PCB 基板 + 芯片主体，无引脚
 };
 
 // 引脚渲染配置

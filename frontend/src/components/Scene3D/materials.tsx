@@ -159,13 +159,14 @@ export const InstancedPins: React.FC<{
     return result
   }, [chips, actualPinsPerSide])
 
-  // 更新 InstancedMesh
+  // 更新 InstancedMesh 并确保 BoundingSphere 正确（视锥剔除依赖此值）
   useEffect(() => {
     if (!meshRef.current) return
     matrices.forEach((matrix, i) => {
       meshRef.current!.setMatrixAt(i, matrix)
     })
     meshRef.current.instanceMatrix.needsUpdate = true
+    meshRef.current.computeBoundingSphere()
   }, [matrices])
 
   // 使用第一个芯片的尺寸作为引脚尺寸参考
@@ -241,19 +242,21 @@ export const InstancedCircuitTraces: React.FC<{
     return result
   }, [chips])
 
-  // 更新 InstancedMesh
+  // 更新 InstancedMesh 并确保 BoundingSphere 正确（视锥剔除依赖此值）
   useEffect(() => {
     if (hMeshRef.current) {
       hMatrices.forEach((matrix, i) => {
         hMeshRef.current!.setMatrixAt(i, matrix)
       })
       hMeshRef.current.instanceMatrix.needsUpdate = true
+      hMeshRef.current.computeBoundingSphere()
     }
     if (vMeshRef.current) {
       vMatrices.forEach((matrix, i) => {
         vMeshRef.current!.setMatrixAt(i, matrix)
       })
       vMeshRef.current.instanceMatrix.needsUpdate = true
+      vMeshRef.current.computeBoundingSphere()
     }
   }, [hMatrices, vMatrices])
 
