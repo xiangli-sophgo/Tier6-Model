@@ -1,147 +1,212 @@
 # 04. 虚拟通道与仲裁机制
 
-## 4.1 三类虚拟通道
+## 4.1 8 CBFC/PFC虚拟通道
 
-**[DOC]** PAXI Features:
+**[DOC]** PAXI SUE2.0 Features:
 
-> "Support 3 type virtual channels, inside management/control/data"
-> "Independent enablement/reset for 3 virtual channels."
+> "Support 8 CBFC and PFC VC."
 
-| 虚拟通道 | 用途 | 优先级 | 独立复位 |
-|----------|------|--------|---------|
-| Management | 系统管理、链路控制 | 最高(抢占) | 支持 |
-| Control | 控制平面AXI事务 | 中 (WRR) | 支持 |
-| Data | 数据平面AXI事务 | 低 (WRR) | 支持 |
+**[DOC]** 来自SUE2.0 2.2 CBFC & PFC Virtual Channel:
 
-### Management Channel
+> "MAC's CBFC/PFC supports 8 Virtual Channels (VCs). The user transmits the VC ID via the User field of the AXI interface. PAXI encapsulates the AXI Flit with VC ID/DA and routes it to RC Link to encapsulates MAC Frame."
 
-管理通道承载的消息类型:
+### 与旧版的对比
 
-1. **Linkup消息**: 链路建立时发送128条消息(DA0-127)
-2. **Credit Update Request/Response**: 运行时信用更新协商
-3. **远程APB访问**: 访问远端芯片的寄存器
+| 特性 | 旧版 (v2R0p6) | SUE2.0 |
+|------|---------------|--------|
+| VC数量 | 3 (Management/Control/Data) | 8 (CBFC/PFC VC) |
+| 仲裁方式 | 优先级 + WRR | 通道权重 + CBFC/PFC |
+| 独立复位 | 3个通道各自独立 | 通过VC映射统一管理 |
+| 流控机制 | Per-DA Credit | Per-VC CBFC/PFC |
 
-**[DOC]** 2.6 Remote APB ACCESS:
+## 4.2 两种VC映射模式
 
-> "paxi generate management flit to MAC"
+**[DOC]** 来自SUE2.0 2.2:
 
-管理通道通过APB Flit (flit type=3'b100) 和 Message Flit (flit type=3'b101) 传输。
+> "PAXI supports two modes of VC mapping."
 
-### Control Channel
+### Mode 0: PAXI默认映射
 
-**[推导]** 控制通道用于承载控制平面的AXI事务, 有独立的AXI Master/Slave接口对:
-- Ctrl AXI Master Interface
-- Ctrl AXI Slave Interface
+**[DOC]**:
 
-控制通道是可选的:
+> "The first mode is VC-DA mapping by PAXI, where DAs are evenly distributed across two VC channels based on the number of DAs."
 
-**[DOC]** 3.2.13/3.2.14 CAXI Latency Register:
+Ctrl Register (0x00C) bit8 = 0 (默认):
 
-> "Note: if not define CAXI channel, this CAXI registers type is reserved."
+| VC编号 | 用途 |
+|--------|------|
+| VC0, VC2 | Single-cast request (REQ) |
+| VC1, VC3 | Single-cast response (RSP) |
+| VC4 | Multi-cast request |
+| VC0~VC3 | APB/Msg request/response (可配置) |
 
-### Data Channel
+**[DOC]** DA分配示例:
 
-数据通道承载主要的数据平面AXI事务, 拥有独立的AXI Master/Slave接口对:
-- Data AXI Master Interface
-- Data AXI Slave Interface
+> "Take request for example, with 8 DAs, DA0-3 are assigned to VC0, and DA4-7 are assigned to VC2."
 
-## 4.2 虚拟通道仲裁
+DA按数量均匀分配到两个VC通道: 前半DA分配到VC0(REQ)/VC1(RSP), 后半DA分配到VC2(REQ)/VC3(RSP)。
 
-**[DOC]** 2.4 Virtual Channel Arbitration (完整原文):
+### Mode 1: 用户自定义映射
 
-> "The management channel always has the highest priority, Secondly ctrl channel and then data channel. Data and ctrl channel is arbitrated by weight from 1 ~ 255 which is user configured. Paxi will prioritize high priority channels until the configured weight ratio is reached or there is no data to send."
+**[DOC]**:
 
-### 仲裁规则
+> "Set vc mode to 1 in Ctrl Register to activates this mode. User transmit mapping info through VC/DA bit in AXI USER field."
 
-1. **Management Channel**: 绝对最高优先级, 只要有数据就优先发送
-2. **Control Channel vs Data Channel**: 使用WRR (Weighted Round-Robin)
-   - 权重值范围: 1 ~ 255
-   - 高优先级通道优先, 直到达到配置的权重比或无数据可发
+Ctrl Register (0x00C) bit8 = 1:
 
-### 权重配置
+用户通过AXI USER field的VC位直接指定VC通道。
 
-**[DOC]** 3.2.8 WEIGHT CFG Register (地址0x01c):
+**[DOC]** 约束:
 
-| 字段 | Bits | 说明 |
-|------|------|------|
-| DAXI_WEIGHT | [31:16] | Data AXI通道权重配置 |
-| CAXI_WEIGHT | [15:0] | Ctrl AXI通道权重配置 |
+> "In this mode, REQ channels can only be assigned to VC0 and VC2, while RSP channels are restricted to VC1 and VC3. APB transactions can be allocated to any available VC."
 
-默认复位值: 0x0001_0100
+| 事务类型 | 可用VC |
+|---------|--------|
+| REQ (AW+W, AR) | VC0, VC2 |
+| RSP (R, B) | VC1, VC3 |
+| APB | 任意VC |
 
-**[推导]** 默认值分析:
-- DAXI_WEIGHT = 0x0001 = 1
-- CAXI_WEIGHT = 0x0100 = 256
+### APB VC配置
 
-这意味着默认情况下, Ctrl通道权重远高于Data通道。实际使用时需根据业务调整。
+**[DOC]** Ctrl Register (0x00C) bits[11:9]:
 
-### WRR行为模型
+> "APB VC: Virtual channel of APB."
 
-**[推导]** 基于文档描述的WRR行为:
+APB事务的VC通道可通过Ctrl Register的APB VC字段配置。
+
+## 4.3 死锁预防规则
+
+**[DOC]** 来自SUE2.0 2.2:
+
+> "When using the user VC/DA mapping mode, to prevent out-of-order and deadlocks, the following principles must be followed when assigning Virtual Channels (VCs) at the user side:"
+
+### 规则
+
+1. **REQ和RSP必须分配到不同VC**
+
+   **[DOC]**: REQ只能用VC0/VC2, RSP只能用VC1/VC3, 物理上隔离。
+
+2. **跨VC无序列保证**
+
+   **[DOC]**:
+   > "PAXI does not guarantee ordering for data across different virtual channels. The upper layer must maintain the order or support out-of-order operations."
+
+**[推导]** 这些规则的原因:
+- REQ/RSP分离到不同VC避免了经典的请求-响应死锁: 如果REQ和RSP共享同一VC, 当VC缓冲满时, RSP无法返回, 导致死锁
+- 上层需要自行管理跨VC的数据顺序, 这是VC机制的固有特性
+
+## 4.4 CBFC机制
+
+**[DOC]** 来自RCLINK Spec 5.5 CBFC:
+
+CBFC (Credit-Based Flow Control) 是一种端到端的流量控制机制, 由RC Link实现, 与PAXI的VC映射配合工作。
+
+### 核心参数 (per-VC)
+
+| 参数 | 说明 |
+|------|------|
+| credit_size | 单个Credit代表的字节数 (32/64/128/256/1024/2048) |
+| credit_limit (CL) | 该VC的最大Credit数量 |
+| pkt_ovhd | CBFC协议中的PktOvhd值 (有符号数) |
+| credit_uf_limit | Credit下限 (1~7), 单位为最大报文消耗的Credit数 |
+
+### 工作流程
+
+1. **初始化阶段**: MAC配置各VC的credit_size, credit_limit, pkt_ovhd
+2. **工作阶段**:
+   - 发送方: 根据报文长度和credit_size计算消耗的Credit数量
+   - 接收方: 数据从缓冲弹出时归还Credit
+   - 当剩余Credit低于credit_uf_limit时, 阻塞该VC的发送
+
+### RC Link中的VC映射
+
+**[DOC]** 来自RCLINK Spec:
+
+RC Link内部有7路物理流量, 映射到8个VC:
+
+| 流量类型 | 映射关系 |
+|---------|---------|
+| TYPE1_REQ (Bank0~3) | 可映射到1/2/4个VC (按QPID低位划分) |
+| TYPE1_ACK + CNP | 同一个VC |
+| TYPE2 | 一个独立VC |
+| TYPE3 | 一个独立VC |
+
+**[推导]** PAXI的VC0~VC4对应RC Link的不同流量类型:
+- VC0/VC2 (REQ) -> TYPE1_REQ (不同Bank)
+- VC1/VC3 (RSP) -> TYPE1_ACK
+- VC4 (多播) -> TYPE2
+
+## 4.5 PFC机制
+
+PFC (Priority Flow Control) 是CBFC的替代方案, 两者互斥。
+
+**[DOC]** Ctrl Register (0x00C) bit7:
+
+> "CBFC_EN: Set 1 to enable CFBC mode. Set 0 to enable PFC mode."
+
+### PFC工作方式
+
+基于RX Buffer水位线触发:
+- 当接收数据超过高水位线时, 触发PFC帧, 暂停远端对应VC的发送
+- 当数据降到低水位线以下时, 解除PFC限制
+
+水位线配置:
+
+| Buffer | 寄存器 | 默认高水位 | 默认低水位 |
+|--------|--------|-----------|-----------|
+| REQ | RX REQ Buffer Water Mark (0x058) | 32帧+1RTT | 1RTT |
+| RSP | RX RSP Buffer Water Mark (0x05C) | 32帧+1RTT | 1RTT |
+| MUL | RX MUL Buffer Water Mark (0x060) | 8帧+1RTT | 1RTT |
+
+### CBFC vs PFC对比
+
+| 特性 | CBFC | PFC |
+|------|------|-----|
+| 控制粒度 | Per-VC Credit计数 | Per-VC水位线 |
+| 实现位置 | RC Link端到端 | PAXI RX Buffer |
+| 参数配置 | credit_size, credit_limit, pkt_ovhd | 高/低水位线 |
+| 软件流控 | 支持 (software_ctrl_cbfc_vc_status) | 不支持 |
+| 动态下限 | 支持 (dyn_uf_limit_cbfc_en, 仅TYPE1 REQ) | 不支持 |
+| 使能控制 | Ctrl Register bit7 = 1 | Ctrl Register bit7 = 0 |
+
+**不能同时使用CBFC和PFC。**
+
+## 4.6 通道权重配置
+
+**[DOC]** 来自SUE2.0 3.2.29/3.2.30:
+
+### Channel Weight Register (0x070)
+
+| Bits | 字段 | 说明 | 默认值 |
+|------|------|------|--------|
+| 31:16 | REQ channel Weight | REQ通道权重 | 0x0008 |
+| 15:0 | RSP channel Weight | RSP通道权重 | 0x0008 |
+
+### Channel Weight Register2 (0x074)
+
+| Bits | 字段 | 说明 | 默认值 |
+|------|------|------|--------|
+| 31:16 | MUL channel Weight | 多播通道权重 | 0x0100 |
+| 15:0 | APB channel Weight | APB通道权重 | 0x0008 |
+
+**[推导]** 权重决定了不同类型流量的仲裁优先级和带宽分配:
+- REQ和RSP默认权重相同 (0x0008)
+- MUL通道默认权重较高 (0x0100), 确保多播数据优先传输
+- APB通道默认权重与REQ/RSP相同
+
+## 4.7 仲裁整体行为
+
+**[推导]** SUE2.0的仲裁模型:
 
 ```
-每轮调度:
-1. 如果Management队列有数据 -> 立即发送, 不消耗其他通道权重
-2. 否则进入WRR:
-   a. Ctrl通道可发送 CAXI_WEIGHT 个flit
-   b. Data通道可发送 DAXI_WEIGHT 个flit
-   c. 如果某通道无数据, 其配额转给另一通道
-3. 当两个通道的配额都用完, 重新开始一轮
+TX方向:
+  REQ (VC0/VC2) -----+
+  RSP (VC1/VC3) -----+--- Channel Weight Arbiter ---> RC Link TX
+  MUL (VC4) ---------+
+  APB ----------------+
+
+其中:
+  - 各通道按Channel Weight进行加权轮询
+  - RC Link内部进一步按CBFC Credit或PFC进行流控
+  - TYPE1 REQ内部按Bank轮转 (tx_bank_rr_en)
 ```
-
-## 4.3 DA (Destination Address) 仲裁
-
-**[DOC]** 2.5 DA Arbitration (完整原文):
-
-> "There are 128 DAs for each channel, and the arbiter select the DAs by round robin and read the corresponding channel. So if multi-da exist, same da will not be pick continuously unless the there is not other DA transfer."
-
-### 关键要点
-
-1. **每个虚拟通道**都有独立的128个DA
-2. DA选择使用 **Round-Robin** 算法
-3. **公平性保证**: 同一DA不会被连续选择(除非只有它有数据)
-
-### DA映射
-
-**[DOC]** 2.3 DA insertion Handling:
-
-> "Can be mapped to 128 different DA."
-
-映射规则:
-
-| AXI User Signal值 | 映射到的DA寄存器 |
-|-------------------|----------------|
-| 0 | DA00, DA01 |
-| 1 | DA10, DA11 |
-| 2 | DA20, DA21 |
-| ... | ... |
-| 127 | DA1270, DA1271 |
-
-每个DA有两个寄存器(DA*0和DA*1), 分别存储:
-- DA*0: 目的地址低32位部分 + DA使能等信息
-- DA*1: 目的地址高16位部分 + Credit信息
-
-**[DOC]** DA MAP Register (3.2.100~355): 地址范围 0x200 ~ 0x4fc
-
-## 4.4 两级仲裁的整体行为
-
-完整的发送仲裁过程是两级流水:
-
-```
-第一级: VC仲裁 (选择哪个虚拟通道)
-  Management ─┐
-  Control ────┼─→ VC Arbiter ──→ 选中的VC
-  Data ───────┘
-
-第二级: DA仲裁 (在选中的VC内选择哪个DA)
-  DA[0] ──┐
-  DA[1] ──┤
-  ...     ├─→ DA Arbiter (Round-Robin) ──→ 选中的DA
-  DA[126]─┤
-  DA[127]─┘
-```
-
-**[推导]** 这种两级结构意味着:
-- VC级别保证了管理/控制/数据流量的优先级隔离
-- DA级别保证了不同目的芯片之间的公平带宽分配
-- 组合效果: 既有优先级保障, 又有公平性保障

@@ -1,5 +1,9 @@
 # 09. DCQCN拥塞控制算法
 
+> **[历史文档]** 此文档描述旧版DCQCN算法。在SUE2.0架构中, 速率控制由RC Link内置的per-QP速率控制和CNP MERGE机制替代。请参见 [12_rclink.md](12_rclink.md) 的12.4节(速率控制)和12.8节(CNP MERGE)。
+>
+> 以下内容保留作为历史参考。
+
 ## 9.1 概述
 
 DCQCN (Data Center Quantized Congestion Notification) 是RDMA IP中实现的拥塞控制算法, 用于在以太网环境下进行端到端的速率调节。

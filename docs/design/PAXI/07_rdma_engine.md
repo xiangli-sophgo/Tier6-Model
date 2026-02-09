@@ -1,5 +1,9 @@
 # 07. RDMA引擎 (RoCEv2) 详细分析
 
+> **[历史文档]** 此文档描述旧版独立RDMA Engine (RoCEv2)。在SUE2.0架构中, RC Link替代了其大部分功能, 包括可靠传输(Go-Back-N)、速率控制(per-QP)和拥塞通知(ECN/CNP)。请参见 [12_rclink.md](12_rclink.md) 了解SUE2.0的传输层设计。
+>
+> 以下内容保留作为历史参考。
+
 ## 7.1 概述
 
 **[DOC]** RDMA Reference Guide 1.1:
