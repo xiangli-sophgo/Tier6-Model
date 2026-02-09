@@ -93,6 +93,8 @@ align_bytes: 32                 # 内存对齐要求 (bytes)，影响 tiling 时
 compute_dma_overlap_rate: 0.8   # 计算-DMA 重叠率 (0~1)，流水线隐藏搬运延迟的能力
                                 # 0 = 完全串行，1 = 完全重叠
                                 # 总时间 = max(t_comp, t_dma) + min(t_comp, t_dma) * (1 - overlap)
+compute_efficiency: 0.9         # 计算效率 (0~1)，实际算力利用率
+                                # 实际计算时延 = 理论时延 / compute_efficiency
 
 # ------------------------------------------------------------
 # 片内互联 (NoC)

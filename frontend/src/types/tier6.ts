@@ -189,6 +189,7 @@ export interface BenchmarkListItem {
   id: string;
   name: string;
   model_name?: string;
+  topology?: string;
   batch_size?: number;
   input_seq_length?: number;
   output_seq_length?: number;
@@ -200,6 +201,8 @@ export interface Tier6BenchmarkConfig {
   name?: string;
   model: string | ModelPreset | Record<string, unknown>;
   model_preset_ref?: string;
+  topology?: string | Tier6TopologyConfig | Record<string, unknown>;
+  topology_preset_ref?: string;
   inference: Tier6InferenceConfig | Record<string, unknown>;
 }
 
@@ -208,6 +211,8 @@ export interface Tier6InferenceConfig {
   batch_size: number;
   input_seq_length: number;
   output_seq_length: number;
+  weight_dtype?: string;
+  activation_dtype?: string;
 }
 
 // ==================== Topology 类型 ====================
@@ -219,24 +224,56 @@ export interface TopologyListItem {
   chip_count?: number;
 }
 
-/** Tier6 拓扑配置 */
+/** 芯片分组 (board 内) */
+export interface TopologyChipGroup {
+  name: string;
+  preset_id?: string;
+  count: number;
+}
+
+/** 板卡分组 (rack 内) */
+export interface TopologyBoardGroup {
+  id?: string;
+  name?: string;
+  u_height?: number;
+  count: number;
+  chips: TopologyChipGroup[];
+}
+
+/** Rack 分组 (pod 内) */
+export interface TopologyRackGroup {
+  count: number;
+  total_u?: number;
+  boards: TopologyBoardGroup[];
+}
+
+/** Pod 分组 (顶层) */
+export interface TopologyPodGroup {
+  count: number;
+  racks: TopologyRackGroup[];
+}
+
+/** 互联链路配置 */
+export interface InterconnectLinks {
+  c2c?: { bandwidth_gbps: number; latency_us: number };
+  b2b?: { bandwidth_gbps: number; latency_us: number };
+  r2r?: { bandwidth_gbps: number; latency_us: number };
+  p2p?: { bandwidth_gbps: number; latency_us: number };
+}
+
+/** 互联配置 (链路 + 通信参数) */
+export interface InterconnectConfig {
+  links?: InterconnectLinks;
+  comm_params?: CommLatencyConfig | Record<string, unknown>;
+}
+
+/** Tier6 拓扑配置 (grouped_pods 格式) */
 export interface Tier6TopologyConfig {
   name?: string;
   description?: string;
-  pod_count?: number;
-  racks_per_pod?: number;
-  rack_config?: Record<string, unknown>;
-  topology?: Record<string, unknown>;
-  hardware_params?: {
-    chips?: Record<string, ChipPreset>;
-    interconnect?: {
-      c2c?: { bandwidth_gbps: number; latency_us: number };
-      b2b?: { bandwidth_gbps: number; latency_us: number };
-      r2r?: { bandwidth_gbps: number; latency_us: number };
-      p2p?: { bandwidth_gbps: number; latency_us: number };
-    };
-  };
-  comm_latency_config?: CommLatencyConfig | Record<string, unknown>;
+  pods?: TopologyPodGroup[];
+  chips?: Record<string, ChipPreset>;
+  interconnect?: InterconnectConfig;
   [key: string]: unknown;  // 允许额外字段
 }
 

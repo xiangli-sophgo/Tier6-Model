@@ -450,7 +450,8 @@ export function getHardwarePreset(hardwareId: string): HardwareConfig {
     throw new Error(`未找到硬件预设: ${hardwareId}`);
   }
   return {
-    hardware_params: { chips: {}, interconnect: { c2c: { bandwidth_gbps: 0, latency_us: 0 }, b2b: { bandwidth_gbps: 0, latency_us: 0 }, r2r: { bandwidth_gbps: 0, latency_us: 0 }, p2p: { bandwidth_gbps: 0, latency_us: 0 } } },
+    chips: {},
+    interconnect: { links: { c2c: { bandwidth_gbps: 0, latency_us: 0 }, b2b: { bandwidth_gbps: 0, latency_us: 0 }, r2r: { bandwidth_gbps: 0, latency_us: 0 }, p2p: { bandwidth_gbps: 0, latency_us: 0 } } },
     chip: { ...(preset as any).chip },
     board: { ...(preset as any).board },
     rack: { ...(preset as any).rack },
@@ -472,7 +473,8 @@ export function createHardwareConfig(
   const pod = POD_PRESETS[podId] ?? IB_NDR_POD;
 
   return {
-    hardware_params: { chips: {}, interconnect: { c2c: { bandwidth_gbps: 0, latency_us: 0 }, b2b: { bandwidth_gbps: 0, latency_us: 0 }, r2r: { bandwidth_gbps: 0, latency_us: 0 }, p2p: { bandwidth_gbps: 0, latency_us: 0 } } },
+    chips: {},
+    interconnect: { links: { c2c: { bandwidth_gbps: 0, latency_us: 0 }, b2b: { bandwidth_gbps: 0, latency_us: 0 }, r2r: { bandwidth_gbps: 0, latency_us: 0 }, p2p: { bandwidth_gbps: 0, latency_us: 0 } } },
     chip,
     board: { ...board },
     rack: { ...rack },

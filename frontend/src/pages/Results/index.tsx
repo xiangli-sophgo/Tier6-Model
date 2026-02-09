@@ -404,9 +404,9 @@ export const Results: React.FC = () => {
     }
 
     // 尝试多种路径获取芯片配置
-    // 1. hardware_params.chips (标准格式)
-    // 2. chips (简化格式)
-    const chips = topology.hardware_params?.chips || topology.chips || {}
+    // 1. chips (新格式 v2.2+)
+    // 2. hardware_params.chips (旧格式兼容)
+    const chips = topology.chips || topology.hardware_params?.chips || {}
     const firstChipName = Object.keys(chips)[0]
 
     // 尝试多种路径获取 memory_capacity_gb
@@ -587,13 +587,13 @@ export const Results: React.FC = () => {
             p2p: { bandwidth_gbps: 400, latency_us: 2 }
           }
 
-          return { hardware_params: { chips, interconnect } } as HardwareConfig
+          return { chips, interconnect: { links: interconnect } } as HardwareConfig
         }
 
-        // 格式2: tier6 格式 (hardware_params.chips 结构)
-        const hwParams = topology.hardware_params as any
-        if (hwParams?.chips) {
-          const tier6Chips = hwParams.chips as Record<string, any>
+        // 格式2: tier6 格式 (chips 或 hardware_params.chips 结构)
+        const topologyChips = (topology.chips || (topology as any).hardware_params?.chips) as Record<string, any> | undefined
+        if (topologyChips) {
+          const tier6Chips = topologyChips
           const firstChipName = Object.keys(tier6Chips)[0]
           const tier6Chip = tier6Chips[firstChipName]
 
@@ -621,7 +621,7 @@ export const Results: React.FC = () => {
             }
 
             // 从 tier6 获取互联配置
-            const tier6Interconnect = hwParams.interconnect || {}
+            const tier6Interconnect = (topology as any).interconnect?.links || (topology as any).hardware_params?.interconnect || {}
             const interconnect = {
               c2c: {
                 bandwidth_gbps: tier6Interconnect.c2c?.bandwidth_gbps || 448,
@@ -641,13 +641,19 @@ export const Results: React.FC = () => {
               }
             }
 
-            return { hardware_params: { chips, interconnect } } as HardwareConfig
+            return { chips, interconnect: { links: interconnect } } as HardwareConfig
           }
         }
 
-        // 格式3: 已经是 hardware_params 格式（直接返回）
-        if (topology.hardware_params) {
-          return { hardware_params: topology.hardware_params } as HardwareConfig
+        // 格式3: 已经有 chips 和 interconnect（直接返回）
+        if ((topology as any).chips) {
+          return { chips: (topology as any).chips, interconnect: (topology as any).interconnect || {} } as HardwareConfig
+        }
+
+        // 格式4 (旧格式兼容): hardware_params 格式
+        if ((topology as any).hardware_params) {
+          const hp = (topology as any).hardware_params
+          return { chips: hp.chips || {}, interconnect: { links: hp.interconnect } } as HardwareConfig
         }
 
         return undefined

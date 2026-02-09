@@ -1,0 +1,129 @@
+# ============================================================
+# Topology Configuration Template
+# ============================================================
+# 复制此文件并重命名为拓扑名称 (如 P1-R4-B16-C64.yaml) 来创建新配置。
+#
+# 格式: grouped_pods (pods[].racks[].boards[].chips[], 带 count 分组)
+# chips 为芯片参数快照 (从 chips/ 预设复制), interconnect 包含层间链路和通信参数
+#
+# 命名规范: P{PodCount}-R{RackCount}-B{BoardCount}-C{ChipCount}
+# 示例: P1-R4-B16-C128
+#   - 1 个 Pod
+#   - 4 个 Rack
+#   - 每 Rack 16 个 Board
+#   - 总共 128 个 Chip
+# ============================================================
+
+name: "TEMPLATE_TOPOLOGY"
+
+# 层级结构: Pod -> Rack -> Board -> Chip
+# 每一级用 count 表示该组的实例数量
+pods:
+- count: 1
+  racks:
+  - count: 1
+    boards:
+    - count: 2
+      chips:
+      - name: "SG2262"
+        preset_id: "sg2262"  # 可选, 引用芯片预设
+        count: 16
+
+# 芯片参数快照 (从 chips/ 预设复制, 持久化在拓扑中)
+chips:
+  SG2262:
+    name: SG2262
+    architecture: TPU_V7
+    process: 7nm
+    frequency_ghz: 1
+    align_bytes: 32
+    compute_dma_overlap_rate: 0.8
+    compute_efficiency: 0.9
+    cores:
+      count: 4
+      lanes_per_core: 64
+    compute_units:
+      cube:
+        m: 16
+        k: 32
+        n: 8
+        mac_per_lane:
+          INT8: 1000
+          FP8: 1000
+          BF16: 500
+          FP16: 500
+          TF32: 250
+          INT4: 2000
+      vector:
+        eu_per_lane:
+          INT8: 64
+          FP8: 64
+          INT16: 32
+          BF16: 32
+          FP16: 32
+          INT32: 16
+          FP32: 16
+    memory:
+      gmem:
+        type: LPDDR5
+        capacity_gb: 64
+        bandwidth_gbps: 273
+        bandwidth_utilization: 0.85
+        latency_ns: 100
+      lmem:
+        capacity_mb: 64
+        bandwidth_gbps: 2000
+        latency_ns: 1
+        sram_utilization: 0.45
+    dma_engines:
+      gdma:
+        bandwidth_gbps: 68
+        startup_latency_ns: 100
+        efficiency: 0.9
+    interconnect:
+      NoC:
+        topology: Mesh
+        bandwidth_gbps: 1000
+        latency_ns: 10
+
+# 互联配置
+interconnect:
+  # 层间物理链路
+  links:
+    c2c:
+      bandwidth_gbps: 448
+      latency_us: 1.0
+    b2b:
+      bandwidth_gbps: 400
+      latency_us: 2.0
+    r2r:
+      bandwidth_gbps: 400
+      latency_us: 3.0
+    p2p:
+      bandwidth_gbps: 400
+      latency_us: 5.0
+  # 通信开销参数
+  comm_params:
+    allreduce_algorithm: "ring"
+    alltoall_algorithm: "pairwise"
+    enable_compute_comm_overlap: true
+    network_efficiency: 0.85
+
+# 异构集群示例:
+# pods:
+# - count: 2       # 2 个 SG2262 Pod
+#   racks:
+#   - count: 4
+#     boards:
+#     - count: 1
+#       chips:
+#       - name: SG2262
+#         count: 8
+# - count: 1       # 1 个 H100 Pod
+#   racks:
+#   - count: 2
+#     boards:
+#     - count: 2
+#       chips:
+#       - name: H100
+#         count: 4

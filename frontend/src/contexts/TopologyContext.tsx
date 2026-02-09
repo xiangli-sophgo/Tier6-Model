@@ -17,7 +17,7 @@ const CONFIG_CACHE_KEY = 'tier6_topology_config_cache'
 // ============================================
 
 // Rack 配置类型（用于部署分析）
-// 芯片详细配置现在存储在 hardware_params.chips 中（使用 Tier6 ChipPreset 格式）
+// 芯片详细配置现在存储在顶层 chips 字典中（使用 Tier6 ChipPreset 格式）
 export interface RackConfigForAnalysis {
   total_u: number
   boards: Array<{
@@ -117,7 +117,7 @@ export const TopologyProvider: React.FC<TopologyProviderProps> = ({ children }) 
           rack_config: cached.rackConfig,
           switch_config: cached.switchConfig,
           manual_connections: cached.manualConnectionConfig,
-          interconnect_config: cached.hardwareParams?.interconnect,
+          interconnect_config: cached.interconnect?.links || cached.hardwareParams?.interconnect,
         })
         setTopology(data)
         // 保存用于部署分析的配置数据

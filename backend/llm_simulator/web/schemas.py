@@ -36,27 +36,27 @@ class ChipHardwareConfigRequest(BaseModel):
     compute_dma_overlap_rate: Optional[float] = Field(None, description="计算-搬运重叠率（0-1）")
 
 
-class HardwareParamsRequest(BaseModel):
-    """硬件参数配置（新格式 v2.1.0+）"""
-    chips: dict[str, Any] = Field(
-        ...,
-        description="芯片配置字典，key为芯片名称，value为芯片配置"
-    )
-    interconnect: Optional[dict[str, Any]] = Field(
+class InterconnectRequest(BaseModel):
+    """互联配置"""
+    links: Optional[dict[str, Any]] = Field(
         None,
-        description="互联配置 (c2c, b2b, r2r, p2p)"
+        description="互联链路配置 (c2c, b2b, r2r, p2p)"
     )
-    comm_latency_config: Optional[dict[str, Any]] = Field(
+    comm_params: Optional[dict[str, Any]] = Field(
         None,
-        description="通信配置 (allreduce算法等)"
+        description="通信参数配置 (allreduce算法等)"
     )
 
 
 class HardwareConfigRequest(BaseModel):
-    """硬件配置请求（新格式 v2.1.0+）"""
-    hardware_params: HardwareParamsRequest = Field(
+    """硬件配置请求（新格式: 顶层 chips + interconnect）"""
+    chips: dict[str, Any] = Field(
         ...,
-        description="硬件参数配置"
+        description="芯片配置字典，key为芯片名称，value为芯片配置"
+    )
+    interconnect: Optional[InterconnectRequest] = Field(
+        None,
+        description="互联配置 (links + comm_params)"
     )
 
 
@@ -316,8 +316,8 @@ class TopologyConfigRequest(BaseModel):
     pod_count: int = Field(1, description="Pod 数量")
     racks_per_pod: int = Field(1, description="每个 Pod 的 Rack 数量")
     rack_config: Optional[dict] = Field(None, description="Rack 配置")
-    hardware_params: Optional[dict] = Field(None, description="硬件参数配置")
+    chips: Optional[dict] = Field(None, description="芯片配置字典")
+    interconnect: Optional[dict] = Field(None, description="互联配置 (links + comm_params)")
     connections: Optional[list] = Field(None, description="所有连接（自动生成+手动）")
     switch_config: Optional[dict] = Field(None, description="交换机配置（可选）")
     manual_connections: Optional[dict] = Field(None, description="手动连接配置（可选）")
-    comm_latency_config: Optional[dict] = Field(None, description="通信延迟配置（可选）")

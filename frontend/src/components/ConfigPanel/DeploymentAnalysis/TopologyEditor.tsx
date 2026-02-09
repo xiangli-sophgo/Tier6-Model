@@ -1,25 +1,28 @@
 /**
  * TopologyEditor - 拓扑配置编辑器
  *
- * 支持从后端加载拓扑预设，编辑结构和互联参数，
- * 提供保存/另存为/重载功能，修改字段蓝色高亮。
+ * grouped_pods 格式: pods[].racks[].boards[].chips[]
+ * 层级配置只读展示，互联参数可编辑，支持预设管理(保存/另存为/重载)
  */
-import React, { useState, useEffect, useCallback, useRef } from 'react'
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { Save, Copy, RefreshCw, ChevronDown, ChevronUp } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { NumberInput } from '@/components/ui/number-input'
+import { Badge } from '@/components/ui/badge'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { HelpTooltip } from '@/components/ui/info-tooltip'
 import { BaseCard } from '@/components/common/BaseCard'
 import type { Tier6TopologyConfig, TopologyListItem } from '@/types/tier6'
 import { getTopologies, getTopology, createTopology, updateTopology } from '@/api/tier6'
+import { countChips, countPods, countRacks, countBoards } from '@/utils/llmDeployment/topologyFormat'
 
 interface TopologyEditorProps {
   value: Tier6TopologyConfig
   onChange: (config: Tier6TopologyConfig) => void
+  onParamsModified?: (modified: boolean) => void
 }
 
 const IC_LABELS: Record<string, { label: string; tip: string }> = {
@@ -29,44 +32,94 @@ const IC_LABELS: Record<string, { label: string; tip: string }> = {
   p2p: { label: 'P2P (Pod-to-Pod)', tip: '跨 Pod 互联，集群间通信' },
 }
 
+const COMM_FIELDS: Array<{ key: string; label: string; tip: string; step?: number }> = [
+  { key: 'rtt_tp_us', label: 'TP RTT (us)', tip: 'Tensor Parallelism 通信往返延迟' },
+  { key: 'rtt_ep_us', label: 'EP RTT (us)', tip: 'Expert Parallelism 通信往返延迟' },
+  { key: 'bandwidth_utilization', label: '带宽利用率', tip: '实际带宽 / 理论带宽 (0~1)', step: 0.01 },
+  { key: 'sync_latency_us', label: '同步延迟 (us)', tip: '同步屏障延迟' },
+  { key: 'switch_delay_us', label: '交换机延迟 (us)', tip: '交换机转发延迟' },
+  { key: 'cable_delay_us', label: '线缆延迟 (us)', tip: '线缆传输延迟' },
+  { key: 'memory_read_latency_us', label: '显存读延迟 (us)', tip: 'HBM/GDDR 读取延迟' },
+  { key: 'memory_write_latency_us', label: '显存写延迟 (us)', tip: 'HBM/GDDR 写入延迟' },
+  { key: 'noc_latency_us', label: 'NoC 延迟 (us)', tip: '片上网络延迟' },
+  { key: 'die_to_die_latency_us', label: 'D2D 延迟 (us)', tip: 'Die-to-Die 互联延迟' },
+]
+
 function deepClone<T>(obj: T): T { return JSON.parse(JSON.stringify(obj)) }
 
 function getICValue(cfg: Tier6TopologyConfig, lvl: string, f: 'bandwidth_gbps' | 'latency_us'): number | undefined {
-  const ic = cfg.hardware_params?.interconnect
-  if (!ic) return undefined
-  const e = (ic as Record<string, { bandwidth_gbps: number; latency_us: number } | undefined>)[lvl]
+  const links = cfg.interconnect?.links
+  if (!links) return undefined
+  const e = (links as Record<string, { bandwidth_gbps: number; latency_us: number } | undefined>)[lvl]
   return e?.[f]
-}
-
-function parseBoardSummary(rack: Record<string, unknown> | undefined): string[] {
-  if (!rack) return []
-  const boards = rack.boards as Array<Record<string, unknown>> | undefined
-  if (!Array.isArray(boards)) return []
-  return boards.map((board, idx) => {
-    const chips = board.chips as Array<Record<string, unknown>> | undefined
-    const cnt = (board.count as number) ?? 1
-    const parts: string[] = []
-    if (Array.isArray(chips)) {
-      chips.forEach((c) => {
-        const n = c.name as string | undefined
-        const cc = c.count as number | undefined
-        if (n && cc) parts.push(`${n} x${cc}`)
-      })
-    }
-    return `Board ${idx + 1}: ${parts.length > 0 ? parts.join(', ') : 'N/A'} (count: ${cnt})`
-  })
 }
 
 function errMsg(err: unknown): string { return err instanceof Error ? err.message : String(err) }
 
-export const TopologyEditor: React.FC<TopologyEditorProps> = ({ value, onChange }) => {
+/** 统计每种芯片的总数 */
+function getChipBreakdown(value: Tier6TopologyConfig): Array<{ name: string; count: number }> {
+  const chipMap = new Map<string, number>()
+  for (const podGroup of value.pods || []) {
+    const pc = podGroup.count ?? 1
+    for (const rackGroup of podGroup.racks ?? []) {
+      const rc = rackGroup.count ?? 1
+      for (const board of rackGroup.boards ?? []) {
+        const bc = board.count ?? 1
+        for (const chip of board.chips ?? []) {
+          chipMap.set(chip.name, (chipMap.get(chip.name) || 0) + pc * rc * bc * (chip.count ?? 1))
+        }
+      }
+    }
+  }
+  return Array.from(chipMap.entries()).map(([name, count]) => ({ name, count }))
+}
+
+/** 计算各层级的 link 连接数 (全互联假设) */
+function countLevelLinks(value: Tier6TopologyConfig): { p2p: number; r2r: number; b2b: number; c2c: number } {
+  const pods = value.pods || []
+  let c2c = 0, b2b = 0, r2r = 0
+  const mesh = (n: number) => n * (n - 1) / 2
+
+  // p2p: 所有 pod 实例间的连接
+  let totalPodInstances = 0
+  for (const pg of pods) totalPodInstances += pg.count ?? 1
+  const p2p = mesh(totalPodInstances)
+
+  for (const pg of pods) {
+    const pc = pg.count ?? 1
+    // r2r: 同一 pod 内 rack 实例间的连接
+    let racksInPod = 0
+    for (const rg of pg.racks ?? []) racksInPod += rg.count ?? 1
+    r2r += pc * mesh(racksInPod)
+
+    for (const rg of pg.racks ?? []) {
+      const rc = rg.count ?? 1
+      // b2b: 同一 rack 内 board 实例间的连接
+      let boardsInRack = 0
+      for (const bd of rg.boards ?? []) boardsInRack += bd.count ?? 1
+      b2b += pc * rc * mesh(boardsInRack)
+
+      for (const bd of rg.boards ?? []) {
+        const bc = bd.count ?? 1
+        // c2c: 同一 board 内 chip 实例间的连接
+        let chipsInBoard = 0
+        for (const ch of bd.chips ?? []) chipsInBoard += ch.count ?? 1
+        c2c += pc * rc * bc * mesh(chipsInBoard)
+      }
+    }
+  }
+  return { p2p, r2r, b2b, c2c }
+}
+
+
+export const TopologyEditor: React.FC<TopologyEditorProps> = ({ value, onChange, onParamsModified }) => {
   const [presets, setPresets] = useState<TopologyListItem[]>([])
   const [selectedPreset, setSelectedPreset] = useState<string>('')
   const [snapshot, setSnapshot] = useState<Tier6TopologyConfig | null>(null)
   const [saveAsOpen, setSaveAsOpen] = useState(false)
   const [saveAsName, setSaveAsName] = useState('')
   const [loading, setLoading] = useState(false)
-  const [sections, setSections] = useState({ structure: true, board: false, interconnect: true })
+  const [sections, setSections] = useState({ hierarchy: false, interconnect: false })
   const initRef = useRef(false)
 
   // 加载预设列表，自动选择上次使用的或第一个
@@ -88,6 +141,25 @@ export const TopologyEditor: React.FC<TopologyEditorProps> = ({ value, onChange 
       })
       .catch((e) => toast.error(`加载拓扑列表失败: ${errMsg(e)}`))
   }, [])
+
+  // 检测外部推送的预设变更（如 Benchmark 加载联动），同步内部状态
+  useEffect(() => {
+    if (!value.name || !initRef.current) return
+    if (value.name === selectedPreset) return
+    // 外部改变了 name，从后端加载该预设的干净配置，重置 snapshot 和 value
+    setSelectedPreset(value.name)
+    getTopology(value.name)
+      .then(cfg => {
+        setSnapshot(deepClone(cfg))
+        // 用预设列表的干净配置替换外部推送的对象，确保 value 和 snapshot 一致
+        onChange(cfg)
+      })
+      .catch(err => {
+        console.error('加载拓扑失败:', err)
+        // 如果加载失败，使用外部传入的 value 作为 snapshot
+        setSnapshot(deepClone(value))
+      })
+  }, [value.name, onChange])
 
   const handlePresetChange = useCallback(async (name: string) => {
     setSelectedPreset(name)
@@ -138,20 +210,52 @@ export const TopologyEditor: React.FC<TopologyEditorProps> = ({ value, onChange 
     }, [value, snapshot]
   )
 
+  const isAnyParamModified = useMemo(() => {
+    if (!snapshot) return false
+    const check = (getter: (c: Tier6TopologyConfig) => unknown) =>
+      JSON.stringify(getter(value)) !== JSON.stringify(getter(snapshot))
+    return check(c => c.pods)
+      || check(c => c.interconnect?.links)
+      || check(c => c.interconnect?.comm_params)
+  }, [value, snapshot])
+
+  useEffect(() => {
+    onParamsModified?.(isAnyParamModified)
+  }, [isAnyParamModified, onParamsModified])
+
+  const getCommValue = useCallback((key: string): number | undefined => {
+    const cp = value.interconnect?.comm_params as Record<string, unknown> | undefined
+    return cp ? cp[key] as number | undefined : undefined
+  }, [value])
+
+  const updateComm = useCallback((key: string, val: number | undefined) => {
+    if (val === undefined) return
+    const cp = (value.interconnect?.comm_params || {}) as Record<string, unknown>
+    const ic = value.interconnect || {}
+    onChange({ ...value, interconnect: { ...ic, comm_params: { ...cp, [key]: val } } })
+  }, [value, onChange])
+
   const updateIC = useCallback(
     (lvl: string, field: 'bandwidth_gbps' | 'latency_us', val: number | undefined) => {
       if (val === undefined) return
-      const ic = value.hardware_params?.interconnect ?? {}
-      const entry = (ic as Record<string, Record<string, number>>)[lvl] ?? {}
+      const links = value.interconnect?.links ?? {}
+      const entry = (links as Record<string, Record<string, number>>)[lvl] ?? {}
+      const ic = value.interconnect || {}
       onChange({
         ...value,
-        hardware_params: { ...value.hardware_params, interconnect: { ...ic, [lvl]: { ...entry, [field]: val } } },
+        interconnect: { ...ic, links: { ...links, [lvl]: { ...entry, [field]: val } } },
       })
     }, [value, onChange]
   )
 
-  const mc = (mod: boolean) => mod ? 'bg-blue-50/60 rounded px-1 -mx-1' : ''
-  const boardLines = parseBoardSummary(value.rack_config)
+  const mc = (mod: boolean) => mod ? 'bg-blue-50/50 rounded px-1 -mx-1' : ''
+  const modBadge = (mod: boolean) => mod
+    ? <Badge variant="outline" className="text-[9px] px-1 py-0 h-3.5 bg-blue-100 text-blue-700 border-blue-300">已修改</Badge>
+    : null
+
+  const totalChips = useMemo(() => countChips(value), [value.pods])
+  const chipBreakdown = useMemo(() => getChipBreakdown(value), [value.pods])
+  const levelLinks = useMemo(() => countLevelLinks(value), [value.pods])
 
   return (
     <div className="space-y-3">
@@ -159,50 +263,72 @@ export const TopologyEditor: React.FC<TopologyEditorProps> = ({ value, onChange 
       <div>
         <div className="mb-1 flex justify-between items-center">
           <span className="text-gray-500 text-xs">拓扑预设</span>
-          <Button variant="link" size="sm" className="p-0 h-auto text-xs" onClick={() => {
-            const allOpen = Object.values(sections).every(Boolean)
-            setSections({ structure: !allOpen, board: !allOpen, interconnect: !allOpen })
-          }}>
-            {Object.values(sections).every(Boolean)
-              ? <><ChevronUp className="h-3 w-3 mr-1" />全部折叠</>
-              : <><ChevronDown className="h-3 w-3 mr-1" />全部展开</>}
-          </Button>
+          <div className="flex items-center gap-2">
+            <span className="text-gray-400 text-[11px]">{totalChips} chips</span>
+            <Button variant="link" size="sm" className="p-0 h-auto text-xs" onClick={() => {
+              const allOpen = Object.values(sections).every(Boolean)
+              setSections({ hierarchy: !allOpen, interconnect: !allOpen })
+            }}>
+              {Object.values(sections).every(Boolean)
+                ? <><ChevronUp className="h-3 w-3 mr-1" />全部折叠</>
+                : <><ChevronDown className="h-3 w-3 mr-1" />全部展开</>}
+            </Button>
+          </div>
         </div>
         <Select value={selectedPreset} onValueChange={handlePresetChange}>
           <SelectTrigger className="w-full h-7"><SelectValue placeholder="选择拓扑预设..." /></SelectTrigger>
           <SelectContent>
             {presets.map((p) => (
-              <SelectItem key={p.name} value={p.name}>
-                {p.name}{p.chip_count ? ` (${p.chip_count} chips)` : ''}
-              </SelectItem>
+              <SelectItem key={p.name} value={p.name}>{p.name}</SelectItem>
             ))}
           </SelectContent>
         </Select>
       </div>
 
-      {/* 结构参数 */}
-      <BaseCard title="结构参数" collapsible expanded={sections.structure} onExpandChange={() => setSections(s => ({ ...s, structure: !s.structure }))} contentClassName="p-2" gradient>
-        <div className="grid grid-cols-2 gap-2">
-          <div className={mc(isModified((c) => c.pod_count))}>
-            <HelpTooltip label="Pod 数量" content="集群中 Pod 的数量" />
-            <NumberInput min={1} value={value.pod_count} onChange={(v) => onChange({ ...value, pod_count: v })} className="h-7 mt-1" />
+      {/* 层级配置 (只读) */}
+      <BaseCard title="层级配置" collapsible expanded={sections.hierarchy} onExpandChange={() => setSections(s => ({ ...s, hierarchy: !s.hierarchy }))} contentClassName="p-2" gradient>
+        <div className="space-y-1.5 text-xs text-gray-600">
+          {/* 统计概览 */}
+          <div className="grid grid-cols-4 gap-2">
+            <div className="bg-gray-50 rounded px-2 py-1 text-center">
+              <span className="text-gray-400 block text-[10px]">Pod</span>
+              <span className="font-medium">{countPods(value)}</span>
+            </div>
+            <div className="bg-gray-50 rounded px-2 py-1 text-center">
+              <span className="text-gray-400 block text-[10px]">Rack</span>
+              <span className="font-medium">{countRacks(value)}</span>
+            </div>
+            <div className="bg-gray-50 rounded px-2 py-1 text-center">
+              <span className="text-gray-400 block text-[10px]">Board</span>
+              <span className="font-medium">{countBoards(value)}</span>
+            </div>
+            <div className="bg-gray-50 rounded px-2 py-1 text-center relative group cursor-default">
+              <span className="text-gray-400 block text-[10px]">Chip</span>
+              <span className="font-medium">{totalChips}</span>
+              {chipBreakdown.length > 0 && (
+                <div className="absolute left-1/2 -translate-x-1/2 top-full mt-1 z-10 hidden group-hover:block bg-gray-800 text-white text-[11px] rounded px-2 py-1 whitespace-nowrap shadow-lg">
+                  {chipBreakdown.map(({ name, count }) => (
+                    <div key={name}>{name} x{count}</div>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
-          <div className={mc(isModified((c) => c.racks_per_pod))}>
-            <HelpTooltip label="Rack/Pod" content="每个 Pod 中机架数量" />
-            <NumberInput min={1} value={value.racks_per_pod} onChange={(v) => onChange({ ...value, racks_per_pod: v })} className="h-7 mt-1" />
+          {/* Link 连接数 */}
+          <div className="grid grid-cols-4 gap-1.5">
+            {([
+              { key: 'p2p', label: 'P2P', count: levelLinks.p2p },
+              { key: 'r2r', label: 'R2R', count: levelLinks.r2r },
+              { key: 'b2b', label: 'B2B', count: levelLinks.b2b },
+              { key: 'c2c', label: 'C2C', count: levelLinks.c2c },
+            ] as const).map(({ key, label, count }) => (
+              <div key={key} className="bg-gray-50 rounded px-1.5 py-0.5 text-center">
+                <span className="text-gray-400 text-[10px]">{label} Links</span>
+                <span className={`block font-mono text-[11px] ${count > 0 ? 'text-gray-700' : 'text-gray-300'}`}>{count}</span>
+              </div>
+            ))}
           </div>
         </div>
-      </BaseCard>
-
-      {/* Board 配置 (只读) */}
-      <BaseCard title="Board 配置" collapsible expanded={sections.board} onExpandChange={() => setSections(s => ({ ...s, board: !s.board }))} contentClassName="p-2" gradient>
-        {boardLines.length > 0 ? (
-          <div className="space-y-1">
-            {boardLines.map((line, i) => <div key={i} className="text-xs text-gray-600 font-mono">{line}</div>)}
-          </div>
-        ) : (
-          <div className="text-xs text-gray-400">暂无 Board 配置</div>
-        )}
       </BaseCard>
 
       {/* 互联配置 */}
@@ -210,24 +336,49 @@ export const TopologyEditor: React.FC<TopologyEditorProps> = ({ value, onChange 
         <div className="space-y-3">
           {(['c2c', 'b2b', 'r2r', 'p2p'] as const).map((lvl) => {
             const m = IC_LABELS[lvl]
-            const bwMod = isModified((c) => c.hardware_params?.interconnect?.[lvl]?.bandwidth_gbps)
-            const latMod = isModified((c) => c.hardware_params?.interconnect?.[lvl]?.latency_us)
+            const bwMod = isModified((c) => c.interconnect?.links?.[lvl]?.bandwidth_gbps)
+            const latMod = isModified((c) => c.interconnect?.links?.[lvl]?.latency_us)
             return (
               <div key={lvl}>
                 <HelpTooltip label={m.label} content={m.tip} labelClassName="text-gray-600 text-xs font-medium cursor-help" />
                 <div className="grid grid-cols-2 gap-2 mt-1">
                   <div className={mc(bwMod)}>
-                    <span className="text-gray-400 text-[11px]">BW (GB/s)</span>
+                    <div className="mb-1 flex items-center gap-1.5">
+                      <span className="text-gray-400 text-[11px]">BW (GB/s)</span>
+                      {modBadge(bwMod)}
+                    </div>
                     <NumberInput min={0} step={1} value={getICValue(value, lvl, 'bandwidth_gbps')} onChange={(v) => updateIC(lvl, 'bandwidth_gbps', v)} className="h-7" />
                   </div>
                   <div className={mc(latMod)}>
-                    <span className="text-gray-400 text-[11px]">Latency (us)</span>
+                    <div className="mb-1 flex items-center gap-1.5">
+                      <span className="text-gray-400 text-[11px]">Latency (us)</span>
+                      {modBadge(latMod)}
+                    </div>
                     <NumberInput min={0} step={0.1} value={getICValue(value, lvl, 'latency_us')} onChange={(v) => updateIC(lvl, 'latency_us', v)} className="h-7" />
                   </div>
                 </div>
               </div>
             )
           })}
+
+          {/* 通信参数 */}
+          <div className="border-t border-gray-200 pt-2 mt-2">
+            <span className="text-gray-500 text-xs font-medium">通信参数</span>
+            <div className="grid grid-cols-2 gap-2 mt-1.5">
+              {COMM_FIELDS.map(({ key, label, tip, step }) => {
+                const mod = isModified((c) => (c.interconnect?.comm_params as Record<string, unknown> | undefined)?.[key])
+                return (
+                  <div key={key} className={mc(mod)}>
+                    <div className="mb-1 flex items-center gap-1.5">
+                      <HelpTooltip label={label} content={tip} labelClassName="text-gray-400 text-[11px] cursor-help" />
+                      {modBadge(mod)}
+                    </div>
+                    <NumberInput min={0} step={step ?? 0.01} value={getCommValue(key)} onChange={(v) => updateComm(key, v)} className="h-7" />
+                  </div>
+                )
+              })}
+            </div>
+          </div>
         </div>
       </BaseCard>
 

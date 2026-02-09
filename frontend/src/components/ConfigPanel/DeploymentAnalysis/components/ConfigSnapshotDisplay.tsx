@@ -57,10 +57,10 @@ export const ConfigSnapshotDisplay: React.FC<ConfigSnapshotDisplayProps> = ({
 
   const { model, inference, topology } = configSnapshot
 
-  // 提取通信延迟配置
-  const commLatencyConfig = (topology as any).comm_latency_config
-  // 提取互联参数配置（C2C延迟使用互联参数）
-  const interconnectParams = (topology as any).hardware_params?.interconnect
+  // 提取通信延迟配置（新格式: interconnect.comm_params, 旧格式: comm_latency_config）
+  const commLatencyConfig = (topology as any).interconnect?.comm_params || (topology as any).comm_latency_config
+  // 提取互联参数配置（新格式: interconnect.links, 旧格式: hardware_params.interconnect）
+  const interconnectParams = (topology as any).interconnect?.links || (topology as any).hardware_params?.interconnect
 
   // 计算总芯片数
   const calculateTotalChips = () => {
@@ -144,11 +144,11 @@ export const ConfigSnapshotDisplay: React.FC<ConfigSnapshotDisplayProps> = ({
           {/* 芯片硬件信息（如果有） */}
           {(() => {
             const pods = (topology as any).pods || []
-            const hardwareParams = (topology as any).hardware_params
+            const topologyChips = (topology as any).chips || (topology as any).hardware_params?.chips
             if (pods.length > 0 && pods[0].racks && pods[0].racks[0].boards && pods[0].racks[0].boards[0].chips) {
               const chipInfo = pods[0].racks[0].boards[0].chips[0]
-              // 从 hardware_params.chips 获取详细芯片配置 (Tier6 ChipPreset 格式)
-              const chipConfig = hardwareParams?.chips?.[chipInfo.name]
+              // 从顶层 chips 获取详细芯片配置 (Tier6 ChipPreset 格式)
+              const chipConfig = topologyChips?.[chipInfo.name]
               return (
                 <DescList className="mt-3">
                   <DescItem label="芯片型号" span={2}>{chipInfo.name || '-'}</DescItem>

@@ -707,18 +707,12 @@ def validate_hardware_config(hardware_dict: dict) -> None:
         ValueError: 配置无效或缺少必需字段时抛出
     """
 
-    # 检查新格式: hardware_params.chips
-    if "hardware_params" not in hardware_dict:
-        logger.error("[DEBUG] hardware_dict缺少hardware_params字段!")
-        raise ValueError("硬件配置缺少 'hardware_params' 字段")
+    # 检查新格式: 顶层 chips 字典
+    if "chips" not in hardware_dict:
+        logger.error("[DEBUG] hardware_dict缺少chips字段!")
+        raise ValueError("硬件配置缺少 'chips' 字段")
 
-    hardware_params = hardware_dict["hardware_params"]
-
-    if "chips" not in hardware_params:
-        logger.error("[DEBUG] hardware_params缺少chips字段!")
-        raise ValueError("硬件配置中 'hardware_params' 缺少 'chips' 字段")
-
-    chips_dict = hardware_params["chips"]
+    chips_dict = hardware_dict["chips"]
 
     # 验证至少有一个芯片配置
     if not chips_dict:

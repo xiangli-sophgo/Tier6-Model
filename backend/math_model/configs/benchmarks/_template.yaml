@@ -1,0 +1,69 @@
+# ============================================================
+# Benchmark Configuration Template
+# ============================================================
+# 复制此文件并重命名为测试场景名称 (如 DeepSeek-V3-S4K-O1K-B8.yaml) 来创建新配置。
+#
+# Benchmark 定义了完整的推理测试场景:
+#   - 模型: 引用 models/ 中的模型配置
+#   - 拓扑: 引用 topologies/ 中的拓扑配置
+#   - 推理参数: batch size、序列长度、数据类型
+#
+# 命名规范: {ModelName}-S{InputSeqLen}-O{OutputSeqLen}-{WeightDtype}A{ActivationDtype}-B{BatchSize}
+# 示例: DeepSeek-V3-S4K-O1K-W16A16-B8
+#   - 模型: DeepSeek-V3
+#   - 输入序列: 4096 tokens
+#   - 输出序列: 1024 tokens
+#   - 权重精度: FP16 (16-bit)
+#   - 激活精度: FP16 (16-bit)
+#   - Batch Size: 8
+# ============================================================
+
+# Benchmark 唯一标识符，需与文件名一致 (不含 .yaml 后缀)
+id: BENCHMARK_ID
+
+# Benchmark 显示名称
+name: "Benchmark Display Name"
+
+# 模型引用 (引用 models/ 中的模型配置文件名，不含 .yaml 后缀)
+model: "DeepSeek-V3"
+
+# 拓扑引用 (引用 topologies/ 中的拓扑配置文件名，不含 .yaml 后缀)
+topology: "P1-R1-B1-C8"
+
+# 推理参数
+inference:
+  batch_size: 8                 # 批次大小，影响并行度和内存占用
+                                # 常见值: 1 (单请求), 8/16/32 (批处理)
+
+  input_seq_length: 4096        # 输入序列长度 (prefill 阶段处理的 token 数)
+                                # 常见值: 512/1024/2048/4096/8192
+
+  output_seq_length: 1024       # 输出序列长度 (decode 阶段生成的 token 数)
+                                # 常见值: 256/512/1024/2048
+
+  weight_dtype: "bf16"          # 权重数据类型
+                                # 可选值: "fp32", "fp16", "bf16", "int8", "int4"
+                                # 推荐: "bf16" (性能和精度平衡)
+
+  activation_dtype: "bf16"      # 激活数据类型 (中间计算结果)
+                                # 可选值: "fp32", "fp16", "bf16"
+                                # 推荐: 与 weight_dtype 一致
+
+# ============================================================
+# 常见测试场景示例
+# ============================================================
+#
+# 1. 短上下文对话 (ChatGPT 式)
+#    input_seq_length: 512, output_seq_length: 256, batch_size: 16
+#
+# 2. 长文档理解
+#    input_seq_length: 8192, output_seq_length: 512, batch_size: 4
+#
+# 3. 代码生成
+#    input_seq_length: 2048, output_seq_length: 1024, batch_size: 8
+#
+# 4. 极限吞吐测试
+#    input_seq_length: 512, output_seq_length: 1024, batch_size: 64
+#
+# 5. 长上下文推理
+#    input_seq_length: 32768, output_seq_length: 2048, batch_size: 1

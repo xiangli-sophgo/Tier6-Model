@@ -33,7 +33,7 @@ export const RooflineChart: React.FC<RooflineChartProps> = React.memo(({
 }) => {
   const option: EChartsOption = useMemo(() => {
     // 安全地获取第一个芯片配置（仅支持新格式）
-    if (!hardware?.hardware_params?.chips) {
+    if (!hardware?.chips) {
       // 如果没有硬件配置，返回空图表配置
       return {
         title: {
@@ -45,7 +45,7 @@ export const RooflineChart: React.FC<RooflineChartProps> = React.memo(({
       }
     }
 
-    const firstChip = Object.values(hardware.hardware_params.chips)[0] as any
+    const firstChip = Object.values(hardware.chips)[0] as any
     const peakTflops = firstChip?.compute_tflops_bf16 || 256
     const memoryBandwidthTBps = (firstChip?.memory_bandwidth_gbps || 12000) / 1000
     const ridgePoint = peakTflops / memoryBandwidthTBps

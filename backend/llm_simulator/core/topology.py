@@ -18,8 +18,8 @@ class TopologyParser:
     """拓扑解析器
 
     硬件参数来源：
-    - 芯片参数: hardware_params.chips (计算、内存、微架构)
-    - 互联参数: hardware_params.interconnect (c2c/b2b/r2r/p2p 带宽和延迟)
+    - 芯片参数: chips (顶层字典, 计算、内存、微架构)
+    - 互联参数: interconnect.links (c2c/b2b/r2r/p2p 带宽和延迟)
 
     互联层级：
     - c2c: 同板芯片互联 (Die-to-Die)
@@ -35,9 +35,9 @@ class TopologyParser:
         Args:
             topology_dict: 前端传入的拓扑配置字典（包含硬件参数）
         """
-        # 提取 hardware_params.interconnect 配置
-        self.hardware_params = topology_dict.get("hardware_params", {})
-        self.interconnect_params = self.hardware_params.get("interconnect", {})
+        # 提取 interconnect.links 配置
+        self.chips_dict = topology_dict.get("chips", {})
+        self.interconnect_params = topology_dict.get("interconnect", {}).get("links", {})
 
         self.topology = self._parse_topology(topology_dict)
         self.interconnect: InterconnectGraph | None = None
@@ -46,8 +46,8 @@ class TopologyParser:
 
     def _parse_topology(self, data: dict[str, Any]) -> HierarchicalTopology:
         """解析拓扑配置（包含嵌入的硬件参数）"""
-        # 从 hardware_params 中获取芯片参数（新格式 v2.1.0+: chips 字典）
-        chips_dict = self.hardware_params.get("chips", {})
+        # 从顶层 chips 字典获取芯片参数
+        chips_dict = self.chips_dict
         if chips_dict:
             first_chip_name = next(iter(chips_dict))
             chip_params = chips_dict[first_chip_name]

@@ -278,6 +278,7 @@ async def create_benchmark(request: BenchmarkCreateRequest):
         "id": request.id,
         "name": request.name,
         "model": request.model,
+        "topology": request.topology,
         "inference": request.inference,
     }
     loader.save_benchmark(request.id, config)
@@ -303,6 +304,14 @@ async def update_benchmark(benchmark_id: str, request: BenchmarkUpdateRequest):
         config["model"] = request.model
     if request.inference is not None:
         config["inference"] = request.inference
+    if request.topology is not None:
+        config["topology"] = request.topology
+        # 清除旧的拓扑引用，避免 save_benchmark 用旧引用覆盖新值
+        config.pop("topology_preset_ref", None)
+
+    # 同样处理模型引用
+    if request.model is not None:
+        config.pop("model_preset_ref", None)
 
     # 保存
     loader.save_benchmark(benchmark_id, config)
@@ -794,131 +803,273 @@ async def update_executor_config(request: ExecutorConfigRequest):
 # 实验管理
 # ============================================
 
-# 内存中的实验存储 (生产环境应使用数据库)
-_experiments: dict[str, dict[str, Any]] = {}
-_experiment_counter = 0
-
-
-def _generate_experiment_id() -> str:
-    """生成实验 ID"""
-    global _experiment_counter
-    _experiment_counter += 1
-    return f"exp_{_experiment_counter}_{uuid.uuid4().hex[:8]}"
-
-
 @router.get("/evaluation/experiments")
 async def list_experiments(skip: int = 0, limit: int = 20):
     """列出实验"""
-    experiments = list(_experiments.values())
-    experiments.sort(key=lambda x: x.get("created_at", ""), reverse=True)
+    try:
+        with get_db_session() as db:
+            total = db.query(DBExperiment).count()
+            experiments = db.query(DBExperiment).order_by(
+                DBExperiment.created_at.desc()
+            ).offset(skip).limit(limit).all()
 
-    return {
-        "experiments": experiments[skip:skip + limit],
-        "total": len(experiments),
-    }
+            return {
+                "experiments": [
+                    {
+                        "id": exp.id,
+                        "name": exp.name,
+                        "description": exp.description,
+                        "total_tasks": exp.total_tasks,
+                        "completed_tasks": exp.completed_tasks,
+                        "created_at": exp.created_at.isoformat() + 'Z' if exp.created_at else None,
+                    }
+                    for exp in experiments
+                ],
+                "total": total,
+            }
+    except Exception as e:
+        logger.error(f"Failed to list experiments: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.get("/evaluation/experiments/{experiment_id}")
-async def get_experiment(experiment_id: str):
-    """获取实验详情"""
-    experiment = _experiments.get(experiment_id)
-    if not experiment:
-        raise HTTPException(status_code=404, detail=f"Experiment not found: {experiment_id}")
+async def get_experiment(experiment_id: int):
+    """获取实验详情（含所有评估结果）"""
+    try:
+        with get_db_session() as db:
+            experiment = db.query(DBExperiment).filter(
+                DBExperiment.id == experiment_id
+            ).first()
+            if not experiment:
+                raise HTTPException(status_code=404, detail=f"Experiment not found: {experiment_id}")
 
-    return experiment
+            tasks = db.query(DBEvaluationTask).filter(
+                DBEvaluationTask.experiment_id == experiment_id
+            ).all()
+
+            # 展开每个任务的所有结果为单独条目
+            tasks_with_results = []
+            for task in tasks:
+                results = db.query(DBEvaluationResult).filter(
+                    DBEvaluationResult.task_id == task.id
+                ).order_by(DBEvaluationResult.score.desc()).all()
+
+                if results:
+                    for idx, result in enumerate(results):
+                        full_result = result.full_result or {}
+                        task_dict = {
+                            "id": task.id,
+                            "task_id": task.task_id,
+                            "result_id": result.id,
+                            "result_rank": idx + 1,
+                            "experiment_id": task.experiment_id,
+                            "status": task.status.value,
+                            "progress": task.progress,
+                            "message": task.message,
+                            "error": task.error,
+                            "created_at": result.created_at.isoformat() + 'Z' if result.created_at else None,
+                            "started_at": task.started_at.isoformat() + 'Z' if task.started_at else None,
+                            "completed_at": task.completed_at.isoformat() + 'Z' if task.completed_at else None,
+                            "config_snapshot": task.config_snapshot,
+                            "benchmark_name": task.benchmark_name,
+                            "topology_config_name": task.topology_config_name,
+                            "search_mode": task.search_mode,
+                            "manual_parallelism": task.manual_parallelism,
+                            "search_constraints": task.search_constraints,
+                            "search_stats": task.search_stats,
+                            "result": {
+                                "tps": result.tps,
+                                "tps_per_chip": result.tps_per_chip,
+                                "tps_per_batch": result.tps_per_batch,
+                                "tpot": result.tpot,
+                                "ttft": result.ttft,
+                                "mfu": result.mfu,
+                                "mbu": full_result.get("mbu", 0),
+                                "score": result.score,
+                                "chips": result.chips,
+                                "dram_occupy": result.dram_occupy,
+                                "flops": result.flops,
+                                "cost": full_result.get("cost"),
+                                "parallelism": {
+                                    "dp": result.dp,
+                                    "tp": result.tp,
+                                    "pp": result.pp,
+                                    "ep": result.ep,
+                                    "sp": result.sp,
+                                    "moe_tp": result.moe_tp,
+                                },
+                            },
+                        }
+                        tasks_with_results.append(task_dict)
+
+            return {
+                "id": experiment.id,
+                "name": experiment.name,
+                "description": experiment.description,
+                "total_tasks": experiment.total_tasks,
+                "completed_tasks": experiment.completed_tasks,
+                "created_at": experiment.created_at.isoformat() + 'Z' if experiment.created_at else None,
+                "updated_at": experiment.updated_at.isoformat() + 'Z' if experiment.updated_at else None,
+                "tasks": tasks_with_results,
+            }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to get experiment: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.patch("/evaluation/experiments/{experiment_id}")
-async def update_experiment(experiment_id: str, request: ExperimentUpdateRequest):
-    """更新实验"""
-    experiment = _experiments.get(experiment_id)
-    if not experiment:
-        raise HTTPException(status_code=404, detail=f"Experiment not found: {experiment_id}")
+async def update_experiment(experiment_id: int, request: ExperimentUpdateRequest):
+    """更新实验名称/描述"""
+    try:
+        with get_db_session() as db:
+            experiment = db.query(DBExperiment).filter(
+                DBExperiment.id == experiment_id
+            ).first()
+            if not experiment:
+                raise HTTPException(status_code=404, detail=f"Experiment not found: {experiment_id}")
 
-    if request.name is not None:
-        experiment["name"] = request.name
-    if request.description is not None:
-        experiment["description"] = request.description
+            if request.name is not None:
+                experiment.name = request.name
+            if request.description is not None:
+                experiment.description = request.description
 
-    experiment["updated_at"] = datetime.now().isoformat()
+            db.commit()
+            db.refresh(experiment)
 
-    return experiment
+            return {
+                "id": experiment.id,
+                "name": experiment.name,
+                "description": experiment.description,
+                "created_at": experiment.created_at.isoformat() + 'Z' if experiment.created_at else None,
+                "updated_at": experiment.updated_at.isoformat() + 'Z' if experiment.updated_at else None,
+            }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to update experiment: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.delete("/evaluation/experiments/{experiment_id}")
-async def delete_experiment(experiment_id: str):
-    """删除实验"""
-    if experiment_id not in _experiments:
-        raise HTTPException(status_code=404, detail=f"Experiment not found: {experiment_id}")
+async def delete_experiment(experiment_id: int):
+    """删除实验（级联删除任务和结果）"""
+    try:
+        with get_db_session() as db:
+            experiment = db.query(DBExperiment).filter(
+                DBExperiment.id == experiment_id
+            ).first()
+            if not experiment:
+                raise HTTPException(status_code=404, detail=f"Experiment not found: {experiment_id}")
 
-    del _experiments[experiment_id]
-
-    return {"message": "Experiment deleted", "experiment_id": experiment_id}
+            db.delete(experiment)
+            db.commit()
+            return {"message": f"Experiment '{experiment.name}' deleted"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to delete experiment: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.post("/evaluation/experiments/batch-delete")
 async def batch_delete_experiments(request: BatchDeleteRequest):
     """批量删除实验"""
-    deleted = []
-    not_found = []
+    try:
+        with get_db_session() as db:
+            experiments = db.query(DBExperiment).filter(
+                DBExperiment.id.in_(request.ids)
+            ).all()
 
-    for exp_id in request.ids:
-        if exp_id in _experiments:
-            del _experiments[exp_id]
-            deleted.append(exp_id)
-        else:
-            not_found.append(exp_id)
+            deleted_count = len(experiments)
+            deleted_ids = [exp.id for exp in experiments]
+            for exp in experiments:
+                db.delete(exp)
 
-    return {
-        "deleted": deleted,
-        "not_found": not_found,
-        "count": len(deleted),
-    }
+            db.commit()
+            return {
+                "deleted": deleted_ids,
+                "count": deleted_count,
+            }
+    except Exception as e:
+        logger.error(f"Failed to batch delete experiments: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.post("/evaluation/experiments/{experiment_id}/results/batch-delete")
-async def batch_delete_results(experiment_id: str, request: BatchDeleteRequest):
+async def batch_delete_results(experiment_id: int, request: BatchDeleteRequest):
     """批量删除实验结果"""
-    experiment = _experiments.get(experiment_id)
-    if not experiment:
-        raise HTTPException(status_code=404, detail=f"Experiment not found: {experiment_id}")
+    try:
+        with get_db_session() as db:
+            experiment = db.query(DBExperiment).filter(
+                DBExperiment.id == experiment_id
+            ).first()
+            if not experiment:
+                raise HTTPException(status_code=404, detail=f"Experiment not found: {experiment_id}")
 
-    results = experiment.get("results", [])
-    deleted = []
+            results = db.query(DBEvaluationResult).filter(
+                DBEvaluationResult.id.in_(request.ids)
+            ).all()
 
-    for result_id in request.ids:
-        for i, result in enumerate(results):
-            if result.get("id") == result_id:
-                results.pop(i)
-                deleted.append(result_id)
-                break
+            deleted_count = len(results)
+            deleted_ids = [r.id for r in results]
+            for r in results:
+                db.delete(r)
 
-    experiment["results"] = results
-
-    return {
-        "deleted": deleted,
-        "count": len(deleted),
-    }
+            db.commit()
+            return {
+                "deleted": deleted_ids,
+                "count": deleted_count,
+            }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to batch delete results: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.get("/evaluation/experiments/export")
-async def export_experiments(experiment_ids: str):
+async def export_experiments(experiment_ids: str = ""):
     """导出实验"""
-    ids = experiment_ids.split(",")
-    experiments = []
+    try:
+        with get_db_session() as db:
+            if experiment_ids:
+                ids = [int(id_str) for id_str in experiment_ids.split(",")]
+                experiments = db.query(DBExperiment).filter(
+                    DBExperiment.id.in_(ids)
+                ).all()
+            else:
+                experiments = db.query(DBExperiment).all()
 
-    for exp_id in ids:
-        exp = _experiments.get(exp_id.strip())
-        if exp:
-            experiments.append(exp)
+            export_data = {
+                "version": "1.0",
+                "export_time": datetime.now().isoformat(),
+                "experiments": [],
+            }
 
-    return {
-        "experiments": experiments,
-        "export_metadata": {
-            "timestamp": datetime.now().isoformat(),
-            "count": len(experiments),
-        }
-    }
+            for exp in experiments:
+                exp_data = {
+                    "name": exp.name,
+                    "description": exp.description,
+                    "created_at": exp.created_at.isoformat() + 'Z' if exp.created_at else None,
+                    "tasks": [],
+                }
+                for task in exp.tasks:
+                    task_data = {
+                        "config_snapshot": task.config_snapshot,
+                        "search_mode": task.search_mode,
+                        "results": [],
+                    }
+                    for result in task.results:
+                        task_data["results"].append(result.full_result or {})
+                    exp_data["tasks"].append(task_data)
+                export_data["experiments"].append(exp_data)
+
+            return export_data
+    except Exception as e:
+        logger.error(f"Failed to export experiments: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 # 临时文件存储 (用于导入流程)
@@ -938,14 +1089,16 @@ async def check_import(file: UploadFile = File(...)):
     if not experiments:
         raise HTTPException(status_code=400, detail="No experiments found in file")
 
-    # 检查冲突
+    # 检查冲突（从数据库查询）
     conflicts = []
-    for exp in experiments:
-        exp_name = exp.get("name", "")
-        for existing in _experiments.values():
-            if existing.get("name") == exp_name:
-                conflicts.append(exp_name)
-                break
+    try:
+        with get_db_session() as db:
+            existing_names = {exp.name for exp in db.query(DBExperiment).all()}
+            for exp in experiments:
+                if exp.get("name", "") in existing_names:
+                    conflicts.append(exp.get("name", ""))
+    except Exception as e:
+        logger.error(f"Failed to check conflicts: {e}")
 
     # 保存临时数据
     temp_id = str(uuid.uuid4())
@@ -975,40 +1128,86 @@ async def execute_import(request: ImportExecuteRequest):
     imported = []
     skipped = []
 
-    for exp in experiments:
-        exp_name = exp.get("name", "")
+    try:
+        with get_db_session() as db:
+            existing_names = {exp.name: exp for exp in db.query(DBExperiment).all()}
 
-        # 检查冲突
-        existing_id = None
-        for eid, existing in _experiments.items():
-            if existing.get("name") == exp_name:
-                existing_id = eid
-                break
+            for exp in experiments:
+                exp_name = exp.get("name", "")
 
-        if existing_id:
-            if request.conflict_strategy == "skip":
-                skipped.append(exp_name)
-                continue
-            elif request.conflict_strategy == "overwrite":
-                # 覆盖现有实验
-                exp_id = existing_id
-            elif request.conflict_strategy == "rename":
-                # 重命名
-                exp["name"] = f"{exp_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-                exp_id = _generate_experiment_id()
-            else:
-                skipped.append(exp_name)
-                continue
-        else:
-            exp_id = _generate_experiment_id()
+                if exp_name in existing_names:
+                    if request.conflict_strategy == "skip":
+                        skipped.append(exp_name)
+                        continue
+                    elif request.conflict_strategy == "overwrite":
+                        db.delete(existing_names[exp_name])
+                        db.flush()
+                    elif request.conflict_strategy == "rename":
+                        exp_name = f"{exp_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+                    else:
+                        skipped.append(exp_name)
+                        continue
 
-        # 添加元数据
-        exp["id"] = exp_id
-        exp["created_at"] = exp.get("created_at", datetime.now().isoformat())
-        exp["updated_at"] = datetime.now().isoformat()
+                # 创建实验
+                db_exp = DBExperiment(
+                    name=exp_name,
+                    description=exp.get("description", ""),
+                    total_tasks=len(exp.get("tasks", [])),
+                )
+                db.add(db_exp)
+                db.flush()
 
-        _experiments[exp_id] = exp
-        imported.append(exp_name)
+                # 导入任务和结果
+                for task_data in exp.get("tasks", []):
+                    db_task = DBEvaluationTask(
+                        task_id=str(uuid.uuid4()),
+                        experiment_id=db_exp.id,
+                        status=DBTaskStatus.COMPLETED,
+                        progress=1.0,
+                        config_snapshot=task_data.get("config_snapshot", {}),
+                        search_mode=task_data.get("search_mode", "manual"),
+                    )
+                    db.add(db_task)
+                    db.flush()
+
+                    for result_data in task_data.get("results", []):
+                        parallelism = result_data.get("parallelism", {})
+                        chips = parallelism.get("tp", 1) * parallelism.get("pp", 1) * parallelism.get("dp", 1) * parallelism.get("ep", 1)
+                        db_result = DBEvaluationResult(
+                            task_id=db_task.id,
+                            dp=parallelism.get("dp", 1),
+                            tp=parallelism.get("tp", 1),
+                            pp=parallelism.get("pp", 1),
+                            ep=parallelism.get("ep", 1),
+                            sp=parallelism.get("sp", 1),
+                            moe_tp=parallelism.get("moe_tp"),
+                            chips=chips,
+                            total_elapse_us=float(result_data.get("total_elapse_us", 0)),
+                            total_elapse_ms=float(result_data.get("total_elapse_ms", 0)),
+                            comm_elapse_us=float(result_data.get("comm_elapse_us", 0)),
+                            tps=float(result_data.get("tps", 0)),
+                            tps_per_batch=float(result_data.get("tps_per_batch", 0)),
+                            tps_per_chip=float(result_data.get("tps_per_chip", 0)),
+                            ttft=float(result_data.get("ttft", 0)),
+                            tpot=float(result_data.get("tpot", 0)),
+                            mfu=float(result_data.get("mfu", 0)),
+                            flops=float(result_data.get("flops", 0)),
+                            dram_occupy=float(result_data.get("dram_occupy", 0)),
+                            score=float(result_data.get("score", 0)),
+                            is_feasible=1 if result_data.get("is_feasible", True) else 0,
+                            infeasible_reason=result_data.get("infeasible_reason"),
+                            full_result=result_data,
+                        )
+                        db.add(db_result)
+
+                imported.append(exp_name)
+
+            db.commit()
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to import experiments: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
 
     return {
         "imported": imported,
@@ -1182,35 +1381,5 @@ def _update_task_status_in_db(task_uuid: str, status: DBTaskStatus, error: str |
 
 def _count_topology_chips(config: dict[str, Any]) -> int:
     """计算拓扑中的芯片总数"""
-    # 优先从 rack_config.boards[].chips[] 计算
-    rack_config = config.get("rack_config", {})
-    boards = rack_config.get("boards", [])
-    if boards:
-        pod_count = config.get("pod_count", 1)
-        racks_per_pod = config.get("racks_per_pod", 1)
-        chips_per_rack = 0
-        for board in boards:
-            board_count = board.get("count", 1)
-            for chip_group in board.get("chips", []):
-                chips_per_rack += chip_group.get("count", 1) * board_count
-        return pod_count * racks_per_pod * chips_per_rack
-
-    # 尝试从 topology 结构计算
-    topology = config.get("topology", {})
-    pods = topology.get("pods", [])
-    if pods:
-        count = 0
-        for pod in pods:
-            for rack in pod.get("racks", []):
-                for board in rack.get("boards", []):
-                    for chip_group in board.get("chips", []):
-                        count += chip_group.get("count", 1)
-        return count
-
-    # 尝试从简单字段获取
-    pod_count = topology.get("pod_count", config.get("pod_count", 1))
-    racks_per_pod = topology.get("racks_per_pod", config.get("racks_per_pod", 1))
-    boards_per_rack = topology.get("boards_per_rack", 1)
-    chips_per_board = topology.get("chips_per_board", 8)
-
-    return pod_count * racks_per_pod * boards_per_rack * chips_per_board
+    from .topology_format import count_chips
+    return count_chips(config)

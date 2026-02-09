@@ -88,8 +88,8 @@ class ClusterSpecImpl:
         # 解析节点配置
         nodes: list[NodeSpecImpl] = []
 
-        # Tier6 风格配置
-        if "pod_count" in config or "rack_config" in config:
+        # Tier6 风格配置 (grouped_pods 格式)
+        if "pods" in config:
             nodes = cls._from_tier6_config(config)
         # CHIPMathica 风格配置
         elif "nodes" in config:
@@ -107,89 +107,95 @@ class ClusterSpecImpl:
 
     @classmethod
     def _from_tier6_config(cls, config: dict[str, Any]) -> list[NodeSpecImpl]:
-        """从 Tier6 风格配置创建节点列表
+        """从 grouped_pods 格式配置创建节点列表
+
+        遍历 pods[].racks[].boards[].chips[], 展开 count 分组,
+        每个 rack 实例生成一个 NodeSpecImpl.
 
         Args:
-            config: Tier6 拓扑配置
+            config: grouped_pods 格式拓扑配置
 
         Returns:
             节点列表
         """
         nodes: list[NodeSpecImpl] = []
 
-        pod_count = config.get("pod_count", 1)
-        racks_per_pod = config.get("racks_per_pod", 1)
-        rack_config = config.get("rack_config", {})
-
-        # 解析板卡配置
-        boards_config = rack_config.get("boards", [])
-
-        # 硬件参数
-        hardware_params = config.get("hardware_params", {})
-        chips_config = hardware_params.get("chips", {})
-        interconnect_config = hardware_params.get("interconnect", {})
+        pods = config.get("pods", [])
+        chips_config = config.get("chips", {})
+        interconnect_config = config.get("interconnect", {}).get("links", {})
 
         node_idx = 0
-        for pod_idx in range(pod_count):
-            for rack_idx in range(racks_per_pod):
-                # 每个 rack 对应一个 node
-                boards: list[BoardSpecImpl] = []
+        pod_global_idx = 0
+        for pod_group in pods:
+            pod_count = pod_group.get("count", 1)
+            rack_groups = pod_group.get("racks", [])
 
-                for board_config in boards_config:
-                    board_chips: list[ChipSpecImpl] = []
-                    chips_in_board = board_config.get("chips", [])
+            for _ in range(pod_count):
+                rack_global_idx = 0
+                for rack_group in rack_groups:
+                    rack_count = rack_group.get("count", 1)
+                    board_groups = rack_group.get("boards", [])
 
-                    for chip_entry in chips_in_board:
-                        chip_name = chip_entry.get("name", "unknown")
-                        chip_count = chip_entry.get("count", 1)
-                        preset_id = chip_entry.get("preset_id")
+                    for _ in range(rack_count):
+                        boards: list[BoardSpecImpl] = []
 
-                        # 尝试从配置或注册表获取芯片规格
-                        if preset_id and chip_registry.has(preset_id):
-                            base_chip = chip_registry.get(preset_id)
-                        elif chip_name in chips_config:
-                            base_chip = ChipSpecImpl.from_config(
-                                chip_name, chips_config[chip_name]
-                            )
-                        else:
-                            # 创建默认芯片
-                            base_chip = ChipSpecImpl(name=chip_name)
+                        for board_group in board_groups:
+                            board_count = board_group.get("count", 1)
+                            chips_in_board = board_group.get("chips", [])
 
-                        for i in range(chip_count):
-                            chip = base_chip.with_chip_id(len(board_chips))
-                            board_chips.append(chip)
+                            for _ in range(board_count):
+                                board_chips: list[ChipSpecImpl] = []
 
-                    # 创建芯片间互联
-                    c2c_config = interconnect_config.get("c2c", {})
-                    chip_interconnect = ChipInterconnectSpecImpl(
-                        topology="ring",
-                        link_bandwidth_gbps=c2c_config.get("bandwidth_gbps", 112.0),
-                        link_count=10,
-                        latency_ns=c2c_config.get("latency_us", 0.5) * 1000,
-                        chip_count=len(board_chips),
-                    )
+                                for chip_entry in chips_in_board:
+                                    chip_name = chip_entry.get("name", "unknown")
+                                    chip_count = chip_entry.get("count", 1)
+                                    preset_id = chip_entry.get("preset_id")
 
-                    board = BoardSpecImpl(
-                        name=f"board_{pod_idx}_{rack_idx}_{len(boards)}",
-                        chip_count=len(board_chips),
-                        chips=board_chips,
-                        chip_interconnect=chip_interconnect,
-                    )
-                    boards.append(board)
+                                    if preset_id and chip_registry.has(preset_id):
+                                        base_chip = chip_registry.get(preset_id)
+                                    elif chip_name in chips_config:
+                                        base_chip = ChipSpecImpl.from_config(
+                                            chip_name, chips_config[chip_name]
+                                        )
+                                    else:
+                                        base_chip = ChipSpecImpl(name=chip_name)
 
-                # 计算节点内带宽
-                b2b_config = interconnect_config.get("b2b", {})
-                intra_node_bw = b2b_config.get("bandwidth_gbps", 200.0)
-                intra_node_lat = b2b_config.get("latency_us", 2.0)
+                                    for _ in range(chip_count):
+                                        chip = base_chip.with_chip_id(len(board_chips))
+                                        board_chips.append(chip)
 
-                node = NodeSpecImpl(
-                    node_id=f"node_{node_idx}",
-                    boards=boards,
-                    intra_node_bandwidth_gbps=intra_node_bw,
-                    intra_node_latency_us=intra_node_lat,
-                )
-                nodes.append(node)
-                node_idx += 1
+                                c2c_config = interconnect_config.get("c2c", {})
+                                chip_interconnect = ChipInterconnectSpecImpl(
+                                    topology="ring",
+                                    link_bandwidth_gbps=c2c_config.get("bandwidth_gbps", 112.0),
+                                    link_count=10,
+                                    latency_ns=c2c_config.get("latency_us", 0.5) * 1000,
+                                    chip_count=len(board_chips),
+                                )
+
+                                board = BoardSpecImpl(
+                                    name=f"board_{pod_global_idx}_{rack_global_idx}_{len(boards)}",
+                                    chip_count=len(board_chips),
+                                    chips=board_chips,
+                                    chip_interconnect=chip_interconnect,
+                                )
+                                boards.append(board)
+
+                        b2b_config = interconnect_config.get("b2b", {})
+                        intra_node_bw = b2b_config.get("bandwidth_gbps", 200.0)
+                        intra_node_lat = b2b_config.get("latency_us", 2.0)
+
+                        node = NodeSpecImpl(
+                            node_id=f"node_{node_idx}",
+                            boards=boards,
+                            intra_node_bandwidth_gbps=intra_node_bw,
+                            intra_node_latency_us=intra_node_lat,
+                        )
+                        nodes.append(node)
+                        node_idx += 1
+                        rack_global_idx += 1
+
+                pod_global_idx += 1
 
         return nodes
 

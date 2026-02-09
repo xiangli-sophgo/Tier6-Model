@@ -72,7 +72,7 @@ export const ChipPresetEditor: React.FC<ChipPresetEditorProps> = ({ value, onCha
   const [presetList, setPresetList] = useState<Array<{ name: string; config: ChipPreset }>>([])
   const [selectedPreset, setSelectedPreset] = useState<string>('')
   const originalRef = useRef<ChipPreset | null>(null)
-  const [sections, setSections] = useState<Record<string, boolean>>({ basic: true })
+  const [sections, setSections] = useState<Record<string, boolean>>({ basic: false })
   const [saveAsOpen, setSaveAsOpen] = useState(false)
   const [saveAsName, setSaveAsName] = useState('')
 

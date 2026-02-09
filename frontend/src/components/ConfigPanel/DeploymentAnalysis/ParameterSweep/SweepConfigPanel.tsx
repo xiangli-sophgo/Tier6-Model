@@ -155,25 +155,6 @@ export const SweepConfigPanel: React.FC<SweepConfigPanelProps> = ({
   return (
     <TooltipProvider>
       <div className="space-y-4">
-      {/* 基础配置摘要（一行显示） */}
-      <div className="p-3 bg-gray-50 rounded-lg border border-gray-200">
-        <div className="flex items-center gap-6 text-[13px]">
-          <span className="text-gray-500 font-medium">基础配置:</span>
-          {benchmarkName && (
-            <div className="flex items-center gap-1.5">
-              <span className="text-gray-500">Benchmark</span>
-              <span className="font-medium text-gray-700">{benchmarkName}</span>
-            </div>
-          )}
-          {topologyName && (
-            <div className="flex items-center gap-1.5">
-              <span className="text-gray-500">拓扑</span>
-              <span className="font-medium text-gray-700">{topologyName}</span>
-            </div>
-          )}
-        </div>
-      </div>
-
       {/* 参数选择器（带搜索，参考 CrossRing 实现） */}
       <Select
         value=""

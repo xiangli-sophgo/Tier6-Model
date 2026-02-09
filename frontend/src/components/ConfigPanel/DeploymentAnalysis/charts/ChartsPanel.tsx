@@ -234,8 +234,8 @@ export const ChartsPanel: React.FC<ChartsPanelProps> = ({
                 )}
                 {(() => {
                   // 基于实际利用率判断内存状态（前端二次校验）
-                  // 从 hardware.hardware_params.chips 中获取第一个芯片的容量
-                  const chips = hardware?.hardware_params?.chips || {}
+                  // 从 hardware.chips 中获取第一个芯片的容量
+                  const chips = hardware?.chips || {}
                   const firstChipName = Object.keys(chips)[0]
 
                   if (!firstChipName || !chips[firstChipName]?.memory_capacity_gb) {

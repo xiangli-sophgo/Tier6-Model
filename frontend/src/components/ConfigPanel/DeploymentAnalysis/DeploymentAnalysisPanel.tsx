@@ -10,11 +10,24 @@ import {
   PlayCircle,
   Search,
   Info,
+  Save,
+  Copy,
+  RefreshCw,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { NumberInput } from '@/components/ui/number-input'
+import { HelpTooltip } from '@/components/ui/info-tooltip'
+import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select'
+import { Badge } from '@/components/ui/badge'
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from '@/components/ui/dialog'
 // Label 保留用于未来扩展
 import { Switch } from '@/components/ui/switch'
 import {
@@ -33,6 +46,7 @@ import {
   TopologyTrafficResult,
   CommLatencyConfig,
   DEFAULT_COMM_LATENCY_CONFIG,
+  DataType,
 } from '../../../utils/llmDeployment/types'
 import { HierarchicalTopology } from '../../../types'
 import {
@@ -45,6 +59,11 @@ import {
   submitEvaluation,
   getTaskResults,
   cancelTask as cancelBackendTask,
+  getBenchmarks,
+  getBenchmark,
+  createBenchmark,
+  updateBenchmark,
+  getTopology,
 } from '../../../api/tier6'
 import {
   extractChipGroupsFromConfig,
@@ -71,7 +90,7 @@ import { ModelPresetEditor } from './ModelPresetEditor'
 import { ChipPresetEditor } from './ChipPresetEditor'
 import { TopologyEditor } from './TopologyEditor'
 import { colors } from './ConfigSelectors'
-import type { ModelPreset, ChipPreset, Tier6TopologyConfig } from '@/types/tier6'
+import type { ModelPreset, ChipPreset, Tier6TopologyConfig, BenchmarkListItem } from '@/types/tier6'
 import { modelPresetToLLMConfig, llmConfigToModelPreset } from '@/utils/llmDeployment/configAdapters'
 import {
   generateBenchmarkName,
@@ -205,6 +224,10 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
   // 最大模拟 token 数（默认 4）
   const [maxSimulatedTokens, setMaxSimulatedTokens] = useState<number>(4)
 
+  // 推理阶段开关
+  const [enablePrefill, setEnablePrefill] = useState<boolean>(true)
+  const [enableDecode, setEnableDecode] = useState<boolean>(true)
+
   // 原始配置快照（用于修改追踪）
   const [originalBenchmarkConfig, setOriginalBenchmarkConfig] = useState<{
     model: LLMModelConfig | null
@@ -215,6 +238,23 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
     hardwareParams: HardwareParams | null
     commLatency: CommLatencyConfig | null
   }>({ hardwareParams: null, commLatency: null })
+
+  // Benchmark 预设
+  const [benchmarkPresets, setBenchmarkPresets] = useState<BenchmarkListItem[]>([])
+  const [selectedBenchmarkId, setSelectedBenchmarkId] = useState<string>('')
+  const [benchmarkLoading, setBenchmarkLoading] = useState(false)
+  // Benchmark 原始快照 (修改追踪)
+  const [benchmarkSnapshot, setBenchmarkSnapshot] = useState<{
+    modelName: string;
+    topologyName: string;
+    inference: InferenceConfig;
+  } | null>(null)
+  // 子编辑器参数级修改状态 (同一预设内的编辑)
+  const [modelParamsModified, setModelParamsModified] = useState(false)
+  const [topologyParamsModified, setTopologyParamsModified] = useState(false)
+  // 另存为对话框
+  const [saveAsBenchmarkOpen, setSaveAsBenchmarkOpen] = useState(false)
+  const [saveAsBenchmarkName, setSaveAsBenchmarkName] = useState('')
 
   // 加载拓扑配置列表，并自动选择第一个配置
   React.useEffect(() => {
@@ -237,34 +277,22 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
               }
               setLocalPodCount(fullConfig.pod_count || 1)
               setLocalRacksPerPod(fullConfig.racks_per_pod || 1)
-              if (fullConfig.comm_latency_config) {
-                setCommLatencyConfig(fullConfig.comm_latency_config)
+              if (fullConfig.interconnect?.comm_params) {
+                setCommLatencyConfig(fullConfig.interconnect.comm_params)
               }
               // 恢复硬件参数
-              if (fullConfig.hardware_params) {
-                const hw = fullConfig.hardware_params as any
-                if (hw.chips) {
-                  setLocalHardwareParams({
-                    chips: { ...DEFAULT_HARDWARE_PARAMS.chips, ...hw.chips },
-                    interconnect: {
-                      c2c: { ...DEFAULT_HARDWARE_PARAMS.interconnect.c2c, ...hw.interconnect?.c2c },
-                      b2b: { ...DEFAULT_HARDWARE_PARAMS.interconnect.b2b, ...hw.interconnect?.b2b },
-                      r2r: { ...DEFAULT_HARDWARE_PARAMS.interconnect.r2r, ...hw.interconnect?.r2r },
-                      p2p: { ...DEFAULT_HARDWARE_PARAMS.interconnect.p2p, ...hw.interconnect?.p2p },
-                    },
-                  })
-                } else if (hw.chip) {
-                  const chipName = hw.chip.name || 'SG2262'
-                  setLocalHardwareParams({
-                    chips: { [chipName]: { ...DEFAULT_CHIP_HARDWARE, ...hw.chip } },
-                    interconnect: {
-                      c2c: { ...DEFAULT_HARDWARE_PARAMS.interconnect.c2c, ...hw.interconnect?.c2c },
-                      b2b: { ...DEFAULT_HARDWARE_PARAMS.interconnect.b2b, ...hw.interconnect?.b2b },
-                      r2r: { ...DEFAULT_HARDWARE_PARAMS.interconnect.r2r, ...hw.interconnect?.r2r },
-                      p2p: { ...DEFAULT_HARDWARE_PARAMS.interconnect.p2p, ...hw.interconnect?.p2p },
-                    },
-                  })
-                }
+              if (fullConfig.chips) {
+                const chips = fullConfig.chips as any
+                const links = fullConfig.interconnect?.links
+                setLocalHardwareParams({
+                  chips: { ...DEFAULT_HARDWARE_PARAMS.chips, ...chips },
+                  interconnect: {
+                    c2c: { ...DEFAULT_HARDWARE_PARAMS.interconnect.c2c, ...links?.c2c },
+                    b2b: { ...DEFAULT_HARDWARE_PARAMS.interconnect.b2b, ...links?.b2b },
+                    r2r: { ...DEFAULT_HARDWARE_PARAMS.interconnect.r2r, ...links?.r2r },
+                    p2p: { ...DEFAULT_HARDWARE_PARAMS.interconnect.p2p, ...links?.p2p },
+                  },
+                })
               }
             }
           } catch (error) {
@@ -313,55 +341,42 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
         setLocalPodCount(config.pod_count || 1)
         setLocalRacksPerPod(config.racks_per_pod || 1)
         // 恢复延迟设置
-        if (config.comm_latency_config) {
-          setCommLatencyConfig(config.comm_latency_config)
+        if (config.interconnect?.comm_params) {
+          setCommLatencyConfig(config.interconnect.comm_params)
         }
-        // 恢复硬件参数（支持新格式 chips 和旧格式 chip）
-        if (config.hardware_params) {
-          const hw = config.hardware_params as any
-          if (hw.chips) {
-            // 新格式
-            setLocalHardwareParams({
-              chips: { ...DEFAULT_HARDWARE_PARAMS.chips, ...hw.chips },
-              interconnect: {
-                c2c: { ...DEFAULT_HARDWARE_PARAMS.interconnect.c2c, ...hw.interconnect?.c2c },
-                b2b: { ...DEFAULT_HARDWARE_PARAMS.interconnect.b2b, ...hw.interconnect?.b2b },
-                r2r: { ...DEFAULT_HARDWARE_PARAMS.interconnect.r2r, ...hw.interconnect?.r2r },
-                p2p: { ...DEFAULT_HARDWARE_PARAMS.interconnect.p2p, ...hw.interconnect?.p2p },
-              },
-            })
-          } else if (hw.chip) {
-            // 旧格式兼容
-            const chipName = hw.chip.name || 'SG2262'
-            setLocalHardwareParams({
-              chips: { [chipName]: { ...DEFAULT_CHIP_HARDWARE, ...hw.chip } },
-              interconnect: {
-                c2c: { ...DEFAULT_HARDWARE_PARAMS.interconnect.c2c, ...hw.interconnect?.c2c },
-                b2b: { ...DEFAULT_HARDWARE_PARAMS.interconnect.b2b, ...hw.interconnect?.b2b },
-                r2r: { ...DEFAULT_HARDWARE_PARAMS.interconnect.r2r, ...hw.interconnect?.r2r },
-                p2p: { ...DEFAULT_HARDWARE_PARAMS.interconnect.p2p, ...hw.interconnect?.p2p },
-              },
-            })
-          }
+        // 恢复硬件参数
+        if (config.chips) {
+          const chips = config.chips as any
+          const links = config.interconnect?.links
+          setLocalHardwareParams({
+            chips: { ...DEFAULT_HARDWARE_PARAMS.chips, ...chips },
+            interconnect: {
+              c2c: { ...DEFAULT_HARDWARE_PARAMS.interconnect.c2c, ...links?.c2c },
+              b2b: { ...DEFAULT_HARDWARE_PARAMS.interconnect.b2b, ...links?.b2b },
+              r2r: { ...DEFAULT_HARDWARE_PARAMS.interconnect.r2r, ...links?.r2r },
+              p2p: { ...DEFAULT_HARDWARE_PARAMS.interconnect.p2p, ...links?.p2p },
+            },
+          })
         } else {
           setLocalHardwareParams(null)
         }
 
         // 保存原始拓扑配置快照（用于修改追踪）
-        const hwParams = config.hardware_params as any
-        const originalHwParams: HardwareParams | null = hwParams ? {
-          chips: hwParams.chips ? { ...hwParams.chips } : (hwParams.chip ? { [hwParams.chip.name || 'SG2262']: { ...hwParams.chip } } : {}),
+        const chips = config.chips as any
+        const links = config.interconnect?.links
+        const originalHwParams: HardwareParams | null = chips ? {
+          chips: { ...chips },
           interconnect: {
-            c2c: { ...DEFAULT_HARDWARE_PARAMS.interconnect.c2c, ...hwParams.interconnect?.c2c },
-            b2b: { ...DEFAULT_HARDWARE_PARAMS.interconnect.b2b, ...hwParams.interconnect?.b2b },
-            r2r: { ...DEFAULT_HARDWARE_PARAMS.interconnect.r2r, ...hwParams.interconnect?.r2r },
-            p2p: { ...DEFAULT_HARDWARE_PARAMS.interconnect.p2p, ...hwParams.interconnect?.p2p },
+            c2c: { ...DEFAULT_HARDWARE_PARAMS.interconnect.c2c, ...links?.c2c },
+            b2b: { ...DEFAULT_HARDWARE_PARAMS.interconnect.b2b, ...links?.b2b },
+            r2r: { ...DEFAULT_HARDWARE_PARAMS.interconnect.r2r, ...links?.r2r },
+            p2p: { ...DEFAULT_HARDWARE_PARAMS.interconnect.p2p, ...links?.p2p },
           },
         } : null
 
         setOriginalTopologyConfig({
           hardwareParams: originalHwParams,
-          commLatency: config.comm_latency_config ? { ...config.comm_latency_config } : null,
+          commLatency: config.interconnect?.comm_params ? { ...config.interconnect.comm_params } : null,
         })
 
         toast.success(`已加载拓扑配置: ${config.name}`)
@@ -395,7 +410,8 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
       // 如果没有拓扑配置，使用默认值（SG2260E 参数）
       console.warn('未找到拓扑配置，使用默认硬件配置')
       const defaultConfig: HardwareConfig = {
-        hardware_params: { chips: {}, interconnect: { c2c: { bandwidth_gbps: 0, latency_us: 0 }, b2b: { bandwidth_gbps: 0, latency_us: 0 }, r2r: { bandwidth_gbps: 0, latency_us: 0 }, p2p: { bandwidth_gbps: 0, latency_us: 0 } } },
+        chips: {},
+        interconnect: { links: { c2c: { bandwidth_gbps: 0, latency_us: 0 }, b2b: { bandwidth_gbps: 0, latency_us: 0 }, r2r: { bandwidth_gbps: 0, latency_us: 0 }, p2p: { bandwidth_gbps: 0, latency_us: 0 } } },
         chip: {
           name: 'SG2262',
           num_cores: 64,
@@ -455,7 +471,7 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
     // 如果有保存的硬件参数，优先使用保存的芯片配置
     let groups: ChipGroupInfo[]
     if (localHardwareParams?.chips && Object.keys(localHardwareParams.chips).length > 0) {
-      // 从保存的 hardware_params.chips 构建 chipGroups
+      // 从保存的 chips 构建 chipGroups
       groups = Object.entries(localHardwareParams.chips).map(([chipName, chipConfig]) => ({
         chipType: chipName,
         presetId: chipConfig.name === chipName ? undefined : chipConfig.name,
@@ -522,18 +538,27 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
   // 参数遍历状态
   const [sweepParams, setSweepParams] = useState<SweepParam[]>([])
 
-  // 计算最大可用芯片数（从拓扑配置中提取实际芯片总数）
+  // 计算最大可用芯片数（从本地拓扑配置中计算实际芯片总数）
   const maxChips = React.useMemo(() => {
-    if (!topology) return 0
-    const summary = extractHardwareSummary(topology)
-    return summary.totalChips
-  }, [topology])
+    if (!localRackConfig || localRackConfig.boards.length === 0) {
+      // 本地配置不可用时，回退到全局 topology
+      if (!topology) return 0
+      const summary = extractHardwareSummary(topology)
+      return summary.totalChips
+    }
+    // 从 localRackConfig 计算: pods * racks_per_pod * sum(board.count * sum(chip.count))
+    const chipsPerRack = localRackConfig.boards.reduce((sum, board) => {
+      const chipsPerBoard = board.chips.reduce((s, chip) => s + chip.count, 0)
+      return sum + board.count * chipsPerBoard
+    }, 0)
+    return localPodCount * localRacksPerPod * chipsPerRack
+  }, [localRackConfig, localPodCount, localRacksPerPod, topology])
 
   // 当模型配置或硬件配置变化时，更新手动策略为满足约束的默认值
   React.useEffect(() => {
     if (!hardwareConfig) return
 
-    const isMoE = modelConfig.model_type === 'moe' && modelConfig.moe_config
+    const isMoE = modelConfig.model_type === 'moe' || !!modelConfig.moe_config
     const maxTP = Math.min(128, modelConfig.num_attention_heads, maxChips)
 
     // 找一个能整除头数的 TP 值
@@ -586,38 +611,276 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
   // 构造 Tier6TopologyConfig 供 TopologyEditor 使用
   const topologyConfigForEditor = useMemo<Tier6TopologyConfig>(() => ({
     name: selectedTopologyConfig || '',
-    pod_count: localPodCount,
-    racks_per_pod: localRacksPerPod,
-    rack_config: localRackConfig as unknown as Record<string, unknown>,
-    hardware_params: localHardwareParams ? {
-      chips: localHardwareParams.chips as unknown as Record<string, ChipPreset>,
-      interconnect: localHardwareParams.interconnect,
-    } : undefined,
-    comm_latency_config: commLatencyConfig,
+    pods: localRackConfig ? [{
+      count: localPodCount,
+      racks: [{
+        count: localRacksPerPod,
+        boards: localRackConfig.boards.map(b => ({
+          count: b.count,
+          chips: b.chips.map(c => ({ name: c.name, count: c.count, preset_id: (c as any).preset_id })),
+          id: (b as any).id,
+          name: (b as any).name,
+          u_height: (b as any).u_height,
+        })),
+        total_u: localRackConfig.total_u,
+      }],
+    }] : undefined,
+    chips: localHardwareParams ? localHardwareParams.chips as unknown as Record<string, ChipPreset> : undefined,
+    interconnect: {
+      links: localHardwareParams?.interconnect,
+      comm_params: commLatencyConfig,
+    },
   }), [selectedTopologyConfig, localPodCount, localRacksPerPod, localRackConfig, localHardwareParams, commLatencyConfig])
 
   // 当 TopologyEditor 变化时，分解回各个独立 state
   const handleTopologyConfigChange = useCallback((config: Tier6TopologyConfig) => {
-    if (config.pod_count !== undefined) setLocalPodCount(config.pod_count)
-    if (config.racks_per_pod !== undefined) setLocalRacksPerPod(config.racks_per_pod)
-    if (config.rack_config) setLocalRackConfig(config.rack_config as unknown as RackConfig)
-    if (config.hardware_params) {
-      const hp = config.hardware_params
+    // 从 pods 结构提取 podCount, racksPerPod, rackConfig
+    if (config.pods && config.pods.length > 0) {
+      const firstPod = config.pods[0]
+      setLocalPodCount(firstPod.count ?? 1)
+      if (firstPod.racks && firstPod.racks.length > 0) {
+        const firstRack = firstPod.racks[0]
+        setLocalRacksPerPod(firstRack.count ?? 1)
+        setLocalRackConfig({
+          total_u: firstRack.total_u ?? 42,
+          boards: firstRack.boards.map(b => ({
+            id: b.id || '',
+            name: b.name || 'Board',
+            u_height: b.u_height || 2,
+            count: b.count ?? 1,
+            chips: b.chips.map(c => ({ name: c.name, count: c.count ?? 1, preset_id: c.preset_id })),
+          })),
+        } as RackConfig)
+      }
+    }
+    if (config.chips) {
+      const links = config.interconnect?.links
       setLocalHardwareParams({
-        chips: (hp.chips || {}) as Record<string, ChipPreset>,
+        chips: (config.chips || {}) as Record<string, ChipPreset>,
         interconnect: {
-          c2c: hp.interconnect?.c2c || { bandwidth_gbps: 0, latency_us: 0 },
-          b2b: hp.interconnect?.b2b || { bandwidth_gbps: 0, latency_us: 0 },
-          r2r: hp.interconnect?.r2r || { bandwidth_gbps: 0, latency_us: 0 },
-          p2p: hp.interconnect?.p2p || { bandwidth_gbps: 0, latency_us: 0 },
+          c2c: links?.c2c || { bandwidth_gbps: 0, latency_us: 0 },
+          b2b: links?.b2b || { bandwidth_gbps: 0, latency_us: 0 },
+          r2r: links?.r2r || { bandwidth_gbps: 0, latency_us: 0 },
+          p2p: links?.p2p || { bandwidth_gbps: 0, latency_us: 0 },
         },
       })
     }
-    if (config.comm_latency_config) {
-      setCommLatencyConfig(config.comm_latency_config as CommLatencyConfig)
+    if (config.interconnect?.comm_params) {
+      setCommLatencyConfig(config.interconnect.comm_params as CommLatencyConfig)
     }
     if (config.name) setSelectedTopologyConfig(config.name)
   }, [])
+
+  // ==========================================
+  // Benchmark 预设管理
+  // ==========================================
+
+  // Benchmark 预设自动恢复 ref (在 handleBenchmarkPresetChange 之后赋值)
+  const benchmarkPresetChangeRef = useRef<((id: string) => void) | null>(null)
+
+  // 选择 Benchmark 预设时联动更新
+  const handleBenchmarkPresetChange = useCallback(async (presetId: string) => {
+    if (!presetId) return
+    setSelectedBenchmarkId(presetId)
+    setBenchmarkLoading(true)
+
+    try {
+      const fullConfig = await getBenchmark(presetId)
+
+      // 1. 联动更新模型配置
+      if (fullConfig.model_preset_ref) {
+        const modelData = fullConfig.model as ModelPreset
+        if (modelData) {
+          handleModelPresetChange(modelData)
+        }
+      }
+
+      // 2. 联动更新拓扑配置
+      if (fullConfig.topology_preset_ref) {
+        try {
+          const topologyConfig = await getTopology(fullConfig.topology_preset_ref)
+          handleTopologyConfigChange(topologyConfig)
+        } catch (err) {
+          console.error('Failed to load topology from benchmark:', err)
+        }
+      }
+
+      // 3. 更新推理参数 (含 dtype)
+      const inf = fullConfig.inference as Record<string, unknown>
+      const newInference: InferenceConfig = {
+        batch_size: Number(inf.batch_size) || 1,
+        input_seq_length: Number(inf.input_seq_length) || 4096,
+        output_seq_length: Number(inf.output_seq_length) || 1024,
+        max_seq_length: (Number(inf.input_seq_length) || 4096) + (Number(inf.output_seq_length) || 1024),
+        weight_dtype: (inf.weight_dtype as DataType) || undefined,
+        activation_dtype: (inf.activation_dtype as DataType) || undefined,
+      }
+      setInferenceConfig(newInference)
+
+      // 4. 同步 dtype 到 modelConfig
+      if (inf.weight_dtype || inf.activation_dtype) {
+        setModelConfig(prev => ({
+          ...prev,
+          ...(inf.weight_dtype ? { weight_dtype: inf.weight_dtype as DataType } : {}),
+          ...(inf.activation_dtype ? { activation_dtype: inf.activation_dtype as DataType } : {}),
+        }))
+      }
+
+      // 5. 直接从后端响应拍快照 (用预设名称，不等 React state settle)
+      setBenchmarkSnapshot({
+        modelName: fullConfig.model_preset_ref || '',
+        topologyName: fullConfig.topology_preset_ref || '',
+        inference: { ...newInference },
+      })
+
+      localStorage.setItem('tier6_last_benchmark', presetId)
+    } catch (err) {
+      console.error('Failed to load benchmark:', err)
+      toast.error('Benchmark 加载失败')
+    } finally {
+      setBenchmarkLoading(false)
+    }
+  }, [handleModelPresetChange, handleTopologyConfigChange])
+
+  // 加载 Benchmark 预设列表，自动恢复上次选中
+  benchmarkPresetChangeRef.current = handleBenchmarkPresetChange
+  React.useEffect(() => {
+    getBenchmarks()
+      .then(res => {
+        setBenchmarkPresets(res.benchmarks)
+        if (res.benchmarks.length === 0) return
+        const lastUsed = localStorage.getItem('tier6_last_benchmark')
+        const target = res.benchmarks.find(b => b.id === lastUsed)
+          || res.benchmarks[0]
+        benchmarkPresetChangeRef.current?.(target.id)
+      })
+      .catch(err => console.error('Failed to load benchmarks:', err))
+  }, [])
+
+  // 修改追踪 (细粒度，每个字段独立检测)
+  // model/topology: 预设名称对比 → "已切换"; 子编辑器参数对比 → "已修改"
+  // 推理参数: benchmark 快照对比 → "已修改"
+  const benchmarkFieldModified = useMemo(() => {
+    const snap = benchmarkSnapshot
+    const modelSwitched = snap ? (modelPreset.name || '') !== snap.modelName : false
+    const topologySwitched = snap ? (topologyConfigForEditor.name || '') !== snap.topologyName : false
+    return {
+      // 预设级: 名称变了 → "已切换"
+      modelSwitched,
+      topologySwitched,
+      // 参数级: 同一预设内参数被编辑 → "已修改"
+      modelEdited: !modelSwitched && modelParamsModified,
+      topologyEdited: !topologySwitched && topologyParamsModified,
+      // 推理参数
+      batch_size: snap ? inferenceConfig.batch_size !== snap.inference.batch_size : false,
+      input_seq_length: snap ? inferenceConfig.input_seq_length !== snap.inference.input_seq_length : false,
+      output_seq_length: snap ? inferenceConfig.output_seq_length !== snap.inference.output_seq_length : false,
+      weight_dtype: snap ? (inferenceConfig.weight_dtype || modelConfig.weight_dtype) !== (snap.inference.weight_dtype || 'bf16') : false,
+      activation_dtype: snap ? (inferenceConfig.activation_dtype || modelConfig.activation_dtype) !== (snap.inference.activation_dtype || 'bf16') : false,
+    }
+  }, [inferenceConfig, modelConfig, benchmarkSnapshot, modelPreset.name, topologyConfigForEditor.name, modelParamsModified, topologyParamsModified])
+
+  const isBenchmarkModified = useMemo(() => {
+    const f = benchmarkFieldModified
+    return f.modelSwitched || f.modelEdited || f.topologySwitched || f.topologyEdited
+      || f.batch_size || f.input_seq_length || f.output_seq_length
+      || f.weight_dtype || f.activation_dtype
+  }, [benchmarkFieldModified])
+
+  /** 渲染修改状态 badge: 橙色"已切换" / 蓝色"已修改" / null */
+  const benchmarkModBadge = (field: string) => {
+    const f = benchmarkFieldModified as Record<string, boolean>
+    if (field === 'model') {
+      if (f.modelSwitched)
+        return <Badge variant="outline" className="text-[9px] px-1 py-0 h-3.5 bg-orange-100 text-orange-700 border-orange-300">已切换</Badge>
+      if (f.modelEdited)
+        return <Badge variant="outline" className="text-[9px] px-1 py-0 h-3.5 bg-blue-100 text-blue-700 border-blue-300">已修改</Badge>
+      return null
+    }
+    if (field === 'topology') {
+      if (f.topologySwitched)
+        return <Badge variant="outline" className="text-[9px] px-1 py-0 h-3.5 bg-orange-100 text-orange-700 border-orange-300">已切换</Badge>
+      if (f.topologyEdited)
+        return <Badge variant="outline" className="text-[9px] px-1 py-0 h-3.5 bg-blue-100 text-blue-700 border-blue-300">已修改</Badge>
+      return null
+    }
+    // 推理参数字段: 蓝色"已修改"
+    return f[field]
+      ? <Badge variant="outline" className="text-[9px] px-1 py-0 h-3.5 bg-blue-100 text-blue-700 border-blue-300">已修改</Badge>
+      : null
+  }
+
+  // 保存 Benchmark
+  const handleSaveBenchmark = useCallback(async () => {
+    if (!selectedBenchmarkId) return
+    try {
+      await updateBenchmark(selectedBenchmarkId, {
+        name: generateBenchmarkName(modelConfig, inferenceConfig),
+        model: modelPreset.name || modelConfig.model_name,
+        topology: selectedTopologyConfig || undefined,
+        inference: {
+          batch_size: inferenceConfig.batch_size,
+          input_seq_length: inferenceConfig.input_seq_length,
+          output_seq_length: inferenceConfig.output_seq_length,
+          weight_dtype: inferenceConfig.weight_dtype || modelConfig.weight_dtype,
+          activation_dtype: inferenceConfig.activation_dtype || modelConfig.activation_dtype,
+        },
+      })
+      const res = await getBenchmarks()
+      setBenchmarkPresets(res.benchmarks)
+      setBenchmarkSnapshot({
+        modelName: modelPreset.name || modelConfig.model_name,
+        topologyName: selectedTopologyConfig || '',
+        inference: { ...inferenceConfig },
+      })
+      toast.success('Benchmark saved')
+    } catch (err) {
+      toast.error('Save failed')
+    }
+  }, [selectedBenchmarkId, modelConfig, inferenceConfig, selectedTopologyConfig, modelPreset])
+
+  // 另存为
+  const handleSaveAsBenchmarkOpen = useCallback(() => {
+    setSaveAsBenchmarkName(generateBenchmarkName(modelConfig, inferenceConfig))
+    setSaveAsBenchmarkOpen(true)
+  }, [modelConfig, inferenceConfig])
+
+  const handleConfirmSaveAs = useCallback(async () => {
+    if (!saveAsBenchmarkName.trim()) return
+    try {
+      await createBenchmark({
+        id: saveAsBenchmarkName.trim(),
+        name: saveAsBenchmarkName.trim(),
+        model: modelPreset.name || modelConfig.model_name,
+        topology: selectedTopologyConfig || undefined,
+        inference: {
+          batch_size: inferenceConfig.batch_size,
+          input_seq_length: inferenceConfig.input_seq_length,
+          output_seq_length: inferenceConfig.output_seq_length,
+          weight_dtype: inferenceConfig.weight_dtype || modelConfig.weight_dtype,
+          activation_dtype: inferenceConfig.activation_dtype || modelConfig.activation_dtype,
+        },
+      })
+      const res = await getBenchmarks()
+      setBenchmarkPresets(res.benchmarks)
+      setSelectedBenchmarkId(saveAsBenchmarkName.trim())
+      setBenchmarkSnapshot({
+        modelName: modelPreset.name || modelConfig.model_name,
+        topologyName: selectedTopologyConfig || '',
+        inference: { ...inferenceConfig },
+      })
+      setSaveAsBenchmarkOpen(false)
+      toast.success(`Saved: ${saveAsBenchmarkName.trim()}`)
+    } catch (err) {
+      toast.error('Save failed')
+    }
+  }, [saveAsBenchmarkName, modelConfig, inferenceConfig, selectedTopologyConfig, modelPreset])
+
+  // 重置 Benchmark
+  const handleResetBenchmark = useCallback(() => {
+    if (!selectedBenchmarkId) return
+    handleBenchmarkPresetChange(selectedBenchmarkId)
+  }, [selectedBenchmarkId, handleBenchmarkPresetChange])
 
   // 提取当前 ChipPreset 供 ChipPresetEditor 使用
   const currentChipPreset = useMemo<ChipPreset>(() => {
@@ -702,8 +965,8 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
     const selectedConfig = selectedTopologyConfig
       ? topologyConfigs.find(c => c.name === selectedTopologyConfig)
       : null
-    if (selectedConfig?.hardware_params?.interconnect) {
-      return selectedConfig.hardware_params.interconnect
+    if (selectedConfig?.interconnect?.links) {
+      return selectedConfig.interconnect.links
     }
     // 默认值
     return {
@@ -742,23 +1005,17 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
     }
     setSaveLoading(true)
     try {
-      const newConfig: SavedConfig = {
+      const newConfig = {
         name: newConfigName.trim(),
         description: newConfigDesc.trim() || undefined,
-        pod_count: localPodCount,
-        racks_per_pod: localRacksPerPod,
-        rack_config: localRackConfig ? {
-          total_u: localRackConfig.total_u,
-          boards: localRackConfig.boards,
-        } : undefined,
-        comm_latency_config: { ...commLatencyConfig },
-        // 保存硬件参数（如果有本地修改）
-        hardware_params: localHardwareParams ? {
-          chips: localHardwareParams.chips,
-          interconnect: localHardwareParams.interconnect,
-        } as any : undefined,
+        pods: topologyConfigForEditor.pods,
+        chips: localHardwareParams?.chips || undefined,
+        interconnect: {
+          links: localHardwareParams?.interconnect,
+          comm_params: { ...commLatencyConfig },
+        },
       }
-      await saveConfig(newConfig)
+      await saveConfig(newConfig as any)
       await refreshTopologyConfigs()
       setSelectedTopologyConfig(newConfigName.trim())
       setSaveAsModalOpen(false)
@@ -780,22 +1037,17 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
       return
     }
     try {
-      const updatedConfig: SavedConfig = {
+      const updatedConfig = {
         name: selectedTopologyConfig,
         description: topologyConfigs.find(c => c.name === selectedTopologyConfig)?.description,
-        pod_count: localPodCount,
-        racks_per_pod: localRacksPerPod,
-        rack_config: localRackConfig ? {
-          total_u: localRackConfig.total_u,
-          boards: localRackConfig.boards,
-        } : undefined,
-        comm_latency_config: { ...commLatencyConfig },
-        hardware_params: localHardwareParams ? {
-          chips: localHardwareParams.chips,
-          interconnect: localHardwareParams.interconnect,
-        } as any : undefined,
+        pods: topologyConfigForEditor.pods,
+        chips: localHardwareParams?.chips || undefined,
+        interconnect: {
+          links: localHardwareParams?.interconnect,
+          comm_params: { ...commLatencyConfig },
+        },
       }
-      await saveConfig(updatedConfig)
+      await saveConfig(updatedConfig as any)
       await refreshTopologyConfigs()
       toast.success(`已保存配置: ${selectedTopologyConfig}`)
     } catch (error) {
@@ -807,22 +1059,17 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
   // 拓扑配置另存为
   const handleSaveAsTopologyConfig = useCallback(async (name: string, description?: string) => {
     try {
-      const newConfig: SavedConfig = {
+      const newConfig = {
         name,
         description,
-        pod_count: localPodCount,
-        racks_per_pod: localRacksPerPod,
-        rack_config: localRackConfig ? {
-          total_u: localRackConfig.total_u,
-          boards: localRackConfig.boards,
-        } : undefined,
-        comm_latency_config: { ...commLatencyConfig },
-        hardware_params: localHardwareParams ? {
-          chips: localHardwareParams.chips,
-          interconnect: localHardwareParams.interconnect,
-        } as any : undefined,
+        pods: topologyConfigForEditor.pods,
+        chips: localHardwareParams?.chips || undefined,
+        interconnect: {
+          links: localHardwareParams?.interconnect,
+          comm_params: { ...commLatencyConfig },
+        },
       }
-      await saveConfig(newConfig)
+      await saveConfig(newConfig as any)
       await refreshTopologyConfigs()
       setSelectedTopologyConfig(name)
       toast.success(`已创建新配置: ${name}`)
@@ -831,7 +1078,7 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
       toast.error('另存为配置失败')
       throw error
     }
-  }, [localPodCount, localRacksPerPod, localRackConfig, commLatencyConfig, localHardwareParams, refreshTopologyConfigs])
+  }, [topologyConfigForEditor.pods, commLatencyConfig, localHardwareParams, refreshTopologyConfigs])
 
   // 分析结果状态
   const [analysisResult, setAnalysisResult] = useState<PlanAnalysisResult | null>(null)
@@ -1121,11 +1368,7 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
 
     // 基于当前配置内容生成名称
     const benchmarkName = generateBenchmarkName(modelConfig, inferenceConfig)
-    const topologyName = generateTopologyName({
-      pod_count: localPodCount,
-      racks_per_pod: localRacksPerPod,
-      rack_config: localRackConfig,
-    })
+    const topologyName = generateTopologyName({ pods: topologyConfigForEditor.pods })
 
     // 使用用户输入的实验名称，如果为空则使用生成的 Benchmark 名称
     const finalExperimentName = experimentName.trim() || benchmarkName
@@ -1133,10 +1376,9 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
     // 生成临时任务 ID（提交后会更新为后端返回的 ID）
     const tempTaskId = `temp-${Date.now()}`
 
-    // 计算实际使用的芯片数
-    const isMoE = !!modelConfig.moe_config
+    // 计算实际使用的芯片数: dp * tp * pp
     const actualChips = parallelismMode === 'manual'
-      ? (isMoE ? strategy.dp * strategy.tp : strategy.dp * strategy.tp * strategy.ep)
+      ? strategy.dp * strategy.tp * strategy.pp
       : maxChips
 
     // 先创建本地任务记录并显示卡片（立即响应用户操作）
@@ -1167,18 +1409,20 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
         // 完整配置内容
         benchmark_config: {
           model: modelConfig as unknown as Record<string, unknown>,
-          inference: inferenceConfig as unknown as Record<string, unknown>,
+          inference: {
+            ...inferenceConfig,
+            weight_dtype: inferenceConfig.weight_dtype || modelConfig.weight_dtype,
+            activation_dtype: inferenceConfig.activation_dtype || modelConfig.activation_dtype,
+          } as unknown as Record<string, unknown>,
         },
         topology_config: {
           name: topologyName,
-          pod_count: localPodCount,
-          racks_per_pod: localRacksPerPod,
-          rack_config: localRackConfig,
-          hardware_params: {
-            chips: localHardwareParams?.chips || {},
-            interconnect: localHardwareParams?.interconnect || {},
+          pods: topologyConfigForEditor.pods,
+          chips: localHardwareParams?.chips || {},
+          interconnect: {
+            links: localHardwareParams?.interconnect || {},
+            comm_params: commLatencyConfig,
           },
-          comm_latency_config: commLatencyConfig,
         },
 
         search_mode: parallelismMode,
@@ -1235,11 +1479,7 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
     }
 
     // 基础拓扑名称（不随 sweep 参数变化）
-    const baseTopologyName = generateTopologyName({
-      pod_count: localPodCount,
-      racks_per_pod: localRacksPerPod,
-      rack_config: localRackConfig,
-    })
+    const baseTopologyName = generateTopologyName({ pods: topologyConfigForEditor.pods })
     const baseExperimentName = experimentName.trim() || generateBenchmarkName(modelConfig, inferenceConfig)
 
     // 生成实验级别的描述：优先使用用户输入，否则自动生成
@@ -1309,18 +1549,20 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
           // 完整配置内容（变体配置）
           benchmark_config: {
             model: overriddenConfig.model,
-            inference: overriddenConfig.inference,
+            inference: {
+              ...overriddenConfig.inference,
+              weight_dtype: (overriddenConfig.inference as InferenceConfig).weight_dtype || modelConfig.weight_dtype,
+              activation_dtype: (overriddenConfig.inference as InferenceConfig).activation_dtype || modelConfig.activation_dtype,
+            },
           },
           topology_config: {
             name: baseTopologyName,
-            pod_count: localPodCount,
-            racks_per_pod: localRacksPerPod,
-            rack_config: localRackConfig,
-            hardware_params: {
-              chips: overriddenConfig.hardware?.chips || localHardwareParams?.chips || {},
-              interconnect: overriddenConfig.hardware?.interconnect || localHardwareParams?.interconnect || {},
+            pods: topologyConfigForEditor.pods,
+            chips: overriddenConfig.hardware?.chips || localHardwareParams?.chips || {},
+            interconnect: {
+              links: overriddenConfig.hardware?.interconnect || localHardwareParams?.interconnect || {},
+              comm_params: commLatencyConfig,
             },
-            comm_latency_config: commLatencyConfig,
           },
 
           search_mode: 'manual',
@@ -1386,22 +1628,54 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
       <div>
         {/* 上方：配置面板（左右两列） */}
         <div className="grid grid-cols-2 gap-8 mb-4">
-          {/* 左列：模型配置 + 推理参数 + 部署策略 */}
+          {/* 左列：Benchmark 配置(入口) + 模型配置 + 部署策略 */}
           <div>
-            {/* 模型配置 */}
-            <BaseCard title="模型配置" collapsible gradient>
-              <ModelPresetEditor
-                value={modelPreset}
-                onChange={handleModelPresetChange}
-              />
-            </BaseCard>
-
-            {/* 推理参数 */}
-            <BaseCard title="推理参数" collapsible gradient className="mt-4">
+            {/* Benchmark 配置 (入口) */}
+            <BaseCard title="Benchmark 配置" collapsible gradient>
               <div className="space-y-3">
+                {/* Benchmark 预设下拉 */}
+                <Select value={selectedBenchmarkId} onValueChange={handleBenchmarkPresetChange}>
+                  <SelectTrigger className="w-full h-7">
+                    <SelectValue placeholder="选择 Benchmark 预设" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {benchmarkPresets.map(b => (
+                      <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+
+                {/* 只读信息行: 模型 + 拓扑 */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div className={`px-2 py-1.5 rounded text-[13px] ${
+                    benchmarkFieldModified.modelSwitched ? 'bg-orange-50/50' :
+                    benchmarkFieldModified.modelEdited ? 'bg-blue-50/50' : 'bg-gray-50'
+                  }`}>
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-gray-400 mr-1">模型:</span>
+                      <span className="font-medium text-gray-700">{modelConfig.model_name || '--'}</span>
+                      {benchmarkModBadge('model')}
+                    </div>
+                  </div>
+                  <div className={`px-2 py-1.5 rounded text-[13px] ${
+                    benchmarkFieldModified.topologySwitched ? 'bg-orange-50/50' :
+                    benchmarkFieldModified.topologyEdited ? 'bg-blue-50/50' : 'bg-gray-50'
+                  }`}>
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-gray-400 mr-1">拓扑:</span>
+                      <span className="font-medium text-gray-700">{selectedTopologyConfig || '--'}</span>
+                      {benchmarkModBadge('topology')}
+                    </div>
+                  </div>
+                </div>
+
+                {/* 推理参数 */}
                 <div className="grid grid-cols-3 gap-3">
-                  <div>
-                    <div className="mb-1 text-[13px] text-gray-600">Batch Size</div>
+                  <div className={`p-2 rounded ${benchmarkFieldModified.batch_size ? 'bg-blue-50/50' : ''}`}>
+                    <div className="mb-1 flex items-center gap-1.5">
+                      <span className="text-[13px] text-gray-600">Batch Size</span>
+                      {benchmarkModBadge('batch_size')}
+                    </div>
                     <NumberInput
                       min={1}
                       value={inferenceConfig.batch_size}
@@ -1409,8 +1683,11 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
                       className="h-7"
                     />
                   </div>
-                  <div>
-                    <div className="mb-1 text-[13px] text-gray-600">输入序列长度</div>
+                  <div className={`p-2 rounded ${benchmarkFieldModified.input_seq_length ? 'bg-blue-50/50' : ''}`}>
+                    <div className="mb-1 flex items-center gap-1.5">
+                      <span className="text-[13px] text-gray-600">输入序列长度</span>
+                      {benchmarkModBadge('input_seq_length')}
+                    </div>
                     <NumberInput
                       min={1}
                       value={inferenceConfig.input_seq_length}
@@ -1418,8 +1695,11 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
                       className="h-7"
                     />
                   </div>
-                  <div>
-                    <div className="mb-1 text-[13px] text-gray-600">输出序列长度</div>
+                  <div className={`p-2 rounded ${benchmarkFieldModified.output_seq_length ? 'bg-blue-50/50' : ''}`}>
+                    <div className="mb-1 flex items-center gap-1.5">
+                      <span className="text-[13px] text-gray-600">输出序列长度</span>
+                      {benchmarkModBadge('output_seq_length')}
+                    </div>
                     <NumberInput
                       min={1}
                       value={inferenceConfig.output_seq_length}
@@ -1428,11 +1708,100 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
                     />
                   </div>
                 </div>
+
+                {/* 精度配置 */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div className={`p-2 rounded ${benchmarkFieldModified.weight_dtype ? 'bg-blue-50/50' : ''}`}>
+                    <div className="mb-1 flex items-center gap-1.5">
+                      <span className="text-[13px] text-gray-600">权重精度</span>
+                      {benchmarkModBadge('weight_dtype')}
+                    </div>
+                    <Select value={inferenceConfig.weight_dtype || modelConfig.weight_dtype}
+                      onValueChange={(v) => {
+                        setInferenceConfig(prev => ({ ...prev, weight_dtype: v as DataType }))
+                        setModelConfig(prev => ({ ...prev, weight_dtype: v as DataType }))
+                      }}>
+                      <SelectTrigger className="w-full h-7"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="bf16">BF16</SelectItem>
+                        <SelectItem value="fp16">FP16</SelectItem>
+                        <SelectItem value="fp8">FP8</SelectItem>
+                        <SelectItem value="int8">INT8</SelectItem>
+                        <SelectItem value="int4">INT4</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className={`p-2 rounded ${benchmarkFieldModified.activation_dtype ? 'bg-blue-50/50' : ''}`}>
+                    <div className="mb-1 flex items-center gap-1.5">
+                      <span className="text-[13px] text-gray-600">激活精度</span>
+                      {benchmarkModBadge('activation_dtype')}
+                    </div>
+                    <Select value={inferenceConfig.activation_dtype || modelConfig.activation_dtype}
+                      onValueChange={(v) => {
+                        setInferenceConfig(prev => ({ ...prev, activation_dtype: v as DataType }))
+                        setModelConfig(prev => ({ ...prev, activation_dtype: v as DataType }))
+                      }}>
+                      <SelectTrigger className="w-full h-7"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="bf16">BF16</SelectItem>
+                        <SelectItem value="fp16">FP16</SelectItem>
+                        <SelectItem value="fp8">FP8</SelectItem>
+                        <SelectItem value="int8">INT8</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+
+                {/* 操作按钮 */}
+                <div className="flex gap-2">
+                  <Button variant="outline" size="sm" onClick={handleSaveBenchmark} disabled={!selectedBenchmarkId}>
+                    <Save className="h-3.5 w-3.5 mr-1" />保存
+                  </Button>
+                  <Button variant="outline" size="sm" onClick={handleSaveAsBenchmarkOpen}>
+                    <Copy className="h-3.5 w-3.5 mr-1" />另存为
+                  </Button>
+                  <Button variant="outline" size="sm" onClick={handleResetBenchmark} disabled={!selectedBenchmarkId}>
+                    <RefreshCw className="h-3.5 w-3.5 mr-1" />重新加载
+                  </Button>
+                </div>
               </div>
             </BaseCard>
 
+            {/* Benchmark 另存为对话框 */}
+            <Dialog open={saveAsBenchmarkOpen} onOpenChange={setSaveAsBenchmarkOpen}>
+              <DialogContent className="sm:max-w-md">
+                <DialogHeader>
+                  <DialogTitle>另存为新预设</DialogTitle>
+                </DialogHeader>
+                <div className="py-4">
+                  <label className="text-sm font-medium mb-2 block">预设名称</label>
+                  <Input
+                    value={saveAsBenchmarkName}
+                    onChange={(e) => setSaveAsBenchmarkName(e.target.value)}
+                    placeholder="请输入预设名称"
+                    onKeyDown={(e) => { if (e.key === 'Enter' && saveAsBenchmarkName.trim()) handleConfirmSaveAs() }}
+                  />
+                </div>
+                <DialogFooter>
+                  <Button variant="outline" onClick={() => { setSaveAsBenchmarkOpen(false); setSaveAsBenchmarkName('') }}>取消</Button>
+                  <Button onClick={handleConfirmSaveAs} disabled={!saveAsBenchmarkName.trim()}>保存</Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
+
+            {/* 模型配置 */}
+            <BaseCard title="模型配置" collapsible gradient className="mt-4">
+              <ModelPresetEditor
+                value={modelPreset}
+                onChange={handleModelPresetChange}
+                onParamsModified={setModelParamsModified}
+              />
+            </BaseCard>
+
             {/* 部署策略 */}
-            <BaseCard collapsible title="部署策略" gradient className="mt-4">
+            <BaseCard collapsible defaultExpanded={false} title="部署策略" gradient className="mt-4">
+              {/* --- 并行策略 --- */}
+              <div className="mb-1 text-xs font-medium text-gray-500">并行策略</div>
               <ParallelismConfigPanel
                 mode={parallelismMode}
                 onModeChange={setParallelismMode}
@@ -1441,103 +1810,83 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
                 maxChips={maxChips}
                 modelConfig={modelConfig}
                 hardwareConfig={hardwareConfig}
+                isMoE={!!modelPreset.MoE}
               />
 
               {/* 参数遍历面板（仅在 sweep 模式下显示） */}
               {parallelismMode === 'sweep' && (
-                <>
-                  <div className="mt-4">
-                    <SweepConfigPanel
-                      sweepableParams={sweepableParams}
-                      sweepParams={sweepParams}
-                      onSweepParamsChange={setSweepParams}
-                      benchmarkName={selectedBenchmark}
-                      topologyName={selectedTopologyConfig}
-                    />
-                  </div>
-                  <div className="my-6 border-t border-gray-200" />
-                </>
+                <div className="mt-4">
+                  <SweepConfigPanel
+                    sweepableParams={sweepableParams}
+                    sweepParams={sweepParams}
+                    onSweepParamsChange={setSweepParams}
+                    benchmarkName={selectedBenchmark}
+                    topologyName={selectedTopologyConfig}
+                  />
+                </div>
               )}
 
-              {/* Tile 搜索、分区搜索、最大模拟 Token 数 */}
-              <div className="grid grid-cols-3 gap-4 mt-4">
-                <div>
-                  <div className="mb-1.5 text-[13px] text-gray-600 flex items-center">
-                    启用 Tile 搜索
-                    <TooltipProvider>
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <Info className="h-3.5 w-3.5 ml-1 text-gray-400 cursor-help" />
-                        </TooltipTrigger>
-                        <TooltipContent>开启时使用最优tile搜索以获得最高精度，关闭时使用固定tile大小以显著提升评估速度</TooltipContent>
-                      </Tooltip>
-                    </TooltipProvider>
+              {/* --- 评估选项 --- */}
+              <div className="mt-4 pt-4 border-t border-gray-200">
+                <div className="mb-3 text-xs font-medium text-gray-500">评估选项</div>
+                <div className="grid grid-cols-5 gap-4">
+                  <div className="text-center">
+                    <HelpTooltip label="Prefill 阶段" content="预填充阶段: 处理输入序列，计算密集型" labelClassName="text-[11px] text-gray-600 block mb-1 cursor-help" />
+                    <div className="flex justify-center h-7 items-center"><Switch checked={enablePrefill} onCheckedChange={setEnablePrefill} /></div>
                   </div>
-                  <Switch checked={enableTileSearch} onCheckedChange={setEnableTileSearch} />
-                </div>
-                <div>
-                  <div className="mb-1.5 text-[13px] text-gray-600 flex items-center">
-                    启用分区搜索
-                    <TooltipProvider>
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <Info className="h-3.5 w-3.5 ml-1 text-gray-400 cursor-help" />
-                        </TooltipTrigger>
-                        <TooltipContent>开启时搜索最优分区策略（极慢），关闭时使用固定分区（推荐）</TooltipContent>
-                      </Tooltip>
-                    </TooltipProvider>
+                  <div className="text-center">
+                    <HelpTooltip label="Decode 阶段" content="解码阶段: 逐 token 生成，带宽密集型" labelClassName="text-[11px] text-gray-600 block mb-1 cursor-help" />
+                    <div className="flex justify-center h-7 items-center"><Switch checked={enableDecode} onCheckedChange={setEnableDecode} /></div>
                   </div>
-                  <Switch checked={enablePartitionSearch} onCheckedChange={setEnablePartitionSearch} />
-                </div>
-                <div>
-                  <div className="mb-1.5 text-[13px] text-gray-600 flex items-center">
-                    最大模拟 Token 数
-                    <TooltipProvider>
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <Info className="h-3.5 w-3.5 ml-1 text-gray-400 cursor-help" />
-                        </TooltipTrigger>
-                        <TooltipContent>Decode 阶段模拟的 token 数量。推荐：快速评估用 1-2，精确评估用 4-8</TooltipContent>
-                      </Tooltip>
-                    </TooltipProvider>
+                  <div className="text-center">
+                    <HelpTooltip label="Tile 搜索" content="开启时使用最优tile搜索以获得最高精度，关闭时使用固定tile大小以显著提升评估速度" labelClassName="text-[11px] text-gray-600 block mb-1 cursor-help" />
+                    <div className="flex justify-center h-7 items-center"><Switch checked={enableTileSearch} onCheckedChange={setEnableTileSearch} /></div>
                   </div>
-                  <NumberInput min={1} max={16} value={maxSimulatedTokens} onChange={(v) => setMaxSimulatedTokens(v || 4)} className="w-full" />
+                  <div className="text-center">
+                    <HelpTooltip label="分区搜索" content="开启时搜索最优分区策略（极慢），关闭时使用固定分区（推荐）" labelClassName="text-[11px] text-gray-600 block mb-1 cursor-help" />
+                    <div className="flex justify-center h-7 items-center"><Switch checked={enablePartitionSearch} onCheckedChange={setEnablePartitionSearch} /></div>
+                  </div>
+                  <div className="text-center">
+                    <HelpTooltip label="模拟 Token 数" content="Decode 阶段模拟的 token 数量。推荐：快速评估用 1-2，精确评估用 4-8" labelClassName="text-[11px] text-gray-600 block mb-1 cursor-help" />
+                    <NumberInput min={1} max={16} value={maxSimulatedTokens} onChange={(v) => setMaxSimulatedTokens(v || 4)} className="h-7 text-center" />
+                  </div>
                 </div>
               </div>
 
-              {/* 实验名称和任务并发数 */}
-              <div className="grid grid-cols-2 gap-4 mt-4">
-                <div>
-                  <div className="mb-1.5 text-[13px] text-gray-600">实验名称</div>
-                  <Input placeholder="留空则自动生成" value={experimentName} onChange={(e) => setExperimentName(e.target.value)} />
-                </div>
-                <div>
-                  <div className="mb-1.5 text-[13px] text-gray-600 flex items-center">
-                    任务并发数
-                    <TooltipProvider>
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <Info className="h-3.5 w-3.5 ml-1 text-gray-400 cursor-help" />
-                        </TooltipTrigger>
-                        <TooltipContent>本次评估使用的 worker 数量（1-16）</TooltipContent>
-                      </Tooltip>
-                    </TooltipProvider>
+              {/* --- 实验配置 --- */}
+              <div className="mt-4 pt-4 border-t border-gray-200">
+                <div className="mb-3 text-xs font-medium text-gray-500">实验配置</div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <div className="mb-1.5 text-[13px] text-gray-600">实验名称</div>
+                    <Input placeholder="留空则自动生成" value={experimentName} onChange={(e) => setExperimentName(e.target.value)} />
                   </div>
-                  <NumberInput min={1} max={16} value={taskMaxWorkers} onChange={(v) => setTaskMaxWorkers(v || 4)} className="w-full" />
+                  <div>
+                    <div className="mb-1.5 text-[13px] text-gray-600 flex items-center">
+                      任务并发数
+                      <TooltipProvider>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Info className="h-3.5 w-3.5 ml-1 text-gray-400 cursor-help" />
+                          </TooltipTrigger>
+                          <TooltipContent>本次评估使用的 worker 数量（1-16）</TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
+                    </div>
+                    <NumberInput min={1} max={16} value={taskMaxWorkers} onChange={(v) => setTaskMaxWorkers(v || 4)} className="w-full" />
+                  </div>
                 </div>
-              </div>
-
-              {/* 实验描述 */}
-              <div className="mt-4">
-                <div className="mb-1.5 text-[13px] text-gray-600">实验描述</div>
-                <Input placeholder="留空则自动生成" value={experimentDescription} onChange={(e) => setExperimentDescription(e.target.value)} />
+                <div className="mt-3">
+                  <div className="mb-1.5 text-[13px] text-gray-600">实验描述</div>
+                  <Input placeholder="留空则自动生成" value={experimentDescription} onChange={(e) => setExperimentDescription(e.target.value)} />
+                </div>
               </div>
 
               {/* 运行按钮 */}
               <Button
                 onClick={parallelismMode === 'sweep' ? handleRunSweep : handleRunAnalysis}
                 disabled={parallelismMode === 'sweep' && (sweepParams.length === 0 || totalCombinations > 500)}
-                className="w-full mt-4 h-11 rounded-lg"
+                className="w-full mt-5 h-11 rounded-lg"
                 style={{ background: colors.primary, boxShadow: '0 2px 8px rgba(94, 106, 210, 0.3)' }}
               >
                 {parallelismMode === 'auto' ? (
@@ -1558,6 +1907,7 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
               <TopologyEditor
                 value={topologyConfigForEditor}
                 onChange={handleTopologyConfigChange}
+                onParamsModified={setTopologyParamsModified}
               />
             </BaseCard>
 
@@ -1572,7 +1922,7 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
         </div>
 
         {/* 分析任务列表 */}
-        <BaseCard collapsible title="分析任务" gradient className="mt-4">
+        <BaseCard collapsible defaultExpanded={false} title="分析任务" gradient className="mt-4">
           <AnalysisTaskList
             tasks={analysisTasks}
             onViewTask={viewTaskResult}

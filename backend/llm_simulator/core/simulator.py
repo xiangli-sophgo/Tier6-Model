@@ -1916,18 +1916,17 @@ def run_simulation(
     # 获取 MoE 相关的 moe_tp 参数（从 parallelism_dict 中获取）
     moe_tp = parallelism_dict.get("moe_tp")
 
-    # 从 hardware_dict 获取芯片参数（仅支持新格式 v2.1.0+: hardware_params.chips）
-    chips_dict = hardware_dict.get("hardware_params", {}).get("chips", {})
+    # 从 hardware_dict 获取芯片参数（顶层 chips 字典）
+    chips_dict = hardware_dict.get("chips", {})
     if not chips_dict:
-        raise ValueError("硬件配置缺少 'hardware_params.chips' 字段，请确保使用 v2.1.0+ 新格式配置")
+        raise ValueError("硬件配置缺少 'chips' 字段，请确保使用新格式配置")
     first_chip_name = next(iter(chips_dict))
     chip_hw = chips_dict[first_chip_name]
 
     # ========== 互联参数获取（支持两种格式） ==========
-    # 格式1: topology_dict.hardware_params.interconnect (YAML 配置文件格式)
+    # 格式1: topology_dict.interconnect.links (YAML 配置文件格式)
     # 格式2: hardware_dict 中的 chip/board/rack/pod (前端传入格式)
-    hardware_params = topology_dict.get("hardware_params", {})
-    interconnect = hardware_params.get("interconnect", {})
+    interconnect = topology_dict.get("interconnect", {}).get("links", {})
     c2c_config = interconnect.get("c2c", {})
     b2b_config = interconnect.get("b2b", {})
     r2r_config = interconnect.get("r2r", {})
@@ -1976,7 +1975,7 @@ def run_simulation(
         if frontend_field in frontend_config:
             return frontend_config[frontend_field]
         # 都没有则报错
-        raise ValueError(f"互联配置缺少必需字段: {param_name}（支持格式：topology.hardware_params.interconnect.*.{yaml_field} 或 hardware.*.{frontend_field}）")
+        raise ValueError(f"互联配置缺少必需字段: {param_name}（支持格式：topology.interconnect.links.*.{yaml_field} 或 hardware.*.{frontend_field}）")
 
     # 验证芯片必需参数
     chip_type = _require_field(chip_hw, "name", "芯片配置")
@@ -2046,8 +2045,8 @@ def run_simulation(
         enable_kv_cache=config_dict.get("enableKVCacheAccessSimulation", True) if config_dict else True,
     )
 
-    # 从拓扑配置中提取通信延迟配置 (前端传递的统一配置)
-    comm_latency_config = topology_dict.get("comm_latency_config")
+    # 从拓扑配置中提取通信延迟配置 (interconnect.comm_params)
+    comm_latency_config = topology_dict.get("interconnect", {}).get("comm_params")
 
     # 运行模拟
     simulator = LLMInferenceSimulator(

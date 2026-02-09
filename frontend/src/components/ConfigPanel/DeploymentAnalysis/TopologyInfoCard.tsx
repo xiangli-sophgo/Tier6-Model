@@ -105,7 +105,7 @@ interface TopologyInfoCardProps {
     boardCount: number
     chipCount: number
   }
-  /** 互联参数（从 hardware_params.interconnect 获取） */
+  /** 互联参数（从 interconnect.links 获取） */
   interconnectParams?: {
     c2c?: { bandwidth_gbps: number; latency_us: number }
     b2b?: { bandwidth_gbps: number; latency_us: number }

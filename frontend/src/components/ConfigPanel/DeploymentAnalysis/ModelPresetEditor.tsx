@@ -6,7 +6,7 @@
  * 支持预设加载、字段编辑、修改追踪、保存/另存为/重新加载功能。
  */
 
-import React, { useState, useEffect, useCallback, useRef } from 'react'
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { Save, Copy, RefreshCw, ChevronDown, ChevronUp } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
@@ -38,6 +38,8 @@ import { getModelPresets, getModelPreset, updateModelPreset, saveModelPreset } f
 interface ModelPresetEditorProps {
   value: ModelPreset
   onChange: (config: ModelPreset) => void
+  /** 当编辑器内部参数相对于加载的预设发生变化时回调 */
+  onParamsModified?: (modified: boolean) => void
 }
 
 // 特性模块 key 和嵌套对象 key，从基础参数中排除
@@ -48,13 +50,13 @@ const SKIP_BASIC_KEYS = new Set(['name', ...FEATURE_KEYS])
 // 组件
 // ============================================
 
-export const ModelPresetEditor: React.FC<ModelPresetEditorProps> = ({ value, onChange }) => {
+export const ModelPresetEditor: React.FC<ModelPresetEditorProps> = ({ value, onChange, onParamsModified }) => {
   const [presetList, setPresetList] = useState<Array<{ name: string; config: ModelPreset }>>([])
   const [selectedPreset, setSelectedPreset] = useState<string>('')
   const originalRef = useRef<ModelPreset | null>(null)
 
   const [sections, setSections] = useState<Record<string, boolean>>({
-    basic: true, MoE: false, MLA: false, DSA: false, NSA: false, RoPE: false,
+    basic: false, MoE: false, MLA: false, DSA: false, NSA: false, RoPE: false,
   })
 
   const [saveAsOpen, setSaveAsOpen] = useState(false)
@@ -76,6 +78,22 @@ export const ModelPresetEditor: React.FC<ModelPresetEditorProps> = ({ value, onC
       })
       .catch(() => toast.error('加载模型预设列表失败'))
   }, [])
+
+  // 检测外部推送的预设变更 (如 Benchmark 加载联动)，同步内部状态
+  useEffect(() => {
+    if (!value.name || presetList.length === 0) return
+    if (value.name === selectedPreset) return
+    // 外部改变了 name，同步内部选中预设和快照
+    // 支持按 config.name 匹配（文件内 name 字段）或按 preset.name 匹配（文件名）
+    const match = presetList.find(p => p.name === value.name)
+      || presetList.find(p => p.config.name === value.name)
+    if (match) {
+      setSelectedPreset(match.name)
+      originalRef.current = JSON.parse(JSON.stringify(match.config))
+      // 用预设列表的干净配置替换外部推送的对象，确保 value 和 originalRef 一致
+      onChange({ ...match.config })
+    }
+  }, [value.name, presetList])
 
   const handlePresetChange = useCallback((name: string) => {
     setSelectedPreset(name)
@@ -135,6 +153,16 @@ export const ModelPresetEditor: React.FC<ModelPresetEditorProps> = ({ value, onC
     if (!orig || !curr) return false
     return JSON.stringify(orig) !== JSON.stringify(curr)
   }, [value])
+
+  // 向父组件报告参数级修改状态 (同一预设内的编辑)
+  const isAnyParamModified = useMemo(() => {
+    if (!originalRef.current) return false
+    return JSON.stringify(value) !== JSON.stringify(originalRef.current)
+  }, [value])
+
+  useEffect(() => {
+    onParamsModified?.(isAnyParamModified)
+  }, [isAnyParamModified, onParamsModified])
 
   // 保存
   const handleSave = async () => {

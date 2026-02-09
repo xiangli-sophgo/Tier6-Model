@@ -189,6 +189,10 @@ export interface InferenceConfig {
   max_seq_length: number;
   /** micro batch 数量 (PP流水线) */
   num_micro_batches?: number;
+  /** 权重精度 */
+  weight_dtype?: DataType;
+  /** 激活精度 */
+  activation_dtype?: DataType;
 }
 
 // ============================================
@@ -213,7 +217,33 @@ export interface InterconnectParams {
   latency_us: number;
 }
 
-/** 硬件参数配置（新格式 v2.1.0+） */
+/** 互联配置（新格式 v2.2+） */
+export interface InterconnectConfig {
+  /** 层级互联链路 */
+  links?: {
+    /** Chip-to-Chip (Die间，板内) */
+    c2c?: InterconnectParams;
+    /** Board-to-Board (板间，机架内) */
+    b2b?: InterconnectParams;
+    /** Rack-to-Rack (机架间，Pod内) */
+    r2r?: InterconnectParams;
+    /** Pod-to-Pod (Pod间，跨Pod) */
+    p2p?: InterconnectParams;
+  };
+  /** 通信参数 */
+  comm_params?: {
+    /** AllReduce算法 */
+    allreduce_algorithm?: AllReduceAlgorithm;
+    /** AllToAll算法 */
+    alltoall_algorithm?: AllToAllAlgorithm;
+    /** 计算通信重叠 */
+    enable_compute_comm_overlap?: boolean;
+    /** 网络效率 (0-1) */
+    network_efficiency?: number;
+  };
+}
+
+/** 硬件参数配置（新格式 v2.1.0+，v2.2+ 移除 hardware_params 包装） */
 export interface HardwareParams {
   /** 芯片配置字典，key为芯片名称 */
   chips: Record<string, ChipHardwareConfig>;
@@ -279,12 +309,16 @@ export interface PodConfig {
 // 硬件配置（v2.1.0+ 格式）
 // ============================================
 
-/** 完整硬件配置（新格式 v2.1.0+） */
+/** 完整硬件配置（v2.2+ 格式：chips 和 interconnect 直接在顶层） */
 export interface HardwareConfig {
-  /** 硬件参数配置 */
-  hardware_params: HardwareParams;
+  /** 芯片配置字典，key为芯片名称 */
+  chips: Record<string, ChipHardwareConfig>;
+  /** 互联配置 */
+  interconnect: InterconnectConfig;
 
   // 以下字段仅用于向后兼容旧代码（已废弃）
+  /** @deprecated 使用 chips + interconnect 代替 */
+  hardware_params?: HardwareParams;
   chip?: ChipHardwareConfig;
   board?: BoardConfig;
   rack?: RackConfig;

@@ -144,128 +144,12 @@ def load_topology_config(topology_name: str) -> dict:
     with open(file_path, "r", encoding="utf-8") as f:
         config = yaml.safe_load(f)
 
-    # 如果配置使用 rack_config 格式，转换为 pods 格式
-    if "rack_config" in config and "pods" not in config:
-        config = _convert_rack_config_to_pods(config)
+    # grouped_pods -> expanded_pods (展开 count, 生成 id)
+    from math_model.L0_entry.topology_format import grouped_pods_to_expanded
+    config = grouped_pods_to_expanded(config)
 
     logger.info(f"加载 Topology 配置: {topology_name}")
     return config
-
-
-def _convert_rack_config_to_pods(config: dict) -> dict:
-    """
-    将 rack_config 格式转换为 pods 格式
-
-    rack_config 格式:
-        pod_count: 1
-        racks_per_pod: 1
-        rack_config:
-            boards:
-            - id: board_1
-              count: 2
-              chips:
-              - name: SG2262
-                count: 8
-
-    pods 格式:
-        pods:
-        - id: pod_0
-          racks:
-          - id: rack_0
-            boards:
-            - id: board_0
-              chips:
-              - id: chip_0
-                ...
-    """
-    pod_count = config.get("pod_count", 1)
-    racks_per_pod = config.get("racks_per_pod", 1)
-    rack_config = config.get("rack_config", {})
-    hardware_params = config.get("hardware_params", {})
-    # 新格式 v2.1.0+: hardware_params.chips 字典
-    chips_dict = hardware_params.get("chips", {})
-    if chips_dict:
-        first_chip_name = next(iter(chips_dict))
-        chip_params = chips_dict[first_chip_name]
-    else:
-        chip_params = {}
-
-    pods = []
-    for pod_idx in range(pod_count):
-        racks = []
-        for rack_idx in range(racks_per_pod):
-            boards = []
-            global_board_idx = 0
-            for board_template in rack_config.get("boards", []):
-                board_count = board_template.get("count", 1)
-                for _ in range(board_count):
-                    chips = []
-                    global_chip_idx = 0
-                    for chip_template in board_template.get("chips", []):
-                        chip_count = chip_template.get("count", 1)
-                        for _ in range(chip_count):
-                            chip_id = f"pod_{pod_idx}/rack_{rack_idx}/board_{global_board_idx}/chip_{global_chip_idx}"
-                            chips.append({
-                                "id": chip_id,
-                                "type": "chip",
-                                "name": chip_template.get("name", chip_params.get("name", "SG2260E")),
-                                "position": [global_chip_idx % 4, global_chip_idx // 4],
-                                # 硬件参数从 chip_params 获取
-                                "num_cores": chip_params.get("num_cores", 64),
-                                "compute_tflops_fp8": chip_params.get("compute_tflops_fp8", 0),
-                                "compute_tflops_bf16": chip_params.get("compute_tflops_bf16", 0),
-                                "memory_capacity_gb": chip_params.get("memory_capacity_gb", 0),
-                                "memory_bandwidth_gbps": chip_params.get("memory_bandwidth_gbps", 0),
-                                "memory_bandwidth_utilization": chip_params.get("memory_bandwidth_utilization", 0.85),
-                                "lmem_capacity_mb": chip_params.get("lmem_capacity_mb", 0),
-                                "lmem_bandwidth_gbps": chip_params.get("lmem_bandwidth_gbps", 0),
-                                # 微架构参数
-                                "cube_m": chip_params.get("cube_m"),
-                                "cube_k": chip_params.get("cube_k"),
-                                "cube_n": chip_params.get("cube_n"),
-                                "sram_size_kb": chip_params.get("sram_size_kb"),
-                                "sram_utilization": chip_params.get("sram_utilization"),
-                                "lane_num": chip_params.get("lane_num"),
-                                "align_bytes": chip_params.get("align_bytes"),
-                                "compute_dma_overlap_rate": chip_params.get("compute_dma_overlap_rate"),
-                            })
-                            global_chip_idx += 1
-
-                    board_id = f"pod_{pod_idx}/rack_{rack_idx}/board_{global_board_idx}"
-                    boards.append({
-                        "id": board_id,
-                        "u_position": board_template.get("u_position", 1),
-                        "u_height": board_template.get("u_height", 2),
-                        "label": board_template.get("name", "Board"),
-                        "chips": chips,
-                    })
-                    global_board_idx += 1
-
-            rack_id = f"pod_{pod_idx}/rack_{rack_idx}"
-            racks.append({
-                "id": rack_id,
-                "position": [rack_idx % 4, rack_idx // 4],
-                "label": f"Rack {rack_idx}",
-                "total_u": rack_config.get("total_u", 42),
-                "boards": boards,
-            })
-
-        pods.append({
-            "id": f"pod_{pod_idx}",
-            "label": f"Pod {pod_idx}",
-            "grid_size": [racks_per_pod, 1],
-            "racks": racks,
-        })
-
-    # 构建转换后的配置
-    converted = {
-        "pods": pods,
-        "connections": config.get("connections", []),
-        "hardware_params": hardware_params,
-        "comm_latency_config": config.get("comm_latency_config", {}),
-    }
-
-    return converted
 
 
 # ============================================
@@ -508,16 +392,15 @@ def _run_event_driven_simulation(
         sp=parallelism_dict.get("sp", 1),
     )
 
-    # 从 hardware_dict 获取芯片参数
-    chips_dict = hardware_dict.get("hardware_params", {}).get("chips", {})
+    # 从 hardware_dict 获取芯片参数（顶层 chips 字典）
+    chips_dict = hardware_dict.get("chips", {})
     if not chips_dict:
-        raise ValueError("硬件配置缺少 'hardware_params.chips' 字段")
+        raise ValueError("硬件配置缺少 'chips' 字段")
     first_chip_name = next(iter(chips_dict))
     chip_hw = chips_dict[first_chip_name]
 
     # 获取互联参数
-    hardware_params = topology_dict.get("hardware_params", {})
-    interconnect = hardware_params.get("interconnect", {})
+    interconnect = topology_dict.get("interconnect", {}).get("links", {})
     c2c_config = interconnect.get("c2c", {})
     b2b_config = interconnect.get("b2b", {})
     r2r_config = interconnect.get("r2r", {})

@@ -173,7 +173,7 @@ export function extractParametersFromResults(tasks: EvaluationTask[]): Map<strin
     'model.num_layers',
     'model.num_attention_heads',
     'model.intermediate_size',
-    // 硬件参数 (注意：新版本在 topology_config.hardware_params.chips 中)
+    // 硬件参数 (注意：新版本在 topology_config.chips 中)
     'hardware.compute_tflops_fp8',
     'hardware.compute_tflops_bf16',
     'hardware.memory_capacity_gb',
@@ -190,7 +190,7 @@ export function extractParametersFromResults(tasks: EvaluationTask[]): Map<strin
       parallelism: task.result?.parallelism || {},
       inference: config.benchmark_config?.inference || config.inference || {},
       model: config.benchmark_config?.model || config.model || {},
-      hardware: config.topology_config?.hardware_params || config.hardware || {},
+      hardware: config.topology_config?.chips || config.topology_config?.hardware_params || config.hardware || {},
     }
 
     parameterPaths.forEach(path => {
@@ -237,7 +237,7 @@ export function aggregateSensitivityData(
       parallelism: task.result?.parallelism || {},
       inference: config.benchmark_config?.inference || config.inference || {},
       model: config.benchmark_config?.model || config.model || {},
-      hardware: config.topology_config?.hardware_params || config.hardware || {},
+      hardware: config.topology_config?.chips || config.topology_config?.hardware_params || config.hardware || {},
     }
 
     const paramValue = extractParamValue(normalizedConfig, parameter)
@@ -296,7 +296,7 @@ export function aggregateHeatmapData(
       parallelism: task.result?.parallelism || {},
       inference: config.benchmark_config?.inference || config.inference || {},
       model: config.benchmark_config?.model || config.model || {},
-      hardware: config.topology_config?.hardware_params || config.hardware || {},
+      hardware: config.topology_config?.chips || config.topology_config?.hardware_params || config.hardware || {},
     }
 
     const xValue = extractParamValue(normalizedConfig, paramX)

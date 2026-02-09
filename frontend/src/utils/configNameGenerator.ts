@@ -84,54 +84,35 @@ export function generateBenchmarkName(
 }
 
 /**
- * 拓扑配置类型（简化版，仅包含名称生成需要的字段）
- */
-interface TopologyForNaming {
-  pod_count?: number
-  racks_per_pod?: number
-  rack_config?: {
-    boards?: Array<{
-      count?: number
-      chips?: Array<{
-        count?: number
-      }>
-    }>
-  }
-}
-
-/**
  * 生成 Topology 名称
  *
  * 格式: P{Pods}-R{Racks}-B{TotalBoards}-C{TotalChips}
  * 示例: P1-R4-B32-C256
  *
- * 只有修改拓扑结构（数量）才更新名称：
- * - pod_count
- * - racks_per_pod
- * - boards[].count
- * - chips[].count
- *
- * 修改 hardware_params、interconnect、comm_latency_config 不影响名称
+ * 从 grouped_pods 格式 (pods[].racks[].boards[].chips[]) 计算统计量。
  */
-export function generateTopologyName(topology: TopologyForNaming): string {
-  const pods = topology.pod_count || 1
-  const racks = topology.racks_per_pod || 1
+export function generateTopologyName(topology: { pods?: Array<{ count?: number; racks?: Array<{ count?: number; boards?: Array<{ count?: number; chips?: Array<{ count?: number }> }> }> }> }): string {
+  const pods = topology.pods || []
+  let totalPods = 0
+  let totalRacks = 0
+  let totalBoards = 0
+  let totalChips = 0
 
-  let boardsPerRack = 0
-  let chipsPerBoard = 0
-
-  if (topology.rack_config?.boards) {
-    for (const board of topology.rack_config.boards) {
-      boardsPerRack += board.count || 1
-      // 取第一个 board 的芯片数作为代表（假设每个 board 配置相同）
-      if (chipsPerBoard === 0 && board.chips) {
-        chipsPerBoard = board.chips.reduce((sum, c) => sum + (c.count || 1), 0)
+  for (const podGroup of pods) {
+    const pc = podGroup.count ?? 1
+    totalPods += pc
+    for (const rackGroup of podGroup.racks ?? []) {
+      const rc = rackGroup.count ?? 1
+      totalRacks += pc * rc
+      for (const board of rackGroup.boards ?? []) {
+        const bc = board.count ?? 1
+        totalBoards += pc * rc * bc
+        for (const chip of board.chips ?? []) {
+          totalChips += pc * rc * bc * (chip.count ?? 1)
+        }
       }
     }
   }
 
-  const totalBoards = racks * boardsPerRack
-  const totalChips = totalBoards * chipsPerBoard
-
-  return `P${pods}-R${racks}-B${totalBoards}-C${totalChips}`
+  return `P${totalPods}-R${totalRacks}-B${totalBoards}-C${totalChips}`
 }

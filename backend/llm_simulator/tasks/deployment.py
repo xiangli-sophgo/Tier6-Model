@@ -30,41 +30,14 @@ class TaskCancelledException(Exception):
 def count_topology_chips(topology: dict) -> int:
     """统计拓扑中的芯片总数
 
-    支持两种拓扑格式：
-    1. 展开格式：pods[].racks[].boards[].chips[]
-    2. 配置文件格式：pod_count, racks_per_pod, rack_config.boards[].count/chips[].count
-
     Args:
-        topology: 拓扑配置字典
+        topology: grouped_pods 格式拓扑配置
 
     Returns:
         芯片总数
     """
-    # 格式1：展开后的 pods/racks/boards/chips 结构
-    if "pods" in topology:
-        total = 0
-        for pod in topology.get("pods", []):
-            for rack in pod.get("racks", []):
-                for board in rack.get("boards", []):
-                    total += len(board.get("chips", []))
-        return total
-
-    # 格式2：配置文件格式 (pod_count, racks_per_pod, rack_config)
-    if "rack_config" in topology:
-        pod_count = topology.get("pod_count", 1)
-        racks_per_pod = topology.get("racks_per_pod", 1)
-        rack_config = topology.get("rack_config", {})
-
-        chips_per_rack = 0
-        for board in rack_config.get("boards", []):
-            board_count = board.get("count", 1)
-            for chip in board.get("chips", []):
-                chip_count = chip.get("count", 1)
-                chips_per_rack += board_count * chip_count
-
-        return pod_count * racks_per_pod * chips_per_rack
-
-    return 0
+    from math_model.L0_entry.topology_format import count_chips
+    return count_chips(topology)
 
 
 def calculate_required_chips(parallelism: dict, model_config: dict) -> int:
@@ -841,8 +814,8 @@ def _transform_to_ds_tpu_format(
 
     # 从拓扑配置中提取硬件配置（只调用一次，后续复用）
     hardware_config = _extract_hardware_config(topology)
-    # 新格式 v2.1.0+: hardware_params.chips 字典
-    chips_dict = hardware_config.get("hardware_params", {}).get("chips", {})
+    # 新格式: 顶层 chips 字典
+    chips_dict = hardware_config.get("chips", {})
     if chips_dict:
         first_chip_name = next(iter(chips_dict))
         chip_hw = chips_dict[first_chip_name]
@@ -975,7 +948,7 @@ def _extract_hardware_config(topology: dict) -> dict:
 
     支持多种配置格式：
     1. hardware_config: 直接嵌入的硬件配置
-    2. hardware_params.chip: 配置文件格式的芯片参数
+    2. chips: 顶层芯片配置字典 + interconnect: 互联配置
     3. pods/racks/boards/chips: 展开后的拓扑结构
 
     Args:
@@ -991,21 +964,14 @@ def _extract_hardware_config(topology: dict) -> dict:
     if "hardware_config" in topology:
         return topology["hardware_config"]
 
-    # 格式2：配置文件格式 hardware_params.chips (新格式)
-    if "hardware_params" in topology:
-        hardware_params = topology["hardware_params"]
-        chips_dict = hardware_params.get("chips", {})
-
-        if chips_dict:
-            first_chip_name = next(iter(chips_dict))
+    # 格式2：配置文件格式 顶层 chips + interconnect (新格式)
+    if "chips" in topology:
+        chips_dict = topology["chips"]
 
         if chips_dict:
             result = {
-                "hardware_params": {
-                    "chips": chips_dict,
-                    "interconnect": hardware_params.get("interconnect", {}),
-                    "comm_latency_config": hardware_params.get("comm_latency_config", {}),
-                }
+                "chips": chips_dict,
+                "interconnect": topology.get("interconnect", {}),
             }
             return result
 
@@ -1023,34 +989,31 @@ def _extract_hardware_config(topology: dict) -> dict:
                             if chips:
                                 chip = chips[0]
                                 chip_name = chip.get("name", "SG2260E")
-                                # 构建新格式的 hardware_params.chips 结构
+                                # 构建新格式的顶层 chips 结构
                                 return {
-                                    "hardware_params": {
-                                        "chips": {
-                                            chip_name: {
-                                                "name": chip_name,
-                                                "num_cores": chip.get("num_cores", 64),
-                                                "compute_tflops_fp8": chip.get("compute_tflops_fp8", 0),
-                                                "compute_tflops_bf16": chip.get("compute_tflops_bf16", 0),
-                                                "memory_capacity_gb": chip.get("memory_capacity_gb", chip.get("memory_gb", 80)),
-                                                "memory_bandwidth_gbps": chip.get("memory_bandwidth_gbps", 3000),
-                                                "memory_bandwidth_utilization": chip.get("memory_bandwidth_utilization", 0.85),
-                                                "lmem_capacity_mb": chip.get("lmem_capacity_mb", 0),
-                                                "lmem_bandwidth_gbps": chip.get("lmem_bandwidth_gbps", 0),
-                                                "cube_m": chip.get("cube_m"),
-                                                "cube_k": chip.get("cube_k"),
-                                                "cube_n": chip.get("cube_n"),
-                                                "sram_size_kb": chip.get("sram_size_kb"),
-                                                "sram_utilization": chip.get("sram_utilization"),
-                                                "lane_num": chip.get("lane_num"),
-                                                "align_bytes": chip.get("align_bytes"),
-                                                "compute_dma_overlap_rate": chip.get("compute_dma_overlap_rate"),
-                                            }
-                                        },
-                                        "interconnect": {},
-                                        "comm_latency_config": {},
-                                    }
+                                    "chips": {
+                                        chip_name: {
+                                            "name": chip_name,
+                                            "num_cores": chip.get("num_cores", 64),
+                                            "compute_tflops_fp8": chip.get("compute_tflops_fp8", 0),
+                                            "compute_tflops_bf16": chip.get("compute_tflops_bf16", 0),
+                                            "memory_capacity_gb": chip.get("memory_capacity_gb", chip.get("memory_gb", 80)),
+                                            "memory_bandwidth_gbps": chip.get("memory_bandwidth_gbps", 3000),
+                                            "memory_bandwidth_utilization": chip.get("memory_bandwidth_utilization", 0.85),
+                                            "lmem_capacity_mb": chip.get("lmem_capacity_mb", 0),
+                                            "lmem_bandwidth_gbps": chip.get("lmem_bandwidth_gbps", 0),
+                                            "cube_m": chip.get("cube_m"),
+                                            "cube_k": chip.get("cube_k"),
+                                            "cube_n": chip.get("cube_n"),
+                                            "sram_size_kb": chip.get("sram_size_kb"),
+                                            "sram_utilization": chip.get("sram_utilization"),
+                                            "lane_num": chip.get("lane_num"),
+                                            "align_bytes": chip.get("align_bytes"),
+                                            "compute_dma_overlap_rate": chip.get("compute_dma_overlap_rate"),
+                                        }
+                                    },
+                                    "interconnect": {},
                                 }
 
     # 如果找不到芯片配置，抛出错误
-    raise ValueError("无法从拓扑配置中提取芯片硬件配置，请确保拓扑中包含有效的芯片数据或 hardware_params.chips 配置")
+    raise ValueError("无法从拓扑配置中提取芯片硬件配置，请确保拓扑中包含有效的芯片数据或顶层 chips 配置")

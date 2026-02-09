@@ -338,8 +338,11 @@ export const ConfigPanel: React.FC<ConfigPanelProps> = ({
         pod_count: podCount,
         racks_per_pod: racksPerPod,
         rack_config: cleanRackConfig,
-        hardware_params: hardwareParams,
-        comm_latency_config: commLatencyConfig,
+        chips: hardwareParams?.chips,
+        interconnect: {
+          links: hardwareParams?.interconnect,
+          comm_params: commLatencyConfig,
+        },
       }
 
       // 保存所有连接，清理冗余的 bandwidth/latency（除了 custom 类型）
@@ -407,38 +410,25 @@ export const ConfigPanel: React.FC<ConfigPanelProps> = ({
     if (config.manual_connections && onManualConnectionConfigChange) {
       onManualConnectionConfigChange(config.manual_connections)
     }
-    // 加载硬件参数配置（支持新格式 chips 和旧格式 chip）
-    if (config.hardware_params) {
-      const hw = config.hardware_params as any
-      if (hw.chips) {
-        // 新格式：多芯片配置
-        setHardwareParams({
-          chips: { ...DEFAULT_HARDWARE_PARAMS.chips, ...hw.chips },
-          interconnect: {
-            c2c: { ...DEFAULT_HARDWARE_PARAMS.interconnect.c2c, ...hw.interconnect?.c2c },
-            b2b: { ...DEFAULT_HARDWARE_PARAMS.interconnect.b2b, ...hw.interconnect?.b2b },
-            r2r: { ...DEFAULT_HARDWARE_PARAMS.interconnect.r2r, ...hw.interconnect?.r2r },
-            p2p: { ...DEFAULT_HARDWARE_PARAMS.interconnect.p2p, ...hw.interconnect?.p2p },
-          },
-        })
-      } else if (hw.chip) {
-        // 旧格式兼容：单芯片配置转换为多芯片
-        const chipName = hw.chip.name || 'SG2262'
-        setHardwareParams({
-          chips: { [chipName]: createDefaultChipPreset(chipName) },
-          interconnect: {
-            c2c: { ...DEFAULT_HARDWARE_PARAMS.interconnect.c2c, ...hw.interconnect?.c2c },
-            b2b: { ...DEFAULT_HARDWARE_PARAMS.interconnect.b2b, ...hw.interconnect?.b2b },
-            r2r: { ...DEFAULT_HARDWARE_PARAMS.interconnect.r2r, ...hw.interconnect?.r2r },
-            p2p: { ...DEFAULT_HARDWARE_PARAMS.interconnect.p2p, ...hw.interconnect?.p2p },
-          },
-        })
-      }
+    // 加载硬件参数配置（支持新格式 chips/interconnect 和旧格式 hardware_params）
+    const configChips = config.chips || (config as any).hardware_params?.chips
+    const configInterconnectLinks = config.interconnect?.links || (config as any).hardware_params?.interconnect
+    if (configChips) {
+      setHardwareParams({
+        chips: { ...DEFAULT_HARDWARE_PARAMS.chips, ...configChips },
+        interconnect: {
+          c2c: { ...DEFAULT_HARDWARE_PARAMS.interconnect.c2c, ...configInterconnectLinks?.c2c },
+          b2b: { ...DEFAULT_HARDWARE_PARAMS.interconnect.b2b, ...configInterconnectLinks?.b2b },
+          r2r: { ...DEFAULT_HARDWARE_PARAMS.interconnect.r2r, ...configInterconnectLinks?.r2r },
+          p2p: { ...DEFAULT_HARDWARE_PARAMS.interconnect.p2p, ...configInterconnectLinks?.p2p },
+        },
+      })
     }
 
     // 加载通信延迟配置
-    if ((config as any).comm_latency_config) {
-      setCommLatencyConfig((config as any).comm_latency_config)
+    const configCommParams = config.interconnect?.comm_params || (config as any).comm_latency_config
+    if (configCommParams) {
+      setCommLatencyConfig(configCommParams)
     }
 
     setLoadModalOpen(false)

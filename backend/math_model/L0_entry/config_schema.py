@@ -163,12 +163,11 @@ def validate_model_config(config: dict[str, Any], source: str = "") -> list[str]
 
 TOPOLOGY_REQUIRED_FIELDS = [
     "name",
-    "pod_count",
 ]
 
 
 def validate_topology_config(config: dict[str, Any], source: str = "") -> list[str]:
-    """验证拓扑配置
+    """验证拓扑配置 (grouped_pods 格式)
 
     Args:
         config: 拓扑配置字典
@@ -184,21 +183,42 @@ def validate_topology_config(config: dict[str, Any], source: str = "") -> list[s
             source_info = f" in {source}" if source else ""
             errors.append(f"Missing required field '{f}'{source_info}")
 
-    if config.get("pod_count", 0) <= 0:
-        errors.append("pod_count must be positive")
+    # pods 结构验证
+    pods = config.get("pods")
+    if not pods:
+        source_info = f" in {source}" if source else ""
+        errors.append(f"Missing required field 'pods'{source_info}")
+    elif isinstance(pods, list):
+        for i, pod_group in enumerate(pods):
+            if not isinstance(pod_group, dict):
+                errors.append(f"pods[{i}] must be a dict")
+                continue
+            racks = pod_group.get("racks")
+            if not racks:
+                errors.append(f"pods[{i}] missing 'racks'")
+                continue
+            for j, rack_group in enumerate(racks):
+                boards = rack_group.get("boards")
+                if not boards:
+                    errors.append(f"pods[{i}].racks[{j}] missing 'boards'")
+                    continue
+                for k, board in enumerate(boards):
+                    chips = board.get("chips")
+                    if not chips:
+                        errors.append(f"pods[{i}].racks[{j}].boards[{k}] missing 'chips'")
 
-    # interconnect 必需
-    hw = config.get("hardware_params", {})
-    interconnect = hw.get("interconnect", {})
+    # interconnect.links 必需
+    ic = config.get("interconnect", {})
+    links = ic.get("links", {})
     for level in ["c2c", "b2b", "r2r", "p2p"]:
-        if level not in interconnect:
-            errors.append(f"Missing 'hardware_params.interconnect.{level}'")
+        if level not in links:
+            errors.append(f"Missing 'interconnect.links.{level}'")
         else:
-            level_config = interconnect[level]
+            level_config = links[level]
             if "bandwidth_gbps" not in level_config:
-                errors.append(f"Missing 'hardware_params.interconnect.{level}.bandwidth_gbps'")
+                errors.append(f"Missing 'interconnect.links.{level}.bandwidth_gbps'")
             if "latency_us" not in level_config:
-                errors.append(f"Missing 'hardware_params.interconnect.{level}.latency_us'")
+                errors.append(f"Missing 'interconnect.links.{level}.latency_us'")
 
     return errors
 
@@ -367,6 +387,7 @@ class BenchmarkCreateRequest(BaseModel):
     id: str = Field(...)
     name: str = Field(...)
     model: Any = Field(...)  # 字符串引用 (如 "deepseek-v3") 或完整配置 dict
+    topology: Optional[str] = None  # 拓扑引用名称 (如 "P1-R1-B1-C8")
     inference: Dict[str, Any] = Field(...)
 
 
@@ -374,37 +395,36 @@ class BenchmarkUpdateRequest(BaseModel):
     """更新 Benchmark 请求"""
     name: Optional[str] = None
     model: Optional[Any] = None  # 字符串引用或完整配置 dict
+    topology: Optional[str] = None  # 拓扑引用名称
     inference: Optional[Dict[str, Any]] = None
 
 
 class TopologyCreateRequest(BaseModel):
-    """创建拓扑请求"""
+    """创建拓扑请求 (grouped_pods 格式)"""
     model_config = {"extra": "allow"}
 
     name: str = Field(...)
     description: Optional[str] = None
-    pod_count: Optional[int] = None
-    racks_per_pod: Optional[int] = None
-    rack_config: Optional[Dict[str, Any]] = None
+    pods: List[Dict[str, Any]] = Field(...)
+    chips: Optional[Dict[str, Any]] = None
+    interconnect: Optional[Dict[str, Any]] = None
     switch_config: Optional[Dict[str, Any]] = None
     manual_connections: Optional[Dict[str, Any]] = None
     generated_topology: Optional[Dict[str, Any]] = None
-    hardware_params: Optional[Dict[str, Any]] = None
 
 
 class TopologyUpdateRequest(BaseModel):
-    """更新拓扑请求"""
+    """更新拓扑请求 (grouped_pods 格式)"""
     model_config = {"extra": "allow"}
 
     name: Optional[str] = None
     description: Optional[str] = None
-    pod_count: Optional[int] = None
-    racks_per_pod: Optional[int] = None
-    rack_config: Optional[Dict[str, Any]] = None
+    pods: Optional[List[Dict[str, Any]]] = None
+    chips: Optional[Dict[str, Any]] = None
+    interconnect: Optional[Dict[str, Any]] = None
     switch_config: Optional[Dict[str, Any]] = None
     manual_connections: Optional[Dict[str, Any]] = None
     generated_topology: Optional[Dict[str, Any]] = None
-    hardware_params: Optional[Dict[str, Any]] = None
 
 
 # ============================================
@@ -483,6 +503,7 @@ class BenchmarkInfo(BaseModel):
     """Benchmark 信息"""
     id: str
     name: str
+    topology: Optional[str] = None
     format: str = "yaml"
     filename: str
 

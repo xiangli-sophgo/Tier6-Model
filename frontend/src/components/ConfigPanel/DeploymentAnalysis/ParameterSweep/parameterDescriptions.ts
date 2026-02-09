@@ -61,16 +61,16 @@ export const PARAMETER_DESCRIPTIONS: Record<string, string> = {
   'latency_us': '互联延迟（单向）',
 
   // === 通信延迟配置 ===
-  'comm_latency_config.rtt_tp_us': '张量并行通信往返时延',
-  'comm_latency_config.rtt_ep_us': '专家并行通信往返时延',
-  'comm_latency_config.bandwidth_utilization': '网络带宽利用率（考虑拥塞）',
-  'comm_latency_config.sync_latency_us': 'AllReduce同步延迟',
-  'comm_latency_config.switch_delay_us': '交换机转发延迟',
-  'comm_latency_config.cable_delay_us': '线缆传输延迟',
-  'comm_latency_config.memory_read_latency_us': 'HBM读取延迟',
-  'comm_latency_config.memory_write_latency_us': 'HBM写入延迟',
-  'comm_latency_config.noc_latency_us': '片上网络（NoC）延迟',
-  'comm_latency_config.die_to_die_latency_us': 'Die间互联延迟',
+  'interconnect.comm_params.rtt_tp_us': '张量并行通信往返时延',
+  'interconnect.comm_params.rtt_ep_us': '专家并行通信往返时延',
+  'interconnect.comm_params.bandwidth_utilization': '网络带宽利用率（考虑拥塞）',
+  'interconnect.comm_params.sync_latency_us': 'AllReduce同步延迟',
+  'interconnect.comm_params.switch_delay_us': '交换机转发延迟',
+  'interconnect.comm_params.cable_delay_us': '线缆传输延迟',
+  'interconnect.comm_params.memory_read_latency_us': 'HBM读取延迟',
+  'interconnect.comm_params.memory_write_latency_us': 'HBM写入延迟',
+  'interconnect.comm_params.noc_latency_us': '片上网络（NoC）延迟',
+  'interconnect.comm_params.die_to_die_latency_us': 'Die间互联延迟',
 
   // === 拓扑配置 ===
   'topology.pod_count': 'Pod数量（集群规模）',

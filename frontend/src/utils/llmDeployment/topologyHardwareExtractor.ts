@@ -197,7 +197,7 @@ export function extractChipGroupsFromConfig(
       // 默认芯片配置 (使用 Tier6 格式)
       const defaultChipConfig: ChipHardwareConfig = createDefaultChipPreset(chip.name)
 
-      // 方案1: 从拓扑配置的 hardware_params.chips 直接获取（优先级最高）
+      // 方案1: 从拓扑配置的 chips 字典直接获取（优先级最高）
       if (hardwareParams?.chips?.[chip.name]) {
         chipConfig = hardwareParams.chips[chip.name] as ChipHardwareConfig
       }
@@ -316,9 +316,9 @@ export function generateHardwareConfig(
   }
 
   const result = {
-    hardware_params: {
-      chips,
-      interconnect
+    chips,
+    interconnect: {
+      links: interconnect
     }
   }
 

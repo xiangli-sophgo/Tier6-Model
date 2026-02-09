@@ -2,6 +2,9 @@ name: 'SG2262'
 architecture: TPU_V7
 process: 7nm
 frequency_ghz: 1
+align_bytes: 32
+compute_dma_overlap_rate: 0.8
+compute_efficiency: 0.9
 cores:
   count: 4
   lanes_per_core: 64
@@ -43,8 +46,6 @@ dma_engines:
     bandwidth_gbps: 68
     startup_latency_ns: 100
     efficiency: 0.9
-align_bytes: 32
-compute_dma_overlap_rate: 0.8
 interconnect:
   NoC:
     topology: Mesh

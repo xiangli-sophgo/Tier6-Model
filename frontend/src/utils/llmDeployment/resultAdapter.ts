@@ -76,8 +76,8 @@ export function adaptSimulationResult(
   const stats = simulation.stats;
 
   // 1. 显存分析（简化版，后端应提供详细数据）
-  // 从 hardware.hardware_params.chips 中获取第一个芯片的容量
-  const chips = hardware?.hardware_params?.chips || {};
+  // 从 hardware.chips 中获取第一个芯片的容量
+  const chips = hardware?.chips || {};
   const firstChipName = Object.keys(chips)[0];
 
   if (!firstChipName || !chips[firstChipName]?.memory_capacity_gb) {

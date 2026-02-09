@@ -84,16 +84,16 @@ const PARAMETER_METADATA: Record<string, ParameterMetadata> = {
   'latency_us': { label: '延迟', unit: 'μs', defaultRange: { min: 0.1, max: 10, step: 0.1 } },
 
   // === 通信延迟配置 ===
-  'comm_latency_config.rtt_tp_us': { label: 'TP RTT', unit: 'μs', defaultRange: { min: 0.1, max: 2, step: 0.1 } },
-  'comm_latency_config.rtt_ep_us': { label: 'EP RTT', unit: 'μs', defaultRange: { min: 0.1, max: 2, step: 0.1 } },
-  'comm_latency_config.bandwidth_utilization': { label: '带宽利用率', defaultRange: { min: 0.7, max: 1.0, step: 0.05 } },
-  'comm_latency_config.sync_latency_us': { label: '同步延迟', unit: 'μs', defaultRange: { min: 0, max: 5, step: 0.1 } },
-  'comm_latency_config.switch_delay_us': { label: '交换机延迟', unit: 'μs', defaultRange: { min: 0.5, max: 5, step: 0.5 } },
-  'comm_latency_config.cable_delay_us': { label: '线缆延迟', unit: 'μs', defaultRange: { min: 0.01, max: 0.5, step: 0.01 } },
-  'comm_latency_config.memory_read_latency_us': { label: '显存读延迟', unit: 'μs', defaultRange: { min: 0.05, max: 1, step: 0.05 } },
-  'comm_latency_config.memory_write_latency_us': { label: '显存写延迟', unit: 'μs', defaultRange: { min: 0.01, max: 0.5, step: 0.01 } },
-  'comm_latency_config.noc_latency_us': { label: 'NoC延迟', unit: 'μs', defaultRange: { min: 0.01, max: 0.5, step: 0.01 } },
-  'comm_latency_config.die_to_die_latency_us': { label: 'Die2Die延迟', unit: 'μs', defaultRange: { min: 0.01, max: 0.5, step: 0.01 } },
+  'interconnect.comm_params.rtt_tp_us': { label: 'TP RTT', unit: 'μs', defaultRange: { min: 0.1, max: 2, step: 0.1 } },
+  'interconnect.comm_params.rtt_ep_us': { label: 'EP RTT', unit: 'μs', defaultRange: { min: 0.1, max: 2, step: 0.1 } },
+  'interconnect.comm_params.bandwidth_utilization': { label: '带宽利用率', defaultRange: { min: 0.7, max: 1.0, step: 0.05 } },
+  'interconnect.comm_params.sync_latency_us': { label: '同步延迟', unit: 'μs', defaultRange: { min: 0, max: 5, step: 0.1 } },
+  'interconnect.comm_params.switch_delay_us': { label: '交换机延迟', unit: 'μs', defaultRange: { min: 0.5, max: 5, step: 0.5 } },
+  'interconnect.comm_params.cable_delay_us': { label: '线缆延迟', unit: 'μs', defaultRange: { min: 0.01, max: 0.5, step: 0.01 } },
+  'interconnect.comm_params.memory_read_latency_us': { label: '显存读延迟', unit: 'μs', defaultRange: { min: 0.05, max: 1, step: 0.05 } },
+  'interconnect.comm_params.memory_write_latency_us': { label: '显存写延迟', unit: 'μs', defaultRange: { min: 0.01, max: 0.5, step: 0.01 } },
+  'interconnect.comm_params.noc_latency_us': { label: 'NoC延迟', unit: 'μs', defaultRange: { min: 0.01, max: 0.5, step: 0.01 } },
+  'interconnect.comm_params.die_to_die_latency_us': { label: 'Die2Die延迟', unit: 'μs', defaultRange: { min: 0.01, max: 0.5, step: 0.01 } },
 
   // === 拓扑配置 ===
   'topology.pod_count': { label: 'Pod数量', defaultRange: { min: 1, max: 16, step: 1 } },
@@ -231,7 +231,7 @@ function getCategoryFromPath(fullPath: string): SweepableParameter['category'] {
   if (fullPath.startsWith('model.')) return 'model'
   if (fullPath.startsWith('inference.')) return 'inference'
   if (fullPath.startsWith('parallelism.')) return 'parallelism'
-  if (fullPath.startsWith('topology.') || fullPath.startsWith('hardware.') || fullPath.startsWith('comm_latency_config.')) {
+  if (fullPath.startsWith('topology.') || fullPath.startsWith('hardware.') || fullPath.startsWith('interconnect.comm_params.') || fullPath.startsWith('comm_latency_config.')) {
     return 'topology'
   }
   return 'hardware'
@@ -342,14 +342,22 @@ export function extractSweepableParameters(
       })
     }
 
-    // 提取硬件参数
-    if (topologyConfig.hardware_params) {
-      traverseObject(topologyConfig.hardware_params, 'topology.hardware_params', 'topology', params)
+    // 提取芯片参数（新格式: chips, 旧格式: hardware_params）
+    const topoChips = topologyConfig.chips || (topologyConfig as any).hardware_params?.chips
+    if (topoChips) {
+      traverseObject(topoChips, 'topology.chips', 'topology', params)
     }
 
-    // 提取通信延迟配置
-    if (topologyConfig.comm_latency_config) {
-      traverseObject(topologyConfig.comm_latency_config, 'comm_latency_config', 'topology', params)
+    // 提取互联链路参数（新格式: interconnect.links, 旧格式: hardware_params.interconnect）
+    const topoInterconnectLinks = topologyConfig.interconnect?.links || (topologyConfig as any).hardware_params?.interconnect
+    if (topoInterconnectLinks) {
+      traverseObject(topoInterconnectLinks, 'topology.interconnect.links', 'topology', params)
+    }
+
+    // 提取通信参数（新格式: interconnect.comm_params, 旧格式: comm_latency_config）
+    const topoCommParams = topologyConfig.interconnect?.comm_params || (topologyConfig as any).comm_latency_config
+    if (topoCommParams) {
+      traverseObject(topoCommParams, 'interconnect.comm_params', 'topology', params)
     }
 
     // 提取网络配置

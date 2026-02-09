@@ -578,8 +578,8 @@ def generate_link_traffic_stats(
     b2b_latency = 0.35  # us
 
     if topology_config:
-        hw = topology_config.get("hardware_params", {})
-        interconnect = hw.get("interconnect", {})
+        ic = topology_config.get("interconnect", {})
+        interconnect = ic.get("links", {})
         c2c = interconnect.get("c2c", {})
         b2b = interconnect.get("b2b", {})
         c2c_bandwidth = c2c.get("bandwidth_gbps", c2c_bandwidth)

@@ -309,9 +309,9 @@ export const AnalysisResultDisplay: React.FC<AnalysisResultDisplayProps> = ({
 
   // 各章节折叠状态
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
-    performance: true,
-    suggestions: true,
-    candidates: true,
+    performance: false,
+    suggestions: false,
+    candidates: false,
   })
 
   // 从历史记录加载（父组件会自动切换到详情视图）

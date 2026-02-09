@@ -60,7 +60,7 @@ export interface SavedConfig {
         name: string;
         count: number;
         preset_id?: string;
-        // 芯片详细配置现在存储在 hardware_params.chips 中（使用 Tier6 ChipPreset 格式）
+        // 芯片详细配置现在存储在顶层 chips 字典中（使用 Tier6 ChipPreset 格式）
       }>;
     }>;
   };
@@ -80,32 +80,33 @@ export interface SavedConfig {
   /** 网络配置 (带宽/延迟参数) */
   network_config?: NetworkConfig;
 
-  /** 通信延迟配置 (统一所有延迟相关参数) */
-  comm_latency_config?: {
-    // 协议相关
-    rtt_tp_us: number;
-    rtt_ep_us: number;
-    bandwidth_utilization: number;
-    sync_latency_us: number;
-    // 网络基础设施
-    switch_delay_us: number;
-    cable_delay_us: number;
-    // 芯片延迟
-    memory_read_latency_us: number;
-    memory_write_latency_us: number;
-    noc_latency_us: number;
-    die_to_die_latency_us: number;
-  };
+  /** 芯片配置字典 - 使用 Tier6 ChipPreset 格式 */
+  chips?: Record<string, ChipPreset>;
 
-  /** 硬件参数配置 (芯片参数 + 互联参数) - 使用 Tier6 ChipPreset 格式 */
-  hardware_params?: {
-    // 多芯片独立配置，key = chip.name，使用 Tier6 ChipPreset 格式
-    chips: Record<string, ChipPreset>;
-    interconnect: {
+  /** 互联配置 (层级链路 + 通信参数) */
+  interconnect?: {
+    /** 层级互联链路 */
+    links: {
       c2c: { bandwidth_gbps: number; latency_us: number };
       b2b: { bandwidth_gbps: number; latency_us: number };
       r2r: { bandwidth_gbps: number; latency_us: number };
       p2p: { bandwidth_gbps: number; latency_us: number };
+    };
+    /** 通信参数 (统一所有延迟相关参数) */
+    comm_params?: {
+      // 协议相关
+      rtt_tp_us: number;
+      rtt_ep_us: number;
+      bandwidth_utilization: number;
+      sync_latency_us: number;
+      // 网络基础设施
+      switch_delay_us: number;
+      cable_delay_us: number;
+      // 芯片延迟
+      memory_read_latency_us: number;
+      memory_write_latency_us: number;
+      noc_latency_us: number;
+      die_to_die_latency_us: number;
     };
   };
 }

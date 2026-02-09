@@ -248,13 +248,14 @@ export const TaskDetailPanel: React.FC<TaskDetailPanelProps> = ({ task, onAnalyz
   // 旧格式: topology
   const topologyConfig = (configSnapshot.topology_config || configSnapshot.topology || {}) as Record<string, unknown>
 
-  // 从拓扑配置中提取硬件参数
+  // 从拓扑配置中提取硬件参数（新格式: chips/interconnect 在顶层, 旧格式: hardware_params 包装）
   const hardwareParams = topologyConfig.hardware_params as Record<string, unknown> | undefined
-  const chipsConfig = hardwareParams?.chips as Record<string, Record<string, unknown>> | undefined
-  const interconnectConfig = hardwareParams?.interconnect as Record<string, Record<string, unknown>> | undefined
+  const chipsConfig = (topologyConfig.chips || hardwareParams?.chips) as Record<string, Record<string, unknown>> | undefined
+  const interconnectLinks = (topologyConfig.interconnect as any)?.links || hardwareParams?.interconnect
+  const interconnectConfig = interconnectLinks as Record<string, Record<string, unknown>> | undefined
 
-  // 通信配置（可能在 topology_config 或 hardware_params 中）
-  const commLatencyConfig = (topologyConfig.comm_latency_config || hardwareParams?.comm_latency_config) as Record<string, unknown> | undefined
+  // 通信配置（新格式: interconnect.comm_params, 旧格式: comm_latency_config）
+  const commLatencyConfig = ((topologyConfig.interconnect as any)?.comm_params || topologyConfig.comm_latency_config || hardwareParams?.comm_latency_config) as Record<string, unknown> | undefined
 
   // ============================================
   // 计算拓扑规模
