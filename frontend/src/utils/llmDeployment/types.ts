@@ -4,7 +4,7 @@
  * 定义模型参数、硬件配置、部署方案、分析结果等核心类型
  */
 
-import { ChipPreset } from '../../types/tier6';
+import { ChipPreset } from '../../types/math_model';
 
 // ============================================
 // 数据类型
@@ -203,9 +203,9 @@ export interface InferenceConfig {
 export type FlopsDtype = 'BF16' | 'FP16' | 'FP8' | 'INT8';
 
 /**
- * 芯片硬件配置 - 使用 Tier6 ChipPreset 格式
+ * 芯片硬件配置 - 使用 ChipPreset 格式
  *
- * 参见 types/tier6.ts 中的 ChipPreset 接口定义
+ * 参见 types/math_model.ts 中的 ChipPreset 接口定义
  */
 export type ChipHardwareConfig = ChipPreset;
 

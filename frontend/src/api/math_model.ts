@@ -1,24 +1,24 @@
 /**
- * Tier6 后端 API 模块
+ * Math Model 后端 API 模块
  *
- * 提供与 tier6 仿真引擎的接口
+ * 提供与 math_model 仿真引擎的接口
  */
 
 import type {
   ChipPreset,
   ModelPreset,
   BenchmarkListItem,
-  Tier6BenchmarkConfig,
+  BenchmarkConfig,
   TopologyListItem,
-  Tier6TopologyConfig,
-  Tier6SimulateRequest,
-  Tier6SimulateResponse,
+  TopologyConfig,
+  SimulateRequest,
+  SimulateResponse,
   ValidationResult,
-  Tier6EvaluationRequest,
-  Tier6TaskStatus,
-  Tier6TaskResults,
-  Tier6Experiment,
-} from '../types/tier6';
+  EvaluationRequest,
+  TaskStatus,
+  TaskResults,
+  Experiment,
+} from '../types/math_model';
 
 // API 统一使用 /api 前缀（通过 vite proxy 转发）
 const API_BASE = '';
@@ -151,7 +151,7 @@ export async function getBenchmarks(): Promise<{ benchmarks: BenchmarkListItem[]
 /**
  * 获取 Benchmark 详情
  */
-export async function getBenchmark(id: string): Promise<Tier6BenchmarkConfig> {
+export async function getBenchmark(id: string): Promise<BenchmarkConfig> {
   const res = await fetch(`${API_BASE}/api/benchmarks/${encodeURIComponent(id)}`);
   if (!res.ok) throw new Error(`Failed to fetch benchmark: ${res.statusText}`);
   return res.json();
@@ -160,7 +160,7 @@ export async function getBenchmark(id: string): Promise<Tier6BenchmarkConfig> {
 /**
  * 创建 Benchmark
  */
-export async function createBenchmark(config: Tier6BenchmarkConfig): Promise<{ id: string }> {
+export async function createBenchmark(config: BenchmarkConfig): Promise<{ id: string }> {
   const res = await fetch(`${API_BASE}/api/benchmarks`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -173,7 +173,7 @@ export async function createBenchmark(config: Tier6BenchmarkConfig): Promise<{ i
 /**
  * 更新 Benchmark
  */
-export async function updateBenchmark(id: string, config: Tier6BenchmarkConfig): Promise<void> {
+export async function updateBenchmark(id: string, config: BenchmarkConfig): Promise<void> {
   const res = await fetch(`${API_BASE}/api/benchmarks/${encodeURIComponent(id)}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
@@ -206,7 +206,7 @@ export async function getTopologies(): Promise<{ topologies: TopologyListItem[] 
 /**
  * 获取拓扑详情（含解析后的芯片参数）
  */
-export async function getTopology(name: string): Promise<Tier6TopologyConfig> {
+export async function getTopology(name: string): Promise<TopologyConfig> {
   const res = await fetch(`${API_BASE}/api/topologies/${encodeURIComponent(name)}`);
   if (!res.ok) throw new Error(`Failed to fetch topology: ${res.statusText}`);
   return res.json();
@@ -215,7 +215,7 @@ export async function getTopology(name: string): Promise<Tier6TopologyConfig> {
 /**
  * 创建拓扑
  */
-export async function createTopology(config: Tier6TopologyConfig): Promise<{ name: string }> {
+export async function createTopology(config: TopologyConfig): Promise<{ name: string }> {
   const res = await fetch(`${API_BASE}/api/topologies`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -228,7 +228,7 @@ export async function createTopology(config: Tier6TopologyConfig): Promise<{ nam
 /**
  * 更新拓扑
  */
-export async function updateTopology(name: string, config: Tier6TopologyConfig): Promise<void> {
+export async function updateTopology(name: string, config: TopologyConfig): Promise<void> {
   const res = await fetch(`${API_BASE}/api/topologies/${encodeURIComponent(name)}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
@@ -252,7 +252,7 @@ export async function deleteTopology(name: string): Promise<void> {
 /**
  * 同步仿真
  */
-export async function simulate(request: Tier6SimulateRequest): Promise<Tier6SimulateResponse> {
+export async function simulate(request: SimulateRequest): Promise<SimulateResponse> {
   const res = await fetch(`${API_BASE}/api/simulate`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -280,7 +280,7 @@ export async function validateConfig(config: Record<string, unknown>): Promise<V
 /**
  * 提交评估任务
  */
-export async function submitEvaluation(request: Tier6EvaluationRequest): Promise<{ task_id: string; experiment_id: number }> {
+export async function submitEvaluation(request: EvaluationRequest): Promise<{ task_id: string; experiment_id: number }> {
   const res = await fetch(`${API_BASE}/api/evaluation/submit`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -293,7 +293,7 @@ export async function submitEvaluation(request: Tier6EvaluationRequest): Promise
 /**
  * 获取任务状态
  */
-export async function getTaskStatus(taskId: string): Promise<Tier6TaskStatus> {
+export async function getTaskStatus(taskId: string): Promise<TaskStatus> {
   const res = await fetch(`${API_BASE}/api/evaluation/tasks/${encodeURIComponent(taskId)}`);
   if (!res.ok) throw new Error(`Failed to fetch task status: ${res.statusText}`);
   return res.json();
@@ -302,7 +302,7 @@ export async function getTaskStatus(taskId: string): Promise<Tier6TaskStatus> {
 /**
  * 获取任务结果
  */
-export async function getTaskResults(taskId: string): Promise<Tier6TaskResults> {
+export async function getTaskResults(taskId: string): Promise<TaskResults> {
   const res = await fetch(`${API_BASE}/api/evaluation/tasks/${encodeURIComponent(taskId)}/results`);
   if (!res.ok) throw new Error(`Failed to fetch task results: ${res.statusText}`);
   return res.json();
@@ -323,7 +323,7 @@ export async function cancelTask(taskId: string): Promise<void> {
 /**
  * 获取实验列表
  */
-export async function getExperiments(params?: { skip?: number; limit?: number }): Promise<{ experiments: Tier6Experiment[]; total: number }> {
+export async function getExperiments(params?: { skip?: number; limit?: number }): Promise<{ experiments: Experiment[]; total: number }> {
   const url = new URL(`${API_BASE}/api/evaluation/experiments`);
   if (params?.skip !== undefined) url.searchParams.set('skip', String(params.skip));
   if (params?.limit !== undefined) url.searchParams.set('limit', String(params.limit));
@@ -335,7 +335,7 @@ export async function getExperiments(params?: { skip?: number; limit?: number })
 /**
  * 获取实验详情
  */
-export async function getExperiment(id: number): Promise<Tier6Experiment> {
+export async function getExperiment(id: number): Promise<Experiment> {
   const res = await fetch(`${API_BASE}/api/evaluation/experiments/${id}`);
   if (!res.ok) throw new Error(`Failed to fetch experiment: ${res.statusText}`);
   return res.json();
@@ -401,18 +401,18 @@ export type {
   NSAConfig,
   RoPEConfig,
   BenchmarkListItem,
-  Tier6BenchmarkConfig,
-  Tier6InferenceConfig,
+  BenchmarkConfig,
+  BackendInferenceConfig,
   TopologyListItem,
-  Tier6TopologyConfig,
+  TopologyConfig,
   CommLatencyConfig,
-  Tier6EvaluationRequest,
-  Tier6ManualParallelism,
-  Tier6TaskStatus,
-  Tier6TaskResults,
-  Tier6EvaluationResult,
-  Tier6Experiment,
-  Tier6SimulateRequest,
-  Tier6SimulateResponse,
+  EvaluationRequest,
+  ManualParallelism,
+  TaskStatus,
+  TaskResults,
+  EvaluationResult,
+  Experiment,
+  SimulateRequest,
+  SimulateResponse,
   ValidationResult,
-} from '../types/tier6';
+} from '../types/math_model';

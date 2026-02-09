@@ -13,8 +13,8 @@ import {
   HardwareConfig,
 } from './types';
 import { modelPresetToLLMConfig } from './configAdapters';
-import { getChipPresets as tier6GetChipPresets } from '../../api/tier6';
-import type { ModelPreset } from '../../types/tier6';
+import { getChipPresets as backendGetChipPresets } from '../../api/math_model';
+import type { ModelPreset } from '../../types/math_model';
 
 // ============================================
 // 模型预设（全部从后端获取）
@@ -46,10 +46,10 @@ function estimateModelParamsFromPreset(preset: ModelPreset): string {
 
   let total: number;
 
-  if (preset.moe) {
-    const E = preset.moe.num_routed_experts;
-    const S = preset.moe.num_shared_experts || 0;
-    const expertI = preset.moe.intermediate_size;
+  if (preset.MoE) {
+    const E = preset.MoE.num_routed_experts;
+    const S = preset.MoE.num_shared_experts || 0;
+    const expertI = preset.MoE.intermediate_size;
     const ffn = 3 * H * expertI * L * (E + S);
     const router = E * H * L;
     total = embedding + attention + ffn + layerNorm + router;
@@ -136,19 +136,19 @@ let backendPresetsLoaded = false;
 /** 后端芯片互联配置缓存 */
 let backendChipInterconnectCache: Record<string, ChipInterconnectConfig> = {};
 
-/** 从后端加载芯片预设 (使用 Tier6 API) */
+/** 从后端加载芯片预设 */
 export async function loadBackendChipPresets(): Promise<void> {
   if (backendPresetsLoaded) return;
 
   try {
-    const data = await tier6GetChipPresets();
+    const data = await backendGetChipPresets();
     const presets = data.presets || [];
 
-    // 直接使用 Tier6 ChipPreset 格式
+    // 直接使用 ChipPreset 格式
     backendChipPresetsCache = {};
     backendChipInterconnectCache = {};
     for (const preset of presets) {
-      // 芯片配置直接使用 Tier6 格式
+      // 芯片配置直接使用后端格式
       backendChipPresetsCache[preset.name] = {
         ...preset.config,
         name: preset.name,
@@ -229,7 +229,7 @@ export function getCustomChipPresets(): Record<string, ChipHardwareConfig> {
   }
 }
 
-/** 保存自定义芯片预设（调用 Tier6 API，保存到 YAML）*/
+/** 保存自定义芯片预设（调用后端 API，保存到 YAML）*/
 export async function saveCustomChipPreset(config: ChipHardwareConfig): Promise<void> {
   try {
     // 调用 API 保存芯片预设
@@ -449,13 +449,52 @@ export function getHardwarePreset(hardwareId: string): HardwareConfig {
   if (!preset) {
     throw new Error(`未找到硬件预设: ${hardwareId}`);
   }
+
+  // 从预设中提取互联参数
+  const board = (preset as any).board as BoardConfig | undefined;
+  const rack = (preset as any).rack as RackConfig | undefined;
+  const pod = (preset as any).pod as PodConfig | undefined;
+  const chip = (preset as any).chip as ChipHardwareConfig | undefined;
+
+  // 构建互联配置 - 从预设中提取，如果找不到则抛出错误
+  if (!board) {
+    throw new Error(`硬件预设 '${hardwareId}' 缺少 board 配置`);
+  }
+  if (!rack) {
+    throw new Error(`硬件预设 '${hardwareId}' 缺少 rack 配置`);
+  }
+  if (!pod) {
+    throw new Error(`硬件预设 '${hardwareId}' 缺少 pod 配置`);
+  }
+
+  // c2c: 从芯片名称查找互联配置，如果找不到则抛出错误
+  let c2cBandwidth: number;
+  let c2cLatency: number;
+  if (chip?.name) {
+    const chipInterconnect = backendChipInterconnectCache[chip.name];
+    if (!chipInterconnect) {
+      throw new Error(`硬件预设 '${hardwareId}' 的芯片 '${chip.name}' 缺少互联配置`);
+    }
+    c2cBandwidth = chipInterconnect.intra_board_bandwidth_gbps;
+    c2cLatency = chipInterconnect.intra_board_latency_us;
+  } else {
+    throw new Error(`硬件预设 '${hardwareId}' 缺少芯片配置或芯片名称`);
+  }
+
   return {
     chips: {},
-    interconnect: { links: { c2c: { bandwidth_gbps: 0, latency_us: 0 }, b2b: { bandwidth_gbps: 0, latency_us: 0 }, r2r: { bandwidth_gbps: 0, latency_us: 0 }, p2p: { bandwidth_gbps: 0, latency_us: 0 } } },
-    chip: { ...(preset as any).chip },
-    board: { ...(preset as any).board },
-    rack: { ...(preset as any).rack },
-    pod: { ...(preset as any).pod },
+    interconnect: {
+      links: {
+        c2c: { bandwidth_gbps: c2cBandwidth, latency_us: c2cLatency },
+        b2b: { bandwidth_gbps: board.b2b_bandwidth_gbps, latency_us: board.b2b_latency_us },
+        r2r: { bandwidth_gbps: rack.r2r_bandwidth_gbps, latency_us: rack.r2r_latency_us },
+        p2p: { bandwidth_gbps: pod.p2p_bandwidth_gbps, latency_us: pod.p2p_latency_us },
+      }
+    },
+    chip: { ...chip },
+    board: { ...board },
+    rack: { ...rack },
+    pod: { ...pod },
   };
 }
 
@@ -468,13 +507,51 @@ export function createHardwareConfig(
   podId: string
 ): HardwareConfig {
   const chip = getChipPreset(chipId);
-  const board = BOARD_PRESETS[boardId] ?? DGX_H100_BOARD;
-  const rack = RACK_PRESETS[rackId] ?? IB_NDR_RACK;
-  const pod = POD_PRESETS[podId] ?? IB_NDR_POD;
+
+  // 禁止使用默认值 - 如果预设不存在则抛出错误
+  const board = BOARD_PRESETS[boardId];
+  if (!board) {
+    throw new Error(`未找到 Board 预设: ${boardId}`);
+  }
+
+  const rack = RACK_PRESETS[rackId];
+  if (!rack) {
+    throw new Error(`未找到 Rack 预设: ${rackId}`);
+  }
+
+  const pod = POD_PRESETS[podId];
+  if (!pod) {
+    throw new Error(`未找到 Pod 预设: ${podId}`);
+  }
+
+  // c2c: 从芯片互联配置获取，如果找不到则抛出错误
+  const chipInterconnect = backendChipInterconnectCache[chipId] || (chip.name ? backendChipInterconnectCache[chip.name] : null);
+  if (!chipInterconnect) {
+    throw new Error(`芯片 '${chipId}' 缺少互联配置 (c2c)。请确保已加载芯片预设。`);
+  }
 
   return {
     chips: {},
-    interconnect: { links: { c2c: { bandwidth_gbps: 0, latency_us: 0 }, b2b: { bandwidth_gbps: 0, latency_us: 0 }, r2r: { bandwidth_gbps: 0, latency_us: 0 }, p2p: { bandwidth_gbps: 0, latency_us: 0 } } },
+    interconnect: {
+      links: {
+        c2c: {
+          bandwidth_gbps: chipInterconnect.intra_board_bandwidth_gbps,
+          latency_us: chipInterconnect.intra_board_latency_us
+        },
+        b2b: {
+          bandwidth_gbps: board.b2b_bandwidth_gbps,
+          latency_us: board.b2b_latency_us
+        },
+        r2r: {
+          bandwidth_gbps: rack.r2r_bandwidth_gbps,
+          latency_us: rack.r2r_latency_us
+        },
+        p2p: {
+          bandwidth_gbps: pod.p2p_bandwidth_gbps,
+          latency_us: pod.p2p_latency_us
+        },
+      }
+    },
     chip,
     board: { ...board },
     rack: { ...rack },
@@ -483,7 +560,7 @@ export function createHardwareConfig(
 }
 
 // ============================================
-// Tier6 预设加载辅助函数
+// 后端预设加载辅助函数
 // ============================================
 
 import {
@@ -491,17 +568,17 @@ import {
   getBenchmark,
   getTopologies,
   getTopology,
-} from '@/api/tier6';
+} from '@/api/math_model';
 
 import type {
-  Tier6BenchmarkConfig,
-  Tier6TopologyConfig,
-} from '@/types/tier6';
+  BenchmarkConfig,
+  TopologyConfig,
+} from '@/types/math_model';
 
 /**
- * 加载 Tier6 Benchmark 预设列表
+ * 加载 Benchmark 预设列表
  */
-export async function loadTier6BenchmarkPresets(): Promise<Tier6BenchmarkConfig[]> {
+export async function loadBenchmarkPresets(): Promise<BenchmarkConfig[]> {
   const { benchmarks } = await getBenchmarks();
   // 逐个加载完整配置
   const fullConfigs = await Promise.all(
@@ -511,9 +588,9 @@ export async function loadTier6BenchmarkPresets(): Promise<Tier6BenchmarkConfig[
 }
 
 /**
- * 加载 Tier6 Topology 预设列表
+ * 加载 Topology 预设列表
  */
-export async function loadTier6TopologyPresets(): Promise<Tier6TopologyConfig[]> {
+export async function loadTopologyPresets(): Promise<TopologyConfig[]> {
   const { topologies } = await getTopologies();
   // 逐个加载完整配置
   const fullConfigs = await Promise.all(

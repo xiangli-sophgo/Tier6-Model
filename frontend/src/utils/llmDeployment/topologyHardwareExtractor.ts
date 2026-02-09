@@ -194,7 +194,7 @@ export function extractChipGroupsFromConfig(
       // 从预设或默认值获取硬件参数
       let chipConfig: ChipHardwareConfig
 
-      // 默认芯片配置 (使用 Tier6 格式)
+      // 默认芯片配置 (使用 ChipPreset 格式)
       const defaultChipConfig: ChipHardwareConfig = createDefaultChipPreset(chip.name)
 
       // 方案1: 从拓扑配置的 chips 字典直接获取（优先级最高）

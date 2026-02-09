@@ -4,13 +4,13 @@ pods:
   racks:
   - count: 1
     boards:
-    - count: 1
+    - id: board_1
+      name: Board
+      u_height: 2
+      count: 1
       chips:
       - name: SG2262
         count: 8
-      id: board_1
-      name: Board
-      u_height: 2
     total_u: 42
 chips:
   SG2262:

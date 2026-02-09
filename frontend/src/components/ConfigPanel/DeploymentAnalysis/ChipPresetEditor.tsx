@@ -16,8 +16,8 @@ import { Badge } from '@/components/ui/badge'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { BaseCard } from '@/components/common/BaseCard'
-import type { ChipPreset } from '@/types/tier6'
-import { getChipPresets, getChipPreset, saveChipPreset, updateChipPreset } from '@/api/tier6'
+import type { ChipPreset } from '@/types/math_model'
+import { getChipPresets, getChipPreset, saveChipPreset, updateChipPreset } from '@/api/math_model'
 
 // ==================== Props ====================
 

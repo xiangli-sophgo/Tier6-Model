@@ -1,7 +1,7 @@
 /**
  * ModelPresetEditor - 模型预设编辑器
  *
- * 基于 Tier6 ModelPreset 类型的模型配置编辑面板，
+ * 基于 ModelPreset 类型的模型配置编辑面板，
  * 动态渲染配置中实际存在的所有字段，
  * 支持预设加载、字段编辑、修改追踪、保存/另存为/重新加载功能。
  */
@@ -28,8 +28,8 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog'
 import { BaseCard } from '@/components/common/BaseCard'
-import type { ModelPreset } from '@/types/tier6'
-import { getModelPresets, getModelPreset, updateModelPreset, saveModelPreset } from '@/api/tier6'
+import type { ModelPreset } from '@/types/math_model'
+import { getModelPresets, getModelPreset, updateModelPreset, saveModelPreset } from '@/api/math_model'
 
 // ============================================
 // Props

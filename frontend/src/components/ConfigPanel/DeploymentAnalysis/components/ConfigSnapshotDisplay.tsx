@@ -147,7 +147,7 @@ export const ConfigSnapshotDisplay: React.FC<ConfigSnapshotDisplayProps> = ({
             const topologyChips = (topology as any).chips || (topology as any).hardware_params?.chips
             if (pods.length > 0 && pods[0].racks && pods[0].racks[0].boards && pods[0].racks[0].boards[0].chips) {
               const chipInfo = pods[0].racks[0].boards[0].chips[0]
-              // 从顶层 chips 获取详细芯片配置 (Tier6 ChipPreset 格式)
+              // 从顶层 chips 获取详细芯片配置 (ChipPreset 格式)
               const chipConfig = topologyChips?.[chipInfo.name]
               return (
                 <DescList className="mt-3">

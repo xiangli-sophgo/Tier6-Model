@@ -23,9 +23,6 @@ import {
   getChipTypes as storageGetChipTypes,
   getRackDimensions as storageGetRackDimensions,
   getLevelConnectionDefaults as storageGetLevelConnectionDefaults,
-  SavedConfig,
-  NetworkConfig,
-  SavedChipConfig,
 } from '../utils/storage';
 
 // ============================================
@@ -152,87 +149,6 @@ export async function getLevelConnectionDefaults(): Promise<{
 }
 
 // ============================================
-// 拓扑配置保存/加载 API（后端存储）
-// ============================================
-
-export type { SavedConfig, NetworkConfig, SavedChipConfig };
-
-/**
- * 获取所有保存的拓扑配置列表
- */
-export async function listConfigs(): Promise<SavedConfig[]> {
-  try {
-    const response = await fetch('/api/topologies');
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
-    }
-    const data = await response.json();
-    return data.topologies || [];
-  } catch (error) {
-    console.error('获取拓扑配置列表失败:', error);
-    return [];
-  }
-}
-
-/**
- * 获取指定名称的拓扑配置
- */
-export async function getConfig(name: string): Promise<SavedConfig> {
-  const response = await fetch(`/api/topologies/${encodeURIComponent(name)}`);
-  if (!response.ok) {
-    if (response.status === 404) {
-      throw new Error(`配置 '${name}' 不存在`);
-    }
-    throw new Error(`HTTP error! status: ${response.status}`);
-  }
-  return await response.json();
-}
-
-/**
- * 保存拓扑配置（创建或更新）
- */
-export async function saveConfig(config: SavedConfig): Promise<SavedConfig> {
-  // 先尝试 PUT（更新），如果返回 404 则 POST（创建）
-  let response = await fetch(`/api/topologies/${encodeURIComponent(config.name)}`, {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(config),
-  });
-
-  if (response.status === 404) {
-    // 配置不存在，创建新的
-    response = await fetch('/api/topologies', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(config),
-    });
-  }
-
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({ detail: '未知错误' }));
-    throw new Error(error.detail || `保存失败: ${response.status}`);
-  }
-
-  return config;
-}
-
-/**
- * 删除拓扑配置
- */
-export async function deleteConfig(name: string): Promise<void> {
-  const response = await fetch(`/api/topologies/${encodeURIComponent(name)}`, {
-    method: 'DELETE',
-  });
-
-  if (!response.ok) {
-    if (response.status === 404) {
-      throw new Error(`配置 '${name}' 不存在`);
-    }
-    throw new Error(`HTTP error! status: ${response.status}`);
-  }
-}
-
-// ============================================
 // 后端预设 API
 // ============================================
 
@@ -259,7 +175,7 @@ export async function getBackendChipPresets(): Promise<BackendChipPreset[]> {
       throw new Error(`HTTP error! status: ${response.status}`);
     }
     const data = await response.json();
-    // tier6 返回 { presets: [...] } 格式
+    // 后端返回 { presets: [...] } 格式
     return data.presets?.map((p: any) => ({
       id: p.name,
       name: p.config?.name || p.name,
@@ -301,10 +217,10 @@ export async function listBenchmarks(): Promise<BenchmarkConfig[]> {
     const data = await response.json();
     const summaries = data.benchmarks || [];
 
-    // tier6 列表只返回摘要，需要获取每个 benchmark 的详情
+    // 列表只返回摘要，需要获取每个 benchmark 的详情
     const benchmarks = await Promise.all(
       summaries.map(async (summary: any) => {
-        // 使用 filename 获取详情（tier6 用 filename 作为查询 key）
+        // 使用 filename 获取详情（后端用 filename 作为查询 key）
         const id = summary.filename || summary.id;
         const detail = await getBenchmark(id);
         return detail;
@@ -319,16 +235,16 @@ export async function listBenchmarks(): Promise<BenchmarkConfig[]> {
 }
 
 /**
- * 转换 Tier6 Benchmark 格式为前端期望格式
+ * 转换后端 Benchmark 格式为前端期望格式
  */
-function convertTier6Benchmark(data: any): BenchmarkConfig {
+function convertBackendBenchmark(data: any): BenchmarkConfig {
   const model = data.model || {};
   return {
     id: data.id,
     name: data.name,
     model: {
       ...model,
-      // tier6 用 name，前端用 model_name
+      // 后端用 name，前端用 model_name
       model_name: model.model_name || model.name || data.name,
       // 根据是否有 moe 配置判断模型类型
       model_type: model.model_type || (model.moe ? 'moe' : 'dense'),
@@ -370,7 +286,7 @@ export async function getBenchmark(id: string): Promise<BenchmarkConfig | null> 
       throw new Error(`HTTP error! status: ${response.status}`);
     }
     const data = await response.json();
-    return convertTier6Benchmark(data);
+    return convertBackendBenchmark(data);
   } catch (error) {
     console.error('获取 Benchmark 失败:', error);
     return null;

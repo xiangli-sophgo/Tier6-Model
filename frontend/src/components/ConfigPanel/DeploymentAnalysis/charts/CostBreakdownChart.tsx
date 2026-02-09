@@ -99,7 +99,8 @@ export const CostBreakdownChart: React.FC<CostBreakdownChartProps> = ({
             show: true,
             formatter: (params: any) => {
               const { name, value } = params
-              const percentage = ((value / rootValue) * 100).toFixed(0)
+              const percentageNum = (value / rootValue) * 100
+              const percentage = percentageNum.toFixed(0)
 
               // 格式化数值
               let formattedValue
@@ -112,9 +113,9 @@ export const CostBreakdownChart: React.FC<CostBreakdownChartProps> = ({
               }
 
               // 根据区块大小决定显示内容
-              if (percentage >= 5) {
+              if (percentageNum >= 5) {
                 return `{name|${name}}\n{value|${formattedValue}}\n{percent|${percentage}%}`
-              } else if (percentage >= 2) {
+              } else if (percentageNum >= 2) {
                 return `{name|${name}}\n{percent|${percentage}%}`
               } else {
                 return ''

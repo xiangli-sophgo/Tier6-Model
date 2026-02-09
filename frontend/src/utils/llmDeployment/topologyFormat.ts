@@ -4,10 +4,10 @@
  * grouped_pods 格式: pods[].racks[].boards[].chips[], 每级带 count
  */
 
-import type { Tier6TopologyConfig, TopologyPodGroup } from '../../types/tier6'
+import type { TopologyConfig, TopologyPodGroup } from '../../types/math_model'
 
 /** 统计 grouped_pods 格式的芯片总数 */
-export function countChips(config: Tier6TopologyConfig): number {
+export function countChips(config: TopologyConfig): number {
   const pods = config.pods
   if (!pods || pods.length === 0) return 0
 
@@ -29,7 +29,7 @@ export function countChips(config: Tier6TopologyConfig): number {
 }
 
 /** 统计 Board 总数 */
-export function countBoards(config: Tier6TopologyConfig): number {
+export function countBoards(config: TopologyConfig): number {
   const pods = config.pods
   if (!pods || pods.length === 0) return 0
 
@@ -47,7 +47,7 @@ export function countBoards(config: Tier6TopologyConfig): number {
 }
 
 /** 统计 Rack 总数 */
-export function countRacks(config: Tier6TopologyConfig): number {
+export function countRacks(config: TopologyConfig): number {
   const pods = config.pods
   if (!pods || pods.length === 0) return 0
 
@@ -62,7 +62,7 @@ export function countRacks(config: Tier6TopologyConfig): number {
 }
 
 /** 统计 Pod 总数 */
-export function countPods(config: Tier6TopologyConfig): number {
+export function countPods(config: TopologyConfig): number {
   const pods = config.pods
   if (!pods || pods.length === 0) return 0
 

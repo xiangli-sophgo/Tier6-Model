@@ -52,16 +52,11 @@ export const ModifiedFieldDemo: React.FC = () => {
               max={128}
               value={batchSize1}
               onChange={(v) => setBatchSize1(v || 8)}
-              className="w-full"
-              style={
+              className={`w-full ${
                 batchSize1 !== originalBatchSize
-                  ? {
-                      borderColor: '#3b82f6',
-                      borderWidth: '2px',
-                      boxShadow: '0 0 0 3px rgba(59, 130, 246, 0.1)',
-                    }
-                  : undefined
-              }
+                  ? 'border-blue-500 border-2 shadow-[0_0_0_3px_rgba(59,130,246,0.1)]'
+                  : ''
+              }`}
             />
           </div>
           <div>
@@ -71,16 +66,11 @@ export const ModifiedFieldDemo: React.FC = () => {
               max={4096}
               value={inputLen1}
               onChange={(v) => setInputLen1(v || 512)}
-              className="w-full"
-              style={
+              className={`w-full ${
                 inputLen1 !== originalInputLen
-                  ? {
-                      borderColor: '#3b82f6',
-                      borderWidth: '2px',
-                      boxShadow: '0 0 0 3px rgba(59, 130, 246, 0.1)',
-                    }
-                  : undefined
-              }
+                  ? 'border-blue-500 border-2 shadow-[0_0_0_3px_rgba(59,130,246,0.1)]'
+                  : ''
+              }`}
             />
           </div>
           <div>
@@ -90,16 +80,11 @@ export const ModifiedFieldDemo: React.FC = () => {
               max={4096}
               value={outputLen1}
               onChange={(v) => setOutputLen1(v || 128)}
-              className="w-full"
-              style={
+              className={`w-full ${
                 outputLen1 !== originalOutputLen
-                  ? {
-                      borderColor: '#3b82f6',
-                      borderWidth: '2px',
-                      boxShadow: '0 0 0 3px rgba(59, 130, 246, 0.1)',
-                    }
-                  : undefined
-              }
+                  ? 'border-blue-500 border-2 shadow-[0_0_0_3px_rgba(59,130,246,0.1)]'
+                  : ''
+              }`}
             />
           </div>
           <div>
@@ -109,16 +94,11 @@ export const ModifiedFieldDemo: React.FC = () => {
               max={256}
               value={numLayers1}
               onChange={(v) => setNumLayers1(v || 32)}
-              className="w-full"
-              style={
+              className={`w-full ${
                 numLayers1 !== originalNumLayers
-                  ? {
-                      borderColor: '#3b82f6',
-                      borderWidth: '2px',
-                      boxShadow: '0 0 0 3px rgba(59, 130, 246, 0.1)',
-                    }
-                  : undefined
-              }
+                  ? 'border-blue-500 border-2 shadow-[0_0_0_3px_rgba(59,130,246,0.1)]'
+                  : ''
+              }`}
             />
           </div>
         </div>

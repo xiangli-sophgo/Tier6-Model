@@ -245,7 +245,7 @@ export class HierarchicalTopologyGenerator {
               const keepDirect = interChipCfg?.keep_direct_topology ?? false;
 
               if (!interChipEnabled || keepDirect) {
-                const chipConnections = this.generateChipConnections(chips, interChipTopo, effectiveInterconnect.c2c);
+                const chipConnections = this.generateChipConnections(chips, interChipTopo);
                 connections.push(...chipConnections);
               }
 

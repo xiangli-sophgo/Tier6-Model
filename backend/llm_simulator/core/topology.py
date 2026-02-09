@@ -133,18 +133,27 @@ class TopologyParser:
 
             # 如果连接没有指定 bandwidth/latency，根据 type 从 interconnect_params 查找
             if bandwidth == 0 or latency == 0:
-                if conn_type == "c2c":
-                    bandwidth = bandwidth or c2c_params.get("bandwidth_gbps", 0.0)
-                    latency = latency or (c2c_params.get("latency_us", 0.0) * 1000)  # us -> ns
-                elif conn_type == "b2b":
-                    bandwidth = bandwidth or b2b_params.get("bandwidth_gbps", 0.0)
-                    latency = latency or (b2b_params.get("latency_us", 0.0) * 1000)  # us -> ns
-                elif conn_type == "r2r":
-                    bandwidth = bandwidth or r2r_params.get("bandwidth_gbps", 0.0)
-                    latency = latency or (r2r_params.get("latency_us", 0.0) * 1000)  # us -> ns
-                elif conn_type == "p2p":
-                    bandwidth = bandwidth or p2p_params.get("bandwidth_gbps", 0.0)
-                    latency = latency or (p2p_params.get("latency_us", 0.0) * 1000)  # us -> ns
+                params_dict = {
+                    "c2c": c2c_params,
+                    "b2b": b2b_params,
+                    "r2r": r2r_params,
+                    "p2p": p2p_params,
+                }
+                type_params = params_dict.get(conn_type, {})
+
+                if not bandwidth:
+                    if "bandwidth_gbps" not in type_params:
+                        raise ValueError(
+                            f"Missing 'interconnect.links.{conn_type}.bandwidth_gbps' in topology config"
+                        )
+                    bandwidth = type_params["bandwidth_gbps"]
+
+                if not latency:
+                    if "latency_us" not in type_params:
+                        raise ValueError(
+                            f"Missing 'interconnect.links.{conn_type}.latency_us' in topology config"
+                        )
+                    latency = type_params["latency_us"] * 1000  # us -> ns
 
             connections.append(ConnectionConfig(
                 source=conn_data["source"],

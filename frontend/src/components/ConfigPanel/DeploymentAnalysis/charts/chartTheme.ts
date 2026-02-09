@@ -237,7 +237,7 @@ export const ECHARTS_COMMON_CONFIG = {
     textStyle: {
       color: '#333',
       fontSize: 12,
-    },
+    } as const,
     padding: [10, 14],
     extraCssText: 'box-shadow: 0 4px 12px rgba(0,0,0,0.1);',
   },
@@ -265,4 +265,4 @@ export const ECHARTS_COMMON_CONFIG = {
       lineStyle: { color: '#f0f0f0', type: 'dashed' as const },
     },
   },
-} as const
+}

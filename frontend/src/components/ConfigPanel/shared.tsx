@@ -9,9 +9,9 @@ import {
 } from '../../types'
 import { TopologyTrafficResult, PlanAnalysisResult, HardwareConfig, LLMModelConfig, InferenceConfig, ParallelismStrategy } from '../../utils/llmDeployment/types'
 import { InfeasibleResult } from '../../utils/llmDeployment'
-import type { ChipPreset, GmemConfig, LmemConfig, DmaEngineConfig, ChipInterconnectConfig } from '../../types/tier6'
+import type { ChipPreset, GmemConfig, LmemConfig, DmaEngineConfig, ChipInterconnectConfig } from '../../types/math_model'
 
-// 重导出 Tier6 芯片类型
+// 重导出芯片类型
 export type { ChipPreset, GmemConfig, LmemConfig, DmaEngineConfig, ChipInterconnectConfig }
 
 // 历史记录项
@@ -215,7 +215,7 @@ export interface InterconnectParams {
   latency_us: number           // 延迟 (us)
 }
 
-// 芯片硬件参数 - 使用 Tier6 ChipPreset 格式
+// 芯片硬件参数 - 使用 ChipPreset 格式
 // 保留别名以保持向后兼容
 export type ChipHardwareParams = ChipPreset
 
@@ -319,7 +319,7 @@ export const DEFAULT_SWITCH_CONFIG: GlobalSwitchConfig = {
   inter_chip: { enabled: false, layers: [], downlink_redundancy: 1, connect_to_upper_level: true, keep_direct_topology: false },
 }
 
-// 默认芯片硬件参数 - Tier6 格式
+// 默认芯片硬件参数 - ChipPreset 格式
 export const DEFAULT_CHIP_HARDWARE: ChipPreset = {
   name: 'SG2262',
   architecture: 'TPU_V7',
@@ -362,20 +362,11 @@ export const DEFAULT_CHIP_HARDWARE: ChipPreset = {
       bandwidth_gbps: 273,
       latency_ns: 100,
     },
-    l2m: {
-      capacity_mb: 64,
-      bandwidth_gbps: 1000,
-      latency_ns: 10,
-    },
     lmem: {
       capacity_mb: 64,
       bandwidth_gbps: 2000,
       latency_ns: 1,
-    },
-    smem: {
-      capacity_kb: 256,
-      bandwidth_gbps: 2000,
-      latency_ns: 1,
+      sram_utilization: 0.45,
     },
   },
 
@@ -385,12 +376,10 @@ export const DEFAULT_CHIP_HARDWARE: ChipPreset = {
       startup_latency_ns: 100,
       efficiency: 0.9,
     },
-    sdma: {
-      bandwidth_gbps: 1000,
-      startup_latency_ns: 50,
-      efficiency: 0.95,
-    },
   },
+
+  align_bytes: 32,
+  compute_dma_overlap_rate: 0.8,
 
   interconnect: {
     noc: {

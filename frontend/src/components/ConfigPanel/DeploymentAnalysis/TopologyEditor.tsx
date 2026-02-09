@@ -15,13 +15,13 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { HelpTooltip } from '@/components/ui/info-tooltip'
 import { BaseCard } from '@/components/common/BaseCard'
-import type { Tier6TopologyConfig, TopologyListItem } from '@/types/tier6'
-import { getTopologies, getTopology, createTopology, updateTopology } from '@/api/tier6'
+import type { TopologyConfig, TopologyListItem } from '@/types/math_model'
+import { getTopologies, getTopology, createTopology, updateTopology } from '@/api/math_model'
 import { countChips, countPods, countRacks, countBoards } from '@/utils/llmDeployment/topologyFormat'
 
 interface TopologyEditorProps {
-  value: Tier6TopologyConfig
-  onChange: (config: Tier6TopologyConfig) => void
+  value: TopologyConfig
+  onChange: (config: TopologyConfig) => void
   onParamsModified?: (modified: boolean) => void
 }
 
@@ -47,7 +47,7 @@ const COMM_FIELDS: Array<{ key: string; label: string; tip: string; step?: numbe
 
 function deepClone<T>(obj: T): T { return JSON.parse(JSON.stringify(obj)) }
 
-function getICValue(cfg: Tier6TopologyConfig, lvl: string, f: 'bandwidth_gbps' | 'latency_us'): number | undefined {
+function getICValue(cfg: TopologyConfig, lvl: string, f: 'bandwidth_gbps' | 'latency_us'): number | undefined {
   const links = cfg.interconnect?.links
   if (!links) return undefined
   const e = (links as Record<string, { bandwidth_gbps: number; latency_us: number } | undefined>)[lvl]
@@ -57,7 +57,7 @@ function getICValue(cfg: Tier6TopologyConfig, lvl: string, f: 'bandwidth_gbps' |
 function errMsg(err: unknown): string { return err instanceof Error ? err.message : String(err) }
 
 /** 统计每种芯片的总数 */
-function getChipBreakdown(value: Tier6TopologyConfig): Array<{ name: string; count: number }> {
+function getChipBreakdown(value: TopologyConfig): Array<{ name: string; count: number }> {
   const chipMap = new Map<string, number>()
   for (const podGroup of value.pods || []) {
     const pc = podGroup.count ?? 1
@@ -75,7 +75,7 @@ function getChipBreakdown(value: Tier6TopologyConfig): Array<{ name: string; cou
 }
 
 /** 计算各层级的 link 连接数 (全互联假设) */
-function countLevelLinks(value: Tier6TopologyConfig): { p2p: number; r2r: number; b2b: number; c2c: number } {
+function countLevelLinks(value: TopologyConfig): { p2p: number; r2r: number; b2b: number; c2c: number } {
   const pods = value.pods || []
   let c2c = 0, b2b = 0, r2r = 0
   const mesh = (n: number) => n * (n - 1) / 2
@@ -115,7 +115,7 @@ function countLevelLinks(value: Tier6TopologyConfig): { p2p: number; r2r: number
 export const TopologyEditor: React.FC<TopologyEditorProps> = ({ value, onChange, onParamsModified }) => {
   const [presets, setPresets] = useState<TopologyListItem[]>([])
   const [selectedPreset, setSelectedPreset] = useState<string>('')
-  const [snapshot, setSnapshot] = useState<Tier6TopologyConfig | null>(null)
+  const [snapshot, setSnapshot] = useState<TopologyConfig | null>(null)
   const [saveAsOpen, setSaveAsOpen] = useState(false)
   const [saveAsName, setSaveAsName] = useState('')
   const [loading, setLoading] = useState(false)
@@ -204,7 +204,7 @@ export const TopologyEditor: React.FC<TopologyEditorProps> = ({ value, onChange,
   }, [selectedPreset, onChange])
 
   const isModified = useCallback(
-    (getter: (c: Tier6TopologyConfig) => unknown): boolean => {
+    (getter: (c: TopologyConfig) => unknown): boolean => {
       if (!snapshot) return false
       return JSON.stringify(getter(value)) !== JSON.stringify(getter(snapshot))
     }, [value, snapshot]
@@ -212,7 +212,7 @@ export const TopologyEditor: React.FC<TopologyEditorProps> = ({ value, onChange,
 
   const isAnyParamModified = useMemo(() => {
     if (!snapshot) return false
-    const check = (getter: (c: Tier6TopologyConfig) => unknown) =>
+    const check = (getter: (c: TopologyConfig) => unknown) =>
       JSON.stringify(getter(value)) !== JSON.stringify(getter(snapshot))
     return check(c => c.pods)
       || check(c => c.interconnect?.links)

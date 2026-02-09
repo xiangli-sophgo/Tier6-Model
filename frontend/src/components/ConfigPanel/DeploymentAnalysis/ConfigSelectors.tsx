@@ -534,10 +534,13 @@ export const HardwareConfigSelector: React.FC<HardwareConfigSelectorProps> = ({ 
       <div className="p-2 bg-blue-50 rounded-md text-xs mt-2">
         <div className="flex justify-between">
           <span className="text-gray-500">总芯片数: <b>{totalChips}</b></span>
-          <span className="text-gray-500">显存: <b>{value.chip?.memory_capacity_gb || 64}GB</b>/卡</span>
+          <span className="text-gray-500">显存: <b>{value.chip?.memory.gmem.capacity_gb || 64}GB</b>/卡</span>
         </div>
         <div className="flex justify-between mt-1">
-          <span className="text-gray-500">算力: {value.chip?.compute_tflops_bf16 || 768} TFLOPs</span>
+          <span className="text-gray-500">算力: {value.chip?.compute_units.cube.mac_per_lane.BF16 ?
+            (value.chip.frequency_ghz * value.chip.cores.count * value.chip.cores.lanes_per_core *
+             value.chip.compute_units.cube.mac_per_lane.BF16 *
+             (value.chip.compute_units.cube.m || 16) * (value.chip.compute_units.cube.n || 8) * 2 / 1000).toFixed(0) : 768} TFLOPs</span>
           <span className="text-gray-500">Board内: {value.board?.b2b_bandwidth_gbps || 900} GB/s</span>
         </div>
       </div>

@@ -238,7 +238,7 @@ export const ChartsPanel: React.FC<ChartsPanelProps> = ({
                   const chips = hardware?.chips || {}
                   const firstChipName = Object.keys(chips)[0]
 
-                  if (!firstChipName || !chips[firstChipName]?.memory_capacity_gb) {
+                  if (!firstChipName || !chips[firstChipName]?.memory?.gmem?.capacity_gb) {
                     return (
                       <span className="text-[11px] text-red-500">
                         ⚠ 配置错误：无法获取芯片容量
@@ -246,7 +246,7 @@ export const ChartsPanel: React.FC<ChartsPanelProps> = ({
                     )
                   }
 
-                  const chipMemoryGB = chips[firstChipName].memory_capacity_gb
+                  const chipMemoryGB = chips[firstChipName].memory.gmem.capacity_gb
                   const utilization = (result.memory.total_per_chip_gb / chipMemoryGB) * 100
                   const statusColor = utilization > 100 ? '#ff4d4f' : utilization > 90 ? '#faad14' : '#52c41a'
                   const statusText = utilization > 100 ? '✗ 内存溢出' : utilization > 90 ? '⚠ 接近上限' : '✓ 内存充足'

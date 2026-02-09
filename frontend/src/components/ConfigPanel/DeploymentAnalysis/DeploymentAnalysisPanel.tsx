@@ -64,7 +64,9 @@ import {
   createBenchmark,
   updateBenchmark,
   getTopology,
-} from '../../../api/tier6'
+  createTopology,
+  updateTopology,
+} from '../../../api/math_model'
 import {
   extractChipGroupsFromConfig,
   generateHardwareConfigFromPanelConfig,
@@ -84,13 +86,12 @@ import {
   DEFAULT_CHIP_HARDWARE,
 } from '../shared'
 import { AnalysisTaskList } from './AnalysisTaskList'
-import { listConfigs, getConfig, saveConfig, SavedConfig } from '../../../api/topology'
 // BenchmarkConfigSelector 已拆分为 ModelPresetEditor + 推理参数内联编辑
 import { ModelPresetEditor } from './ModelPresetEditor'
 import { ChipPresetEditor } from './ChipPresetEditor'
 import { TopologyEditor } from './TopologyEditor'
 import { colors } from './ConfigSelectors'
-import type { ModelPreset, ChipPreset, Tier6TopologyConfig, BenchmarkListItem } from '@/types/tier6'
+import type { ModelPreset, ChipPreset, TopologyConfig, BenchmarkListItem } from '@/types/math_model'
 import { modelPresetToLLMConfig, llmConfigToModelPreset } from '@/utils/llmDeployment/configAdapters'
 import {
   generateBenchmarkName,
@@ -183,8 +184,6 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
   const [chipGroups, setChipGroups] = useState<ChipGroupInfo[]>([])
   const [selectedChipType, setSelectedChipType] = useState<string | undefined>()
 
-  // 拓扑配置文件列表
-  const [topologyConfigs, setTopologyConfigs] = useState<SavedConfig[]>([])
   const [selectedTopologyConfig, setSelectedTopologyConfig] = useState<string | undefined>()
 
   // 当前选中的 Benchmark 配置文件名
@@ -256,54 +255,43 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
   const [saveAsBenchmarkOpen, setSaveAsBenchmarkOpen] = useState(false)
   const [saveAsBenchmarkName, setSaveAsBenchmarkName] = useState('')
 
-  // 加载拓扑配置列表，并自动选择第一个配置
-  React.useEffect(() => {
-    const loadTopologyConfigs = async () => {
-      try {
-        const configs = await listConfigs()
-        setTopologyConfigs(configs)
-
-        // 自动加载第一个配置
-        if (configs.length > 0 && !selectedTopologyConfig) {
-          const firstConfigName = configs[0].name
-          setSelectedTopologyConfig(firstConfigName)
-
-          // 获取完整配置并应用
-          try {
-            const fullConfig = await getConfig(firstConfigName)
-            if (fullConfig) {
-              if (fullConfig.rack_config) {
-                setLocalRackConfig(fullConfig.rack_config as RackConfig)
-              }
-              setLocalPodCount(fullConfig.pod_count || 1)
-              setLocalRacksPerPod(fullConfig.racks_per_pod || 1)
-              if (fullConfig.interconnect?.comm_params) {
-                setCommLatencyConfig(fullConfig.interconnect.comm_params)
-              }
-              // 恢复硬件参数
-              if (fullConfig.chips) {
-                const chips = fullConfig.chips as any
-                const links = fullConfig.interconnect?.links
-                setLocalHardwareParams({
-                  chips: { ...DEFAULT_HARDWARE_PARAMS.chips, ...chips },
-                  interconnect: {
-                    c2c: { ...DEFAULT_HARDWARE_PARAMS.interconnect.c2c, ...links?.c2c },
-                    b2b: { ...DEFAULT_HARDWARE_PARAMS.interconnect.b2b, ...links?.b2b },
-                    r2r: { ...DEFAULT_HARDWARE_PARAMS.interconnect.r2r, ...links?.r2r },
-                    p2p: { ...DEFAULT_HARDWARE_PARAMS.interconnect.p2p, ...links?.p2p },
-                  },
-                })
-              }
-            }
-          } catch (error) {
-            console.error('加载默认配置失败:', error)
-          }
-        }
-      } catch (error) {
-        console.error('加载拓扑配置列表失败:', error)
+  // 从 TopologyConfig 格式（pods 数组）中提取并设置各个独立 state
+  const handleTopologyConfigChange = useCallback((config: TopologyConfig) => {
+    // 从 pods 结构提取 podCount, racksPerPod, rackConfig
+    if (config.pods && config.pods.length > 0) {
+      const firstPod = config.pods[0]
+      setLocalPodCount(firstPod.count ?? 1)
+      if (firstPod.racks && firstPod.racks.length > 0) {
+        const firstRack = firstPod.racks[0]
+        setLocalRacksPerPod(firstRack.count ?? 1)
+        setLocalRackConfig({
+          total_u: firstRack.total_u ?? 42,
+          boards: firstRack.boards.map(b => ({
+            id: b.id || '',
+            name: b.name || 'Board',
+            u_height: b.u_height || 2,
+            count: b.count ?? 1,
+            chips: b.chips.map(c => ({ name: c.name, count: c.count ?? 1, preset_id: c.preset_id })),
+          })),
+        } as RackConfig)
       }
     }
-    loadTopologyConfigs()
+    if (config.chips) {
+      const links = config.interconnect?.links
+      setLocalHardwareParams({
+        chips: (config.chips || {}) as Record<string, ChipPreset>,
+        interconnect: {
+          c2c: links?.c2c || { bandwidth_gbps: 0, latency_us: 0 },
+          b2b: links?.b2b || { bandwidth_gbps: 0, latency_us: 0 },
+          r2r: links?.r2r || { bandwidth_gbps: 0, latency_us: 0 },
+          p2p: links?.p2p || { bandwidth_gbps: 0, latency_us: 0 },
+        },
+      })
+    }
+    if (config.interconnect?.comm_params) {
+      setCommLatencyConfig(config.interconnect.comm_params as CommLatencyConfig)
+    }
+    if (config.name) setSelectedTopologyConfig(config.name)
   }, [])
 
   // 当 props 传入的配置变化时，更新本地状态
@@ -314,78 +302,6 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
       setLocalRacksPerPod(racksPerPod)
     }
   }, [rackConfig, podCount, racksPerPod, selectedTopologyConfig])
-
-  // 选择拓扑配置文件
-  const handleSelectTopologyConfig = useCallback(async (configName: string | undefined) => {
-    setSelectedTopologyConfig(configName)
-    if (!configName) {
-      // 清除选择，使用 props 传入的配置
-      setLocalRackConfig(rackConfig)
-      setLocalPodCount(podCount)
-      setLocalRacksPerPod(racksPerPod)
-      // 重置延迟设置为默认值
-      setCommLatencyConfig({ ...DEFAULT_COMM_LATENCY_CONFIG })
-      // 重置硬件参数
-      setLocalHardwareParams(null)
-      return
-    }
-
-    // 从后端获取完整配置（列表API只返回摘要信息）
-    try {
-      const config = await getConfig(configName)
-      if (config) {
-        // 使用保存的配置
-        if (config.rack_config) {
-          setLocalRackConfig(config.rack_config as RackConfig)
-        }
-        setLocalPodCount(config.pod_count || 1)
-        setLocalRacksPerPod(config.racks_per_pod || 1)
-        // 恢复延迟设置
-        if (config.interconnect?.comm_params) {
-          setCommLatencyConfig(config.interconnect.comm_params)
-        }
-        // 恢复硬件参数
-        if (config.chips) {
-          const chips = config.chips as any
-          const links = config.interconnect?.links
-          setLocalHardwareParams({
-            chips: { ...DEFAULT_HARDWARE_PARAMS.chips, ...chips },
-            interconnect: {
-              c2c: { ...DEFAULT_HARDWARE_PARAMS.interconnect.c2c, ...links?.c2c },
-              b2b: { ...DEFAULT_HARDWARE_PARAMS.interconnect.b2b, ...links?.b2b },
-              r2r: { ...DEFAULT_HARDWARE_PARAMS.interconnect.r2r, ...links?.r2r },
-              p2p: { ...DEFAULT_HARDWARE_PARAMS.interconnect.p2p, ...links?.p2p },
-            },
-          })
-        } else {
-          setLocalHardwareParams(null)
-        }
-
-        // 保存原始拓扑配置快照（用于修改追踪）
-        const chips = config.chips as any
-        const links = config.interconnect?.links
-        const originalHwParams: HardwareParams | null = chips ? {
-          chips: { ...chips },
-          interconnect: {
-            c2c: { ...DEFAULT_HARDWARE_PARAMS.interconnect.c2c, ...links?.c2c },
-            b2b: { ...DEFAULT_HARDWARE_PARAMS.interconnect.b2b, ...links?.b2b },
-            r2r: { ...DEFAULT_HARDWARE_PARAMS.interconnect.r2r, ...links?.r2r },
-            p2p: { ...DEFAULT_HARDWARE_PARAMS.interconnect.p2p, ...links?.p2p },
-          },
-        } : null
-
-        setOriginalTopologyConfig({
-          hardwareParams: originalHwParams,
-          commLatency: config.interconnect?.comm_params ? { ...config.interconnect.comm_params } : null,
-        })
-
-        toast.success(`已加载拓扑配置: ${config.name}`)
-      }
-    } catch (error) {
-      console.error('获取拓扑配置失败:', error)
-      toast.error('加载配置失败')
-    }
-  }, [rackConfig, podCount, racksPerPod])
 
   // 从拓扑配置中提取硬件配置（不依赖后端）
   React.useEffect(() => {
@@ -414,21 +330,39 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
         interconnect: { links: { c2c: { bandwidth_gbps: 0, latency_us: 0 }, b2b: { bandwidth_gbps: 0, latency_us: 0 }, r2r: { bandwidth_gbps: 0, latency_us: 0 }, p2p: { bandwidth_gbps: 0, latency_us: 0 } } },
         chip: {
           name: 'SG2262',
-          num_cores: 64,
-          compute_tflops_fp8: 1536,
-          compute_tflops_bf16: 768,
-          memory_capacity_gb: 64,
-          memory_bandwidth_gbps: 11468,
-          memory_bandwidth_utilization: 0.85,
-          lmem_capacity_mb: 2,
-          lmem_bandwidth_gbps: 512,
-          // 微架构参数（SG2260E 默认值）
-          cube_m: 16,
-          cube_k: 32,
-          cube_n: 8,
-          sram_size_kb: 2048,
-          sram_utilization: 0.45,
-          lane_num: 16,
+          frequency_ghz: 1.8,
+          cores: {
+            count: 64,
+            lanes_per_core: 16,
+          },
+          compute_units: {
+            cube: {
+              m: 16,
+              k: 32,
+              n: 8,
+              mac_per_lane: {
+                FP8: 32,
+                BF16: 16,
+              },
+            },
+          },
+          memory: {
+            gmem: {
+              capacity_gb: 64,
+              bandwidth_gbps: 11468,
+              bandwidth_utilization: 0.85,
+            },
+            lmem: {
+              capacity_mb: 2,
+              bandwidth_gbps: 512,
+              sram_utilization: 0.45,
+            },
+          },
+          dma_engines: {
+            gdma: {
+              bandwidth_gbps: 512,
+            },
+          },
           align_bytes: 32,
           compute_dma_overlap_rate: 0.8,
         },
@@ -608,8 +542,8 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
     setModelConfig(modelPresetToLLMConfig(preset))
   }, [])
 
-  // 构造 Tier6TopologyConfig 供 TopologyEditor 使用
-  const topologyConfigForEditor = useMemo<Tier6TopologyConfig>(() => ({
+  // 构造 TopologyConfig 供 TopologyEditor 使用
+  const topologyConfigForEditor = useMemo<TopologyConfig>(() => ({
     name: selectedTopologyConfig || '',
     pods: localRackConfig ? [{
       count: localPodCount,
@@ -631,45 +565,6 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
       comm_params: commLatencyConfig,
     },
   }), [selectedTopologyConfig, localPodCount, localRacksPerPod, localRackConfig, localHardwareParams, commLatencyConfig])
-
-  // 当 TopologyEditor 变化时，分解回各个独立 state
-  const handleTopologyConfigChange = useCallback((config: Tier6TopologyConfig) => {
-    // 从 pods 结构提取 podCount, racksPerPod, rackConfig
-    if (config.pods && config.pods.length > 0) {
-      const firstPod = config.pods[0]
-      setLocalPodCount(firstPod.count ?? 1)
-      if (firstPod.racks && firstPod.racks.length > 0) {
-        const firstRack = firstPod.racks[0]
-        setLocalRacksPerPod(firstRack.count ?? 1)
-        setLocalRackConfig({
-          total_u: firstRack.total_u ?? 42,
-          boards: firstRack.boards.map(b => ({
-            id: b.id || '',
-            name: b.name || 'Board',
-            u_height: b.u_height || 2,
-            count: b.count ?? 1,
-            chips: b.chips.map(c => ({ name: c.name, count: c.count ?? 1, preset_id: c.preset_id })),
-          })),
-        } as RackConfig)
-      }
-    }
-    if (config.chips) {
-      const links = config.interconnect?.links
-      setLocalHardwareParams({
-        chips: (config.chips || {}) as Record<string, ChipPreset>,
-        interconnect: {
-          c2c: links?.c2c || { bandwidth_gbps: 0, latency_us: 0 },
-          b2b: links?.b2b || { bandwidth_gbps: 0, latency_us: 0 },
-          r2r: links?.r2r || { bandwidth_gbps: 0, latency_us: 0 },
-          p2p: links?.p2p || { bandwidth_gbps: 0, latency_us: 0 },
-        },
-      })
-    }
-    if (config.interconnect?.comm_params) {
-      setCommLatencyConfig(config.interconnect.comm_params as CommLatencyConfig)
-    }
-    if (config.name) setSelectedTopologyConfig(config.name)
-  }, [])
 
   // ==========================================
   // Benchmark 预设管理
@@ -931,13 +826,6 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
     }
   }, [localPodCount, localRacksPerPod, localRackConfig])
 
-  // 获取选中的拓扑配置对象（用于参数提取）
-  const selectedTopologyConfigObj = React.useMemo(() => {
-    return selectedTopologyConfig
-      ? topologyConfigs.find(c => c.name === selectedTopologyConfig)
-      : null
-  }, [selectedTopologyConfig, topologyConfigs])
-
   // 可遍历参数列表（动态计算 - 现在包含拓扑配置参数）
   const sweepableParams = React.useMemo(
     () => extractSweepableParameters(
@@ -945,9 +833,9 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
       inferenceConfig,
       localHardwareParams,
       manualStrategy,
-      selectedTopologyConfigObj
+      null
     ),
-    [modelConfig, inferenceConfig, localHardwareParams, manualStrategy, selectedTopologyConfigObj]
+    [modelConfig, inferenceConfig, localHardwareParams, manualStrategy]
   )
 
   // 总组合数（参数遍历）
@@ -960,13 +848,10 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
     return total
   }, [sweepParams])
 
-  // 获取互联参数（从选中的配置或使用默认值）
+  // 获取互联参数（优先从 localHardwareParams 获取，这是 getConfig 加载后解析的实际值）
   const interconnectParams = React.useMemo(() => {
-    const selectedConfig = selectedTopologyConfig
-      ? topologyConfigs.find(c => c.name === selectedTopologyConfig)
-      : null
-    if (selectedConfig?.interconnect?.links) {
-      return selectedConfig.interconnect.links
+    if (localHardwareParams?.interconnect) {
+      return localHardwareParams.interconnect
     }
     // 默认值
     return {
@@ -975,22 +860,12 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
       r2r: { bandwidth_gbps: 200, latency_us: 2 },
       p2p: { bandwidth_gbps: 100, latency_us: 5 },
     }
-  }, [selectedTopologyConfig, topologyConfigs])
+  }, [localHardwareParams])
 
   // 跳转到互联拓扑页面
   const handleNavigateToTopology = useCallback(() => {
     ui.setViewMode('topology')
   }, [ui])
-
-  // 刷新配置列表
-  const refreshTopologyConfigs = useCallback(async () => {
-    try {
-      const configs = await listConfigs()
-      setTopologyConfigs(configs)
-    } catch (error) {
-      console.error('刷新拓扑配置列表失败:', error)
-    }
-  }, [])
 
   // 另存为新配置
   const handleSaveAsConfig = useCallback(async () => {
@@ -998,14 +873,9 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
       toast.warning('请输入配置名称')
       return
     }
-    // 检查名称是否已存在
-    if (topologyConfigs.some(c => c.name === newConfigName.trim())) {
-      toast.error('配置名称已存在，请使用其他名称')
-      return
-    }
     setSaveLoading(true)
     try {
-      const newConfig = {
+      const newConfig: TopologyConfig = {
         name: newConfigName.trim(),
         description: newConfigDesc.trim() || undefined,
         pods: topologyConfigForEditor.pods,
@@ -1015,8 +885,7 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
           comm_params: { ...commLatencyConfig },
         },
       }
-      await saveConfig(newConfig as any)
-      await refreshTopologyConfigs()
+      await createTopology(newConfig)
       setSelectedTopologyConfig(newConfigName.trim())
       setSaveAsModalOpen(false)
       setNewConfigName('')
@@ -1028,7 +897,7 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
     } finally {
       setSaveLoading(false)
     }
-  }, [newConfigName, newConfigDesc, topologyConfigs, selectedTopologyConfig, localPodCount, localRacksPerPod, localRackConfig, commLatencyConfig, localHardwareParams, refreshTopologyConfigs])
+  }, [newConfigName, newConfigDesc, localPodCount, localRacksPerPod, localRackConfig, commLatencyConfig, localHardwareParams, topologyConfigForEditor.pods])
 
   // 保存拓扑配置（更新现有配置）
   const handleSaveTopologyConfig = useCallback(async () => {
@@ -1037,9 +906,8 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
       return
     }
     try {
-      const updatedConfig = {
+      const updatedConfig: TopologyConfig = {
         name: selectedTopologyConfig,
-        description: topologyConfigs.find(c => c.name === selectedTopologyConfig)?.description,
         pods: topologyConfigForEditor.pods,
         chips: localHardwareParams?.chips || undefined,
         interconnect: {
@@ -1047,19 +915,18 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
           comm_params: { ...commLatencyConfig },
         },
       }
-      await saveConfig(updatedConfig as any)
-      await refreshTopologyConfigs()
+      await updateTopology(selectedTopologyConfig, updatedConfig)
       toast.success(`已保存配置: ${selectedTopologyConfig}`)
     } catch (error) {
       console.error('保存配置失败:', error)
       toast.error('保存配置失败')
     }
-  }, [selectedTopologyConfig, topologyConfigs, localPodCount, localRacksPerPod, localRackConfig, commLatencyConfig, localHardwareParams, refreshTopologyConfigs])
+  }, [selectedTopologyConfig, localPodCount, localRacksPerPod, localRackConfig, commLatencyConfig, localHardwareParams, topologyConfigForEditor.pods])
 
   // 拓扑配置另存为
   const handleSaveAsTopologyConfig = useCallback(async (name: string, description?: string) => {
     try {
-      const newConfig = {
+      const newConfig: TopologyConfig = {
         name,
         description,
         pods: topologyConfigForEditor.pods,
@@ -1069,8 +936,7 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
           comm_params: { ...commLatencyConfig },
         },
       }
-      await saveConfig(newConfig as any)
-      await refreshTopologyConfigs()
+      await createTopology(newConfig)
       setSelectedTopologyConfig(name)
       toast.success(`已创建新配置: ${name}`)
     } catch (error) {
@@ -1078,7 +944,7 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
       toast.error('另存为配置失败')
       throw error
     }
-  }, [topologyConfigForEditor.pods, commLatencyConfig, localHardwareParams, refreshTopologyConfigs])
+  }, [topologyConfigForEditor.pods, commLatencyConfig, localHardwareParams])
 
   // 分析结果状态
   const [analysisResult, setAnalysisResult] = useState<PlanAnalysisResult | null>(null)
@@ -1799,7 +1665,7 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
             </BaseCard>
 
             {/* 部署策略 */}
-            <BaseCard collapsible defaultExpanded={false} title="部署策略" gradient className="mt-4">
+            <BaseCard collapsible defaultExpanded={true} title="部署策略" gradient className="mt-4">
               {/* --- 并行策略 --- */}
               <div className="mb-1 text-xs font-medium text-gray-500">并行策略</div>
               <ParallelismConfigPanel
@@ -1922,7 +1788,7 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
         </div>
 
         {/* 分析任务列表 */}
-        <BaseCard collapsible defaultExpanded={false} title="分析任务" gradient className="mt-4">
+        <BaseCard collapsible defaultExpanded={true} title="分析任务" gradient className="mt-4">
           <AnalysisTaskList
             tasks={analysisTasks}
             onViewTask={viewTaskResult}

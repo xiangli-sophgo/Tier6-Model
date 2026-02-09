@@ -1,7 +1,7 @@
 /**
- * Tier6 类型定义
+ * Math Model 类型定义
  *
- * 与 Tier6 仿真引擎后端对应的类型定义
+ * 与 math_model 仿真引擎后端对应的类型定义
  */
 
 // ==================== 预设类型 ====================
@@ -59,7 +59,7 @@ export interface EuPerLaneConfig {
   FP32?: number;
 }
 
-/** 芯片预设 - Tier6 结构化格式 */
+/** 芯片预设 - Math Model 结构化格式 */
 export interface ChipPreset {
   name: string;
   architecture?: string;   // 架构 (TPU_V7, etc.)
@@ -195,19 +195,19 @@ export interface BenchmarkListItem {
   output_seq_length?: number;
 }
 
-/** Tier6 Benchmark 配置 */
-export interface Tier6BenchmarkConfig {
+/** Math Model Benchmark 配置 */
+export interface BenchmarkConfig {
   id?: string;
   name?: string;
   model: string | ModelPreset | Record<string, unknown>;
   model_preset_ref?: string;
-  topology?: string | Tier6TopologyConfig | Record<string, unknown>;
+  topology?: string | TopologyConfig | Record<string, unknown>;
   topology_preset_ref?: string;
-  inference: Tier6InferenceConfig | Record<string, unknown>;
+  inference: BackendInferenceConfig | Record<string, unknown>;
 }
 
-/** Tier6 推理配置 */
-export interface Tier6InferenceConfig {
+/** Math Model 推理配置 */
+export interface BackendInferenceConfig {
   batch_size: number;
   input_seq_length: number;
   output_seq_length: number;
@@ -267,8 +267,8 @@ export interface InterconnectConfig {
   comm_params?: CommLatencyConfig | Record<string, unknown>;
 }
 
-/** Tier6 拓扑配置 (grouped_pods 格式) */
-export interface Tier6TopologyConfig {
+/** Math Model 拓扑配置 (grouped_pods 格式) */
+export interface TopologyConfig {
   name?: string;
   description?: string;
   pods?: TopologyPodGroup[];
@@ -293,17 +293,17 @@ export interface CommLatencyConfig {
 
 // ==================== 评估请求类型 ====================
 
-/** Tier6 评估请求 */
-export interface Tier6EvaluationRequest {
+/** Math Model 评估请求 */
+export interface EvaluationRequest {
   experiment_name: string;
   description?: string;
   experiment_description?: string;
   benchmark_name: string;
   topology_config_name: string;
-  benchmark_config: Tier6BenchmarkConfig | Record<string, unknown>;
-  topology_config: Tier6TopologyConfig | Record<string, unknown>;
+  benchmark_config: BenchmarkConfig | Record<string, unknown>;
+  topology_config: TopologyConfig | Record<string, unknown>;
   search_mode: 'manual' | 'auto' | 'sweep';
-  manual_parallelism?: Tier6ManualParallelism | Record<string, unknown>;
+  manual_parallelism?: ManualParallelism | Record<string, unknown>;
   search_constraints?: Record<string, unknown>;
   max_workers?: number;
   enable_tile_search?: boolean;
@@ -312,7 +312,7 @@ export interface Tier6EvaluationRequest {
 }
 
 /** 手动并行策略 */
-export interface Tier6ManualParallelism {
+export interface ManualParallelism {
   tp?: number;
   pp?: number;
   dp?: number;
@@ -332,7 +332,7 @@ export interface Tier6ManualParallelism {
 // ==================== 任务与结果类型 ====================
 
 /** 任务状态 */
-export interface Tier6TaskStatus {
+export interface TaskStatus {
   task_id: string;
   status: 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
   progress: number;
@@ -344,9 +344,9 @@ export interface Tier6TaskStatus {
 }
 
 /** 任务结果 */
-export interface Tier6TaskResults {
-  top_k_plans: Tier6PlanResult[];
-  infeasible_plans: Tier6InfeasiblePlan[];
+export interface TaskResults {
+  top_k_plans: PlanResult[];
+  infeasible_plans: InfeasiblePlan[];
   search_stats?: {
     total_plans: number;
     feasible_plans: number;
@@ -356,8 +356,8 @@ export interface Tier6TaskResults {
 }
 
 /** 可行方案结果 */
-export interface Tier6PlanResult {
-  parallelism: Tier6ManualParallelism | Record<string, unknown>;
+export interface PlanResult {
+  parallelism: ManualParallelism | Record<string, unknown>;
   tps: number;
   ttft: number;
   tpot: number;
@@ -372,16 +372,16 @@ export interface Tier6PlanResult {
 }
 
 /** 不可行方案 */
-export interface Tier6InfeasiblePlan {
-  parallelism: Tier6ManualParallelism | Record<string, unknown>;
+export interface InfeasiblePlan {
+  parallelism: ManualParallelism | Record<string, unknown>;
   infeasible_reason: string;
   is_feasible: boolean;
   [key: string]: unknown;  // 允许额外字段
 }
 
 /** 评估结果 (保留兼容) */
-export interface Tier6EvaluationResult {
-  parallelism: Tier6ManualParallelism;
+export interface EvaluationResult {
+  parallelism: ManualParallelism;
   metrics: {
     tps: number;
     ttft: number;
@@ -397,7 +397,7 @@ export interface Tier6EvaluationResult {
 // ==================== 实验类型 ====================
 
 /** 实验 */
-export interface Tier6Experiment {
+export interface Experiment {
   id: number;
   name: string;
   description?: string;
@@ -405,20 +405,20 @@ export interface Tier6Experiment {
   updated_at: string;
   total_tasks: number;
   completed_tasks: number;
-  tasks?: Tier6TaskStatus[];
+  tasks?: TaskStatus[];
 }
 
 // ==================== 其他类型 ====================
 
 /** 仿真请求 */
-export interface Tier6SimulateRequest {
-  benchmark_config: Tier6BenchmarkConfig;
-  topology_config: Tier6TopologyConfig;
-  parallelism: Tier6ManualParallelism;
+export interface SimulateRequest {
+  benchmark_config: BenchmarkConfig;
+  topology_config: TopologyConfig;
+  parallelism: ManualParallelism;
 }
 
 /** 仿真响应 */
-export interface Tier6SimulateResponse {
+export interface SimulateResponse {
   success: boolean;
   metrics?: {
     tps: number;

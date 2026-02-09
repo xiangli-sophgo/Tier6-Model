@@ -445,7 +445,6 @@ export const SweepConfigPanel: React.FC<SweepConfigPanelProps> = ({
                         handleUpdateParameter(param.key, 'start', value || 0)
                       }
                       className="w-24"
-                      size="sm"
                     />
                   </td>
                   <td className="px-3 py-2">
@@ -455,7 +454,6 @@ export const SweepConfigPanel: React.FC<SweepConfigPanelProps> = ({
                         handleUpdateParameter(param.key, 'end', value || 0)
                       }
                       className="w-24"
-                      size="sm"
                     />
                   </td>
                   <td className="px-3 py-2">
@@ -466,7 +464,6 @@ export const SweepConfigPanel: React.FC<SweepConfigPanelProps> = ({
                       }
                       min={0.001}
                       className="w-24"
-                      size="sm"
                     />
                   </td>
                   <td className="px-3 py-2 text-center">

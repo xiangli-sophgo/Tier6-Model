@@ -7,7 +7,7 @@
 
 import { ManualConnectionConfig, GlobalSwitchConfig, HierarchicalTopology } from '../types';
 import { ChipHardwareConfig } from './llmDeployment/types';
-import { ChipPreset } from '../types/tier6';
+import { ChipPreset } from '../types/math_model';
 
 // ============================================
 // 类型定义
@@ -60,7 +60,7 @@ export interface SavedConfig {
         name: string;
         count: number;
         preset_id?: string;
-        // 芯片详细配置现在存储在顶层 chips 字典中（使用 Tier6 ChipPreset 格式）
+        // 芯片详细配置现在存储在顶层 chips 字典中（使用 ChipPreset 格式）
       }>;
     }>;
   };
@@ -80,7 +80,7 @@ export interface SavedConfig {
   /** 网络配置 (带宽/延迟参数) */
   network_config?: NetworkConfig;
 
-  /** 芯片配置字典 - 使用 Tier6 ChipPreset 格式 */
+  /** 芯片配置字典 - 使用 ChipPreset 格式 */
   chips?: Record<string, ChipPreset>;
 
   /** 互联配置 (层级链路 + 通信参数) */
@@ -173,7 +173,7 @@ export function getLevelConnectionDefaults(): {
     // Board 间: 同 Rack 内不同节点/Board，走 InfiniBand
     rack: { bandwidth: 50.0, latency: 2.0 },
     // Chip 间: 同 Board 内芯片互联，走 NVLink
-    board: { bandwidth: 900.0, latency: 1.0 },
+    board: { bandwidth: 448.0, latency: 0.2 },
   };
 }
 

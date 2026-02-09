@@ -80,11 +80,11 @@ export function adaptSimulationResult(
   const chips = hardware?.chips || {};
   const firstChipName = Object.keys(chips)[0];
 
-  if (!firstChipName || !chips[firstChipName]?.memory_capacity_gb) {
-    throw new Error('无法从硬件配置中获取芯片容量 (memory_capacity_gb)');
+  if (!firstChipName || !chips[firstChipName]?.memory?.gmem?.capacity_gb) {
+    throw new Error('无法从硬件配置中获取芯片容量 (memory.gmem.capacity_gb)');
   }
 
-  const chipCapacityGB = chips[firstChipName].memory_capacity_gb;
+  const chipCapacityGB = chips[firstChipName].memory.gmem.capacity_gb;
   const totalMemoryGB = 0; // TODO: 从后端获取实际内存数据
   const memory: MemoryAnalysis = {
     model_memory_gb: 0,
