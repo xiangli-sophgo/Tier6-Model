@@ -480,6 +480,7 @@ async def calculate_model_params(request: CalculateParamsRequest):
     vocab_size = model_config.get("vocab_size", 32000)
     intermediate_size = model_config.get("intermediate_size", hidden_size * 4)
     num_heads = model_config.get("num_attention_heads", 32)
+    v_head_dim = model_config.get("v_head_dim", hidden_size // num_heads)
     dtype = model_config.get("dtype", "bf16")
 
     # 数据类型字节数
@@ -490,21 +491,35 @@ async def calculate_model_params(request: CalculateParamsRequest):
     embed_params = vocab_size * hidden_size
 
     # Attention 参数 (Q, K, V, O projections)
-    attn_params_per_layer = 4 * hidden_size * hidden_size
+    head_dim = hidden_size // num_heads
+    attn_params_per_layer = (
+        hidden_size * (num_heads * head_dim) +   # Q proj
+        hidden_size * (num_heads * head_dim) +   # K proj
+        hidden_size * (num_heads * v_head_dim) +  # V proj
+        (num_heads * v_head_dim) * hidden_size    # O proj
+    )
 
     # MLA 配置
     mla_config = model_config.get("MLA", {})
     if mla_config:
         q_lora_rank = mla_config.get("q_lora_rank", 0)
         kv_lora_rank = mla_config.get("kv_lora_rank", 0)
+        qk_nope_head_dim = mla_config.get("qk_nope_head_dim", 128)
+        qk_rope_head_dim = mla_config.get("qk_rope_head_dim", 64)
+        mla_v_head_dim = mla_config.get("v_head_dim", v_head_dim)
         if q_lora_rank > 0 and kv_lora_rank > 0:
-            # MLA: 使用 LoRA 投影
+            # MLA: Q down + Q up + KV down + K up + V up + O proj
             attn_params_per_layer = (
-                hidden_size * q_lora_rank +  # Q down
-                q_lora_rank * hidden_size +  # Q up
-                hidden_size * kv_lora_rank +  # KV down
-                kv_lora_rank * hidden_size * 2  # K up + V up
+                hidden_size * q_lora_rank +                          # Q down-proj
+                q_lora_rank * num_heads * (qk_nope_head_dim + qk_rope_head_dim) +  # Q up-proj
+                hidden_size * kv_lora_rank +                         # KV down-proj
+                kv_lora_rank * num_heads * qk_nope_head_dim +        # K up-proj
+                kv_lora_rank * num_heads * mla_v_head_dim +          # V up-proj
+                num_heads * mla_v_head_dim * hidden_size             # O proj
             )
+
+    # RMSNorm 参数 (每层 2 个: attn pre-norm + ffn pre-norm)
+    norm_params_per_layer = 2 * hidden_size
 
     # FFN 参数
     ffn_params_per_layer = 3 * hidden_size * intermediate_size  # gate, up, down
@@ -520,7 +535,7 @@ async def calculate_model_params(request: CalculateParamsRequest):
     num_moe_layers = model_config.get("num_moe_layers", 0 if num_routed_experts == 0 else num_layers - num_dense_layers)
 
     # Dense 层参数
-    dense_layer_params = attn_params_per_layer + ffn_params_per_layer
+    dense_layer_params = attn_params_per_layer + ffn_params_per_layer + norm_params_per_layer
     total_dense_params = dense_layer_params * num_dense_layers
 
     # MoE 层参数
@@ -529,7 +544,8 @@ async def calculate_model_params(request: CalculateParamsRequest):
         attn_params_per_layer +
         num_routed_experts * moe_expert_params +
         num_shared_experts * moe_expert_params +
-        hidden_size * num_routed_experts  # router
+        hidden_size * num_routed_experts +  # router
+        norm_params_per_layer
     )
     total_moe_params = moe_layer_params * num_moe_layers
 
@@ -538,16 +554,20 @@ async def calculate_model_params(request: CalculateParamsRequest):
         attn_params_per_layer +
         num_activated_experts * moe_expert_params +
         num_shared_experts * moe_expert_params +
-        hidden_size * num_routed_experts
+        hidden_size * num_routed_experts +
+        norm_params_per_layer
     )
     total_active_moe_params = active_moe_layer_params * num_moe_layers
+
+    # Final RMSNorm
+    final_norm_params = hidden_size
 
     # LM Head 参数
     lm_head_params = hidden_size * vocab_size
 
     # 总参数
-    total_params = embed_params + total_dense_params + total_moe_params + lm_head_params
-    active_params = embed_params + total_dense_params + total_active_moe_params + lm_head_params
+    total_params = embed_params + total_dense_params + total_moe_params + final_norm_params + lm_head_params
+    active_params = embed_params + total_dense_params + total_active_moe_params + final_norm_params + lm_head_params
 
     # 权重大小
     weight_size_bytes = int(total_params * bytes_per_param)
@@ -564,6 +584,7 @@ async def calculate_model_params(request: CalculateParamsRequest):
             "dense_layers": int(total_dense_params),
             "moe_layers": int(total_moe_params),
             "lm_head": int(lm_head_params),
+            "norm": int(norm_params_per_layer * num_layers + final_norm_params),
             "num_dense_layers": num_dense_layers,
             "num_moe_layers": num_moe_layers,
         }
@@ -600,9 +621,6 @@ async def submit_evaluation(request: EvaluationRequest):
         "manual_parallelism": request.manual_parallelism.model_dump() if request.manual_parallelism else None,
         "search_constraints": request.search_constraints.model_dump() if request.search_constraints else None,
         "max_workers": request.max_workers,
-        "enable_tile_search": request.enable_tile_search,
-        "enable_partition_search": request.enable_partition_search,
-        "max_simulated_tokens": request.max_simulated_tokens,
     }
 
     # 提交任务到线程池

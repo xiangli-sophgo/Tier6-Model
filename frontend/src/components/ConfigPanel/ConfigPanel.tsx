@@ -198,8 +198,6 @@ export const ConfigPanel: React.FC<ConfigPanelProps> = ({
 
   // 互联通信延迟配置
   const [commLatencyConfig, setCommLatencyConfig] = useState({
-    rtt_tp_us: 0.35,
-    rtt_ep_us: 0.85,
     bandwidth_utilization: 0.95,
     sync_latency_us: 0,
     switch_delay_us: 1.0,
@@ -1229,30 +1227,12 @@ export const ConfigPanel: React.FC<ConfigPanelProps> = ({
         <div className="mt-4">
 
           {/* 互联通信参数 - 全局配置 */}
-          <BaseCard title="互联通信参数（全局）" collapsible defaultExpanded gradient>
-            {/* 协议参数 */}
-            <div className="grid grid-cols-4 gap-3 mb-3">
+          <BaseCard title="Communication Parameters" collapsible defaultExpanded gradient>
+            {/* Bandwidth */}
+            <div className="grid grid-cols-2 gap-3 mb-3">
               <FormInputField
-                  label="TP RTT (µs)"
-                  tooltip="Tensor Parallelism Round Trip Time: 张量并行通信的往返延迟"
-                  min={0}
-                  max={10}
-                  step={0.05}
-                  value={commLatencyConfig.rtt_tp_us}
-                  onChange={(v) => setCommLatencyConfig(prev => ({ ...prev, rtt_tp_us: v ?? 0.35 }))}
-                />
-                <FormInputField
-                  label="EP RTT (µs)"
-                  tooltip="Expert Parallelism Round Trip Time: 专家并行通信的往返延迟"
-                  min={0}
-                  max={10}
-                  step={0.05}
-                  value={commLatencyConfig.rtt_ep_us}
-                  onChange={(v) => setCommLatencyConfig(prev => ({ ...prev, rtt_ep_us: v ?? 0.85 }))}
-                />
-                <FormInputField
-                  label="链路带宽利用率"
-                  tooltip="链路带宽利用率: 实际可用带宽与理论峰值带宽的比例 (典型值: 0.85-0.95)"
+                  label="Bandwidth Utilization"
+                  tooltip="Actual BW / Peak BW (0~1)"
                   min={0.5}
                   max={1.0}
                   step={0.01}
@@ -1260,8 +1240,8 @@ export const ConfigPanel: React.FC<ConfigPanelProps> = ({
                   onChange={(v) => setCommLatencyConfig(prev => ({ ...prev, bandwidth_utilization: v ?? 0.95 }))}
                 />
                 <FormInputField
-                  label="同步延迟 (µs)"
-                  tooltip="多卡同步操作的固定开销，如 Barrier、AllReduce 初始化延迟"
+                  label="Sync Latency (µs)"
+                  tooltip="Synchronization barrier latency"
                   min={0}
                   max={10}
                   step={0.1}
@@ -1270,14 +1250,14 @@ export const ConfigPanel: React.FC<ConfigPanelProps> = ({
                 />
             </div>
 
-            {/* 互联相关 */}
+            {/* Network Latency */}
             <div className="border-t border-dashed my-3 pt-2">
-              <span className="text-xs text-gray-500">互联相关</span>
+              <span className="text-xs text-gray-500">Network Latency</span>
             </div>
             <div className="grid grid-cols-2 gap-3 mb-3">
               <FormInputField
-                label="switch_delay (µs)"
-                  tooltip="网络交换机的数据包转发延迟 (典型值: 0.5-2 µs)"
+                label="Switch Latency (µs)"
+                  tooltip="Switch forwarding latency"
                   min={0}
                   max={10}
                   step={0.05}
@@ -1285,8 +1265,8 @@ export const ConfigPanel: React.FC<ConfigPanelProps> = ({
                   onChange={(v) => setCommLatencyConfig(prev => ({ ...prev, switch_delay_us: v ?? 1.0 }))}
                 />
                 <FormInputField
-                  label="cable_delay (µs)"
-                  tooltip="网络线缆的光/电信号传输延迟，约 5 ns/米 (典型值: 0.01-0.05 µs)"
+                  label="Cable Latency (µs)"
+                  tooltip="Cable transmission latency"
                   min={0}
                   max={1}
                   step={0.005}
@@ -1295,14 +1275,14 @@ export const ConfigPanel: React.FC<ConfigPanelProps> = ({
                 />
             </div>
 
-            {/* 芯片延迟参数 */}
+            {/* Chip Latency */}
             <div className="border-t border-dashed my-3 pt-2">
-              <span className="text-xs text-gray-500">芯片延迟参数</span>
+              <span className="text-xs text-gray-500">Chip Latency</span>
             </div>
             <div className="grid grid-cols-2 gap-3 mb-3">
               <FormInputField
-                label="memory_read (µs)"
-                  tooltip="显存读延迟 (DDR/HBM)"
+                label="DDR Read Latency (µs)"
+                  tooltip="HBM/GDDR read latency"
                   min={0}
                   max={1}
                   step={0.01}
@@ -1310,8 +1290,8 @@ export const ConfigPanel: React.FC<ConfigPanelProps> = ({
                   onChange={(v) => setCommLatencyConfig(prev => ({ ...prev, memory_read_latency_us: v ?? 0.15 }))}
                 />
                 <FormInputField
-                  label="memory_write (µs)"
-                  tooltip="显存写延迟 (DDR/HBM)"
+                  label="DDR Write Latency (µs)"
+                  tooltip="HBM/GDDR write latency"
                   min={0}
                   max={1}
                   step={0.01}
@@ -1319,8 +1299,8 @@ export const ConfigPanel: React.FC<ConfigPanelProps> = ({
                   onChange={(v) => setCommLatencyConfig(prev => ({ ...prev, memory_write_latency_us: v ?? 0.01 }))}
                 />
                 <FormInputField
-                  label="noc_latency (µs)"
-                  tooltip="片上网络延迟 (NoC)"
+                  label="NoC Latency (µs)"
+                  tooltip="Network-on-Chip latency"
                   min={0}
                   max={1}
                   step={0.01}
@@ -1328,8 +1308,8 @@ export const ConfigPanel: React.FC<ConfigPanelProps> = ({
                   onChange={(v) => setCommLatencyConfig(prev => ({ ...prev, noc_latency_us: v ?? 0.05 }))}
                 />
                 <FormInputField
-                  label="die_to_die (µs)"
-                  tooltip="Die-to-Die 延迟 (多Die芯片)"
+                  label="Die-to-Die Latency (µs)"
+                  tooltip="Die-to-Die interconnect latency"
                   min={0}
                   max={1}
                   step={0.01}

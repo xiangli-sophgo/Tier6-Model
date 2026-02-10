@@ -49,9 +49,6 @@ export interface EvaluationRequest {
 
   // 任务配置
   max_workers?: number             // 本任务的最大并发数（默认 4）
-  enable_tile_search?: boolean     // 是否启用 Tile 搜索（默认 true）
-  enable_partition_search?: boolean // 是否启用分区搜索（默认 true）
-  max_simulated_tokens?: number    // 最大模拟 token 数（默认 4）
 }
 
 export interface TaskSubmitResponse {

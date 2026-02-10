@@ -61,8 +61,6 @@ export const PARAMETER_DESCRIPTIONS: Record<string, string> = {
   'latency_us': '互联延迟（单向）',
 
   // === 通信延迟配置 ===
-  'interconnect.comm_params.rtt_tp_us': '张量并行通信往返时延',
-  'interconnect.comm_params.rtt_ep_us': '专家并行通信往返时延',
   'interconnect.comm_params.bandwidth_utilization': '网络带宽利用率（考虑拥塞）',
   'interconnect.comm_params.sync_latency_us': 'AllReduce同步延迟',
   'interconnect.comm_params.switch_delay_us': '交换机转发延迟',

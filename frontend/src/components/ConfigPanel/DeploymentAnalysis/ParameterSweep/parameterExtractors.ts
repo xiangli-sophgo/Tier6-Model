@@ -84,8 +84,6 @@ const PARAMETER_METADATA: Record<string, ParameterMetadata> = {
   'latency_us': { label: '延迟', unit: 'μs', defaultRange: { min: 0.1, max: 10, step: 0.1 } },
 
   // === 通信延迟配置 ===
-  'interconnect.comm_params.rtt_tp_us': { label: 'TP RTT', unit: 'μs', defaultRange: { min: 0.1, max: 2, step: 0.1 } },
-  'interconnect.comm_params.rtt_ep_us': { label: 'EP RTT', unit: 'μs', defaultRange: { min: 0.1, max: 2, step: 0.1 } },
   'interconnect.comm_params.bandwidth_utilization': { label: '带宽利用率', defaultRange: { min: 0.7, max: 1.0, step: 0.05 } },
   'interconnect.comm_params.sync_latency_us': { label: '同步延迟', unit: 'μs', defaultRange: { min: 0, max: 5, step: 0.1 } },
   'interconnect.comm_params.switch_delay_us': { label: '交换机延迟', unit: 'μs', defaultRange: { min: 0.5, max: 5, step: 0.5 } },

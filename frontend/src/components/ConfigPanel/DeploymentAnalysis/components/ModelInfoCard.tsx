@@ -187,7 +187,7 @@ export const ModelInfoCard: React.FC<ModelInfoCardProps> = ({ model, inference }
     let cancelled = false
     calculateModelParams(model)
       .then((res) => {
-        if (!cancelled) setTotalParams(res.params)
+        if (!cancelled) setTotalParams(res.total_params)
       })
       .catch(() => {
         // 后端失败时使用本地计算的近似值

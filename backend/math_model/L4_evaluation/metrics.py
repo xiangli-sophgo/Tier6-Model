@@ -73,8 +73,6 @@ class HardwareSpec:
 class CommProtocolSpec:
     """通信协议评估参数（L4 口径）"""
 
-    rtt_tp_us: float = 0.35
-    rtt_ep_us: float = 0.85
     sync_lat_us: float = 0.0
     bw_utilization: float = 0.95
     cpu_fetch_delay_us: float = 0.0
@@ -84,8 +82,6 @@ class CommProtocolSpec:
     def to_dict(self) -> dict[str, float]:
         """转换为字典"""
         return {
-            "rtt_tp_us": self.rtt_tp_us,
-            "rtt_ep_us": self.rtt_ep_us,
             "sync_lat_us": self.sync_lat_us,
             "bw_utilization": self.bw_utilization,
             "cpu_fetch_delay_us": self.cpu_fetch_delay_us,

@@ -30,6 +30,8 @@ import {
 import { BaseCard } from '@/components/common/BaseCard'
 import type { ModelPreset } from '@/types/math_model'
 import { getModelPresets, getModelPreset, updateModelPreset, saveModelPreset } from '@/api/math_model'
+import { calculateModelParams, formatParams } from '@/api/model'
+import { useDebouncedValue } from '@/hooks/useDebouncedCallback'
 
 // ============================================
 // Props
@@ -180,6 +182,18 @@ export const ModelPresetEditor: React.FC<ModelPresetEditorProps> = ({ value, onC
   useEffect(() => {
     onParamsModified?.(isAnyParamModified)
   }, [isAnyParamModified, onParamsModified])
+
+  // 参数量估算
+  const [paramsStr, setParamsStr] = useState<string>('--')
+  const debouncedValue = useDebouncedValue(value, 300)
+
+  useEffect(() => {
+    let cancelled = false
+    calculateModelParams(debouncedValue as unknown as Record<string, unknown>)
+      .then((res) => { if (!cancelled) setParamsStr(formatParams(res.total_params)) })
+      .catch(() => { if (!cancelled) setParamsStr('--') })
+    return () => { cancelled = true }
+  }, [debouncedValue])
 
   // 保存
   const handleSave = async () => {
@@ -415,6 +429,11 @@ export const ModelPresetEditor: React.FC<ModelPresetEditorProps> = ({ value, onC
             {renderSubSection('RoPE', value.RoPE as unknown as Record<string, unknown>, updateSubField('RoPE'))}
           </BaseCard>
         )}
+      </div>
+
+      {/* 参数量估算 */}
+      <div className="mb-3 px-2 py-1.5 bg-gray-50 rounded text-[13px] text-gray-500">
+        估算参数量: <b className="text-gray-800">{paramsStr}</b>
       </div>
 
       {/* 操作按钮 */}

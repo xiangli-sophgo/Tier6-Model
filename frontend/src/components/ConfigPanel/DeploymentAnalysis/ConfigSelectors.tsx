@@ -36,7 +36,7 @@ import {
   InferenceConfig,
   HardwareConfig,
 } from '../../../utils/llmDeployment/types'
-import { calculateModelParams } from '../../../api/model'
+import { calculateModelParams, formatParams } from '../../../api/model'
 import { useDebouncedValue } from '@/hooks/useDebouncedCallback'
 import {
   getModelList,
@@ -182,7 +182,7 @@ export const ModelConfigSelector: React.FC<ModelConfigSelectorProps> = ({ value,
     let cancelled = false
     calculateModelParams(debouncedModelConfig)
       .then((res) => {
-        if (!cancelled) setParamsStr(res.formatted)
+        if (!cancelled) setParamsStr(formatParams(res.total_params))
       })
       .catch(() => {
         if (!cancelled) setParamsStr('--')

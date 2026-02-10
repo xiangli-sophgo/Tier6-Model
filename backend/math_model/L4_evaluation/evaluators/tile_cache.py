@@ -107,14 +107,11 @@ class TilePersistentCache:
         key_str = json.dumps(self._chip_params, sort_keys=True)
         return hashlib.md5(key_str.encode()).hexdigest()[:8]
 
-    def _make_key(self, op_type: str, shape: dict, dtypes: tuple,
-                  enable_tile_search: bool, enable_partition_search: bool) -> str:
+    def _make_key(self, op_type: str, shape: dict, dtypes: tuple) -> str:
         key_data = (
             op_type,
             tuple(sorted(shape.items())),
             dtypes,
-            enable_tile_search,
-            enable_partition_search,
         )
         key_str = json.dumps(key_data, sort_keys=True, default=str)
         return hashlib.md5(key_str.encode()).hexdigest()[:12]
@@ -124,15 +121,13 @@ class TilePersistentCache:
         op_type: str,
         shape: dict,
         dtypes: tuple,
-        enable_tile_search: bool = True,
-        enable_partition_search: bool = False,
     ) -> Optional[dict]:
         """查询缓存
 
         Returns:
             缓存的 tile_meta dict，未命中返回 None
         """
-        key = self._make_key(op_type, shape, dtypes, enable_tile_search, enable_partition_search)
+        key = self._make_key(op_type, shape, dtypes)
         result = self._cache.get(key)
         if result is not None:
             self._hits += 1
@@ -146,12 +141,10 @@ class TilePersistentCache:
         shape: dict,
         dtypes: tuple,
         tile_meta: dict,
-        enable_tile_search: bool = True,
-        enable_partition_search: bool = False,
         search_time_ms: float = 0.0,
     ) -> None:
         """写入缓存"""
-        key = self._make_key(op_type, shape, dtypes, enable_tile_search, enable_partition_search)
+        key = self._make_key(op_type, shape, dtypes)
         self._cache[key] = tile_meta
         self._save_entry(key, op_type, shape, dtypes, tile_meta, search_time_ms)
 

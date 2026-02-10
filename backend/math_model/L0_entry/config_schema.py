@@ -353,9 +353,6 @@ class EvaluationRequest(BaseModel):
     manual_parallelism: Optional[ManualParallelism] = None
     search_constraints: Optional[SearchConstraints] = None
     max_workers: int = Field(4, ge=1, le=32)
-    enable_tile_search: bool = Field(True)
-    enable_partition_search: bool = Field(True)
-    max_simulated_tokens: int = Field(4, ge=1)
 
 
 class SimulateRequest(BaseModel):

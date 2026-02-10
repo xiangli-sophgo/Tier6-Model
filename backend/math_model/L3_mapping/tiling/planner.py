@@ -70,16 +70,29 @@ class TilingPlanner:
             except Exception as e:
                 logger.warning("Failed to initialize persistent tile cache: %s", e)
 
-    def plan(self, dist_model: DistributedModel) -> TilePlan:
+    def plan(
+        self,
+        dist_model: DistributedModel,
+        progress_callback: Callable[[int, int], None] | None = None,
+    ) -> TilePlan:
         """生成片内映射结果
 
         当 l4_evaluator 存在时，在搜索阶段即用 L4 精评估打分选择最优 tile，
         tile_meta 中直接包含精评估结果（t_compute_ms、t_memory_ms、bottleneck 等）。
+
+        Args:
+            dist_model: 分布式模型
+            progress_callback: 进度回调 (current_op_idx, total_ops)
         """
         plan = TilePlan()
         lmem_budget = self._get_lmem_budget()
 
-        for op in dist_model.get_compute_ops():
+        compute_ops = list(dist_model.get_compute_ops())
+        total_ops = len(compute_ops)
+
+        for idx, op in enumerate(compute_ops):
+            if progress_callback and total_ops > 0:
+                progress_callback(idx, total_ops)
             if not op.local_shape:
                 continue
 
@@ -130,6 +143,9 @@ class TilingPlanner:
 
             if self._needs_intra_reduce(op.local_shape, tile_config):
                 plan.intra_chip_comms.append(self._build_intra_reduce(op, tile_config))
+
+        if progress_callback and total_ops > 0:
+            progress_callback(total_ops, total_ops)
 
         return plan
 

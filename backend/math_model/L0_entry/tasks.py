@@ -166,6 +166,12 @@ class TaskManager:
         task.started_at = datetime.now()
         self._notify_callbacks(task_id)
 
+        # 注入 progress_callback，让任务函数可以上报进度
+        def progress_callback(progress: float) -> None:
+            self.update_progress(task_id, progress)
+
+        kwargs["progress_callback"] = progress_callback
+
         try:
             # 执行任务
             result = func(*args, **kwargs)

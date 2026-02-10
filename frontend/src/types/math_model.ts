@@ -279,8 +279,6 @@ export interface TopologyConfig {
 
 /** 通信延迟配置 */
 export interface CommLatencyConfig {
-  rtt_tp_us?: number;
-  rtt_ep_us?: number;
   bandwidth_utilization?: number;
   sync_latency_us?: number;
   switch_delay_us?: number;
@@ -306,9 +304,6 @@ export interface EvaluationRequest {
   manual_parallelism?: ManualParallelism | Record<string, unknown>;
   search_constraints?: Record<string, unknown>;
   max_workers?: number;
-  enable_tile_search?: boolean;
-  enable_partition_search?: boolean;
-  max_simulated_tokens?: number;
 }
 
 /** 手动并行策略 */

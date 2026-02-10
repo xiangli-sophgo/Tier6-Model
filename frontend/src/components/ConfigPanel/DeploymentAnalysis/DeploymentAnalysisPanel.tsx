@@ -211,18 +211,8 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
   // 任务并发数（本次评估使用的 worker 数量）
   const [taskMaxWorkers, setTaskMaxWorkers] = useState<number>(4)
 
-  // Tile 搜索开关（默认开启）
-  const [enableTileSearch, setEnableTileSearch] = useState<boolean>(true)
-
-  // 分区搜索开关（默认开启）
-  const [enablePartitionSearch, setEnablePartitionSearch] = useState<boolean>(true)
-
-  // 最大模拟 token 数（默认 4）
-  const [maxSimulatedTokens, setMaxSimulatedTokens] = useState<number>(4)
-
   // 推理阶段开关
   const [enablePrefill, setEnablePrefill] = useState<boolean>(true)
-  const [enableDecode, setEnableDecode] = useState<boolean>(true)
 
   // Zigzag Reorder 优化开关（仅 Prefill 阶段生效）
   const [enableZigzag, setEnableZigzag] = useState<boolean>(false)
@@ -1343,14 +1333,15 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
         search_mode: parallelismMode,
         manual_parallelism: parallelismMode === 'manual' ? {
           ...manualStrategy,
+          seq_len: inferenceConfig.input_seq_length,
+          embed_tp: manualStrategy.tp ?? 1,
+          lmhead_tp: manualStrategy.tp ?? 1,
+          is_prefill: enablePrefill,
           enable_zigzag: enableZigzag,
           enable_ring_attention: enableRingAttention,
         } as unknown as Record<string, unknown> : undefined,
         search_constraints: parallelismMode === 'auto' ? { max_chips: maxChips } : undefined,
         max_workers: taskMaxWorkers,
-        enable_tile_search: enableTileSearch,
-        enable_partition_search: enablePartitionSearch,
-        max_simulated_tokens: maxSimulatedTokens,
       })
 
       const backendTaskId = response.task_id
@@ -1374,10 +1365,9 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
     }
   }, [
     experimentName, taskMaxWorkers, modelPreset, modelConfig, inferenceConfig, parallelismMode, manualStrategy,
-    maxChips, addTask, updateTask, setAnalysisTasks, enableTileSearch,
-    enablePartitionSearch, maxSimulatedTokens, selectedTopologyConfig, selectedBenchmark,
+    maxChips, addTask, updateTask, setAnalysisTasks, selectedTopologyConfig, selectedBenchmark,
     localPodCount, localRacksPerPod, localRackConfig, localHardwareParams, commLatencyConfig,
-    enableZigzag, enableRingAttention, topologyConfigForEditor
+    enablePrefill, enableZigzag, enableRingAttention, topologyConfigForEditor
   ])
 
   // 运行参数遍历（批量提交任务）
@@ -1488,13 +1478,14 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
           search_mode: 'manual',
           manual_parallelism: {
             ...overriddenConfig.parallelism,
+            seq_len: inferenceConfig.input_seq_length,
+            embed_tp: (overriddenConfig.parallelism?.tp as number) ?? manualStrategy.tp ?? 1,
+            lmhead_tp: (overriddenConfig.parallelism?.tp as number) ?? manualStrategy.tp ?? 1,
+            is_prefill: enablePrefill,
             enable_zigzag: enableZigzag,
             enable_ring_attention: enableRingAttention,
           } as unknown as Record<string, unknown>,
           max_workers: taskMaxWorkers,
-          enable_tile_search: enableTileSearch,
-          enable_partition_search: enablePartitionSearch,
-          max_simulated_tokens: maxSimulatedTokens,
         })
 
         // 更新任务 ID 为后端返回的真实 ID
@@ -1522,15 +1513,13 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
     localHardwareParams,
     manualStrategy,
     taskMaxWorkers,
-    enableTileSearch,
-    enablePartitionSearch,
-    maxSimulatedTokens,
     addTask,
     setAnalysisTasks,
     localPodCount,
     localRacksPerPod,
     localRackConfig,
     commLatencyConfig,
+    enablePrefill,
     enableZigzag,
     enableRingAttention,
   ])
@@ -1765,14 +1754,10 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
               {/* --- 评估选项 --- */}
               <div className="mt-4 pt-4 border-t border-gray-200">
                 <div className="mb-3 text-xs font-medium text-gray-500">评估选项</div>
-                <div className="grid grid-cols-6 gap-4">
+                <div className="grid grid-cols-3 gap-4">
                   <div className="text-center">
                     <HelpTooltip label="Prefill 阶段" content="预填充阶段: 处理输入序列，计算密集型" labelClassName="text-[11px] text-gray-600 block mb-1 cursor-help" />
                     <div className="flex justify-center h-7 items-center"><Switch checked={enablePrefill} onCheckedChange={setEnablePrefill} /></div>
-                  </div>
-                  <div className="text-center">
-                    <HelpTooltip label="Decode 阶段" content="解码阶段: 逐 token 生成，带宽密集型" labelClassName="text-[11px] text-gray-600 block mb-1 cursor-help" />
-                    <div className="flex justify-center h-7 items-center"><Switch checked={enableDecode} onCheckedChange={setEnableDecode} /></div>
                   </div>
                   <div className="text-center">
                     <HelpTooltip label="Zigzag" content="Zigzag Reorder: Prefill 阶段因果注意力三角矩阵优化，减少约 40% Attention GEMM 计算量（仅 Prefill 生效）" labelClassName="text-[11px] text-gray-600 block mb-1 cursor-help" />
@@ -1781,18 +1766,6 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
                   <div className="text-center">
                     <HelpTooltip label="Ring Attn" content="Ring Attention: Layer 级重叠优化，Attention 层的计算与通信完全并行（需 TP>1）" labelClassName="text-[11px] text-gray-600 block mb-1 cursor-help" />
                     <div className="flex justify-center h-7 items-center"><Switch checked={enableRingAttention} onCheckedChange={setEnableRingAttention} /></div>
-                  </div>
-                  <div className="text-center">
-                    <HelpTooltip label="Tile 搜索" content="开启时使用最优tile搜索以获得最高精度，关闭时使用固定tile大小以显著提升评估速度" labelClassName="text-[11px] text-gray-600 block mb-1 cursor-help" />
-                    <div className="flex justify-center h-7 items-center"><Switch checked={enableTileSearch} onCheckedChange={setEnableTileSearch} /></div>
-                  </div>
-                  <div className="text-center">
-                    <HelpTooltip label="分区搜索" content="开启时搜索最优分区策略（极慢），关闭时使用固定分区（推荐）" labelClassName="text-[11px] text-gray-600 block mb-1 cursor-help" />
-                    <div className="flex justify-center h-7 items-center"><Switch checked={enablePartitionSearch} onCheckedChange={setEnablePartitionSearch} /></div>
-                  </div>
-                  <div className="text-center">
-                    <HelpTooltip label="模拟 Token 数" content="Decode 阶段模拟的 token 数量。推荐：快速评估用 1-2，精确评估用 4-8" labelClassName="text-[11px] text-gray-600 block mb-1 cursor-help" />
-                    <NumberInput min={1} max={16} value={maxSimulatedTokens} onChange={(v) => setMaxSimulatedTokens(v || 4)} className="h-7 text-center" />
                   </div>
                 </div>
               </div>

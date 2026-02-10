@@ -7,7 +7,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import Any, Callable
 
 from math_model.L0_entry.config_loader import (
     load_chip,
@@ -17,7 +17,10 @@ from math_model.L0_entry.config_loader import (
 logger = logging.getLogger(__name__)
 
 
-def run_evaluation(config: dict[str, Any]) -> dict[str, Any]:
+def run_evaluation(
+    config: dict[str, Any],
+    progress_callback: Callable[[float], None] | None = None,
+) -> dict[str, Any]:
     """执行评估
 
     完整流程（对齐 CHIPMathica）:
@@ -41,16 +44,22 @@ def run_evaluation(config: dict[str, Any]) -> dict[str, Any]:
                     "board": {...},
                     "inference": {...}
                 }
+        progress_callback: 进度回调函数 (0.0 ~ 1.0)
 
     Returns:
         dict: 评估结果
     """
+    def _report(p: float) -> None:
+        if progress_callback:
+            progress_callback(p)
     # 解析配置
     chip_config = _load_chip_config(config)
     model_config = _load_model_config(config)
     deployment_config = _get_required(config, "deployment", "evaluation config")
     board_config = _get_required(config, "board", "evaluation config")
     inference_config = _get_required(config, "inference", "evaluation config")
+
+    _report(0.02)
 
     # ==================== L1: 构建 WorkloadIR ====================
     from math_model.L1_workload.models.llm.deepseek import DeepSeekV3Model
@@ -61,12 +70,14 @@ def run_evaluation(config: dict[str, Any]) -> dict[str, Any]:
     ir = model.to_ir()
 
     print(f"[L1] WorkloadIR created: {len(ir.get_layers())} layers")
+    _report(0.05)
 
     # ==================== L2: 加载 ChipSpec ====================
     from math_model.L2_arch.chip import ChipSpecImpl
 
     chip = ChipSpecImpl.from_config(_get_required(chip_config, "name", "chip config"), chip_config)
     print(f"[L2] ChipSpec loaded: {chip.name}")
+    _report(0.08)
 
     # ==================== L3: Parallelism Planning ====================
     from math_model.L3_mapping.parallelism.planner import DeploymentSpec, ParallelismPlanner, BoardSpec
@@ -97,6 +108,7 @@ def run_evaluation(config: dict[str, Any]) -> dict[str, Any]:
     print("[L3] Running ParallelismPlanner...")
     planner = ParallelismPlanner(deployment, board)
     dist_model = planner.plan(ir)
+    _report(0.12)
 
     # ==================== L3: Tiling Planning ====================
     from math_model.L3_mapping.tiling.planner import TilingPlanner
@@ -113,13 +125,22 @@ def run_evaluation(config: dict[str, Any]) -> dict[str, Any]:
         enable_zigzag=bool(deployment_config.get("enable_zigzag", False)),
     )
 
-    tile_plan = TilingPlanner(chip, l4_evaluator=precise_evaluator).plan(dist_model)
+    # TilingPlanner 进度映射到 12% -> 75%
+    def _tiling_progress(current: int, total: int) -> None:
+        if total > 0:
+            _report(0.12 + (current / total) * 0.63)
+
+    tile_plan = TilingPlanner(chip, l4_evaluator=precise_evaluator).plan(
+        dist_model, progress_callback=_tiling_progress,
+    )
+    _report(0.75)
 
     # ==================== L3: Scheduling ====================
     from math_model.L3_mapping.scheduling.scheduler import Scheduler
 
     print("[L3] Running Scheduler...")
     exec_plan = Scheduler().plan(dist_model, tile_plan)
+    _report(0.78)
 
     # ==================== L4: Evaluation ====================
     from math_model.L4_evaluation.engine import EvaluationEngine
@@ -139,6 +160,7 @@ def run_evaluation(config: dict[str, Any]) -> dict[str, Any]:
         output_tokens=deployment.batch_size,
         deployment_config=deployment_config,
     )
+    _report(0.85)
 
     # ==================== L5: Reporting ====================
     print("[L5] Generating reports...")
@@ -171,6 +193,7 @@ def run_evaluation(config: dict[str, Any]) -> dict[str, Any]:
 
     reporting_engine = ReportingEngine()
     report = reporting_engine.run(engine_result=engine_result, config=run_config)
+    _report(0.95)
 
     # 转换为字典 (使用 asdict 处理 dataclass)
     result = {
@@ -383,7 +406,10 @@ def _build_hardware_spec(chip: Any, chip_config: dict[str, Any]) -> dict[str, An
 # ============================================
 
 
-def run_evaluation_from_request(config: dict[str, Any]) -> dict[str, Any]:
+def run_evaluation_from_request(
+    config: dict[str, Any],
+    progress_callback: Callable[[float], None] | None = None,
+) -> dict[str, Any]:
     """从前端 EvaluationRequest 格式运行评估
 
     Args:
@@ -392,6 +418,7 @@ def run_evaluation_from_request(config: dict[str, Any]) -> dict[str, Any]:
             - benchmark_name: Benchmark 名称
             - topology_config_name: 拓扑配置名称
             - benchmark_config: { model: {...}, inference: {...} }
+        progress_callback: 进度回调函数 (0.0 ~ 1.0)，由 TaskManager 注入
             - topology_config: 完整拓扑配置 (含 interconnect.comm_params)
             - manual_parallelism: 手动并行配置
             - search_mode: 搜索模式
@@ -497,7 +524,7 @@ def run_evaluation_from_request(config: dict[str, Any]) -> dict[str, Any]:
 
     # 执行评估
     try:
-        result = run_evaluation(internal_config)
+        result = run_evaluation(internal_config, progress_callback=progress_callback)
 
         # 提取性能指标
         aggregates = _get_required(result, "aggregates", "evaluation result")
@@ -593,6 +620,8 @@ def run_evaluation_from_request(config: dict[str, Any]) -> dict[str, Any]:
         }
 
         # 返回与 llm_simulator 兼容的格式
+        if progress_callback:
+            progress_callback(0.98)
         return {
             "top_k_plans": [plan],
             "infeasible_plans": [],
@@ -750,10 +779,6 @@ def _map_comm_latency_config(frontend_config: dict[str, Any]) -> tuple[dict[str,
         topology_overrides["inter_node_bw_gbps"] = frontend_config["inter_node_bw_gbps"]
 
     # CommProtocolSpec 字段映射
-    if "rtt_tp_us" in frontend_config:
-        comm_overrides["rtt_tp_us"] = frontend_config["rtt_tp_us"]
-    if "rtt_ep_us" in frontend_config:
-        comm_overrides["rtt_ep_us"] = frontend_config["rtt_ep_us"]
     if "bandwidth_utilization" in frontend_config:
         comm_overrides["bw_utilization"] = frontend_config["bandwidth_utilization"]
     if "sync_latency_us" in frontend_config:

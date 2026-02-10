@@ -95,8 +95,6 @@ export interface SavedConfig {
     /** 通信参数 (统一所有延迟相关参数) */
     comm_params?: {
       // 协议相关
-      rtt_tp_us: number;
-      rtt_ep_us: number;
       bandwidth_utilization: number;
       sync_latency_us: number;
       // 网络基础设施

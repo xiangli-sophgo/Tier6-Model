@@ -73,9 +73,6 @@ export interface EvaluationTask {
     topology_config?: Record<string, unknown>
     // 任务配置
     max_workers?: number
-    enable_tile_search?: boolean
-    enable_partition_search?: boolean
-    max_simulated_tokens?: number
   }
   benchmark_name?: string
   topology_config_name?: string

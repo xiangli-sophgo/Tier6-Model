@@ -19,8 +19,13 @@ const api = axios.create({
 // ============================================
 
 export interface ModelParamsResponse {
-  params: number
-  formatted: string
+  total_params: number
+  total_params_b: number
+  active_params: number
+  active_params_b: number
+  weight_size_bytes: number
+  weight_size_gb: number
+  breakdown: Record<string, unknown>
 }
 
 // ============================================
@@ -36,7 +41,7 @@ export interface ModelParamsResponse {
 export async function calculateModelParams(
   model: LLMModelConfig | Record<string, unknown>
 ): Promise<ModelParamsResponse> {
-  const response = await api.post<ModelParamsResponse>('/model/calculate-params', model)
+  const response = await api.post<ModelParamsResponse>('/model/calculate-params', { model_config: model })
   return response.data
 }
 

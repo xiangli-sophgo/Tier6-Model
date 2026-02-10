@@ -798,7 +798,7 @@ Body: {"result_ids": [10, 11, 12]}
 ## Port Configuration
 
 - Frontend default: 3100
-- Backend default: 8001
+- Backend default: 8003 (配置在 `.env` 的 `VITE_API_PORT`)
 - CORS is configured to allow all origins in development
 
 ## Code Style Notes

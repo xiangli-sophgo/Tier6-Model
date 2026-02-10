@@ -33,7 +33,7 @@ import {
   LLMModelConfig,
   InferenceConfig,
 } from '../../../utils/llmDeployment/types'
-import { calculateModelParams } from '../../../api/model'
+import { calculateModelParams, formatParams } from '../../../api/model'
 import { useDebouncedValue } from '@/hooks/useDebouncedCallback'
 import {
   getModelList,
@@ -111,7 +111,7 @@ export const BenchmarkConfigSelector: React.FC<BenchmarkConfigSelectorProps> = (
   useEffect(() => {
     let cancelled = false
     calculateModelParams(debouncedModelConfig)
-      .then((res) => { if (!cancelled) setParamsStr(res.formatted) })
+      .then((res) => { if (!cancelled) setParamsStr(formatParams(res.total_params)) })
       .catch(() => { if (!cancelled) setParamsStr('--') })
     return () => { cancelled = true }
   }, [debouncedModelConfig])

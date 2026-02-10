@@ -34,16 +34,14 @@ const IC_LABELS: Record<string, { label: string; tip: string }> = {
 }
 
 const COMM_FIELDS: Array<{ key: string; label: string; tip: string; step?: number }> = [
-  { key: 'rtt_tp_us', label: 'TP RTT (us)', tip: 'Tensor Parallelism 通信往返延迟' },
-  { key: 'rtt_ep_us', label: 'EP RTT (us)', tip: 'Expert Parallelism 通信往返延迟' },
-  { key: 'bandwidth_utilization', label: '带宽利用率', tip: '实际带宽 / 理论带宽 (0~1)', step: 0.01 },
-  { key: 'sync_latency_us', label: '同步延迟 (us)', tip: '同步屏障延迟' },
-  { key: 'switch_delay_us', label: '交换机延迟 (us)', tip: '交换机转发延迟' },
-  { key: 'cable_delay_us', label: '线缆延迟 (us)', tip: '线缆传输延迟' },
-  { key: 'memory_read_latency_us', label: '显存读延迟 (us)', tip: 'HBM/GDDR 读取延迟' },
-  { key: 'memory_write_latency_us', label: '显存写延迟 (us)', tip: 'HBM/GDDR 写入延迟' },
-  { key: 'noc_latency_us', label: 'NoC 延迟 (us)', tip: '片上网络延迟' },
-  { key: 'die_to_die_latency_us', label: 'D2D 延迟 (us)', tip: 'Die-to-Die 互联延迟' },
+  { key: 'bandwidth_utilization', label: 'Bandwidth Utilization', tip: 'Actual BW / Peak BW (0~1)', step: 0.01 },
+  { key: 'sync_latency_us', label: 'Sync Latency (us)', tip: 'Synchronization barrier latency' },
+  { key: 'switch_delay_us', label: 'Switch Latency (us)', tip: 'Switch forwarding latency' },
+  { key: 'cable_delay_us', label: 'Cable Latency (us)', tip: 'Cable transmission latency' },
+  { key: 'memory_read_latency_us', label: 'DDR Read Latency (us)', tip: 'HBM/GDDR read latency' },
+  { key: 'memory_write_latency_us', label: 'DDR Write Latency (us)', tip: 'HBM/GDDR write latency' },
+  { key: 'noc_latency_us', label: 'NoC Latency (us)', tip: 'Network-on-Chip latency' },
+  { key: 'die_to_die_latency_us', label: 'Die-to-Die Latency (us)', tip: 'Die-to-Die interconnect latency' },
 ]
 
 function getICValue(cfg: TopologyConfig, lvl: string, f: 'bandwidth_gbps' | 'latency_us'): number | undefined {

@@ -556,8 +556,6 @@ def create_default_hardware_spec(
     switch_delay_us: float = 0.25,
     cable_delay_us: float = 0.025,
     # CommProtocolSpec: 评估协议参数（L4 口径）
-    rtt_tp_us: float = 0.35,
-    rtt_ep_us: float = 0.85,
     sync_lat_us: float = 0.0,
     bw_utilization: float = 0.95,
     cpu_fetch_delay_us: float = 0.0,
@@ -602,8 +600,6 @@ def create_default_hardware_spec(
         cable_delay_us=cable_delay_us,
     )
     comm = CommProtocolSpec(
-        rtt_tp_us=rtt_tp_us,
-        rtt_ep_us=rtt_ep_us,
         sync_lat_us=sync_lat_us,
         bw_utilization=bw_utilization,
         cpu_fetch_delay_us=cpu_fetch_delay_us,

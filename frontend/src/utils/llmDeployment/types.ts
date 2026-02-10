@@ -825,44 +825,30 @@ export interface TopologyTrafficResult {
 
 /** 通信延迟配置 (统一所有延迟相关参数) */
 export interface CommLatencyConfig {
-  // === 协议相关 ===
-  /** TP 通信 RTT (微秒) */
-  rtt_tp_us: number;
-  /** EP 通信 RTT (微秒) */
-  rtt_ep_us: number;
-  /** 带宽利用率 (0-1) */
+  /** Bandwidth Utilization (0-1) */
   bandwidth_utilization: number;
-  /** 同步延迟 (微秒) */
+  /** Sync Latency (us) */
   sync_latency_us: number;
-
-  // === 网络基础设施 ===
-  /** 交换机延迟 (微秒) */
+  /** Switch Latency (us) */
   switch_delay_us: number;
-  /** 线缆延迟 (微秒) */
+  /** Cable Latency (us) */
   cable_delay_us: number;
-
-  // === 芯片延迟 ===
-  /** 显存读延迟 (微秒) */
+  /** DDR Read Latency (us) */
   memory_read_latency_us: number;
-  /** 显存写延迟 (微秒) */
+  /** DDR Write Latency (us) */
   memory_write_latency_us: number;
-  /** 片上网络延迟 (微秒) */
+  /** NoC Latency (us) */
   noc_latency_us: number;
-  /** Die-to-Die 延迟 (微秒) */
+  /** Die-to-Die Latency (us) */
   die_to_die_latency_us: number;
 }
 
 /** 默认通信延迟配置 */
 export const DEFAULT_COMM_LATENCY_CONFIG: CommLatencyConfig = {
-  // 协议相关
-  rtt_tp_us: 0.35,
-  rtt_ep_us: 0.85,
   bandwidth_utilization: 0.95,
   sync_latency_us: 0.0,
-  // 网络基础设施
   switch_delay_us: 1.0,
   cable_delay_us: 0.025,
-  // 芯片延迟
   memory_read_latency_us: 0.15,
   memory_write_latency_us: 0.01,
   noc_latency_us: 0.05,

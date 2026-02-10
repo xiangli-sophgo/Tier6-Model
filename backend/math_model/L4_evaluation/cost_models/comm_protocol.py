@@ -28,8 +28,6 @@ class CommProtocolParams:
     ddr_w_lat: float = 0.01
     noc_lat: float = 0.05
     d2d_lat: float = 0.04
-    rtt_tp: float = 0.35
-    rtt_ep: float = 0.85
     sync_lat: float = 0.0
     bw_urate: float = 0.95
     link_delay: float = 0.0
@@ -70,8 +68,6 @@ class CommProtocolParams:
             ),
             noc_lat=float(_read(defaults.noc_lat, "noc_lat_us", "comm_noc_lat", "noc_lat")),
             d2d_lat=float(_read(defaults.d2d_lat, "d2d_lat_us", "comm_d2d_lat", "d2d_lat")),
-            rtt_tp=float(_read(defaults.rtt_tp, "rtt_tp_us", "comm_rtt_tp", "rtt_tp")),
-            rtt_ep=float(_read(defaults.rtt_ep, "rtt_ep_us", "comm_rtt_ep", "rtt_ep")),
             sync_lat=float(_read(defaults.sync_lat, "sync_lat_us", "comm_sync_lat", "sync_lat")),
             bw_urate=float(
                 _read(defaults.bw_urate, "bw_utilization", "comm_bw_urate", "bw_urate")
@@ -160,10 +156,6 @@ class CommProtocolCostModel:
         latency_us = (comm_size / self.arch.intra_bw / self.params.bw_urate) * 1e6 + (
             tp - 1
         ) * (self.start_lat + self.params.sync_lat)
-        if comm_protocol == 2:
-            latency_us += self.params.rtt_tp * 2 * (tp - 1)
-        elif comm_protocol == 3:
-            latency_us += self.params.rtt_tp * min(1, 2 * (tp - 1))
         return latency_us, comm_size
 
     def allgather(self, tp: int, comm_bytes: int, comm_protocol: int) -> tuple[float, float]:
@@ -187,10 +179,6 @@ class CommProtocolCostModel:
         latency_us = (comm_size / self.arch.intra_bw / self.params.bw_urate) * 1e6 + (
             tp - 1
         ) * (self.start_lat + self.params.sync_lat)
-        if comm_protocol == 2:
-            latency_us += self.params.rtt_tp * 2 * (tp - 1)
-        elif comm_protocol == 3:
-            latency_us += self.params.rtt_tp * min(1, 2 * (tp - 1))
         return latency_us, comm_size
 
     def reducescatter(
@@ -216,10 +204,6 @@ class CommProtocolCostModel:
         latency_us = (comm_size / self.arch.intra_bw / self.params.bw_urate) * 1e6 + (
             tp - 1
         ) * (self.start_lat + self.params.sync_lat)
-        if comm_protocol == 2:
-            latency_us += self.params.rtt_tp * 2 * (tp - 1)
-        elif comm_protocol == 3:
-            latency_us += self.params.rtt_tp * min(1, 2 * (tp - 1))
         return latency_us, comm_size
 
     def dispatch(
@@ -236,18 +220,6 @@ class CommProtocolCostModel:
             + self.start_lat
             + self.params.cpu_fetch_delay
         )
-        if comm_protocol == 2:
-            if is_prefill:
-                t_us += self.params.rtt_ep * bs * self.params.topk * self.params.prefill_factor
-            else:
-                t_us += self.params.rtt_ep * bs * self.params.topk
-        elif comm_protocol == 3:
-            if is_prefill:
-                t_us += self.params.rtt_ep * min(
-                    1, bs * self.params.topk * self.params.prefill_factor
-                )
-            else:
-                t_us += self.params.rtt_ep * min(1, bs * self.params.topk)
 
         ag_lat, ag_comm = self.allgather(moe_tp, comm_bytes, comm_protocol)
         t_us += ag_lat
@@ -267,18 +239,6 @@ class CommProtocolCostModel:
             + self.start_lat
             + self.params.cpu_fetch_delay
         )
-        if comm_protocol == 2:
-            if is_prefill:
-                t_us += self.params.rtt_ep * bs * self.params.topk * self.params.prefill_factor
-            else:
-                t_us += self.params.rtt_ep * bs * self.params.topk
-        elif comm_protocol == 3:
-            if is_prefill:
-                t_us += self.params.rtt_ep * min(
-                    1, bs * self.params.topk * self.params.prefill_factor
-                )
-            else:
-                t_us += self.params.rtt_ep * min(1, bs * self.params.topk)
 
         ag_lat, ag_comm = self.allgather(moe_tp, comm_bytes, comm_protocol)
         t_us += ag_lat

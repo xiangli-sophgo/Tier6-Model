@@ -550,42 +550,12 @@ export const TopologyInfoCard: React.FC<TopologyInfoCardProps> = ({
                 contentClassName="p-2"
               >
                 <div className="space-y-2">
-                  <SectionHeader title="协议参数" color="blue" />
+                  <SectionHeader title="Bandwidth" color="blue" />
                   {isEditable && onCommLatencyChange ? (
-                    <div className="grid grid-cols-4 gap-2">
-                      <div className={`p-2 rounded -m-2 mb-0 ${isCommLatencyModified('rtt_tp_us') ? 'bg-blue-50/50' : ''}`}>
-                        <div className="mb-1 flex items-center gap-1.5 text-xs text-gray-600">
-                          TP RTT (µs)
-                          {isCommLatencyModified('rtt_tp_us') && (
-                            <Badge variant="outline" className="text-[9px] px-1 py-0 h-3.5 bg-blue-100 text-blue-700 border-blue-300">已修改</Badge>
-                          )}
-                        </div>
-                        <NumberInput
-                          min={0}
-                          step={0.01}
-                          value={commLatencyConfig.rtt_tp_us}
-                          onChange={(v) => updateCommLatency('rtt_tp_us', v ?? 0.35)}
-                          className="h-7"
-                        />
-                      </div>
-                      <div className={`p-2 rounded -m-2 mb-0 ${isCommLatencyModified('rtt_ep_us') ? 'bg-blue-50/50' : ''}`}>
-                        <div className="mb-1 flex items-center gap-1.5 text-xs text-gray-600">
-                          EP RTT (µs)
-                          {isCommLatencyModified('rtt_ep_us') && (
-                            <Badge variant="outline" className="text-[9px] px-1 py-0 h-3.5 bg-blue-100 text-blue-700 border-blue-300">已修改</Badge>
-                          )}
-                        </div>
-                        <NumberInput
-                          min={0}
-                          step={0.01}
-                          value={commLatencyConfig.rtt_ep_us}
-                          onChange={(v) => updateCommLatency('rtt_ep_us', v ?? 0.85)}
-                          className="h-7"
-                        />
-                      </div>
+                    <div className="grid grid-cols-2 gap-2">
                       <div className={`p-2 rounded -m-2 mb-0 ${isCommLatencyModified('bandwidth_utilization') ? 'bg-blue-50/50' : ''}`}>
                         <div className="mb-1 flex items-center gap-1.5 text-xs text-gray-600">
-                          带宽利用率
+                          Bandwidth Utilization
                           {isCommLatencyModified('bandwidth_utilization') && (
                             <Badge variant="outline" className="text-[9px] px-1 py-0 h-3.5 bg-blue-100 text-blue-700 border-blue-300">已修改</Badge>
                           )}
@@ -601,7 +571,7 @@ export const TopologyInfoCard: React.FC<TopologyInfoCardProps> = ({
                       </div>
                       <div className={`p-2 rounded -m-2 mb-0 ${isCommLatencyModified('sync_latency_us') ? 'bg-blue-50/50' : ''}`}>
                         <div className="mb-1 flex items-center gap-1.5 text-xs text-gray-600">
-                          同步延迟 (µs)
+                          Sync Latency (µs)
                           {isCommLatencyModified('sync_latency_us') && (
                             <Badge variant="outline" className="text-[9px] px-1 py-0 h-3.5 bg-blue-100 text-blue-700 border-blue-300">已修改</Badge>
                           )}
@@ -618,20 +588,19 @@ export const TopologyInfoCard: React.FC<TopologyInfoCardProps> = ({
                   ) : (
                     <InfoGrid
                       items={[
-                        { label: 'TP RTT', value: `${commLatencyConfig.rtt_tp_us} µs` },
-                        { label: 'EP RTT', value: `${commLatencyConfig.rtt_ep_us} µs` },
-                        { label: '带宽利用率', value: formatNumber(commLatencyConfig.bandwidth_utilization) },
-                        { label: '同步延迟', value: `${commLatencyConfig.sync_latency_us} µs` },
+                        { label: 'Bandwidth Utilization', value: formatNumber(commLatencyConfig.bandwidth_utilization) },
+                        { label: 'Sync Latency', value: `${commLatencyConfig.sync_latency_us} µs` },
                       ]}
+                      columns={2}
                     />
                   )}
 
-                  <SectionHeader title="网络延迟" color="green" />
+                  <SectionHeader title="Network Latency" color="green" />
                   {isEditable && onCommLatencyChange ? (
                     <div className="grid grid-cols-2 gap-2">
                       <div className={`p-2 rounded -m-2 mb-0 ${isCommLatencyModified('switch_delay_us') ? 'bg-blue-50/50' : ''}`}>
                         <div className="mb-1 flex items-center gap-1.5 text-xs text-gray-600">
-                          Switch延迟 (µs)
+                          Switch Latency (µs)
                           {isCommLatencyModified('switch_delay_us') && (
                             <Badge variant="outline" className="text-[9px] px-1 py-0 h-3.5 bg-blue-100 text-blue-700 border-blue-300">已修改</Badge>
                           )}
@@ -646,7 +615,7 @@ export const TopologyInfoCard: React.FC<TopologyInfoCardProps> = ({
                       </div>
                       <div className={`p-2 rounded -m-2 mb-0 ${isCommLatencyModified('cable_delay_us') ? 'bg-blue-50/50' : ''}`}>
                         <div className="mb-1 flex items-center gap-1.5 text-xs text-gray-600">
-                          Cable延迟 (µs)
+                          Cable Latency (µs)
                           {isCommLatencyModified('cable_delay_us') && (
                             <Badge variant="outline" className="text-[9px] px-1 py-0 h-3.5 bg-blue-100 text-blue-700 border-blue-300">已修改</Badge>
                           )}
@@ -663,19 +632,19 @@ export const TopologyInfoCard: React.FC<TopologyInfoCardProps> = ({
                   ) : (
                     <InfoGrid
                       items={[
-                        { label: 'Switch延迟', value: `${commLatencyConfig.switch_delay_us} µs` },
-                        { label: 'Cable延迟', value: `${commLatencyConfig.cable_delay_us} µs` },
+                        { label: 'Switch Latency', value: `${commLatencyConfig.switch_delay_us} µs` },
+                        { label: 'Cable Latency', value: `${commLatencyConfig.cable_delay_us} µs` },
                       ]}
                       columns={2}
                     />
                   )}
 
-                  <SectionHeader title="芯片延迟" color="purple" />
+                  <SectionHeader title="Chip Latency" color="purple" />
                   {isEditable && onCommLatencyChange ? (
                     <div className="grid grid-cols-3 gap-2">
                       <div className={`p-2 rounded -m-2 mb-0 ${isCommLatencyModified('memory_read_latency_us') ? 'bg-blue-50/50' : ''}`}>
                         <div className="mb-1 flex items-center gap-1.5 text-xs text-gray-600">
-                          Mem读 (µs)
+                          DDR Read Latency (µs)
                           {isCommLatencyModified('memory_read_latency_us') && (
                             <Badge variant="outline" className="text-[9px] px-1 py-0 h-3.5 bg-blue-100 text-blue-700 border-blue-300">已修改</Badge>
                           )}
@@ -690,7 +659,7 @@ export const TopologyInfoCard: React.FC<TopologyInfoCardProps> = ({
                       </div>
                       <div className={`p-2 rounded -m-2 mb-0 ${isCommLatencyModified('memory_write_latency_us') ? 'bg-blue-50/50' : ''}`}>
                         <div className="mb-1 flex items-center gap-1.5 text-xs text-gray-600">
-                          Mem写 (µs)
+                          DDR Write Latency (µs)
                           {isCommLatencyModified('memory_write_latency_us') && (
                             <Badge variant="outline" className="text-[9px] px-1 py-0 h-3.5 bg-blue-100 text-blue-700 border-blue-300">已修改</Badge>
                           )}
@@ -705,7 +674,7 @@ export const TopologyInfoCard: React.FC<TopologyInfoCardProps> = ({
                       </div>
                       <div className={`p-2 rounded -m-2 mb-0 ${isCommLatencyModified('noc_latency_us') ? 'bg-blue-50/50' : ''}`}>
                         <div className="mb-1 flex items-center gap-1.5 text-xs text-gray-600">
-                          NoC (µs)
+                          NoC Latency (µs)
                           {isCommLatencyModified('noc_latency_us') && (
                             <Badge variant="outline" className="text-[9px] px-1 py-0 h-3.5 bg-blue-100 text-blue-700 border-blue-300">已修改</Badge>
                           )}
@@ -722,15 +691,14 @@ export const TopologyInfoCard: React.FC<TopologyInfoCardProps> = ({
                   ) : (
                     <InfoGrid
                       items={[
-                        { label: 'C2C', value: `${interconnectParams?.c2c?.latency_us || 0} µs` },
-                        { label: 'Mem读', value: `${commLatencyConfig.memory_read_latency_us} µs` },
-                        { label: 'Mem写', value: `${commLatencyConfig.memory_write_latency_us} µs` },
-                        { label: 'NoC', value: `${commLatencyConfig.noc_latency_us} µs` },
+                        { label: 'DDR Read Latency', value: `${commLatencyConfig.memory_read_latency_us} µs` },
+                        { label: 'DDR Write Latency', value: `${commLatencyConfig.memory_write_latency_us} µs` },
+                        { label: 'NoC Latency', value: `${commLatencyConfig.noc_latency_us} µs` },
                       ]}
                     />
                   )}
 
-                  <SectionHeader title="启动延迟 (计算值)" color="orange" />
+                  <SectionHeader title="Start Latency (computed)" color="orange" />
                   <InfoGrid
                     items={[
                       {
