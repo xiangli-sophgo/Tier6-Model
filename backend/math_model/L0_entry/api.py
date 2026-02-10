@@ -41,12 +41,10 @@ from math_model.L0_entry.tasks import TaskInfo, TaskStatus, get_task_manager
 from math_model.L0_entry.websocket import get_ws_manager
 
 # 使用 math_model 自己的数据库存储
-from math_model.core.database import (
+from math_model.L0_entry.database import (
     get_db_session,
     Experiment as DBExperiment,
-    EvaluationTask as DBEvaluationTask,
     EvaluationResult as DBEvaluationResult,
-    TaskStatus as DBTaskStatus,
 )
 
 logger = logging.getLogger(__name__)
@@ -616,58 +614,48 @@ async def submit_evaluation(request: EvaluationRequest):
         config_snapshot=config_snapshot,
     )
 
-    # 创建数据库记录
+    # 查找或创建实验（不再创建中间的 Task 记录）
     db_experiment_id = None
-    db_task_id = None
     try:
         with get_db_session() as db:
-            # 创建实验
-            db_experiment = DBExperiment(
-                name=request.experiment_name or f"Tier6 Experiment",
-                description=request.description or "",
-                total_tasks=1,
-                completed_tasks=0,
-            )
-            db.add(db_experiment)
-            db.flush()  # 获取 ID
+            # 查找或创建实验（相同名称的结果归到同一实验）
+            experiment_name = request.experiment_name or f"Tier6 Experiment"
+            db_experiment = db.query(DBExperiment).filter(
+                DBExperiment.name == experiment_name
+            ).first()
+
+            if db_experiment:
+                # 实验已存在
+                logger.info(f"Found existing experiment {db_experiment.id} ('{experiment_name}')")
+            else:
+                # 创建新实验
+                db_experiment = DBExperiment(
+                    name=experiment_name,
+                    description=request.description or "",
+                )
+                db.add(db_experiment)
+                db.flush()  # 获取 ID
+                logger.info(f"Created new experiment {db_experiment.id} ('{experiment_name}')")
+
             db_experiment_id = db_experiment.id
-
-            # 创建任务记录
-            db_task = DBEvaluationTask(
-                task_id=task_id,
-                experiment_id=db_experiment.id,
-                status=DBTaskStatus.PENDING,
-                progress=0.0,
-                config_snapshot=config_snapshot,
-                benchmark_name=request.benchmark_name,
-                topology_config_name=request.topology_config_name,
-                search_mode=request.search_mode or "manual",
-                manual_parallelism=request.manual_parallelism.model_dump() if request.manual_parallelism else None,
-                search_constraints=request.search_constraints.model_dump() if request.search_constraints else None,
-            )
-            db.add(db_task)
-            db.flush()
-            db_task_id = db_task.id
-
             db.commit()
-            logger.info(f"Created experiment {db_experiment_id} with task {task_id}")
     except Exception as e:
-        logger.error(f"Failed to create database records: {e}")
+        logger.error(f"Failed to create experiment: {e}")
 
-    # 添加任务完成回调
+    # 添加任务完成回调（直接保存结果到数据库）
     def on_task_complete(task_info: TaskInfo) -> None:
         """任务完成时保存结果到数据库"""
         if task_info.status == TaskStatus.COMPLETED and task_info.result:
-            _save_task_result_to_db(task_id, db_task_id, db_experiment_id, task_info)
+            _save_task_result_to_db(task_id, db_experiment_id, task_info, config_snapshot, request)
         elif task_info.status == TaskStatus.FAILED:
-            _update_task_status_in_db(task_id, DBTaskStatus.FAILED, task_info.error)
+            logger.error(f"Task {task_id} failed: {task_info.error}")
 
     task_manager.add_callback(task_id, on_task_complete)
 
     return {
         "task_id": task_id,
         "experiment_id": db_experiment_id,
-        "status": TaskStatus.PENDING.value,
+        "status": "pending",
         "progress": 0.0,
     }
 
@@ -826,8 +814,9 @@ async def list_experiments(skip: int = 0, limit: int = 20):
                         "id": exp.id,
                         "name": exp.name,
                         "description": exp.description,
-                        "total_tasks": exp.total_tasks,
-                        "completed_tasks": exp.completed_tasks,
+                        # 结果数量即为完成的评估任务数
+                        "total_tasks": len(exp.results),
+                        "completed_tasks": len(exp.results),  # 保存到DB的都是已完成的
                         "created_at": exp.created_at.isoformat() + 'Z' if exp.created_at else None,
                     }
                     for exp in experiments
@@ -850,74 +839,72 @@ async def get_experiment(experiment_id: int):
             if not experiment:
                 raise HTTPException(status_code=404, detail=f"Experiment not found: {experiment_id}")
 
-            tasks = db.query(DBEvaluationTask).filter(
-                DBEvaluationTask.experiment_id == experiment_id
-            ).all()
+            # 直接查询所有结果，按得分降序排列
+            results = db.query(DBEvaluationResult).filter(
+                DBEvaluationResult.experiment_id == experiment_id
+            ).order_by(DBEvaluationResult.score.desc()).all()
 
-            # 展开每个任务的所有结果为单独条目
+            # 将结果转换为前端需要的格式（保持字段名为"tasks"以兼容前端）
             tasks_with_results = []
-            for task in tasks:
-                results = db.query(DBEvaluationResult).filter(
-                    DBEvaluationResult.task_id == task.id
-                ).order_by(DBEvaluationResult.score.desc()).all()
-
-                if results:
-                    for idx, result in enumerate(results):
-                        full_result = result.full_result or {}
-                        task_dict = {
-                            "id": task.id,
-                            "task_id": task.task_id,
-                            "result_id": result.id,
-                            "result_rank": idx + 1,
-                            "experiment_id": task.experiment_id,
-                            "status": task.status.value,
-                            "progress": task.progress,
-                            "message": task.message,
-                            "error": task.error,
-                            "created_at": result.created_at.isoformat() + 'Z' if result.created_at else None,
-                            "started_at": task.started_at.isoformat() + 'Z' if task.started_at else None,
-                            "completed_at": task.completed_at.isoformat() + 'Z' if task.completed_at else None,
-                            "config_snapshot": task.config_snapshot,
-                            "benchmark_name": task.benchmark_name,
-                            "topology_config_name": task.topology_config_name,
-                            "search_mode": task.search_mode,
-                            "manual_parallelism": task.manual_parallelism,
-                            "search_constraints": task.search_constraints,
-                            "search_stats": task.search_stats,
-                            "result": {
-                                "tps": result.tps,
-                                "tps_per_chip": result.tps_per_chip,
-                                "tps_per_batch": result.tps_per_batch,
-                                "tpot": result.tpot,
-                                "ttft": result.ttft,
-                                "mfu": result.mfu,
-                                "mbu": full_result.get("mbu", 0),
-                                "score": result.score,
-                                "chips": result.chips,
-                                "dram_occupy": result.dram_occupy,
-                                "flops": result.flops,
-                                "cost": full_result.get("cost"),
-                                "parallelism": {
-                                    "dp": result.dp,
-                                    "tp": result.tp,
-                                    "pp": result.pp,
-                                    "ep": result.ep,
-                                    "sp": result.sp,
-                                    "moe_tp": result.moe_tp,
-                                },
-                            },
-                        }
-                        tasks_with_results.append(task_dict)
+            for idx, result in enumerate(results):
+                full_result = result.full_result or {}
+                result_dict = {
+                    "id": result.id,  # Result的数据库ID
+                    "task_id": result.task_id,  # UUID字符串
+                    "result_id": result.id,  # 保持兼容性
+                    "result_rank": idx + 1,
+                    "experiment_id": result.experiment_id,
+                    "status": "completed",  # 保存到DB的都是完成状态
+                    "progress": 1.0,
+                    "message": None,
+                    "error": result.infeasible_reason,  # 不可行原因作为error
+                    "created_at": result.created_at.isoformat() + 'Z' if result.created_at else None,
+                    "started_at": None,  # 不再记录这些时间戳
+                    "completed_at": result.created_at.isoformat() + 'Z' if result.created_at else None,
+                    # 配置信息（从Result获取）
+                    "config_snapshot": result.config_snapshot,
+                    "benchmark_name": result.benchmark_name,
+                    "topology_config_name": result.topology_config_name,
+                    "search_mode": result.search_mode,
+                    "manual_parallelism": result.manual_parallelism,
+                    "search_constraints": result.search_constraints,
+                    "search_stats": result.search_stats,
+                    # 性能指标
+                    "result": {
+                        "tps": result.tps,
+                        "tps_per_chip": result.tps_per_chip,
+                        "tps_per_batch": result.tps_per_batch,
+                        "tpot": result.tpot,
+                        "ttft": result.ttft,
+                        "mfu": result.mfu,
+                        "mbu": full_result.get("mbu", 0),
+                        "score": result.score,
+                        "chips": result.chips,
+                        "dram_occupy": result.dram_occupy,
+                        "flops": result.flops,
+                        "cost": full_result.get("cost"),
+                        "parallelism": {
+                            "dp": result.dp,
+                            "tp": result.tp,
+                            "pp": result.pp,
+                            "ep": result.ep,
+                            "sp": result.sp,
+                            "moe_tp": result.moe_tp,
+                        },
+                    },
+                }
+                tasks_with_results.append(result_dict)
 
             return {
                 "id": experiment.id,
                 "name": experiment.name,
                 "description": experiment.description,
-                "total_tasks": experiment.total_tasks,
-                "completed_tasks": experiment.completed_tasks,
+                # 结果数量即为完成的任务数
+                "total_tasks": len(results),
+                "completed_tasks": len(results),
                 "created_at": experiment.created_at.isoformat() + 'Z' if experiment.created_at else None,
                 "updated_at": experiment.updated_at.isoformat() + 'Z' if experiment.updated_at else None,
-                "tasks": tasks_with_results,
+                "tasks": tasks_with_results,  # 保持字段名以兼容前端
             }
     except HTTPException:
         raise
@@ -984,9 +971,12 @@ async def delete_experiment(experiment_id: int):
 async def batch_delete_experiments(request: BatchDeleteRequest):
     """批量删除实验"""
     try:
+        ids = request.resolved_ids
+        if not ids:
+            raise HTTPException(status_code=400, detail="No experiment IDs provided (use 'ids' or 'experiment_ids')")
         with get_db_session() as db:
             experiments = db.query(DBExperiment).filter(
-                DBExperiment.id.in_(request.ids)
+                DBExperiment.id.in_(ids)
             ).all()
 
             deleted_count = len(experiments)
@@ -999,6 +989,8 @@ async def batch_delete_experiments(request: BatchDeleteRequest):
                 "deleted": deleted_ids,
                 "count": deleted_count,
             }
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Failed to batch delete experiments: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
@@ -1008,6 +1000,9 @@ async def batch_delete_experiments(request: BatchDeleteRequest):
 async def batch_delete_results(experiment_id: int, request: BatchDeleteRequest):
     """批量删除实验结果"""
     try:
+        ids = request.resolved_ids
+        if not ids:
+            raise HTTPException(status_code=400, detail="No result IDs provided (use 'ids' or 'result_ids')")
         with get_db_session() as db:
             experiment = db.query(DBExperiment).filter(
                 DBExperiment.id == experiment_id
@@ -1015,19 +1010,24 @@ async def batch_delete_results(experiment_id: int, request: BatchDeleteRequest):
             if not experiment:
                 raise HTTPException(status_code=404, detail=f"Experiment not found: {experiment_id}")
 
+            # 获取要删除的结果
             results = db.query(DBEvaluationResult).filter(
-                DBEvaluationResult.id.in_(request.ids)
+                DBEvaluationResult.id.in_(ids)
             ).all()
 
-            deleted_count = len(results)
-            deleted_ids = [r.id for r in results]
+            deleted_result_count = len(results)
+            deleted_result_ids = [r.id for r in results]
+
+            # 删除结果（简化架构，不再需要检查"空任务"）
             for r in results:
                 db.delete(r)
 
             db.commit()
+            logger.info(f"Deleted {deleted_result_count} results from experiment {experiment_id}")
+
             return {
-                "deleted": deleted_ids,
-                "count": deleted_count,
+                "deleted": deleted_result_ids,
+                "count": deleted_result_count,
             }
     except HTTPException:
         raise
@@ -1050,7 +1050,7 @@ async def export_experiments(experiment_ids: str = ""):
                 experiments = db.query(DBExperiment).all()
 
             export_data = {
-                "version": "1.0",
+                "version": "2.0",  # 新版本格式
                 "export_time": datetime.now().isoformat(),
                 "experiments": [],
             }
@@ -1062,15 +1062,33 @@ async def export_experiments(experiment_ids: str = ""):
                     "created_at": exp.created_at.isoformat() + 'Z' if exp.created_at else None,
                     "tasks": [],
                 }
-                for task in exp.tasks:
+
+                # 将results按task_id分组（保持兼容的导出格式）
+                from collections import defaultdict
+                tasks_by_id = defaultdict(list)
+                for result in exp.results:
+                    tasks_by_id[result.task_id].append(result)
+
+                # 为每个task_id创建一个"task"条目
+                for task_id, results in tasks_by_id.items():
+                    # 从第一个result获取配置信息（同一task_id的配置应该相同）
+                    first_result = results[0]
                     task_data = {
-                        "config_snapshot": task.config_snapshot,
-                        "search_mode": task.search_mode,
+                        "task_id": task_id,  # 添加task_id以便导入时保留
+                        "config_snapshot": first_result.config_snapshot,
+                        "search_mode": first_result.search_mode,
+                        "benchmark_name": first_result.benchmark_name,
+                        "topology_config_name": first_result.topology_config_name,
+                        "manual_parallelism": first_result.manual_parallelism,
+                        "search_constraints": first_result.search_constraints,
+                        "search_stats": first_result.search_stats,
                         "results": [],
                     }
-                    for result in task.results:
+                    # 添加所有结果
+                    for result in results:
                         task_data["results"].append(result.full_result or {})
                     exp_data["tasks"].append(task_data)
+
                 export_data["experiments"].append(exp_data)
 
             return export_data
@@ -1159,29 +1177,41 @@ async def execute_import(request: ImportExecuteRequest):
                 db_exp = DBExperiment(
                     name=exp_name,
                     description=exp.get("description", ""),
-                    total_tasks=len(exp.get("tasks", [])),
                 )
                 db.add(db_exp)
                 db.flush()
 
-                # 导入任务和结果
+                # 导入结果（简化架构：直接导入Result，不再有中间Task层）
                 for task_data in exp.get("tasks", []):
-                    db_task = DBEvaluationTask(
-                        task_id=str(uuid.uuid4()),
-                        experiment_id=db_exp.id,
-                        status=DBTaskStatus.COMPLETED,
-                        progress=1.0,
-                        config_snapshot=task_data.get("config_snapshot", {}),
-                        search_mode=task_data.get("search_mode", "manual"),
-                    )
-                    db.add(db_task)
-                    db.flush()
+                    # 从task_data中提取配置信息
+                    config_snapshot = task_data.get("config_snapshot", {})
+                    search_mode = task_data.get("search_mode", "manual")
+                    benchmark_name = task_data.get("benchmark_name")
+                    topology_config_name = task_data.get("topology_config_name")
+                    manual_parallelism = task_data.get("manual_parallelism")
+                    search_constraints = task_data.get("search_constraints")
+                    search_stats = task_data.get("search_stats")
 
+                    # 为这个task生成一个UUID（用于标识这批结果的来源）
+                    task_uuid = task_data.get("task_id", str(uuid.uuid4()))
+
+                    # 导入所有结果
                     for result_data in task_data.get("results", []):
                         parallelism = result_data.get("parallelism", {})
                         chips = parallelism.get("tp", 1) * parallelism.get("pp", 1) * parallelism.get("dp", 1) * parallelism.get("ep", 1)
+
                         db_result = DBEvaluationResult(
-                            task_id=db_task.id,
+                            experiment_id=db_exp.id,  # 直接关联到实验
+                            task_id=task_uuid,  # UUID字符串（来源标识）
+                            # 配置信息（从task_data继承）
+                            config_snapshot=config_snapshot,
+                            benchmark_name=benchmark_name,
+                            topology_config_name=topology_config_name,
+                            search_mode=search_mode,
+                            manual_parallelism=manual_parallelism,
+                            search_constraints=search_constraints,
+                            search_stats=search_stats,
+                            # 并行策略
                             dp=parallelism.get("dp", 1),
                             tp=parallelism.get("tp", 1),
                             pp=parallelism.get("pp", 1),
@@ -1189,6 +1219,7 @@ async def execute_import(request: ImportExecuteRequest):
                             sp=parallelism.get("sp", 1),
                             moe_tp=parallelism.get("moe_tp"),
                             chips=chips,
+                            # 性能指标
                             total_elapse_us=float(result_data.get("total_elapse_us", 0)),
                             total_elapse_ms=float(result_data.get("total_elapse_ms", 0)),
                             comm_elapse_us=float(result_data.get("comm_elapse_us", 0)),
@@ -1256,66 +1287,61 @@ async def websocket_tasks(websocket: WebSocket):
 
 def _save_task_result_to_db(
     task_uuid: str,
-    db_task_id: int | None,
     db_experiment_id: int | None,
     task_info: TaskInfo,
+    config_snapshot: dict,
+    request,
 ) -> None:
-    """保存任务结果到数据库
+    """保存评估结果到数据库
 
     Args:
         task_uuid: 任务 UUID
-        db_task_id: 数据库任务 ID
         db_experiment_id: 数据库实验 ID
         task_info: 任务信息
+        config_snapshot: 配置快照
+        request: 评估请求
     """
     result = task_info.result
-    if not result:
+    if not result or not db_experiment_id:
         return
 
     try:
         with get_db_session() as db:
-            # 查找任务记录
-            db_task = db.query(DBEvaluationTask).filter(
-                DBEvaluationTask.task_id == task_uuid
-            ).first()
-
-            if not db_task:
-                logger.warning(f"Task not found in database: {task_uuid}")
-                return
-
-            # 更新任务状态
-            db_task.status = DBTaskStatus.COMPLETED
-            db_task.progress = 1.0
-            db_task.completed_at = datetime.now()
-
-            # 保存搜索统计
+            # 提取搜索统计
             search_stats = result.get("search_stats", {})
-            db_task.search_stats = search_stats
 
-            # 提取并保存结果
+            # 提取并保存所有结果
             top_k_plans = result.get("top_k_plans", [])
             for plan in top_k_plans:
                 parallelism = plan.get("parallelism", {})
-                # 性能指标在 aggregates 或直接在 plan 顶层
                 aggregates = plan.get("aggregates", {})
 
-                # 获取 TPS、MFU 等指标（优先从顶层获取，其次从 aggregates）
+                # 获取性能指标
                 tps = plan.get("tps", aggregates.get("tps", 0))
                 mfu = plan.get("mfu", aggregates.get("mfu", 0))
                 ttft = plan.get("ttft", aggregates.get("ttft_ms", aggregates.get("total_time_ms", 0)))
                 tpot = plan.get("tpot", aggregates.get("tpot_ms", 0))
                 score = plan.get("score", tps)
 
-                # 从 aggregates 获取详细指标
                 total_time_ms = aggregates.get("total_time_ms", 0)
-                compute_time_ms = aggregates.get("compute_time_ms", 0)
                 comm_time_ms = aggregates.get("comm_time_ms", 0)
 
                 # 计算芯片数
                 chips = parallelism.get("tp", 1) * parallelism.get("pp", 1) * parallelism.get("dp", 1) * parallelism.get("ep", 1)
 
+                # 直接创建结果记录（不再依赖中间的 Task）
                 db_result = DBEvaluationResult(
-                    task_id=db_task.id,
+                    experiment_id=db_experiment_id,
+                    task_id=task_uuid,
+                    # 配置快照
+                    config_snapshot=config_snapshot,
+                    benchmark_name=request.benchmark_name,
+                    topology_config_name=request.topology_config_name,
+                    # 搜索配置
+                    search_mode=request.search_mode or "manual",
+                    manual_parallelism=request.manual_parallelism.model_dump() if request.manual_parallelism else None,
+                    search_constraints=request.search_constraints.model_dump() if request.search_constraints else None,
+                    search_stats=search_stats,
                     # 并行策略
                     dp=parallelism.get("dp", 1),
                     tp=parallelism.get("tp", 1),
@@ -1326,9 +1352,9 @@ def _save_task_result_to_db(
                     # 资源
                     chips=chips,
                     # 性能指标
-                    total_elapse_us=total_time_ms * 1000,  # ms -> us
+                    total_elapse_us=total_time_ms * 1000,
                     total_elapse_ms=total_time_ms,
-                    comm_elapse_us=comm_time_ms * 1000,  # ms -> us
+                    comm_elapse_us=comm_time_ms * 1000,
                     tps=tps,
                     tps_per_batch=aggregates.get("tps_per_batch", tps),
                     tps_per_chip=aggregates.get("tps_per_chip", tps / max(chips, 1)),
@@ -1347,14 +1373,6 @@ def _save_task_result_to_db(
                 )
                 db.add(db_result)
 
-            # 更新实验统计
-            if db_experiment_id:
-                db_experiment = db.query(DBExperiment).filter(
-                    DBExperiment.id == db_experiment_id
-                ).first()
-                if db_experiment:
-                    db_experiment.completed_tasks += 1
-
             db.commit()
             logger.info(f"Saved {len(top_k_plans)} results to database for task {task_uuid}")
 
@@ -1362,28 +1380,6 @@ def _save_task_result_to_db(
         logger.error(f"Failed to save result to database: {e}")
 
 
-def _update_task_status_in_db(task_uuid: str, status: DBTaskStatus, error: str | None = None) -> None:
-    """更新数据库中的任务状态
-
-    Args:
-        task_uuid: 任务 UUID
-        status: 新状态
-        error: 错误信息
-    """
-    try:
-        with get_db_session() as db:
-            db_task = db.query(DBEvaluationTask).filter(
-                DBEvaluationTask.task_id == task_uuid
-            ).first()
-
-            if db_task:
-                db_task.status = status
-                db_task.error = error
-                db_task.completed_at = datetime.now()
-                db.commit()
-                logger.info(f"Updated task {task_uuid} status to {status.value}")
-    except Exception as e:
-        logger.error(f"Failed to update task status: {e}")
 
 
 def _count_topology_chips(config: dict[str, Any]) -> int:

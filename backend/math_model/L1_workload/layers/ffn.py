@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from math_model.core.types import DataType
+from math_model.L0_entry.types import DataType
 from math_model.L1_workload.graph import GraphEdge, GraphNode, NodeKind, NodeRole
 from math_model.L1_workload.layers import layer_registry
 from math_model.L1_workload.layers.base import LayerBase, LayerRole

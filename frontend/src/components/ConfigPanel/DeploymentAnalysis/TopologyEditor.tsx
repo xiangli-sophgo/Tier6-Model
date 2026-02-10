@@ -119,6 +119,8 @@ export const TopologyEditor: React.FC<TopologyEditorProps> = ({ value, onChange,
   const [sections, setSections] = useState({ hierarchy: false, interconnect: false })
   const initRef = useRef(false)
 
+  const [refreshing, setRefreshing] = useState(false)
+
   // 加载预设列表，自动选择上次使用的或第一个
   useEffect(() => {
     getTopologies()
@@ -127,8 +129,9 @@ export const TopologyEditor: React.FC<TopologyEditorProps> = ({ value, onChange,
         if (initRef.current || res.topologies.length === 0) return
         initRef.current = true
         const lastUsed = localStorage.getItem('tier6_last_topology_preset')
-        const target = res.topologies.find((t) => t.name === lastUsed)
-          || (value.name ? res.topologies.find((t) => t.name === value.name) : null)
+        // 优先使用父组件传入的 value.name（来自 Benchmark 联动），其次 localStorage
+        const target = (value.name ? res.topologies.find((t) => t.name === value.name) : null)
+          || res.topologies.find((t) => t.name === lastUsed)
           || res.topologies[0]
         setSelectedPreset(target.name)
         try {
@@ -137,6 +140,20 @@ export const TopologyEditor: React.FC<TopologyEditorProps> = ({ value, onChange,
         } catch (e) { toast.error(`加载拓扑失败: ${errMsg(e)}`) }
       })
       .catch((e) => toast.error(`加载拓扑列表失败: ${errMsg(e)}`))
+  }, [])
+
+  // 刷新预设列表（手动触发）
+  const handleRefreshList = useCallback(async () => {
+    setRefreshing(true)
+    try {
+      const res = await getTopologies()
+      setPresets(res.topologies)
+      toast.success(`已刷新拓扑预设列表 (${res.topologies.length} 个)`)
+    } catch (e) {
+      toast.error(`刷新拓扑预设列表失败: ${errMsg(e)}`)
+    } finally {
+      setRefreshing(false)
+    }
   }, [])
 
   // 检测外部推送的预设变更（如 Benchmark 加载联动），同步内部状态
@@ -272,14 +289,19 @@ export const TopologyEditor: React.FC<TopologyEditorProps> = ({ value, onChange,
             </Button>
           </div>
         </div>
-        <Select value={selectedPreset} onValueChange={handlePresetChange}>
-          <SelectTrigger className="w-full h-7"><SelectValue placeholder="选择拓扑预设..." /></SelectTrigger>
-          <SelectContent>
-            {presets.map((p) => (
-              <SelectItem key={p.name} value={p.name}>{p.name}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <div className="flex gap-1.5">
+          <Select value={selectedPreset} onValueChange={handlePresetChange}>
+            <SelectTrigger className="flex-1 h-7"><SelectValue placeholder="选择拓扑预设..." /></SelectTrigger>
+            <SelectContent>
+              {presets.map((p) => (
+                <SelectItem key={p.name} value={p.name}>{p.name}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Button variant="ghost" size="sm" className="h-7 w-7 p-0 shrink-0" onClick={handleRefreshList} disabled={refreshing || loading} title="刷新预设列表">
+            <RefreshCw className={`h-3.5 w-3.5 ${refreshing ? 'animate-spin' : ''}`} />
+          </Button>
+        </div>
       </div>
 
       {/* 层级配置 (只读) */}

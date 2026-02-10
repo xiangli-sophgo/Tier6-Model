@@ -9,7 +9,7 @@ from abc import ABC, abstractmethod
 from enum import Enum
 from typing import Any
 
-from math_model.core.types import DataType
+from math_model.L0_entry.types import DataType
 from math_model.L1_workload.op import Op
 from math_model.L1_workload.specs import ComputeSpec, MemorySpec
 from math_model.L1_workload.tensor import TensorDesc

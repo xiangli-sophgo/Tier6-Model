@@ -3,7 +3,7 @@
 提供算子基类和注册表。
 """
 
-from math_model.core.registry import Registry
+from math_model.L0_entry.registry import Registry
 from math_model.L1_workload.operators.base import OpBase, OpRole
 
 # 全局算子注册表

@@ -39,9 +39,6 @@ export const DeploymentAnalysis: React.FC = () => {
               topology={topology.topology}
               onTrafficResultChange={analysis.setTrafficResult}
               onAnalysisDataChange={analysis.setDeploymentAnalysisData}
-              rackConfig={topology.rackConfig || undefined}
-              podCount={topology.podCount}
-              racksPerPod={topology.racksPerPod}
               history={analysis.analysisHistory}
               onAddToHistory={analysis.handleAddToHistory}
               onDeleteHistory={analysis.handleDeleteHistory}

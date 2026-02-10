@@ -129,6 +129,7 @@ class EvaluationEngine:
         calibration: CalibrationConfig | None = None,
         output_tokens: int = 1,
         prefill_ops: set[str] | None = None,
+        deployment_config: dict[str, object] | None = None,
     ) -> EngineResult:
         """执行评估
 
@@ -212,7 +213,7 @@ class EvaluationEngine:
 
         # 9.6 应用 Layer 级 Ring Attention 重叠
         # 参考 CHIPMathica: Attention 层的计算与通信完全重叠
-        if deployment_config.get("enable_ring_attention", False) and deployment_config.get("tp", 1) > 1:
+        if deployment_config and deployment_config.get("enable_ring_attention", False) and deployment_config.get("tp", 1) > 1:
             step_metrics_list = self._apply_ring_attn_overlap(step_metrics_list)
 
         # 10. 聚合指标

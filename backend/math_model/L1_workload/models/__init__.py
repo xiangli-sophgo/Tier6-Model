@@ -3,7 +3,7 @@
 提供模型基类和注册表。
 """
 
-from math_model.core.registry import Registry
+from math_model.L0_entry.registry import Registry
 from math_model.L1_workload.models.base import ModelBase
 
 # 全局模型注册表

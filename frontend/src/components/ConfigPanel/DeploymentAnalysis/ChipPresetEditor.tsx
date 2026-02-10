@@ -48,19 +48,36 @@ export const ChipPresetEditor: React.FC<ChipPresetEditorProps> = ({ value, onCha
   const [saveAsOpen, setSaveAsOpen] = useState(false)
   const [saveAsName, setSaveAsName] = useState('')
 
+  const [refreshing, setRefreshing] = useState(false)
+
   // 加载预设列表，自动选择上次使用的或第一个
   useEffect(() => {
     getChipPresets().then(({ presets }) => {
       setPresetList(presets)
       if (presets.length === 0) return
       const lastUsed = localStorage.getItem('tier6_last_chip_preset')
-      const target = presets.find(p => p.name === lastUsed)
-        || presets.find(p => p.name === value.name)
+      // 优先使用父组件传入的 value.name（来自 Benchmark/拓扑联动），其次 localStorage
+      const target = (value.name ? presets.find(p => p.name === value.name) : null)
+        || presets.find(p => p.name === lastUsed)
         || presets[0]
       setSelectedPreset(target.name)
       originalRef.current = deepClone(target.config)
       onChange(target.config)
     }).catch((err) => toast.error(`加载芯片预设失败: ${errMsg(err)}`))
+  }, [])
+
+  // 刷新预设列表（手动触发）
+  const handleRefreshList = useCallback(async () => {
+    setRefreshing(true)
+    try {
+      const { presets } = await getChipPresets()
+      setPresetList(presets)
+      toast.success(`已刷新芯片预设列表 (${presets.length} 个)`)
+    } catch (err) {
+      toast.error(`刷新芯片预设列表失败: ${errMsg(err)}`)
+    } finally {
+      setRefreshing(false)
+    }
   }, [])
 
   // 通用字段更新 (支持嵌套路径)
@@ -231,12 +248,17 @@ export const ChipPresetEditor: React.FC<ChipPresetEditorProps> = ({ value, onCha
               : <><ChevronDown className="h-3 w-3 mr-1" />全部展开</>}
           </Button>
         </div>
-        <Select value={selectedPreset} onValueChange={handlePresetChange}>
-          <SelectTrigger className="w-full h-7"><SelectValue placeholder="选择芯片预设" /></SelectTrigger>
-          <SelectContent>
-            {presetList.map((p) => <SelectItem key={p.name} value={p.name}>{p.name}</SelectItem>)}
-          </SelectContent>
-        </Select>
+        <div className="flex gap-1.5">
+          <Select value={selectedPreset} onValueChange={handlePresetChange}>
+            <SelectTrigger className="flex-1 h-7"><SelectValue placeholder="选择芯片预设" /></SelectTrigger>
+            <SelectContent>
+              {presetList.map((p) => <SelectItem key={p.name} value={p.name}>{p.name}</SelectItem>)}
+            </SelectContent>
+          </Select>
+          <Button variant="ghost" size="sm" className="h-7 w-7 p-0 shrink-0" onClick={handleRefreshList} disabled={refreshing} title="刷新预设列表">
+            <RefreshCw className={`h-3.5 w-3.5 ${refreshing ? 'animate-spin' : ''}`} />
+          </Button>
+        </div>
       </div>
 
       {/* 基础参数 (顶层叶子字段) */}

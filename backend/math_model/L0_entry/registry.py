@@ -8,7 +8,7 @@ from __future__ import annotations
 import logging
 from typing import Any, Callable, Generic, TypeVar
 
-from math_model.core.exceptions import AlreadyRegisteredError, NotRegisteredError
+from math_model.L0_entry.exceptions import AlreadyRegisteredError, NotRegisteredError
 
 logger = logging.getLogger(__name__)
 

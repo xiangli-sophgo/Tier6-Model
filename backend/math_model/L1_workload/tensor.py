@@ -10,7 +10,7 @@ from functools import reduce
 from operator import mul
 from typing import Any, TypeAlias
 
-from math_model.core.types import DataType
+from math_model.L0_entry.types import DataType
 
 # 张量形状类型别名
 TensorShape: TypeAlias = list[int]

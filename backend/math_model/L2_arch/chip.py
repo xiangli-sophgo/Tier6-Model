@@ -13,7 +13,7 @@ from math_model.L2_arch.core import CoreSpecImpl
 from math_model.L2_arch.dma import DMAEngineImpl, create_dma_engines
 from math_model.L2_arch.interconnect import InterconnectSpecImpl
 from math_model.L2_arch.memory import MemoryHierarchyImpl, MemoryLevelImpl
-from math_model.core.registry import InstanceRegistry
+from math_model.L0_entry.registry import InstanceRegistry
 
 
 # 芯片注册表 (使用 InstanceRegistry 存储单例实例)

@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from math_model.core.types import DataType
+from math_model.L0_entry.types import DataType
 
 
 @dataclass

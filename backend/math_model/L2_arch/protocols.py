@@ -19,7 +19,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 if TYPE_CHECKING:
-    from math_model.core.types import Bandwidth, Latency, MemorySize, FLOPs
+    from math_model.L0_entry.types import Bandwidth, Latency, MemorySize, FLOPs
 
 
 # ============================================================================

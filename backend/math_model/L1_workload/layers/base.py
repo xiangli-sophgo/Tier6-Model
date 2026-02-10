@@ -9,7 +9,7 @@ from abc import ABC, abstractmethod
 from enum import Enum
 from typing import TYPE_CHECKING, Any
 
-from math_model.core.types import DataType
+from math_model.L0_entry.types import DataType
 from math_model.L1_workload.graph import GraphEdge, GraphNode, NodeKind, NodeRole
 from math_model.L1_workload.layer import Layer
 from math_model.L1_workload.specs import (

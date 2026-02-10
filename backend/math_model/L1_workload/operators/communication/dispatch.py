@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from math_model.core.types import DataType
+from math_model.L0_entry.types import DataType
 from math_model.L1_workload.operators import op_registry
 from math_model.L1_workload.operators.base import OpBase, OpRole
 from math_model.L1_workload.operators.utils import bytes_to_elements, get_first_int

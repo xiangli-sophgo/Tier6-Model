@@ -137,6 +137,7 @@ def run_evaluation(config: dict[str, Any]) -> dict[str, Any]:
         hardware=hardware,
         granularity=Granularity.CHIP,
         output_tokens=deployment.batch_size,
+        deployment_config=deployment_config,
     )
 
     # ==================== L5: Reporting ====================
@@ -244,22 +245,26 @@ def _map_model_config(
 ) -> dict[str, Any]:
     """映射模型配置为 DeepSeekV3Model 需要的扁平结构
 
-    所有模型必需字段缺失时报错，不使用默认值。
+    输入格式对齐 configs/models/*.yaml (ModelPreset):
+    - 顶层: name, hidden_size, num_layers, num_attention_heads, vocab_size,
+            intermediate_size, num_dense_layers, num_moe_layers
+    - MLA: { q_lora_rank, kv_lora_rank, qk_nope_head_dim, qk_rope_head_dim, v_head_dim }
+    - MoE: { num_routed_experts, num_shared_experts, num_activated_experts, intermediate_size }
+
+    所有必需字段缺失时报错，不使用默认值。
     """
-    # 必需的模型字段（对齐 configs/models/DeepSeek-v3.yaml 字段名）
+    # 必需的模型字段
     hidden_size = int(_get_required(model_cfg, "hidden_size", "model config"))
     num_layers = int(_get_required(model_cfg, "num_layers", "model config"))
     num_heads = int(_get_required(model_cfg, "num_attention_heads", "model config"))
     vocab_size = int(_get_required(model_cfg, "vocab_size", "model config"))
+    intermediate_size = int(_get_required(model_cfg, "intermediate_size", "model config"))
 
     # dense/moe 层数
     num_dense_layers = int(_get_required(model_cfg, "num_dense_layers", "model config"))
     num_moe_layers = int(_get_required(model_cfg, "num_moe_layers", "model config"))
 
-    # FFN 中间层大小（顶层字段，不是嵌套在 ffn 下）
-    intermediate_size = int(_get_required(model_cfg, "intermediate_size", "model config"))
-
-    # MLA 配置 (必需)
+    # MLA 配置
     mla = model_cfg.get("MLA")
     if mla is None:
         raise ValueError("Missing 'MLA' section in model config")
@@ -269,7 +274,7 @@ def _map_model_config(
     qk_rope_head_dim = int(_get_required(mla, "qk_rope_head_dim", "model.MLA"))
     v_head_dim = int(_get_required(mla, "v_head_dim", "model.MLA"))
 
-    # MoE 配置 (必需)
+    # MoE 配置
     moe = model_cfg.get("MoE")
     if moe is None:
         raise ValueError("Missing 'MoE' section in model config")
@@ -293,7 +298,7 @@ def _map_model_config(
     else:
         raise ValueError("Missing 'activation_dtype' in inference config or deployment config")
 
-    # 运行时参数 - 优先从 deployment，其次从 inference
+    # 运行时参数 - 从 deployment_cfg 获取
     seq_len = int(_get_required(deployment_cfg, "seq_len", "deployment config"))
     kv_seq_len = int(_get_required(deployment_cfg, "kv_seq_len", "deployment config"))
     q_seq_len = int(_get_required(deployment_cfg, "q_seq_len", "deployment config"))
@@ -396,6 +401,38 @@ def run_evaluation_from_request(config: dict[str, Any]) -> dict[str, Any]:
     """
     # WebSocket 广播由 TaskManager 处理，此处不需要直接调用
 
+    # === DEBUG: 打印收到的完整配置 ===
+    import json as _json
+    logger.info("=" * 60)
+    logger.info("[DEBUG] run_evaluation_from_request received config keys: %s", list(config.keys()))
+    logger.info("[DEBUG] benchmark_config keys: %s",
+                list(config.get("benchmark_config", {}).keys()) if config.get("benchmark_config") else "MISSING")
+    logger.info("[DEBUG] topology_config keys: %s",
+                list(config.get("topology_config", {}).keys()) if config.get("topology_config") else "MISSING")
+    logger.info("[DEBUG] manual_parallelism: %s", config.get("manual_parallelism"))
+    logger.info("[DEBUG] search_mode: %s", config.get("search_mode"))
+
+    # model 配置详情
+    bc = config.get("benchmark_config", {})
+    if bc:
+        model_keys = list(bc.get("model", {}).keys()) if bc.get("model") else "MISSING"
+        logger.info("[DEBUG] benchmark_config.model keys: %s", model_keys)
+        inf_keys = list(bc.get("inference", {}).keys()) if bc.get("inference") else "MISSING"
+        logger.info("[DEBUG] benchmark_config.inference keys: %s", inf_keys)
+
+    # topology 配置详情
+    tc = config.get("topology_config", {})
+    if tc:
+        logger.info("[DEBUG] topology_config.chips keys: %s",
+                    list(tc.get("chips", {}).keys()) if tc.get("chips") else "MISSING/EMPTY")
+        ic_debug = tc.get("interconnect", {})
+        logger.info("[DEBUG] topology_config.interconnect keys: %s", list(ic_debug.keys()) if ic_debug else "MISSING")
+        logger.info("[DEBUG] topology_config.interconnect.links keys: %s",
+                    list(ic_debug.get("links", {}).keys()) if ic_debug.get("links") else "MISSING")
+        logger.info("[DEBUG] topology_config.pods present: %s, type: %s",
+                    tc.get("pods") is not None, type(tc.get("pods")).__name__)
+    logger.info("=" * 60)
+
     # 提取配置
     benchmark_config = _get_required(config, "benchmark_config", "evaluation request")
     topology_config = _get_required(config, "topology_config", "evaluation request")
@@ -405,10 +442,17 @@ def run_evaluation_from_request(config: dict[str, Any]) -> dict[str, Any]:
     model_config = _get_required(benchmark_config, "model", "benchmark_config")
     inference_config = _get_required(benchmark_config, "inference", "benchmark_config")
 
+    logger.info("[DEBUG] model_config top-level keys: %s", list(model_config.keys()))
+    logger.info("[DEBUG] model_config MLA: %s", model_config.get("MLA"))
+    logger.info("[DEBUG] model_config MoE: %s", model_config.get("MoE"))
+    logger.info("[DEBUG] model_config num_dense_layers: %s", model_config.get("num_dense_layers"))
+    logger.info("[DEBUG] model_config num_moe_layers: %s", model_config.get("num_moe_layers"))
+
     # 从 topology_config.chips 提取芯片配置
     chips_dict = topology_config.get("chips")
     if not chips_dict:
         raise ValueError("Missing 'chips' in topology_config")
+    logger.info("[DEBUG] First chip config: %s", _json.dumps(next(iter(chips_dict.values())), indent=2, default=str)[:500])
     chip_config = _extract_first_chip_config(chips_dict)
 
     # 提取通信延迟配置 (interconnect.comm_params)
@@ -418,13 +462,17 @@ def run_evaluation_from_request(config: dict[str, Any]) -> dict[str, Any]:
         raise ValueError("Missing 'interconnect.comm_params' in topology_config")
 
     # 从 topology_config 提取 BoardSpec
+    logger.info("[DEBUG] Extracting board_spec...")
     board_spec = _extract_board_spec(topology_config)
+    logger.info("[DEBUG] board_spec: %s", board_spec)
 
     # 映射通信延迟配置到 tier6 格式
     topology_overrides, comm_overrides = _map_comm_latency_config(comm_latency_config)
 
     # 构建部署配置
+    logger.info("[DEBUG] Building deployment_config from manual_parallelism...")
     deployment_config = _build_deployment_config(manual_parallelism, inference_config)
+    logger.info("[DEBUG] deployment_config: %s", deployment_config)
 
     # 构建内部评估配置
     internal_config = {
@@ -460,6 +508,7 @@ def run_evaluation_from_request(config: dict[str, Any]) -> dict[str, Any]:
             deployment_config=deployment_config,
             model_config=model_config,
             aggregates=aggregates,
+            chip_config=chip_config,
         )
 
         # 生成与前端兼容的 gantt_chart 和 stats
@@ -563,11 +612,14 @@ def run_evaluation_from_request(config: dict[str, Any]) -> dict[str, Any]:
 
     except Exception as e:
         logger.exception("Evaluation failed")
-        # 返回失败结果
+        # 返回失败结果（deployment_config 可能在异常前未定义）
+        _locals = locals()
+        parallelism_info = _locals.get('deployment_config', manual_parallelism)
+        inference_info = _locals.get('inference_config', {})
         return {
             "top_k_plans": [],
             "infeasible_plans": [{
-                "parallelism": deployment_config,
+                "parallelism": parallelism_info,
                 "infeasible_reason": str(e),
                 "is_feasible": False,
             }],
@@ -580,8 +632,8 @@ def run_evaluation_from_request(config: dict[str, Any]) -> dict[str, Any]:
                 "experiment_name": config.get("experiment_name"),
                 "benchmark_name": config.get("benchmark_name"),
                 "topology_config_name": config.get("topology_config_name"),
-                "parallelism": deployment_config,
-                "inference": inference_config,
+                "parallelism": parallelism_info,
+                "inference": inference_info,
             },
         }
 
@@ -714,6 +766,7 @@ def _calculate_deployment_cost(
     deployment_config: dict[str, Any],
     model_config: dict[str, Any],
     aggregates: dict[str, Any],
+    chip_config: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """计算部署成本
 
@@ -721,6 +774,7 @@ def _calculate_deployment_cost(
         deployment_config: 部署配置（含并行策略）
         model_config: 模型配置
         aggregates: 性能聚合指标
+        chip_config: 芯片配置（含 name 字段）
 
     Returns:
         dict: 成本分析结果
@@ -734,16 +788,13 @@ def _calculate_deployment_cost(
     ep = _get_required(deployment_config, "ep", "deployment config")
     chips = tp * pp * dp * ep
 
-    # 获取芯片类型（从 chip_config 或 deployment_config，而非 model_config）
-    chip_config = config.get("chip", {})
-    if isinstance(chip_config, str):
-        chip_type = chip_config  # 引用预设名称
-    elif "name" in chip_config:
+    # 获取芯片类型
+    if chip_config and "name" in chip_config:
         chip_type = chip_config["name"]
     elif "chip_type" in deployment_config:
         chip_type = deployment_config["chip_type"]
     else:
-        raise ValueError("Cannot determine chip_type from config (check chip or deployment sections)")
+        raise ValueError("Cannot determine chip_type: missing chip_config.name and deployment_config.chip_type")
 
     # 估算模型大小（粗略）
     hidden_size = _get_required(model_config, "hidden_size", "model config")

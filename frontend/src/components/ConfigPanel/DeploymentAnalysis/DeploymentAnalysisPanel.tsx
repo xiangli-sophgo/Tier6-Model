@@ -119,9 +119,6 @@ interface DeploymentAnalysisPanelProps {
   topology?: HierarchicalTopology | null
   onTrafficResultChange?: (result: TopologyTrafficResult | null) => void
   onAnalysisDataChange?: (data: DeploymentAnalysisData | null) => void
-  rackConfig?: RackConfig
-  podCount?: number
-  racksPerPod?: number
   // 历史记录 (由 WorkbenchContext 统一管理)
   history?: AnalysisHistoryItem[]
   onAddToHistory?: (item: Omit<AnalysisHistoryItem, 'id' | 'timestamp'>) => void
@@ -133,9 +130,6 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
   topology,
   onTrafficResultChange,
   onAnalysisDataChange,
-  rackConfig,
-  podCount = 1,
-  racksPerPod = 1,
   // 历史记录 props
   history = [],
   onAddToHistory: _onAddToHistory,
@@ -187,10 +181,14 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
 
   // 当前选中的 Benchmark 配置文件名
   const [selectedBenchmark, setSelectedBenchmark] = useState<string | undefined>()
-  // 当前使用的拓扑配置（从文件加载或从 props 传入）
-  const [localRackConfig, setLocalRackConfig] = useState<RackConfig | undefined>(rackConfig)
-  const [localPodCount, setLocalPodCount] = useState(podCount)
-  const [localRacksPerPod, setLocalRacksPerPod] = useState(racksPerPod)
+
+  // ✅ 新增：完整的拓扑配置（从后端加载，保存时保持结构完整）
+  const [fullTopologyConfig, setFullTopologyConfig] = useState<TopologyConfig | null>(null)
+
+  // 当前使用的拓扑配置（从完整配置中提取，用于本地编辑）
+  const [localRackConfig, setLocalRackConfig] = useState<RackConfig | undefined>()
+  const [localPodCount, setLocalPodCount] = useState(1)
+  const [localRacksPerPod, setLocalRacksPerPod] = useState(1)
 
   // 保存弹窗状态
   const [saveAsModalOpen, setSaveAsModalOpen] = useState(false)
@@ -247,6 +245,8 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
   const [benchmarkPresets, setBenchmarkPresets] = useState<BenchmarkListItem[]>([])
   const [selectedBenchmarkId, setSelectedBenchmarkId] = useState<string>('')
   const [benchmarkLoading, setBenchmarkLoading] = useState(false)
+  // Benchmark 初始化完成标志（子编辑器延迟渲染，避免竞态）
+  const [configReady, setConfigReady] = useState(false)
   // Benchmark 原始快照 (修改追踪)
   const [benchmarkSnapshot, setBenchmarkSnapshot] = useState<{
     modelName: string;
@@ -262,6 +262,10 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
 
   // 从 TopologyConfig 格式（pods 数组）中提取并设置各个独立 state
   const handleTopologyConfigChange = useCallback((config: TopologyConfig) => {
+    // ✅ 保存完整配置（用于保存时保持结构完整）
+    setFullTopologyConfig(config)
+    console.log('[DeploymentAnalysis] 加载完整拓扑配置:', config.name, '芯片数:', config.pods?.[0]?.racks?.[0]?.boards?.[0]?.count)
+
     // 从 pods 结构提取 podCount, racksPerPod, rackConfig
     if (config.pods && config.pods.length > 0) {
       const firstPod = config.pods[0]
@@ -299,15 +303,6 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
     if (config.name) setSelectedTopologyConfig(config.name)
   }, [])
 
-  // 当 props 传入的配置变化时，更新本地状态
-  React.useEffect(() => {
-    if (rackConfig && !selectedTopologyConfig) {
-      setLocalRackConfig(rackConfig)
-      setLocalPodCount(podCount)
-      setLocalRacksPerPod(racksPerPod)
-    }
-  }, [rackConfig, podCount, racksPerPod, selectedTopologyConfig])
-
   // 从拓扑配置中提取硬件配置（不依赖后端）
   React.useEffect(() => {
     // 从拓扑配置提取硬件参数
@@ -328,8 +323,7 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
         }
       }
     } else if (!hardwareConfig) {
-      // 如果没有拓扑配置，使用默认值（SG2260E 参数）
-      console.warn('未找到拓扑配置，使用默认硬件配置')
+
       const defaultConfig: HardwareConfig = {
         chips: {},
         interconnect: { links: { c2c: { bandwidth_gbps: 0, latency_us: 0 }, b2b: { bandwidth_gbps: 0, latency_us: 0 }, r2r: { bandwidth_gbps: 0, latency_us: 0 }, p2p: { bandwidth_gbps: 0, latency_us: 0 } } },
@@ -548,28 +542,29 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
   }, [])
 
   // 构造 TopologyConfig 供 TopologyEditor 使用
+  // ✅ 优先使用 fullTopologyConfig.pods（保持后端原始结构），只覆盖可编辑的硬件参数
   const topologyConfigForEditor = useMemo<TopologyConfig>(() => ({
     name: selectedTopologyConfig || '',
-    pods: localRackConfig ? [{
+    pods: fullTopologyConfig?.pods || (localRackConfig ? [{
       count: localPodCount,
       racks: [{
         count: localRacksPerPod,
         boards: localRackConfig.boards.map(b => ({
+          id: (b as any).id || '',
+          name: (b as any).name || 'Board',
+          u_height: (b as any).u_height || 2,
           count: b.count,
           chips: b.chips.map(c => ({ name: c.name, count: c.count, preset_id: (c as any).preset_id })),
-          id: (b as any).id,
-          name: (b as any).name,
-          u_height: (b as any).u_height,
         })),
         total_u: localRackConfig.total_u,
       }],
-    }] : undefined,
+    }] : undefined),
     chips: localHardwareParams ? localHardwareParams.chips as unknown as Record<string, ChipPreset> : undefined,
     interconnect: {
       links: localHardwareParams?.interconnect,
       comm_params: commLatencyConfig,
     },
-  }), [selectedTopologyConfig, localPodCount, localRacksPerPod, localRackConfig, localHardwareParams, commLatencyConfig])
+  }), [selectedTopologyConfig, fullTopologyConfig?.pods, localPodCount, localRacksPerPod, localRackConfig, localHardwareParams, commLatencyConfig])
 
   // ==========================================
   // Benchmark 预设管理
@@ -642,19 +637,47 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
     }
   }, [handleModelPresetChange, handleTopologyConfigChange])
 
+  const [benchmarkRefreshing, setBenchmarkRefreshing] = useState(false)
+
   // 加载 Benchmark 预设列表，自动恢复上次选中
+  // Benchmark 初始化完成后设置 configReady，子编辑器才会渲染（避免竞态）
   benchmarkPresetChangeRef.current = handleBenchmarkPresetChange
   React.useEffect(() => {
     getBenchmarks()
-      .then(res => {
+      .then(async (res) => {
         setBenchmarkPresets(res.benchmarks)
-        if (res.benchmarks.length === 0) return
+        if (res.benchmarks.length === 0) {
+          setConfigReady(true)
+          return
+        }
         const lastUsed = localStorage.getItem('tier6_last_benchmark')
         const target = res.benchmarks.find(b => b.id === lastUsed)
           || res.benchmarks[0]
-        benchmarkPresetChangeRef.current?.(target.id)
+        try {
+          await benchmarkPresetChangeRef.current?.(target.id)
+        } catch (err) {
+          console.error('Failed to load initial benchmark:', err)
+        }
+        setConfigReady(true)
       })
-      .catch(err => console.error('Failed to load benchmarks:', err))
+      .catch(err => {
+        console.error('Failed to load benchmarks:', err)
+        setConfigReady(true)
+      })
+  }, [])
+
+  // 刷新 Benchmark 预设列表（手动触发）
+  const handleRefreshBenchmarkList = useCallback(async () => {
+    setBenchmarkRefreshing(true)
+    try {
+      const res = await getBenchmarks()
+      setBenchmarkPresets(res.benchmarks)
+      toast.success(`已刷新 Benchmark 列表 (${res.benchmarks.length} 个)`)
+    } catch {
+      toast.error('刷新 Benchmark 列表失败')
+    } finally {
+      setBenchmarkRefreshing(false)
+    }
   }, [])
 
   // 修改追踪 (细粒度，每个字段独立检测)
@@ -878,20 +901,27 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
       toast.warning('请输入配置名称')
       return
     }
+    if (!fullTopologyConfig) {
+      toast.error('配置未加载，请先选择拓扑预设')
+      return
+    }
     setSaveLoading(true)
     try {
+      // ✅ 保持完整结构
       const newConfig: TopologyConfig = {
+        ...fullTopologyConfig,
         name: newConfigName.trim(),
         description: newConfigDesc.trim() || undefined,
-        pods: topologyConfigForEditor.pods,
-        chips: localHardwareParams?.chips || undefined,
+        chips: localHardwareParams?.chips || fullTopologyConfig.chips,
         interconnect: {
-          links: localHardwareParams?.interconnect,
+          ...fullTopologyConfig.interconnect,
+          links: localHardwareParams?.interconnect || fullTopologyConfig.interconnect?.links,
           comm_params: { ...commLatencyConfig },
         },
       }
       await createTopology(newConfig)
       setSelectedTopologyConfig(newConfigName.trim())
+      setFullTopologyConfig(newConfig)
       setSaveAsModalOpen(false)
       setNewConfigName('')
       setNewConfigDesc('')
@@ -902,7 +932,7 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
     } finally {
       setSaveLoading(false)
     }
-  }, [newConfigName, newConfigDesc, localPodCount, localRacksPerPod, localRackConfig, commLatencyConfig, localHardwareParams, topologyConfigForEditor.pods])
+  }, [newConfigName, newConfigDesc, fullTopologyConfig, commLatencyConfig, localHardwareParams])
 
   // 保存拓扑配置（更新现有配置）
   const handleSaveTopologyConfig = useCallback(async () => {
@@ -910,46 +940,71 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
       toast.warning('请先选择一个配置文件')
       return
     }
+    if (!fullTopologyConfig) {
+      toast.error('配置未加载，请先选择拓扑预设')
+      return
+    }
+
+    console.log('[DeploymentAnalysis] 保存前检查 - fullTopologyConfig.pods:', fullTopologyConfig.pods)
+    console.log('[DeploymentAnalysis] 保存前检查 - localHardwareParams:', localHardwareParams)
+
     try {
+      // ✅ 保持原有的 pods 结构不变，只更新硬件参数
       const updatedConfig: TopologyConfig = {
+        ...fullTopologyConfig,  // ← 保留完整结构（pods、switch_config 等）
         name: selectedTopologyConfig,
-        pods: topologyConfigForEditor.pods,
-        chips: localHardwareParams?.chips || undefined,
+        // ✅ 只更新用户编辑的部分
+        chips: localHardwareParams?.chips || fullTopologyConfig.chips,
         interconnect: {
-          links: localHardwareParams?.interconnect,
+          ...fullTopologyConfig.interconnect,  // ← 保留原有的 interconnect 配置
+          links: localHardwareParams?.interconnect || fullTopologyConfig.interconnect?.links,
           comm_params: { ...commLatencyConfig },
         },
       }
+
+      console.log('[DeploymentAnalysis] 保存配置:', updatedConfig.name, '芯片数:', updatedConfig.pods?.[0]?.racks?.[0]?.boards?.[0]?.count)
+
       await updateTopology(selectedTopologyConfig, updatedConfig)
       toast.success(`已保存配置: ${selectedTopologyConfig}`)
+
+      // ✅ 更新完整配置缓存
+      setFullTopologyConfig(updatedConfig)
     } catch (error) {
       console.error('保存配置失败:', error)
       toast.error('保存配置失败')
     }
-  }, [selectedTopologyConfig, localPodCount, localRacksPerPod, localRackConfig, commLatencyConfig, localHardwareParams, topologyConfigForEditor.pods])
+  }, [selectedTopologyConfig, fullTopologyConfig, localHardwareParams, commLatencyConfig])
 
   // 拓扑配置另存为
   const handleSaveAsTopologyConfig = useCallback(async (name: string, description?: string) => {
+    if (!fullTopologyConfig) {
+      toast.error('配置未加载，请先选择拓扑预设')
+      throw new Error('配置未加载')
+    }
+
     try {
+      // ✅ 保持完整结构，只更新名称和硬件参数
       const newConfig: TopologyConfig = {
+        ...fullTopologyConfig,
         name,
         description,
-        pods: topologyConfigForEditor.pods,
-        chips: localHardwareParams?.chips || undefined,
+        chips: localHardwareParams?.chips || fullTopologyConfig.chips,
         interconnect: {
-          links: localHardwareParams?.interconnect,
+          ...fullTopologyConfig.interconnect,
+          links: localHardwareParams?.interconnect || fullTopologyConfig.interconnect?.links,
           comm_params: { ...commLatencyConfig },
         },
       }
       await createTopology(newConfig)
       setSelectedTopologyConfig(name)
+      setFullTopologyConfig(newConfig)  // ✅ 更新缓存
       toast.success(`已创建新配置: ${name}`)
     } catch (error) {
       console.error('另存为配置失败:', error)
       toast.error('另存为配置失败')
       throw error
     }
-  }, [topologyConfigForEditor.pods, commLatencyConfig, localHardwareParams])
+  }, [fullTopologyConfig, commLatencyConfig, localHardwareParams])
 
   // 分析结果状态
   const [analysisResult, setAnalysisResult] = useState<PlanAnalysisResult | null>(null)
@@ -1266,9 +1321,9 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
         benchmark_name: benchmarkName,
         topology_config_name: topologyName,
 
-        // 完整配置内容
+        // 完整配置内容 (model 使用 ModelPreset 格式，对齐后端 YAML)
         benchmark_config: {
-          model: modelConfig as unknown as Record<string, unknown>,
+          model: modelPreset as unknown as Record<string, unknown>,
           inference: {
             ...inferenceConfig,
             weight_dtype: inferenceConfig.weight_dtype || modelConfig.weight_dtype,
@@ -1318,11 +1373,11 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
       toast.error(`提交任务失败: ${msg}`)
     }
   }, [
-    experimentName, taskMaxWorkers, modelConfig, inferenceConfig, parallelismMode, manualStrategy,
+    experimentName, taskMaxWorkers, modelPreset, modelConfig, inferenceConfig, parallelismMode, manualStrategy,
     maxChips, addTask, updateTask, setAnalysisTasks, enableTileSearch,
     enablePartitionSearch, maxSimulatedTokens, selectedTopologyConfig, selectedBenchmark,
     localPodCount, localRacksPerPod, localRackConfig, localHardwareParams, commLatencyConfig,
-    enableZigzag
+    enableZigzag, enableRingAttention, topologyConfigForEditor
   ])
 
   // 运行参数遍历（批量提交任务）
@@ -1365,7 +1420,7 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
         // 1. 应用参数覆盖，生成新的配置对象
         const overriddenConfig = applyParameterCombination(
           {
-            model: modelConfig,
+            model: modelPreset,
             inference: inferenceConfig,
             hardware: localHardwareParams || { chips: {}, interconnect: { c2c: { bandwidth_gbps: 0, latency_us: 0 }, b2b: { bandwidth_gbps: 0, latency_us: 0 }, r2r: { bandwidth_gbps: 0, latency_us: 0 }, p2p: { bandwidth_gbps: 0, latency_us: 0 } } },
             parallelism: manualStrategy,
@@ -1393,7 +1448,7 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
           status: 'running',
           startTime: Date.now(),
           experimentName: sweepExperimentName,
-          modelName: (overriddenConfig.model as any).model_name || modelConfig.model_name,
+          modelName: (overriddenConfig.model as any).name || modelPreset.name,
           benchmarkName: variantBenchmarkName,
           parallelism: overriddenConfig.parallelism,
           mode: 'manual',
@@ -1461,6 +1516,7 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
     selectedBenchmark,
     sweepParams,
     experimentName,
+    modelPreset,
     modelConfig,
     inferenceConfig,
     localHardwareParams,
@@ -1505,16 +1561,21 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
             <BaseCard title="Benchmark 配置" collapsible gradient>
               <div className="space-y-3">
                 {/* Benchmark 预设下拉 */}
-                <Select value={selectedBenchmarkId} onValueChange={handleBenchmarkPresetChange}>
-                  <SelectTrigger className="w-full h-7">
-                    <SelectValue placeholder="选择 Benchmark 预设" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {benchmarkPresets.map(b => (
-                      <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <div className="flex gap-1.5">
+                  <Select value={selectedBenchmarkId} onValueChange={handleBenchmarkPresetChange}>
+                    <SelectTrigger className="flex-1 h-7">
+                      <SelectValue placeholder="选择 Benchmark 预设" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {benchmarkPresets.map(b => (
+                        <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Button variant="ghost" size="sm" className="h-7 w-7 p-0 shrink-0" onClick={handleRefreshBenchmarkList} disabled={benchmarkRefreshing || benchmarkLoading} title="刷新 Benchmark 列表">
+                    <RefreshCw className={`h-3.5 w-3.5 ${benchmarkRefreshing ? 'animate-spin' : ''}`} />
+                  </Button>
+                </div>
 
                 {/* 只读信息行: 模型 + 拓扑 */}
                 <div className="grid grid-cols-2 gap-3">
@@ -1660,13 +1721,17 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
               </DialogContent>
             </Dialog>
 
-            {/* 模型配置 */}
+            {/* 模型配置 (等待 Benchmark 初始化完成后渲染，避免竞态) */}
             <BaseCard title="模型配置" collapsible gradient className="mt-4">
-              <ModelPresetEditor
-                value={modelPreset}
-                onChange={handleModelPresetChange}
-                onParamsModified={setModelParamsModified}
-              />
+              {configReady ? (
+                <ModelPresetEditor
+                  value={modelPreset}
+                  onChange={handleModelPresetChange}
+                  onParamsModified={setModelParamsModified}
+                />
+              ) : (
+                <div className="text-center py-4 text-gray-400 text-sm">加载中...</div>
+              )}
             </BaseCard>
 
             {/* 部署策略 */}
@@ -1781,21 +1846,29 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
 
           {/* 右列：拓扑配置 + 芯片配置 */}
           <div>
-            {/* 拓扑配置 */}
+            {/* 拓扑配置 (等待 Benchmark 初始化完成后渲染，避免竞态) */}
             <BaseCard title="拓扑配置" collapsible gradient>
-              <TopologyEditor
-                value={topologyConfigForEditor}
-                onChange={handleTopologyConfigChange}
-                onParamsModified={setTopologyParamsModified}
-              />
+              {configReady ? (
+                <TopologyEditor
+                  value={topologyConfigForEditor}
+                  onChange={handleTopologyConfigChange}
+                  onParamsModified={setTopologyParamsModified}
+                />
+              ) : (
+                <div className="text-center py-4 text-gray-400 text-sm">加载中...</div>
+              )}
             </BaseCard>
 
-            {/* 芯片配置 */}
+            {/* 芯片配置 (等待 Benchmark 初始化完成后渲染，避免竞态) */}
             <BaseCard title="芯片配置" collapsible gradient className="mt-4">
-              <ChipPresetEditor
-                value={currentChipPreset}
-                onChange={handleChipPresetChange}
-              />
+              {configReady ? (
+                <ChipPresetEditor
+                  value={currentChipPreset}
+                  onChange={handleChipPresetChange}
+                />
+              ) : (
+                <div className="text-center py-4 text-gray-400 text-sm">加载中...</div>
+              )}
             </BaseCard>
           </div>
         </div>

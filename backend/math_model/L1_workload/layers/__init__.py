@@ -3,7 +3,7 @@
 提供层基类和注册表。
 """
 
-from math_model.core.registry import Registry
+from math_model.L0_entry.registry import Registry
 from math_model.L1_workload.layers.base import LayerBase, LayerRole
 
 # 全局层注册表

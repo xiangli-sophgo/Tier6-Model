@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from math_model.core.types import DataType
+from math_model.L0_entry.types import DataType
 from math_model.L1_workload.layers.attention import AttentionLayer
 from math_model.L1_workload.layers.ffn import FFNLayer
 from math_model.L1_workload.metadata import ModelMetadata

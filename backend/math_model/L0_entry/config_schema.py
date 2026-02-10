@@ -468,8 +468,21 @@ class ExperimentUpdateRequest(BaseModel):
 
 
 class BatchDeleteRequest(BaseModel):
-    """批量删除请求"""
-    ids: List[str] = Field(...)
+    """批量删除请求 - 兼容多种字段名"""
+    ids: Optional[List[int]] = None
+    experiment_ids: Optional[List[int]] = None
+    result_ids: Optional[List[int]] = None
+
+    @property
+    def resolved_ids(self) -> List[int]:
+        """统一解析出实际的 ID 列表（兼容 ids / experiment_ids / result_ids）"""
+        if self.ids is not None:
+            return self.ids
+        if self.experiment_ids is not None:
+            return self.experiment_ids
+        if self.result_ids is not None:
+            return self.result_ids
+        return []
 
 
 class ImportCheckResponse(BaseModel):

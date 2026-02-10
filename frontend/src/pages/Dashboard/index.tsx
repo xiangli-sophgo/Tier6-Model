@@ -44,7 +44,9 @@ export const Dashboard: React.FC = () => {
       // 加载最近任务
       const tasksData = await getTasks({ limit: 5 })
       const tasks = tasksData.tasks || []
-      setRecentTasks(tasks)
+      // 过滤掉无效任务（缺少必要字段）
+      const validTasks = tasks.filter((t: any) => t.task_id && t.status)
+      setRecentTasks(validTasks)
 
       // 加载运行中任务
       const runningData = await getRunningTasks()

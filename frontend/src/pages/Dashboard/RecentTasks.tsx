@@ -97,7 +97,7 @@ export const RecentTasks: React.FC<RecentTasksProps> = ({ tasks, loading, onNavi
                 >
                   <div className="mb-2 flex items-center gap-3">
                     <span className="text-sm font-semibold text-text-primary">
-                      {task.experiment_name || task.task_id.slice(0, 8)}
+                      {task.experiment_name || task.task_id?.slice(0, 8) || '未命名任务'}
                     </span>
                     <Badge variant={statusConfig.variant} className="gap-1">
                       {statusConfig.icon}
@@ -111,7 +111,7 @@ export const RecentTasks: React.FC<RecentTasksProps> = ({ tasks, loading, onNavi
                   )}
                   <div className="mt-2">
                     <p className="text-[11px] text-text-muted">
-                      {new Date(task.created_at).toLocaleString()}
+                      {task.created_at ? new Date(task.created_at).toLocaleString() : '时间未知'}
                     </p>
                   </div>
                 </div>

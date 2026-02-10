@@ -62,6 +62,8 @@ export const ModelPresetEditor: React.FC<ModelPresetEditorProps> = ({ value, onC
   const [saveAsOpen, setSaveAsOpen] = useState(false)
   const [saveAsName, setSaveAsName] = useState('')
 
+  const [refreshing, setRefreshing] = useState(false)
+
   // 加载预设列表
   useEffect(() => {
     getModelPresets()
@@ -69,14 +71,29 @@ export const ModelPresetEditor: React.FC<ModelPresetEditorProps> = ({ value, onC
         setPresetList(presets)
         if (presets.length === 0) return
         const lastUsed = localStorage.getItem('tier6_last_model_preset')
-        const target = presets.find(p => p.name === lastUsed)
-          || presets.find(p => p.name === value.name)
+        // 优先使用父组件传入的 value.name（来自 Benchmark 联动），其次 localStorage
+        const target = (value.name ? presets.find(p => p.name === value.name) : null)
+          || presets.find(p => p.name === lastUsed)
           || presets[0]
         setSelectedPreset(target.name)
         originalRef.current = JSON.parse(JSON.stringify(target.config))
         onChange({ ...target.config })
       })
       .catch(() => toast.error('加载模型预设列表失败'))
+  }, [])
+
+  // 刷新预设列表（手动触发）
+  const handleRefreshList = useCallback(async () => {
+    setRefreshing(true)
+    try {
+      const { presets } = await getModelPresets()
+      setPresetList(presets)
+      toast.success(`已刷新模型预设列表 (${presets.length} 个)`)
+    } catch {
+      toast.error('刷新模型预设列表失败')
+    } finally {
+      setRefreshing(false)
+    }
   }, [])
 
   // 检测外部推送的预设变更 (如 Benchmark 加载联动)，同步内部状态
@@ -304,16 +321,21 @@ export const ModelPresetEditor: React.FC<ModelPresetEditorProps> = ({ value, onC
               : <><ChevronDown className="h-3 w-3 mr-1" />全部展开</>}
           </Button>
         </div>
-        <Select value={selectedPreset} onValueChange={handlePresetChange}>
-          <SelectTrigger className="w-full h-7">
-            <SelectValue placeholder="选择模型预设..." />
-          </SelectTrigger>
-          <SelectContent>
-            {presetList.map((p) => (
-              <SelectItem key={p.name} value={p.name}>{p.name}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <div className="flex gap-1.5">
+          <Select value={selectedPreset} onValueChange={handlePresetChange}>
+            <SelectTrigger className="flex-1 h-7">
+              <SelectValue placeholder="选择模型预设..." />
+            </SelectTrigger>
+            <SelectContent>
+              {presetList.map((p) => (
+                <SelectItem key={p.name} value={p.name}>{p.name}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Button variant="ghost" size="sm" className="h-7 w-7 p-0 shrink-0" onClick={handleRefreshList} disabled={refreshing} title="刷新预设列表">
+            <RefreshCw className={`h-3.5 w-3.5 ${refreshing ? 'animate-spin' : ''}`} />
+          </Button>
+        </div>
       </div>
 
       <div className="space-y-2 mb-3">

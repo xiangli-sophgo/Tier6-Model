@@ -10,7 +10,7 @@ from typing import Any
 
 from math_model.L2_arch.chip import ChipSpecImpl, chip_registry
 from math_model.L2_arch.interconnect import BoardMemorySpecImpl, ChipInterconnectSpecImpl
-from math_model.core.registry import InstanceRegistry
+from math_model.L0_entry.registry import InstanceRegistry
 
 
 # 板卡注册表 (使用 InstanceRegistry 存储单例实例)

@@ -39,7 +39,7 @@ def __getattr__(name: str):
         from math_model.L0_entry.config_loader import get_config_loader
         return get_config_loader
     elif name == "DataType":
-        from math_model.core.types import DataType
+        from math_model.L0_entry.types import DataType
         return DataType
     elif name == "router":
         from math_model.L0_entry.api import router

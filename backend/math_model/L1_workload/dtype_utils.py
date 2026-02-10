@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from math_model.core.types import DataType
+from math_model.L0_entry.types import DataType
 
 
 def parse_dtype(value: str | DataType | None, default: DataType) -> DataType:
