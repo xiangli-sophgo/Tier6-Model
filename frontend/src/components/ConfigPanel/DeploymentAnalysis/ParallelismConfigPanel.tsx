@@ -4,6 +4,7 @@
 
 import React from 'react'
 import { NumberInput } from '@/components/ui/number-input'
+import { Switch } from '@/components/ui/switch'
 import { HelpTooltip } from '@/components/ui/info-tooltip'
 import {
   ParallelismStrategy,
@@ -152,19 +153,19 @@ export const ParallelismConfigPanel: React.FC<ParallelismConfigPanelProps> = ({
                 />
               </div>
             )}
-            {/* SP */}
+            {/* SP (enable_tp_sp) */}
             <div className="text-center">
               <HelpTooltip
                 label="SP"
-                content="序列并行: 沿序列维度拆分 LayerNorm/Dropout"
+                content="序列并行: SP 跟随 TP，KV 序列按 TP 度切分，插入 AllGather/ReduceScatter 通信"
                 labelClassName="text-[11px] block mb-1 cursor-help"
               />
-              <NumberInput
-                value={manualStrategy.sp}
-                onChange={(v) => v !== undefined && onManualStrategyChange({ ...manualStrategy, sp: v })}
-                min={1} max={128}
-                className="h-7 text-center"
-              />
+              <div className="flex justify-center h-7 items-center">
+                <Switch
+                  checked={manualStrategy.enable_tp_sp ?? false}
+                  onCheckedChange={(checked) => onManualStrategyChange({ ...manualStrategy, enable_tp_sp: checked })}
+                />
+              </div>
             </div>
             {/* 总芯片数 */}
             <div className="text-center pb-0.5">

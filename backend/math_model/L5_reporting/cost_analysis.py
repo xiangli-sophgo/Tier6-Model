@@ -15,13 +15,7 @@ if TYPE_CHECKING:
 
 # 芯片定价表 (USD)
 CHIP_PRICES = {
-    "B200": 6303,
-    "H100": 4500,
-    "H800": 3800,
-    "A100": 3000,
-    "SG2262": 2500,
-    "SG2260E": 2500,
-    "SG2260": 2000,
+    "SG2262": 2371.275,
 }
 
 # 互联成本层级 ($/lane, 112Gbps per lane)
@@ -112,14 +106,18 @@ class CostAnalyzer:
         if chip_type in self.chip_prices:
             return self.chip_prices[chip_type]
 
-        # 尝试模糊匹配
+        # 尝试严格大小写不敏感匹配
         chip_upper = chip_type.upper()
         for key, price in self.chip_prices.items():
-            if key.upper() in chip_upper or chip_upper in key.upper():
+            if key.upper() == chip_upper:
                 return price
 
-        # 默认价格
-        return 2500.0
+        # 未找到芯片价格
+        available = ", ".join(self.chip_prices.keys())
+        raise ValueError(
+            f"Unknown chip type '{chip_type}' for cost analysis. "
+            f"Available: {available}. Please add to CHIP_PRICES or use a known type."
+        )
 
     def get_lane_cost(self, chip_count: int) -> float:
         """获取每 lane 互联成本

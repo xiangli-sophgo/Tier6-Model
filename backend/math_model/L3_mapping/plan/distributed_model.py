@@ -19,6 +19,7 @@ class CommType(Enum):
 
     ALLREDUCE = auto()
     ALLGATHER = auto()
+    REDUCE_SCATTER = auto()
     ALL2ALL = auto()
     P2P = auto()
 

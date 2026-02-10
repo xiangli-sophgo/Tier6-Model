@@ -334,8 +334,14 @@ class MemoryAnalyzer:
             hidden_size=metadata.hidden_size,
             num_layers=metadata.num_layers,
             num_heads=metadata.num_heads,
-            intermediate_size=metadata.intermediate_size or metadata.hidden_size * 4,
-            vocab_size=metadata.vocab_size or 32000,
+            intermediate_size=(
+                metadata.intermediate_size
+                if metadata.intermediate_size is not None
+                else metadata.hidden_size * 4
+            ),  # 可从 hidden_size 推导
+            vocab_size=(
+                metadata.vocab_size if metadata.vocab_size is not None else 32000
+            ),  # 常见默认值
             batch_size=batch_size,
             seq_len=seq_len,
             num_kv_heads=metadata.num_kv_heads,

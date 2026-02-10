@@ -321,6 +321,8 @@ class ManualParallelism(BaseModel):
     comm_protocol: int = Field(1, ge=0)
     kv_cache_rate: float = Field(0.0, ge=0.0, le=1.0)
     is_prefill: bool = Field(False)
+    enable_zigzag: bool = Field(False)
+    enable_ring_attention: bool = Field(False)
 
 
 class SearchConstraints(BaseModel):

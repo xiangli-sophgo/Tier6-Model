@@ -17,6 +17,9 @@ class CubeSpec:
 
     Attributes:
         name: 单元名称
+        dim_m: 矩阵单元 M 维度
+        dim_k: 矩阵单元 K 维度 (累加维度)
+        dim_n: 矩阵单元 N 维度
         mac_per_lane: 每 lane MAC 数 (按数据类型)
         frequency_ghz: 工作频率
         lane_count: lane 数量
@@ -24,6 +27,9 @@ class CubeSpec:
     """
 
     name: str = "Cube"
+    dim_m: int = 16
+    dim_k: int = 32
+    dim_n: int = 8
     mac_per_lane: dict[str, int] = field(default_factory=dict)
     frequency_ghz: float = 1.0
     lane_count: int = 64
@@ -68,20 +74,37 @@ class CubeSpec:
         """从配置创建
 
         Args:
-            config: 配置字典
+            config: 配置字典，包含 m/k/n 维度和 mac_per_lane
             frequency_ghz: 工作频率
             lane_count: lane 数量
             core_count: 核心数量
 
         Returns:
             CubeSpec 实例
+
+        Raises:
+            ValueError: 缺少必需的 m/k/n 维度参数
         """
+        if "m" not in config:
+            raise ValueError("Missing 'compute_units.cube.m' in chip config")
+        if "k" not in config:
+            raise ValueError("Missing 'compute_units.cube.k' in chip config")
+        if "n" not in config:
+            raise ValueError("Missing 'compute_units.cube.n' in chip config")
+
+        # mac_per_lane 必需（否则 peak_flops 为 0）
+        if "mac_per_lane" not in config or not config["mac_per_lane"]:
+            raise ValueError("Missing or empty 'compute_units.cube.mac_per_lane' in chip config")
+
         mac_per_lane = {}
-        for dtype, mac in config.get("mac_per_lane", {}).items():
+        for dtype, mac in config["mac_per_lane"].items():
             mac_per_lane[dtype.upper()] = mac
 
         return cls(
             name="Cube",
+            dim_m=int(config["m"]),
+            dim_k=int(config["k"]),
+            dim_n=int(config["n"]),
             mac_per_lane=mac_per_lane,
             frequency_ghz=frequency_ghz,
             lane_count=lane_count,

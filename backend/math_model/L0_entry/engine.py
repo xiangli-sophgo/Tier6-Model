@@ -80,6 +80,7 @@ def run_evaluation(config: dict[str, Any]) -> dict[str, Any]:
         seq_len=int(_get_required(deployment_config, "seq_len", "deployment config")),
         batch_size=int(_get_required(deployment_config, "batch_size", "deployment config")),
         enable_tp_sp=bool(_get_required(deployment_config, "enable_tp_sp", "deployment config")),
+        enable_ring_attention=bool(_get_required(deployment_config, "enable_ring_attention", "deployment config")),
         embed_tp=int(_get_required(deployment_config, "embed_tp", "deployment config")),
         lmhead_tp=int(_get_required(deployment_config, "lmhead_tp", "deployment config")),
         comm_protocol=int(_get_required(deployment_config, "comm_protocol", "deployment config")),
@@ -108,6 +109,8 @@ def run_evaluation(config: dict[str, Any]) -> dict[str, Any]:
     precise_evaluator = PreciseTileEvaluator(
         compute_tflops=compute_tflops,
         memory_bandwidth_gbps=memory_bw_gbps,
+        is_prefill=deployment.is_prefill,
+        enable_zigzag=bool(deployment_config.get("enable_zigzag", False)),
     )
 
     tile_plan = TilingPlanner(chip, l4_evaluator=precise_evaluator).plan(dist_model)
@@ -359,6 +362,13 @@ def _build_hardware_spec(chip: Any, chip_config: dict[str, Any]) -> dict[str, An
             f"Missing 'compute_efficiency' in chip config: {chip_config.get('name', 'unknown')}"
         )
     hardware["compute_efficiency"] = float(chip_config["compute_efficiency"])
+
+    # compute_dma_overlap_rate 从芯片配置读取
+    if "compute_dma_overlap_rate" not in chip_config:
+        raise ValueError(
+            f"Missing 'compute_dma_overlap_rate' in chip config: {chip_config.get('name', 'unknown')}"
+        )
+    hardware["compute_dma_overlap_rate"] = float(chip_config["compute_dma_overlap_rate"])
 
     return hardware
 
@@ -715,7 +725,7 @@ def _calculate_deployment_cost(
     Returns:
         dict: 成本分析结果
     """
-    from math_model.evaluators.cost_evaluator import CostEvaluator
+    from math_model.L5_reporting.cost_analysis import CostAnalyzer
 
     # 计算芯片数
     tp = _get_required(deployment_config, "tp", "deployment config")
@@ -724,8 +734,16 @@ def _calculate_deployment_cost(
     ep = _get_required(deployment_config, "ep", "deployment config")
     chips = tp * pp * dp * ep
 
-    # 获取芯片类型
-    chip_type = _get_required(model_config, "chip_type", "model config")
+    # 获取芯片类型（从 chip_config 或 deployment_config，而非 model_config）
+    chip_config = config.get("chip", {})
+    if isinstance(chip_config, str):
+        chip_type = chip_config  # 引用预设名称
+    elif "name" in chip_config:
+        chip_type = chip_config["name"]
+    elif "chip_type" in deployment_config:
+        chip_type = deployment_config["chip_type"]
+    else:
+        raise ValueError("Cannot determine chip_type from config (check chip or deployment sections)")
 
     # 估算模型大小（粗略）
     hidden_size = _get_required(model_config, "hidden_size", "model config")
@@ -740,9 +758,20 @@ def _calculate_deployment_cost(
     # Embedding + Attention + FFN/MoE + LMHead
     embed_params = hidden_size * vocab_size
     attn_params = 4 * hidden_size * hidden_size * num_layers
-    ffn_params = 3 * hidden_size * hidden_size * 4 * num_layers  # 简化
+
+    # FFN/MoE 参数（使用配置而非硬编码）
+    intermediate_size = model_config.get("intermediate_size", hidden_size * 4)
     if num_experts > 0:
-        ffn_params = num_experts * 3 * hidden_size * 2048 * (num_layers - 3)  # MoE 层
+        # MoE: 从配置获取 dense/moe 层数拆分
+        num_dense_layers = model_config.get("num_dense_layers", 0)
+        num_moe_layers = model_config.get("num_moe_layers", num_layers)
+        moe_intermediate_size = moe.get("intermediate_size", intermediate_size // 4)
+        ffn_params = (
+            3 * hidden_size * intermediate_size * num_dense_layers
+            + num_experts * 3 * hidden_size * moe_intermediate_size * num_moe_layers
+        )
+    else:
+        ffn_params = 3 * hidden_size * intermediate_size * num_layers
 
     total_params = embed_params + attn_params + ffn_params
     bytes_per_param = 2  # BF16
@@ -754,26 +783,27 @@ def _calculate_deployment_cost(
     if tpot is None:
         tpot = _get_required(aggregates, "total_time_ms", "aggregates")
 
-    # 计算成本
-    evaluator = CostEvaluator()
-    cost_result = evaluator.calculate_total_cost(
-        cp_num=chips,
+    # 从模型参数估算互联带宽需求 -> lanes_per_chip
+    effective_tpot = tpot if tpot > 0 else 1.0
+    bandwidth_gbps = 2 * model_size_gb * tp / effective_tpot * 1000
+    lanes_per_chip = max(1, int(bandwidth_gbps / 112 * 8))  # 8 modules/server
+
+    # 使用 L5 CostAnalyzer 计算成本
+    analyzer = CostAnalyzer()
+    cost_breakdown = analyzer.analyze(
         chip_type=chip_type,
-        model_size_gb=model_size_gb,
-        tp=tp,
-        tpot_ms=tpot if tpot > 0 else 1.0,
+        chip_count=chips,
+        tps=tps,
+        lanes_per_chip=lanes_per_chip,
     )
 
-    # 计算每百万 tokens 成本
-    cost_per_m_tokens = evaluator.calculate_cost_per_million_tokens(
-        total_cost=cost_result["total_cost"],
-        tps=tps,
-    ) if tps > 0 else 0
-
     return {
-        **cost_result,
+        "server_cost": cost_breakdown.server_cost,
+        "interconnect_cost": cost_breakdown.interconnect_cost,
+        "total_cost": cost_breakdown.total_cost,
+        "cost_per_chip": cost_breakdown.cost_per_chip,
+        "cost_per_million_tokens": cost_breakdown.cost_per_million_tokens,
         "model_size_gb": model_size_gb,
-        "cost_per_million_tokens": cost_per_m_tokens,
         "chips": chips,
     }
 
@@ -817,6 +847,8 @@ def _build_deployment_config(
         "comm_protocol": _get_required(manual_parallelism, "comm_protocol", "manual_parallelism"),
         "kv_cache_rate": _get_required(manual_parallelism, "kv_cache_rate", "manual_parallelism"),
         "is_prefill": _get_required(manual_parallelism, "is_prefill", "manual_parallelism"),
+        "enable_zigzag": _get_required(manual_parallelism, "enable_zigzag", "manual_parallelism"),
+        "enable_ring_attention": _get_required(manual_parallelism, "enable_ring_attention", "manual_parallelism"),
         # 推理参数
         "q_seq_len": input_seq_length,
         "kv_seq_len": input_seq_length + output_seq_length,

@@ -87,10 +87,11 @@ class TreeAllReduceModel:
         bandwidth_bytes_per_ns = self.bandwidth_gbps
         log_n = math.ceil(math.log2(chip_count))
 
-        # Tree AllReduce: 2 * log2(n) * data_size / bandwidth
-        comm_time = 2 * log_n * data_size / bandwidth_bytes_per_ns
+        # Tree AllReduce: 2 * data_size / bandwidth (通信量约为 2*M)
+        # 步数是 2*log2(n)，但数据量不随步数线性增长
+        comm_time = 2 * data_size / bandwidth_bytes_per_ns
 
-        # 延迟: 2 * log2(n) * latency
+        # 延迟: 2 * log2(n) * latency (步数开销)
         latency_time = 2 * log_n * self.latency_ns
 
         return comm_time + latency_time
@@ -239,8 +240,10 @@ class ChipInterconnectSpecImpl:
         if hops == 0:
             return float("inf")
 
-        # 带宽按跳数衰减
-        return self.link_bandwidth_gbps * self.link_count / hops
+        # Ring/Mesh 拓扑：带宽取决于链路带宽，不随跳数衰减
+        # 多跳只影响延迟（latency），不影响带宽（bandwidth）
+        # 每条链路可以独立并行传输，瓶颈是单条链路的带宽
+        return self.link_bandwidth_gbps * self.link_count
 
     def get_path_hops(self, src: int, dst: int) -> int:
         """获取两芯片间的跳数
@@ -308,11 +311,17 @@ class ChipInterconnectSpecImpl:
         Returns:
             ChipInterconnectSpecImpl 实例
         """
+        # 芯片互联关键参数必需
+        if "link_bandwidth_gbps" not in config:
+            raise ValueError("Missing 'link_bandwidth_gbps' in chip interconnect config")
+        if "latency_ns" not in config:
+            raise ValueError("Missing 'latency_ns' in chip interconnect config")
+
         return cls(
-            topology=config.get("topology", "ring"),
-            link_bandwidth_gbps=config.get("link_bandwidth_gbps", 112.0),
-            link_count=config.get("link_count", 10),
-            latency_ns=config.get("latency_ns", 500.0),
+            topology=config.get("topology", "ring"),  # 可选，默认 ring
+            link_bandwidth_gbps=config["link_bandwidth_gbps"],
+            link_count=config.get("link_count", 10),  # 可选，默认 10
+            latency_ns=config["latency_ns"],
             chip_count=chip_count,
         )
 

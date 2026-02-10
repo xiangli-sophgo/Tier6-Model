@@ -326,6 +326,7 @@ export interface ManualParallelism {
   comm_protocol?: number;
   kv_cache_rate?: number;
   is_prefill?: boolean;
+  enable_zigzag?: boolean;
   [key: string]: unknown;  // 允许额外字段
 }
 

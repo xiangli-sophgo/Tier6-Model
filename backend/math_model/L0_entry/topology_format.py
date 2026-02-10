@@ -58,6 +58,7 @@ def count_chips(config: dict[str, Any]) -> int:
 
     total = 0
     for pod_group in pods:
+        # count 默认值 1 用于拓扑展开的向后兼容，单实例时可省略
         pod_count = pod_group.get("count", 1)
         for rack_group in pod_group.get("racks", []):
             rack_count = rack_group.get("count", 1)

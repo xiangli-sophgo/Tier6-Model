@@ -73,8 +73,14 @@ class ChipCostModel(BaseCostModel):
         bytes_read, bytes_write = self.estimate_bytes(op_type, local_shape)
         total_bytes = bytes_read + bytes_write
 
-        compute_tflops = hardware.get("compute_tflops", 125.0)
-        memory_bw_gbps = hardware.get("memory_bandwidth_gbps", 2000.0)
+        # 硬件参数必需
+        if "compute_tflops" not in hardware:
+            raise ValueError("Missing 'compute_tflops' in hardware spec")
+        if "memory_bandwidth_gbps" not in hardware:
+            raise ValueError("Missing 'memory_bandwidth_gbps' in hardware spec")
+
+        compute_tflops = hardware["compute_tflops"]
+        memory_bw_gbps = hardware["memory_bandwidth_gbps"]
 
         # FLOPs -> ms: FLOPs / (TFLOPS * 1e12) * 1e3 = FLOPs / (TFLOPS * 1e9)
         t_compute_bound = flops / (compute_tflops * 1e9) if compute_tflops > 0 else 0

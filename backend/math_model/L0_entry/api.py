@@ -469,10 +469,14 @@ async def validate_config(request: ValidateRequest):
 
 @router.post("/model/calculate-params", response_model=CalculateParamsResponse)
 async def calculate_model_params(request: CalculateParamsRequest):
-    """计算模型参数量"""
+    """计算模型参数量
+
+    注意: 此端点为前端辅助计算工具，使用典型默认值以便快速估算。
+    实际仿真评估时必须提供完整的模型配置（见 run_evaluation）。
+    """
     model_config = request.model_params
 
-    # 基本参数
+    # 基本参数（使用典型默认值用于快速估算）
     hidden_size = model_config.get("hidden_size", 4096)
     num_layers = model_config.get("num_layers", 32)
     vocab_size = model_config.get("vocab_size", 32000)
@@ -678,14 +682,17 @@ async def list_tasks(
     task_manager = get_task_manager()
 
     task_status = TaskStatus(status) if status else None
-    tasks = task_manager.list_tasks(status=task_status, limit=limit + skip)
+    all_tasks = task_manager.list_tasks(status=task_status)
+
+    # 获取总数（分页前）
+    total = len(all_tasks)
 
     # 应用分页
-    tasks = tasks[skip:skip + limit]
+    tasks = all_tasks[skip:skip + limit]
 
     return {
         "tasks": [t.to_dict() for t in tasks],
-        "total": len(tasks),
+        "total": total,
     }
 
 

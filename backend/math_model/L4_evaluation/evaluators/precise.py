@@ -21,6 +21,13 @@ if TYPE_CHECKING:
     from math_model.L1_workload.specs import TileConfig
 
 
+def _align_up(value: int, alignment: int) -> int:
+    """Round up to nearest multiple of alignment."""
+    if alignment <= 1:
+        return value
+    return math.ceil(value / alignment) * alignment
+
+
 @dataclass
 class PreciseMetrics:
     """精评估结果
@@ -51,7 +58,7 @@ class PreciseMetrics:
 
     def to_dict(self) -> dict[str, int | float | str]:
         """转换为字典（供 L3 TilingPlanner 使用）"""
-        return {
+        result: dict[str, int | float | str] = {
             "t_compute_ms": self.t_compute_ms,
             "t_memory_ms": self.t_memory_ms,
             "traffic": self.dram_traffic_bytes,
@@ -62,6 +69,11 @@ class PreciseMetrics:
             "bottleneck": self.bottleneck,
             "best_loop_order": self.best_loop_order,
         }
+        # 将 extra 中的 P0 指标暴露给 L3/L4 链路
+        for key in ("arch_urate", "active_cores", "overlap_rate"):
+            if key in self.extra:
+                result[key] = self.extra[key]
+        return result
 
 
 class OpPreciseEvaluator(Protocol):
@@ -167,15 +179,46 @@ class MatMulPreciseEvaluator:
             tile_m, tile_n, tile_k, a_bytes, b_bytes, accum_bytes
         )
 
-        # 计算 FLOPs
+        # 计算 FLOPs（real + aligned）
         flops = 2 * g * m * n * k
 
-        # 计算执行时间
-        t_compute_ms = flops / (compute_tflops * 1e9) if compute_tflops > 0 else 0
+        # arch_urate: 对齐损耗（P0.1）
+        cube_m = chip.cube_m if chip else 0
+        cube_k = chip.cube_k if chip else 0
+        cube_n = chip.cube_n if chip else 0
+        if cube_m > 0 and cube_k > 0 and cube_n > 0:
+            aligned_flops = (
+                2 * g
+                * _align_up(m, cube_m)
+                * _align_up(k, cube_k)
+                * _align_up(n, cube_n)
+            )
+            arch_urate = flops / aligned_flops if aligned_flops > 0 else 1.0
+        else:
+            aligned_flops = flops
+            arch_urate = 1.0
+
+        # 分核感知（P0.3）: 活跃核数缩放
+        active_cores = chip.core_count if chip else 1
+        if chip and chip.core_count > 0:
+            total_parallel_tiles = g * m_tiles * n_tiles
+            active_cores = min(chip.core_count, max(1, total_parallel_tiles))
+            effective_tflops = compute_tflops * active_cores / chip.core_count
+        else:
+            effective_tflops = compute_tflops
+
+        # 计算执行时间（用 aligned_flops，除以有效算力）
+        t_compute_ms = aligned_flops / (effective_tflops * 1e9) if effective_tflops > 0 else 0
         t_memory_ms = best_traffic / (memory_bw_gbps * 1e6) if memory_bw_gbps > 0 else 0
 
+        # compute-DMA overlap（P0.2）
+        overlap_rate = chip.compute_dma_overlap_rate if chip else 0.0
+        total_time = (
+            min(t_compute_ms, t_memory_ms) * (1 - overlap_rate)
+            + max(t_compute_ms, t_memory_ms)
+        )
+
         # 计算 urate
-        total_time = max(t_compute_ms, t_memory_ms)
         compute_urate = t_compute_ms / total_time if total_time > 0 else 0
         memory_urate = t_memory_ms / total_time if total_time > 0 else 0
         bottleneck = "compute" if t_compute_ms >= t_memory_ms else "memory"
@@ -190,7 +233,14 @@ class MatMulPreciseEvaluator:
             memory_urate=memory_urate,
             bottleneck=bottleneck,
             best_loop_order=best_order,
-            extra={"m_tiles": m_tiles, "n_tiles": n_tiles, "k_tiles": k_tiles},
+            extra={
+                "m_tiles": m_tiles,
+                "n_tiles": n_tiles,
+                "k_tiles": k_tiles,
+                "arch_urate": arch_urate,
+                "active_cores": active_cores,
+                "overlap_rate": overlap_rate,
+            },
         )
 
     def _compute_traffic(
@@ -208,32 +258,74 @@ class MatMulPreciseEvaluator:
         c_bytes: int,
         accum_bytes: int,
     ) -> int:
-        """计算 MatMul 在指定 loop-order 下的 DRAM traffic
+        """计算 MatMul 在指定 loop-order 下的 DRAM traffic（精确模型）
 
         MatMul: C[G,M,N] = A[G,M,K] @ B[G,K,N]
 
-        Loop-order 影响数据复用：
-        - 外层循环的 tile 每次迭代都要重新加载
-        - 内层循环的 tile 可以在 LMEM 中复用
+        Loop-order 影响数据复用模式：
+        - mnk: K 在最内层，A 复用 n_tiles 次，B 复用 m_tiles 次，C 无需累加读写
+        - nkm: M 在最内层，B 读一次，A 复用 n_tiles 次，C 需累加 (k_tiles-1) 次
+        - mkn: N 在最内层，A 读一次，B 复用 m_tiles 次，C 需累加 (k_tiles-1) 次
+        - nmk: K 在最内层（类似 mnk）
+        - kmn: N 在最内层（类似 mkn）
+        - knm: M 在最内层（类似 nkm）
         """
-        a_tile_bytes = tile_m * tile_k * a_bytes
-        b_tile_bytes = tile_k * tile_n * b_bytes
-        c_tile_bytes = tile_m * tile_n * c_bytes
-        accum_tile_bytes = tile_m * tile_n * accum_bytes
+        m_blk = tile_m * m_tiles
+        n_blk = tile_n * n_tiles
+        k_blk = tile_k * k_tiles
 
-        # 所有 loop-order 的基础加载次数
-        a_loads = m_tiles * k_tiles
-        b_loads = n_tiles * k_tiles
-        c_reads = m_tiles * n_tiles * max(0, k_tiles - 1)
-        c_writes = m_tiles * n_tiles * k_tiles
+        # 精确模型：根据 loop-order 区分数据复用
+        if order == "mnk":
+            # K 在最内层：A[m,k] 复用 n_tiles 次，B[k,n] 复用 m_tiles 次
+            # C 在 K 维累加完成后写回，无需中间读写
+            traffic = (
+                (m_blk * k_blk) * a_bytes * n_tiles  # A 复用
+                + (n_blk * k_blk) * b_bytes * m_tiles  # B 复用
+                + (m_blk * n_blk) * c_bytes  # C 最终写回
+            )
+        elif order == "nkm":
+            # M 在最内层：B[k,n] 读一次，A[m,k] 复用 n_tiles 次
+            # C 需要 k_tiles-1 次累加读写（FP32 精度）
+            traffic = (
+                (n_blk * k_blk) * b_bytes  # B 读一次
+                + (m_blk * k_blk) * a_bytes * n_tiles  # A 复用
+                + (m_blk * n_blk) * accum_bytes * 2 * max(0, k_tiles - 1)  # C 累加读写
+                + (m_blk * n_blk) * c_bytes  # C 最终写回
+            )
+        elif order == "mkn":
+            # N 在最内层：A[m,k] 读一次，B[k,n] 复用 m_tiles 次
+            # C 需要 k_tiles-1 次累加读写
+            traffic = (
+                (m_blk * k_blk) * a_bytes  # A 读一次
+                + (n_blk * k_blk) * b_bytes * m_tiles  # B 复用
+                + (m_blk * n_blk) * accum_bytes * 2 * max(0, k_tiles - 1)  # C 累加读写
+                + (m_blk * n_blk) * c_bytes  # C 最终写回
+            )
+        elif order == "nmk":
+            # K 在最内层（类似 mnk，交换 M/N）
+            traffic = (
+                (n_blk * k_blk) * b_bytes * m_tiles  # B 复用
+                + (m_blk * k_blk) * a_bytes * n_tiles  # A 复用
+                + (m_blk * n_blk) * c_bytes  # C 最终写回
+            )
+        elif order == "kmn":
+            # N 在最内层（类似 mkn）
+            traffic = (
+                (m_blk * k_blk) * a_bytes  # A 读一次
+                + (n_blk * k_blk) * b_bytes * m_tiles  # B 复用
+                + (m_blk * n_blk) * accum_bytes * 2 * max(0, k_tiles - 1)  # C 累加
+                + (m_blk * n_blk) * c_bytes  # C 写回
+            )
+        else:  # knm
+            # M 在最内层（类似 nkm）
+            traffic = (
+                (n_blk * k_blk) * b_bytes  # B 读一次
+                + (m_blk * k_blk) * a_bytes * n_tiles  # A 复用
+                + (m_blk * n_blk) * accum_bytes * 2 * max(0, k_tiles - 1)  # C 累加
+                + (m_blk * n_blk) * c_bytes  # C 写回
+            )
 
-        # 计算总 traffic
-        a_traffic = a_loads * a_tile_bytes
-        b_traffic = b_loads * b_tile_bytes
-        c_read_traffic = c_reads * accum_tile_bytes
-        c_write_traffic = c_writes * c_tile_bytes
-
-        return (a_traffic + b_traffic + c_read_traffic + c_write_traffic) * g
+        return int(traffic * g)
 
     def _compute_lmem(
         self,
@@ -266,9 +358,15 @@ class AttentionPreciseEvaluator:
 
     适用：attention/mha/mla/fa2
     特点：FlashAttention-2 风格，考虑 Q/K/V/P/O buffer 占用
+    支持 zigzag reorder 优化（prefill + causal attention 时 GEMM 减 40%）
+    集成 Softmax 10步向量操作评估（P1.4/P1.5）
     """
 
     SUPPORTED_OPS = {"attention", "mha", "mla", "fa2", "flash_attention", "sdpa"}
+
+    def __init__(self, is_prefill: bool = False, enable_zigzag: bool = False) -> None:
+        self.is_prefill = is_prefill
+        self.enable_zigzag = enable_zigzag
 
     def supports(self, op: "DistributedOp") -> bool:
         return op.op_type.lower() in self.SUPPORTED_OPS
@@ -281,7 +379,14 @@ class AttentionPreciseEvaluator:
         compute_tflops: float,
         memory_bw_gbps: float,
     ) -> PreciseMetrics:
-        """Attention 精评估（FlashAttention-2 style）"""
+        """Attention 精评估（FlashAttention-2 style）
+
+        P1.5 集成: GEMM (Cube) + Softmax 向量 (EU) 分开计算时间，合并 arch_urate
+        """
+        from math_model.L4_evaluation.evaluators.softmax_eval import (
+            softmax_theoretical_and_real,
+        )
+
         shape = op.local_shape
         b = shape.get("B", 1)
         s = shape.get("S", shape.get("seq_len", 1))
@@ -322,10 +427,85 @@ class AttentionPreciseEvaluator:
             + 4 * tile_q * d * 4  # O (float32)
         )
 
-        t_compute_ms = flops / (compute_tflops * 1e9) if compute_tflops > 0 else 0
+        # ============ GEMM 部分: arch_urate 对齐损耗（P0.1）============
+        cube_m = chip.cube_m if chip else 0
+        cube_k = chip.cube_k if chip else 0
+        cube_n = chip.cube_n if chip else 0
+        if cube_m > 0 and cube_k > 0 and cube_n > 0:
+            # QK^T: align(S, cube_m) * align(D, cube_k) * align(S, cube_n)
+            # PV:   align(S, cube_m) * align(S, cube_k) * align(D, cube_n)
+            gemm_real = s * s * (d + d)
+            gemm_theo = (
+                _align_up(s, cube_m) * _align_up(d, cube_k) * _align_up(s, cube_n)
+                + _align_up(s, cube_m) * _align_up(s, cube_k) * _align_up(d, cube_n)
+            )
+            # P1.6 zigzag: prefill + causal attention 时三角矩阵优化减 40% GEMM
+            if self.enable_zigzag and self.is_prefill:
+                gemm_real = int(gemm_real * 0.6)
+                gemm_theo = int(gemm_theo * 0.6)
+            aligned_flops = 2 * b * h * gemm_theo
+        else:
+            gemm_real = 2 * s * s * d
+            gemm_theo = gemm_real
+            aligned_flops = flops
+            if self.enable_zigzag and self.is_prefill:
+                gemm_real = int(gemm_real * 0.6)
+                gemm_theo = int(gemm_theo * 0.6)
+                aligned_flops = int(aligned_flops * 0.6)
+
+        # ============ P1.4/P1.5: Softmax 向量部分 ============
+        lane_num = chip.lane_per_core if chip else 0
+        eu_num = chip.eu_num if chip else 0
+        vector_theo = 0
+        vector_real = 0
+        vector_t_ms = 0.0
+
+        if lane_num > 0 and eu_num > 0:
+            # 以 tile 粒度计算 softmax 向量开销
+            # 每个 (q_tile, k_tile) block 都需要一次 softmax
+            sv_theo, sv_real = softmax_theoretical_and_real(
+                QS=tile_q, KS=tile_k,
+                lane_num=lane_num, eu_num=eu_num,
+                dtype_bytes=qkv_bytes,
+            )
+            # 总量 = per-block 向量开销 * block 数 * batch * heads
+            vector_theo = sv_theo * q_tiles * k_tiles * b * h
+            vector_real = sv_real * q_tiles * k_tiles * b * h
+
+            # 向量执行时间: vector_theo / (eu_num * freq / dtype_bytes)
+            # eu_num 的处理能力: eu_num 个元素/cycle, freq GHz
+            freq_ghz = chip.frequency_ghz if chip else 1.0
+            vector_throughput = eu_num * freq_ghz * 1e9 / qkv_bytes  # ops/sec
+            if vector_throughput > 0:
+                vector_t_ms = vector_theo / vector_throughput * 1e3  # ms
+
+        # 合并 arch_urate: (gemm_real + vector_real) / (gemm_theo + vector_theo)
+        total_real = gemm_real + vector_real
+        total_theo = gemm_theo + vector_theo
+        arch_urate = total_real / total_theo if total_theo > 0 else 1.0
+
+        # ============ 分核感知（P0.3）============
+        active_cores = chip.core_count if chip else 1
+        if chip and chip.core_count > 0:
+            total_parallel_tiles = b * h * q_tiles
+            active_cores = min(chip.core_count, max(1, total_parallel_tiles))
+            effective_tflops = compute_tflops * active_cores / chip.core_count
+        else:
+            effective_tflops = compute_tflops
+
+        # GEMM 执行时间
+        t_gemm_ms = aligned_flops / (effective_tflops * 1e9) if effective_tflops > 0 else 0
+        # 总计算时间 = GEMM + Softmax 向量
+        t_compute_ms = t_gemm_ms + vector_t_ms
         t_memory_ms = traffic / (memory_bw_gbps * 1e6) if memory_bw_gbps > 0 else 0
 
-        total_time = max(t_compute_ms, t_memory_ms)
+        # compute-DMA overlap（P0.2）
+        overlap_rate = chip.compute_dma_overlap_rate if chip else 0.0
+        total_time = (
+            min(t_compute_ms, t_memory_ms) * (1 - overlap_rate)
+            + max(t_compute_ms, t_memory_ms)
+        )
+
         compute_urate = t_compute_ms / total_time if total_time > 0 else 0
         memory_urate = t_memory_ms / total_time if total_time > 0 else 0
         bottleneck = "compute" if t_compute_ms >= t_memory_ms else "memory"
@@ -340,7 +520,18 @@ class AttentionPreciseEvaluator:
             memory_urate=memory_urate,
             bottleneck=bottleneck,
             best_loop_order="qk",
-            extra={"q_tiles": q_tiles, "k_tiles": k_tiles},
+            extra={
+                "q_tiles": q_tiles,
+                "k_tiles": k_tiles,
+                "arch_urate": arch_urate,
+                "active_cores": active_cores,
+                "overlap_rate": overlap_rate,
+                "zigzag_applied": 1.0 if (self.enable_zigzag and self.is_prefill) else 0.0,
+                "vector_theo": vector_theo,
+                "vector_real": vector_real,
+                "vector_t_ms": vector_t_ms,
+                "t_gemm_ms": t_gemm_ms,
+            },
         )
 
     def _get_dtype_bytes(self, attrs: dict, key: str, default: int) -> int:
@@ -438,17 +629,128 @@ class ConvPreciseEvaluator:
         return default
 
 
+class RMSNormPreciseEvaluator:
+    """RMSNorm/LayerNorm 精评估器
+
+    适用：rmsnorm/layernorm/rmsnorm_q/rmsnorm_kv
+    特点：9步向量操作精确建模，考虑硬件对齐（lane_num/eu_num）
+    关键慢操作：div_constant(31 cycles), rsqrt(30 cycles)
+    """
+
+    SUPPORTED_OPS = {"rmsnorm", "layernorm", "rmsnorm_q", "rmsnorm_kv"}
+
+    def supports(self, op: "DistributedOp") -> bool:
+        return op.op_type.lower() in self.SUPPORTED_OPS
+
+    def evaluate(
+        self,
+        op: "DistributedOp",
+        tile_config: "TileConfig",
+        chip: "ChipSpecImpl",
+        compute_tflops: float,
+        memory_bw_gbps: float,
+    ) -> PreciseMetrics:
+        """RMSNorm 精评估（9步向量操作）"""
+        from math_model.L4_evaluation.evaluators.rmsnorm_eval import (
+            rmsnorm_theoretical_and_real,
+        )
+
+        shape = op.local_shape
+        # RMSNorm shape: (B*S, hidden) or (M, K)
+        # 行维 = tokens, 列维 = hidden_dim
+        batch_seq = shape.get("M", shape.get("B", 1))
+        if "S" in shape:
+            batch_seq = batch_seq * shape["S"]
+        hidden_dim = shape.get("K", shape.get("N", shape.get("H", 1)))
+
+        dtype_bytes = self._get_dtype_bytes(op.attrs, "input_dtype_bytes", 2)
+        is_layernorm = "layernorm" in op.op_type.lower()
+
+        lane_num = chip.lane_per_core if chip else 0
+        eu_num = chip.eu_num if chip else 0
+
+        # Traffic: read input + read gamma + write output
+        elements = batch_seq * hidden_dim
+        traffic = (2 * elements + hidden_dim) * dtype_bytes  # input + output + gamma
+
+        vector_theo = 0
+        vector_real = 0
+        t_compute_ms = 0.0
+
+        if lane_num > 0 and eu_num > 0:
+            vector_theo, vector_real = rmsnorm_theoretical_and_real(
+                batch_size=batch_seq,
+                hidden_dim=hidden_dim,
+                lane_num=lane_num,
+                eu_num=eu_num,
+                dtype_bytes=dtype_bytes,
+                has_scale=True,
+                has_bias=is_layernorm,
+            )
+
+            # 向量执行时间
+            freq_ghz = chip.frequency_ghz if chip else 1.0
+            ops_per_cycle = eu_num
+            if ops_per_cycle > 0 and freq_ghz > 0:
+                cycles = vector_theo / ops_per_cycle
+                t_compute_ms = cycles / (freq_ghz * 1e6)  # GHz*1e6 = cycles/ms
+        else:
+            # fallback: 粗估
+            flops_estimate = elements * 5
+            t_compute_ms = flops_estimate / (compute_tflops * 1e9) if compute_tflops > 0 else 0
+
+        t_memory_ms = traffic / (memory_bw_gbps * 1e6) if memory_bw_gbps > 0 else 0
+
+        # compute-DMA overlap
+        overlap_rate = chip.compute_dma_overlap_rate if chip else 0.0
+        total_time = (
+            min(t_compute_ms, t_memory_ms) * (1 - overlap_rate)
+            + max(t_compute_ms, t_memory_ms)
+        )
+
+        arch_urate = vector_real / vector_theo if vector_theo > 0 else 1.0
+        compute_urate = t_compute_ms / total_time if total_time > 0 else 0
+        memory_urate = t_memory_ms / total_time if total_time > 0 else 0
+        bottleneck = "compute" if t_compute_ms >= t_memory_ms else "memory"
+
+        return PreciseMetrics(
+            t_compute_ms=t_compute_ms,
+            t_memory_ms=t_memory_ms,
+            dram_traffic_bytes=int(traffic),
+            lmem_bytes=0,
+            flops=vector_real,
+            compute_urate=compute_urate,
+            memory_urate=memory_urate,
+            bottleneck=bottleneck,
+            best_loop_order="sequential",
+            extra={
+                "arch_urate": arch_urate,
+                "vector_theo": vector_theo,
+                "vector_real": vector_real,
+                "overlap_rate": overlap_rate,
+            },
+        )
+
+    def _get_dtype_bytes(self, attrs: dict, key: str, default: int) -> int:
+        value = attrs.get(key)
+        if value is not None:
+            try:
+                return int(value)
+            except (TypeError, ValueError):
+                pass
+        return default
+
+
 class ElementwisePreciseEvaluator:
     """Elementwise 精评估器
 
-    适用：softmax/layernorm/rmsnorm/relu/gelu/silu/add/mul 等
+    适用：relu/gelu/silu/add/mul 等简单逐元素操作
     特点：memory-bound，traffic = 2 * elements * dtype_bytes
+    注意：rmsnorm/layernorm 已由 RMSNormPreciseEvaluator 专门处理
     """
 
     SUPPORTED_OPS = {
         "softmax",
-        "layernorm",
-        "rmsnorm",
         "relu",
         "gelu",
         "silu",
@@ -612,6 +914,8 @@ class PreciseTileEvaluator:
         compute_tflops: float = 125.0,
         memory_bandwidth_gbps: float = 2000.0,
         registry: PreciseEvaluatorRegistry | None = None,
+        is_prefill: bool = False,
+        enable_zigzag: bool = False,
     ) -> None:
         """初始化精评估器
 
@@ -619,9 +923,13 @@ class PreciseTileEvaluator:
             compute_tflops: 峰值算力（TFLOPS）
             memory_bandwidth_gbps: 显存带宽（GB/s）
             registry: 评估器注册表（不指定则使用默认）
+            is_prefill: 是否为 prefill 阶段
+            enable_zigzag: 是否启用 zigzag reorder 优化
         """
         self.compute_tflops = compute_tflops
         self.memory_bandwidth_gbps = memory_bandwidth_gbps
+        self.is_prefill = is_prefill
+        self.enable_zigzag = enable_zigzag
 
         if registry is not None:
             self.registry = registry
@@ -632,8 +940,12 @@ class PreciseTileEvaluator:
         """创建默认注册表"""
         registry = PreciseEvaluatorRegistry()
         registry.register(MatMulPreciseEvaluator())
-        registry.register(AttentionPreciseEvaluator())
+        registry.register(AttentionPreciseEvaluator(
+            is_prefill=self.is_prefill,
+            enable_zigzag=self.enable_zigzag,
+        ))
         registry.register(ConvPreciseEvaluator())
+        registry.register(RMSNormPreciseEvaluator())
         registry.register(ElementwisePreciseEvaluator())
         return registry
 

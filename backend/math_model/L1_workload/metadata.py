@@ -54,22 +54,33 @@ class ModelMetadata:
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "ModelMetadata":
         """从字典创建"""
+        # 必需字段检查
+        if "name" not in data:
+            raise ValueError("Missing required field 'name' in ModelMetadata")
+        if "hidden_size" not in data or data["hidden_size"] <= 0:
+            raise ValueError("Missing or invalid 'hidden_size' in ModelMetadata")
+        if "num_layers" not in data or data["num_layers"] <= 0:
+            raise ValueError("Missing or invalid 'num_layers' in ModelMetadata")
+        if "num_heads" not in data or data["num_heads"] <= 0:
+            raise ValueError("Missing or invalid 'num_heads' in ModelMetadata")
+
+        # dtype 可选，默认 fp16
         dtype = data.get("dtype", "fp16")
         if isinstance(dtype, str):
             dtype = DataType.from_string(dtype)
 
         return cls(
-            name=data.get("name", "unknown"),
+            name=data["name"],
             dtype=dtype,
-            hidden_size=data.get("hidden_size", 0),
-            num_layers=data.get("num_layers", 0),
-            num_heads=data.get("num_heads", 0),
-            num_kv_heads=data.get("num_kv_heads"),
-            intermediate_size=data.get("intermediate_size"),
-            vocab_size=data.get("vocab_size"),
-            seq_len=data.get("seq_len"),
-            batch=data.get("batch"),
-            tags=data.get("tags", {}),
+            hidden_size=data["hidden_size"],
+            num_layers=data["num_layers"],
+            num_heads=data["num_heads"],
+            num_kv_heads=data.get("num_kv_heads"),  # 可选，None 表示 MHA
+            intermediate_size=data.get("intermediate_size"),  # 可选，可从 hidden_size 推导
+            vocab_size=data.get("vocab_size"),  # 可选
+            seq_len=data.get("seq_len"),  # 可选
+            batch=data.get("batch"),  # 可选
+            tags=data.get("tags", {}),  # 可选，空字典
         )
 
 
@@ -95,14 +106,28 @@ class MLAConfig:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "MLAConfig":
-        """从字典创建"""
+        """从字典创建
+
+        注意: enabled=False 时其他字段可选；enabled=True 时必须提供所有参数
+        """
+        enabled = data.get("enabled", False)
+        if not enabled:
+            # MLA 未启用，使用 dataclass 默认值
+            return cls(enabled=False)
+
+        # MLA 启用时，所有参数必须显式提供
+        required_fields = ["kv_lora_rank", "q_lora_rank", "qk_rope_dim", "qk_nope_dim", "v_head_dim"]
+        missing = [f for f in required_fields if f not in data]
+        if missing:
+            raise ValueError(f"MLA enabled but missing required fields: {missing}")
+
         return cls(
-            enabled=data.get("enabled", False),
-            kv_lora_rank=data.get("kv_lora_rank", 512),
-            q_lora_rank=data.get("q_lora_rank", 1536),
-            qk_rope_dim=data.get("qk_rope_dim", 64),
-            qk_nope_dim=data.get("qk_nope_dim", 128),
-            v_head_dim=data.get("v_head_dim", 128),
+            enabled=True,
+            kv_lora_rank=data["kv_lora_rank"],
+            q_lora_rank=data["q_lora_rank"],
+            qk_rope_dim=data["qk_rope_dim"],
+            qk_nope_dim=data["qk_nope_dim"],
+            v_head_dim=data["v_head_dim"],
         )
 
 
@@ -126,11 +151,25 @@ class MoEConfig:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "MoEConfig":
-        """从字典创建"""
+        """从字典创建
+
+        注意: enabled=False 时其他字段可选；enabled=True 时必须提供所有参数
+        """
+        enabled = data.get("enabled", False)
+        if not enabled:
+            # MoE 未启用，使用 dataclass 默认值
+            return cls(enabled=False)
+
+        # MoE 启用时，所有参数必须显式提供
+        required_fields = ["num_experts", "num_shared_experts", "experts_per_token"]
+        missing = [f for f in required_fields if f not in data]
+        if missing:
+            raise ValueError(f"MoE enabled but missing required fields: {missing}")
+
         return cls(
-            enabled=data.get("enabled", False),
-            num_experts=data.get("num_experts", 256),
-            num_shared_experts=data.get("num_shared_experts", 1),
-            experts_per_token=data.get("experts_per_token", 8),
-            router_topk_policy=data.get("router_topk_policy", "greedy"),
+            enabled=True,
+            num_experts=data["num_experts"],
+            num_shared_experts=data["num_shared_experts"],
+            experts_per_token=data["experts_per_token"],
+            router_topk_policy=data.get("router_topk_policy", "greedy"),  # 路由策略可选
         )

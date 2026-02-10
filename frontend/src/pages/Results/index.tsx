@@ -551,7 +551,7 @@ export const Results: React.FC = () => {
 
       // 从拓扑中提取硬件配置（支持多种格式）
       const hardwareConfig: HardwareConfig | undefined = (() => {
-        // 格式1: llm_simulator 格式 (pods 数组结构)
+        // 格式1: 旧版格式 (pods 数组结构，向后兼容)
         const pods = (topology.pods as any[]) || []
         if (pods.length > 0 && pods[0].racks && pods[0].racks[0].boards && pods[0].racks[0].boards[0].chips) {
           const board = pods[0].racks[0].boards[0]

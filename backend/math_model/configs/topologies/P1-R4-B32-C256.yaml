@@ -1,16 +1,16 @@
-name: P1-R1-B1-C8
+name: P1-R4-B32-C256
 pods:
 - count: 1
   racks:
-  - count: 1
+  - count: 4
     boards:
-    - count: 1
+    - id: board_1
+      name: Board
+      u_height: 2
+      count: 8
       chips:
       - name: SG2262
         count: 8
-      id: board_1
-      name: Board
-      u_height: 2
     total_u: 42
 chips:
   SG2262:
@@ -18,17 +18,11 @@ chips:
     architecture: TPU_V7
     process: 7nm
     frequency_ghz: 1
-    align_bytes: 32
-    compute_dma_overlap_rate: 0.8
-    compute_efficiency: 0.9
     cores:
       count: 4
       lanes_per_core: 64
     compute_units:
       cube:
-        m: 16
-        k: 32
-        n: 8
         mac_per_lane:
           INT8: 1000
           FP8: 1000
@@ -50,27 +44,37 @@ chips:
         type: LPDDR5
         capacity_gb: 64
         bandwidth_gbps: 273
-        bandwidth_utilization: 0.85
         latency_ns: 100
+      l2m:
+        capacity_mb: 64
+        bandwidth_gbps: 1000
+        latency_ns: 10
       lmem:
         capacity_mb: 64
         bandwidth_gbps: 2000
         latency_ns: 1
-        sram_utilization: 0.45
+      smem:
+        capacity_kb: 256
+        bandwidth_gbps: 2000
+        latency_ns: 1
     dma_engines:
       gdma:
         bandwidth_gbps: 68
         startup_latency_ns: 100
         efficiency: 0.9
+      sdma:
+        bandwidth_gbps: 1000
+        startup_latency_ns: 50
+        efficiency: 0.95
     interconnect:
-      NoC:
-        topology: Mesh
+      noc:
+        topology: mesh
         bandwidth_gbps: 1000
         latency_ns: 10
 interconnect:
   links:
     c2c:
-      bandwidth_gbps: 448
+      bandwidth_gbps: 900
       latency_us: 0.2
     b2b:
       bandwidth_gbps: 450

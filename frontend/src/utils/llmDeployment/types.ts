@@ -339,10 +339,16 @@ export interface ParallelismStrategy {
   pp: number;
   /** 专家并行度 (MoE) */
   ep: number;
-  /** 序列并行度 */
-  sp: number;
+  /** 启用 TP Sequence Parallelism (SP 跟随 TP，序列按 TP 度切分) */
+  enable_tp_sp: boolean;
+  /** 启用 Ring Attention overlap (Layer 级，计算与通信完全重叠) */
+  enable_ring_attention?: boolean;
   /** MoE专家内张量并行度 (可选，默认=1，仅MoE模型使用) */
   moe_tp?: number;
+  /** 是否为 Prefill 阶段 (false=Decode) */
+  is_prefill?: boolean;
+  /** 启用 Zigzag Reorder 优化 (仅 Prefill + Causal Attention 生效，减少约40% GEMM) */
+  enable_zigzag?: boolean;
 }
 
 /** 部署方案 */

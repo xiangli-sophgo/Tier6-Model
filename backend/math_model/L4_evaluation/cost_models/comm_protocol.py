@@ -49,6 +49,8 @@ class CommProtocolParams:
             - CommProtocolParams
         关键步骤:
             - 优先读取 `comm_xxx`，缺失时回退读取 `xxx`，都缺失则使用默认值。
+
+        注意: 此方法的默认值用于向后兼容和可选配置，通信协议参数通常为可选。
         """
         defaults = cls()
 

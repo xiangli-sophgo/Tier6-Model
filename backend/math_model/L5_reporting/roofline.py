@@ -226,12 +226,13 @@ class RooflineAnalyzer:
         """
         points = []
         for step in steps:
-            if step.flops > 0 and step.bytes_accessed > 0:
+            bytes_accessed = step.bytes_read + step.bytes_write
+            if step.flops > 0 and bytes_accessed > 0:
                 point = self.analyze_point(
-                    name=step.name,
+                    name=step.op_id,  # 实际字段是 op_id，不是 name
                     flops=step.flops,
-                    bytes_accessed=step.bytes_accessed,
-                    time_ns=step.total_ns,
+                    bytes_accessed=bytes_accessed,  # 需要计算 read + write
+                    time_ns=step.t_total * 1e6,  # t_total 是 ms，需要转换为 ns
                 )
                 points.append(point)
 
@@ -280,16 +281,19 @@ def build_roofline_from_engine_result(
     Returns:
         RooflineData: Roofline 数据
     """
-    if not result.hardware_spec:
-        raise ValueError("EngineResult 缺少 hardware_spec")
+    # 从 trace_meta 或 aggregates 获取硬件参数
+    # EngineResult 实际没有 hardware_spec 属性，需要从其他地方提取
+    trace_meta = result.trace_meta
+    if "peak_tflops" not in trace_meta or "memory_bandwidth_gbps" not in trace_meta:
+        raise ValueError("EngineResult.trace_meta 缺少 peak_tflops 或 memory_bandwidth_gbps")
 
     # 转换单位
-    peak_gflops = result.hardware_spec.peak_flops / 1e9
-    peak_gbps = result.hardware_spec.memory_bandwidth / 1e9
+    peak_gflops = trace_meta["peak_tflops"] * 1000  # TFLOPS -> GFLOPS
+    peak_gbps = trace_meta["memory_bandwidth_gbps"]
 
     analyzer = RooflineAnalyzer(peak_gflops, peak_gbps)
 
-    # 合并 prefill 和 decode 步骤
-    all_steps = result.prefill_steps + result.decode_steps
+    # 使用实际的 step_metrics（不再有 prefill_steps/decode_steps）
+    all_steps = result.step_metrics
 
     return analyzer.analyze(all_steps)

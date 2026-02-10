@@ -370,39 +370,36 @@ def build_gantt_from_engine_result(
     builder = GanttChartBuilder(pp_stages=pp_stages)
     current_time = 0.0
 
-    # Prefill 阶段
-    for step in result.prefill_steps:
-        task_type = _infer_task_type(step.name)
-        duration_us = step.total_ns / 1000  # ns -> us
+    # 从 step_metrics 提取所有 step（实际数据结构）
+    # 根据 meta 信息推断 prefill/decode 阶段
+    for step in result.step_metrics:
+        # 推断阶段（从 meta 或 op_id 判断）
+        phase = step.meta.get("phase")
+        if phase == "prefill":
+            infer_phase = InferencePhase.PREFILL
+        elif phase == "decode":
+            infer_phase = InferencePhase.DECODE
+        else:
+            # 回退：假设前半部分是 prefill（简化）
+            infer_phase = InferencePhase.PREFILL if current_time < 1000 else InferencePhase.DECODE
+
+        task_type = _infer_task_type(step.op_id)
+        duration_us = step.t_total * 1000  # ms -> us
+        bytes_accessed = step.bytes_read + step.bytes_write
 
         builder.add_task(
-            name=step.name,
+            name=step.op_id,
             start_us=current_time,
             end_us=current_time + duration_us,
             task_type=task_type,
-            phase=InferencePhase.PREFILL,
+            phase=infer_phase,
             flops=step.flops,
-            bytes_accessed=step.bytes_accessed,
+            bytes_accessed=bytes_accessed,
         )
         current_time += duration_us
 
-    phase_transition = current_time
-
-    # Decode 阶段
-    for step in result.decode_steps:
-        task_type = _infer_task_type(step.name)
-        duration_us = step.total_ns / 1000
-
-        builder.add_task(
-            name=step.name,
-            start_us=current_time,
-            end_us=current_time + duration_us,
-            task_type=task_type,
-            phase=InferencePhase.DECODE,
-            flops=step.flops,
-            bytes_accessed=step.bytes_accessed,
-        )
-        current_time += duration_us
+    # 简化：不再区分 phase_transition（可从 aggregates 的 ttft 获取更准确值）
+    phase_transition = current_time / 2  # 粗略估计
 
     return builder.build(phase_transition=phase_transition)
 

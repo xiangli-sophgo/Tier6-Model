@@ -60,13 +60,16 @@ class ParallelismConfig:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "ParallelismConfig":
-        """从字典创建"""
+        """从字典创建
+
+        注意: 并行度字段都是可选的，未提供时默认为 1（不并行）
+        """
         return cls(
-            tp=data.get("tp", 1),
-            pp=data.get("pp", 1),
-            dp=data.get("dp", 1),
-            ep=data.get("ep", 1),
-            sp=data.get("sp", 1),
+            tp=data.get("tp", 1),  # 可选，默认 1
+            pp=data.get("pp", 1),  # 可选，默认 1
+            dp=data.get("dp", 1),  # 可选，默认 1
+            ep=data.get("ep", 1),  # 可选，默认 1
+            sp=data.get("sp", 1),  # 可选，默认 1
         )
 
 

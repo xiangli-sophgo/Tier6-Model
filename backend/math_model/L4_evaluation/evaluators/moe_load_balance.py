@@ -13,14 +13,14 @@ MoE 负载均衡评估器
 物理意义：
     MAX_EXPERT_TABLE[batch_size][chips] = 最忙芯片需要加载的不同专家个数
 
-    例如：batch=4, chips=32 → 3.18
+    例如：batch=4, chips=32 -> 3.18
     含义：32 个芯片中，最忙的那个芯片需要加载约 3.18 个不同专家的参数并计算
 
 使用方法：
     1. 调用 get_max_expert_load(batch_size, chips) 获取专家加载数
     2. 用于计算：
        - GEMM 的 G 维度（专家并行维度）
-       - 专家参数搬运时间 = max_experts × expert_param_size / dram_bandwidth
+       - 专家参数搬运时间 = max_experts * expert_param_size / dram_bandwidth
        - MoE 层总延迟 = max(计算时间, 搬运时间) + 重叠惩罚
 
 数据来源：
@@ -30,11 +30,12 @@ MoE 负载均衡评估器
 
 参考：
     DS_TPU_1209/model.py:get_max_expert()
+    迁移自 llm_simulator/evaluators/moe_load_balance.py
 """
 
 import math
 import random
-from typing import Optional, Dict, Tuple
+from typing import Optional, Dict
 
 
 # ============================================================================
@@ -189,15 +190,6 @@ def monte_carlo_max_experts(
     """
     蒙特卡洛模拟：计算最忙芯片需要加载的专家数（期望值）
 
-    用途：
-        当查找表中没有对应的 batch/chips 配置时，临时模拟计算
-
-    算法：
-        1. 随机生成 batch_size 个 token 的专家选择（每个选 topk 个）
-        2. 统计每个芯片被激活的不同专家集合
-        3. 记录最忙芯片的专家个数
-        4. 重复 iterations 次，返回期望值
-
     Args:
         batch_size: token 数量
         chips: EP 芯片数（专家并行度）
@@ -208,40 +200,25 @@ def monte_carlo_max_experts(
 
     Returns:
         最忙芯片需要加载的不同专家个数（期望值）
-
-    示例：
-        >>> monte_carlo_max_experts(batch_size=4, chips=32)
-        3.18  # 最忙芯片需要加载约 3.18 个专家
-
-    性能：
-        - iterations=1000: 约 10-50ms
-        - iterations=10000: 约 100-500ms
     """
     if seed is not None:
         random.seed(seed)
 
     max_experts_list = []
-    experts_per_chip = num_experts // chips  # 每芯片负责的专家数
+    experts_per_chip = num_experts // chips
 
     for _ in range(iterations):
-        # 每个芯片被激活的专家集合
         chip_experts = [set() for _ in range(chips)]
 
-        # 模拟 batch_size 个 token 的路由
         for _ in range(batch_size):
-            # 随机选择 topk 个专家（模拟 Router 网络）
             selected_experts = random.sample(range(num_experts), topk)
-
-            # 将专家分配到对应芯片
             for expert_id in selected_experts:
                 chip_id = expert_id // experts_per_chip
                 chip_experts[chip_id].add(expert_id)
 
-        # 统计最忙的芯片激活的专家数
         max_experts = max(len(experts) for experts in chip_experts)
         max_experts_list.append(max_experts)
 
-    # 返回期望值
     return sum(max_experts_list) / len(max_experts_list)
 
 
@@ -253,48 +230,25 @@ def _interpolate_batch(
     batch_size: int,
     chips: int
 ) -> Optional[float]:
-    """
-    batch_size 维度的线性插值
-
-    策略：
-        在表中找到 batch_size 的前后两个采样点，进行线性插值
-
-    Args:
-        batch_size: 目标 batch 大小
-        chips: 芯片数（必须在表中）
-
-    Returns:
-        插值结果，如果无法插值则返回 None
-
-    示例：
-        batch=10, chips=32 在表中
-        找到 batch=8 和 batch=12 的值
-        插值：value = v8 + (v12 - v8) × (10 - 8) / (12 - 8)
-    """
-    # 找到 batch_size 的前后采样点
+    """batch_size 维度的线性插值"""
     batch_points = sorted(MAX_EXPERT_TABLE.keys())
 
     if batch_size <= batch_points[0]:
-        # 小于最小值，用最小值
         if chips in MAX_EXPERT_TABLE[batch_points[0]]:
             return MAX_EXPERT_TABLE[batch_points[0]][chips]
         return None
 
     if batch_size >= batch_points[-1]:
-        # 大于最大值，用最大值
         if chips in MAX_EXPERT_TABLE[batch_points[-1]]:
             return MAX_EXPERT_TABLE[batch_points[-1]][chips]
         return None
 
-    # 找到前后两个点
     for i in range(len(batch_points) - 1):
         b1, b2 = batch_points[i], batch_points[i + 1]
         if b1 <= batch_size <= b2:
-            # 检查 chips 是否在两个点都存在
             if chips in MAX_EXPERT_TABLE[b1] and chips in MAX_EXPERT_TABLE[b2]:
                 v1 = MAX_EXPERT_TABLE[b1][chips]
                 v2 = MAX_EXPERT_TABLE[b2][chips]
-                # 线性插值
                 ratio = (batch_size - b1) / (b2 - b1)
                 return v1 + (v2 - v1) * ratio
             return None
@@ -306,19 +260,7 @@ def _interpolate_chips(
     batch_size: int,
     chips: int
 ) -> Optional[float]:
-    """
-    chips 维度的线性插值（对数空间）
-
-    注意：
-        chips 通常是 2 的幂次（1, 2, 4, 8, ...），使用对数插值更准确
-
-    Args:
-        batch_size: batch 大小（必须在表中）
-        chips: 目标芯片数
-
-    Returns:
-        插值结果，如果无法插值则返回 None
-    """
+    """chips 维度的线性插值（对数空间）"""
     if batch_size not in MAX_EXPERT_TABLE:
         return None
 
@@ -330,13 +272,11 @@ def _interpolate_chips(
     if chips >= chip_points[-1]:
         return MAX_EXPERT_TABLE[batch_size][chip_points[-1]]
 
-    # 找到前后两个点（对数空间）
     for i in range(len(chip_points) - 1):
         c1, c2 = chip_points[i], chip_points[i + 1]
         if c1 <= chips <= c2:
             v1 = MAX_EXPERT_TABLE[batch_size][c1]
             v2 = MAX_EXPERT_TABLE[batch_size][c2]
-            # 对数插值（chips 是 2 的幂次）
             log_ratio = (math.log2(chips) - math.log2(c1)) / (math.log2(c2) - math.log2(c1))
             return v1 + (v2 - v1) * log_ratio
 
@@ -347,27 +287,11 @@ def _try_interpolate(
     batch_size: int,
     chips: int
 ) -> Optional[float]:
-    """
-    尝试插值（优先 batch 维度，其次 chips 维度）
-
-    策略：
-        1. 如果 chips 在表中，对 batch_size 插值
-        2. 如果 batch_size 在表中，对 chips 插值
-        3. 都不在表中，返回 None
-
-    Args:
-        batch_size: batch 大小
-        chips: 芯片数
-
-    Returns:
-        插值结果，失败返回 None
-    """
-    # 优先尝试 batch 维度插值
+    """尝试插值（优先 batch 维度，其次 chips 维度）"""
     result = _interpolate_batch(batch_size, chips)
     if result is not None:
         return result
 
-    # 其次尝试 chips 维度插值
     result = _interpolate_chips(batch_size, chips)
     if result is not None:
         return result
@@ -401,36 +325,7 @@ def get_max_expert_load(
 
     Returns:
         最忙芯片需要加载的专家个数（浮点数）
-
-    使用示例：
-        >>> # Decode 阶段：batch=4, EP=32
-        >>> max_experts = get_max_expert_load(batch_size=4, chips=32)
-        >>> print(max_experts)  # 3.18
-        >>>
-        >>> # 用于 GEMM 评估
-        >>> gemm_result = gemm_evaluator.evaluate(
-        ...     G=math.ceil(max_experts),  # 向上取整到 4
-        ...     M=tokens_per_expert,
-        ...     K=hidden_dim,
-        ...     N=expert_intermediate_size / moe_tp
-        ... )
-        >>>
-        >>> # 用于计算权重搬运
-        >>> expert_param_size = 3 * hidden_dim * expert_intermediate_size * dtype_bytes
-        >>> weight_load_time_us = max_experts * expert_param_size / dram_bandwidth_gbps * 1e6
-
-    注意事项：
-        1. batch_size 超过 256 会被截断到 256
-        2. 返回值是浮点数，用于 GEMM 时需要向上取整 math.ceil()
-        3. 计算权重搬运时使用原始浮点数（更精确）
-        4. 仅适用于 DeepSeek V3 配置（256 专家，Top-8）
-
-    性能：
-        - 查表命中：O(1)，< 1μs
-        - 插值：O(log n)，< 10μs
-        - 模拟：O(iterations)，10-500ms
     """
-    # 截断到表的最大值
     batch_size = min(batch_size, 256)
 
     # 策略 1: 精确查表
@@ -448,8 +343,8 @@ def get_max_expert_load(
         import logging
         logger = logging.getLogger(__name__)
         logger.warning(
-            f"MoE 负载均衡表中未找到 batch={batch_size}, chips={chips}，"
-            f"使用蒙特卡洛模拟（iterations={simulation_iterations}）"
+            f"MoE load balance table miss: batch={batch_size}, chips={chips}, "
+            f"falling back to Monte Carlo (iterations={simulation_iterations})"
         )
         return monte_carlo_max_experts(
             batch_size=batch_size,
@@ -461,15 +356,11 @@ def get_max_expert_load(
     import logging
     logger = logging.getLogger(__name__)
     logger.error(
-        f"MoE 负载均衡表中未找到 batch={batch_size}, chips={chips}，"
-        f"且禁用了模拟，返回保守估计"
+        f"MoE load balance table miss: batch={batch_size}, chips={chips}, "
+        f"simulation disabled, returning conservative estimate"
     )
-    return 256.0 / chips  # 理论极限：所有专家都被激活
+    return 256.0 / chips
 
-
-# ============================================================================
-# 便捷接口（针对不同场景）
-# ============================================================================
 
 def get_max_expert_load_for_moe_layer(
     batch_size: int,
@@ -479,8 +370,6 @@ def get_max_expert_load_for_moe_layer(
 ) -> float:
     """
     针对 MoE 层的便捷接口
-
-    参数验证 + 语义化命名
 
     Args:
         batch_size: 全局 batch 大小（会除以 DP）
@@ -494,11 +383,10 @@ def get_max_expert_load_for_moe_layer(
     Raises:
         ValueError: 如果配置不是 DeepSeek V3（256 专家，Top-8）
     """
-    # 验证配置
     if num_experts != 256 or topk != 8:
         raise ValueError(
-            f"当前查找表仅支持 DeepSeek V3 配置（256 专家，Top-8），"
-            f"当前配置：num_experts={num_experts}, topk={topk}"
+            f"Current lookup table only supports DeepSeek V3 config (256 experts, Top-8), "
+            f"got: num_experts={num_experts}, topk={topk}"
         )
 
     return get_max_expert_load(batch_size, ep_parallelism)
@@ -511,12 +399,6 @@ def estimate_moe_expert_load_impact(
     """
     评估负载不均的影响程度
 
-    返回详细的负载统计，用于分析和调试
-
-    Args:
-        batch_size: token 数量
-        chips: 芯片数
-
     Returns:
         包含以下字段的字典：
         - max_experts: 最忙芯片的专家数
@@ -526,11 +408,9 @@ def estimate_moe_expert_load_impact(
     """
     max_experts = get_max_expert_load(batch_size, chips)
 
-    # 理论平均值
     total_calls = batch_size * 8  # 8 = topk
     avg_experts_theoretical = total_calls / chips
 
-    # 负载因子
     load_factor = max_experts / avg_experts_theoretical if avg_experts_theoretical > 0 else 1.0
 
     return {
@@ -539,29 +419,3 @@ def estimate_moe_expert_load_impact(
         "load_factor": load_factor,
         "imbalance_ratio": load_factor,
     }
-
-
-# ============================================================================
-# 测试和验证
-# ============================================================================
-
-if __name__ == "__main__":
-    # 快速验证
-    print("MoE 负载均衡查询示例：")
-    print("=" * 60)
-
-    test_cases = [
-        (4, 1, "极小 batch + 单芯片"),
-        (4, 32, "极小 batch + 中等并行"),
-        (64, 32, "中等 batch + 中等并行"),
-        (256, 32, "大 batch + 中等并行"),
-        (256, 256, "大 batch + 极高并行"),
-    ]
-
-    for batch, chips, desc in test_cases:
-        result = get_max_expert_load(batch, chips)
-        impact = estimate_moe_expert_load_impact(batch, chips)
-        print(f"\n{desc}")
-        print(f"  batch={batch}, chips={chips}")
-        print(f"  最忙芯片加载专家数: {result:.2f}")
-        print(f"  负载因子: {impact['load_factor']:.2f}x")

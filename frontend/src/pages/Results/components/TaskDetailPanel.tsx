@@ -358,7 +358,7 @@ export const TaskDetailPanel: React.FC<TaskDetailPanelProps> = ({ task, onAnalyz
                     { label: 'TP (张量并行)', value: result.parallelism.tp || '-' },
                     { label: 'PP (流水线并行)', value: result.parallelism.pp || '-' },
                     { label: 'EP (专家并行)', value: result.parallelism.ep || '-' },
-                    { label: 'SP (序列并行)', value: result.parallelism.sp || '-' },
+                    { label: 'SP (序列并行)', value: result.parallelism.enable_tp_sp ? 'ON' : 'OFF' },
                     { label: 'MoE_TP', value: result.parallelism.moe_tp || '-' },
                   ]}
                 />

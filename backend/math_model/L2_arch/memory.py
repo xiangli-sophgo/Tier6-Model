@@ -19,6 +19,7 @@ class MemoryLevelImpl:
         bandwidth_gbps: 带宽 (GB/s)
         latency_ns: 延迟 (ns)
         scope: 共享域
+        sram_utilization: SRAM 可用比例 (仅 lmem 使用，0-1)
     """
 
     name: str
@@ -26,6 +27,7 @@ class MemoryLevelImpl:
     bandwidth_gbps: float
     latency_ns: float = 0.0
     scope: str = "chip"
+    sram_utilization: float = 1.0
 
     @classmethod
     def from_config(cls, name: str, config: dict[str, Any]) -> "MemoryLevelImpl":
@@ -48,12 +50,23 @@ class MemoryLevelImpl:
             elif "capacity_kb" in config:
                 capacity = int(config["capacity_kb"] * 1024)
 
+        # bandwidth 和 latency 必需（0 会导致除零错误）
+        if "bandwidth_gbps" not in config:
+            raise ValueError(f"Missing 'bandwidth_gbps' in memory level '{name}'")
+        bandwidth = config["bandwidth_gbps"]
+        if bandwidth <= 0:
+            raise ValueError(f"bandwidth_gbps must be > 0 in memory level '{name}' (got {bandwidth})")
+
+        if "latency_ns" not in config:
+            raise ValueError(f"Missing 'latency_ns' in memory level '{name}'")
+
         return cls(
             name=name,
             capacity_bytes=capacity,
-            bandwidth_gbps=config.get("bandwidth_gbps", 0.0),
-            latency_ns=config.get("latency_ns", 0.0),
-            scope=config.get("scope", "chip"),
+            bandwidth_gbps=bandwidth,
+            latency_ns=config["latency_ns"],
+            scope=config.get("scope", "chip"),  # 可选，默认 chip
+            sram_utilization=float(config.get("sram_utilization", 1.0)),  # 可选，默认 1.0
         )
 
 

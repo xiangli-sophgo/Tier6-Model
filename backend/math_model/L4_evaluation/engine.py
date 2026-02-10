@@ -206,6 +206,15 @@ class EvaluationEngine:
             calibrator = Calibration(calibration)
             step_metrics_list = calibrator.apply_batch(step_metrics_list)
 
+        # 9.5 应用 Model 级 MoE 通信/计算重叠
+        # 参考 CHIPMathica: dispatch/combine 通信可与相邻计算并行
+        step_metrics_list = self._apply_moe_compute_overlap(step_metrics_list)
+
+        # 9.6 应用 Layer 级 Ring Attention 重叠
+        # 参考 CHIPMathica: Attention 层的计算与通信完全重叠
+        if deployment_config.get("enable_ring_attention", False) and deployment_config.get("tp", 1) > 1:
+            step_metrics_list = self._apply_ring_attn_overlap(step_metrics_list)
+
         # 10. 聚合指标
         aggregates = self._aggregate_metrics(
             step_metrics_list,
@@ -286,8 +295,145 @@ class EvaluationEngine:
             lmem_bytes = kernel_config.get("lmem_bytes")
             if lmem_bytes is not None:
                 attrs["tile_lmem_bytes"] = str(lmem_bytes)
+            # P0 指标: arch_urate / active_cores / overlap_rate
+            for key in ("arch_urate", "active_cores", "overlap_rate",
+                        "t_compute_ms", "t_memory_ms"):
+                val = kernel_config.get(key)
+                if val is not None and str(val) != "":
+                    attrs[key] = str(val)
 
         return attrs
+
+    def _apply_moe_compute_overlap(
+        self,
+        steps: list[StepMetrics],
+    ) -> list[StepMetrics]:
+        """应用 Model 级 MoE 通信/计算重叠
+
+        参考 CHIPMathica (deepseek.py:260-309):
+        MoE 的 dispatch/combine 通信可以与相邻的计算操作并行执行。
+        如果计算时间 >= 通信时间，通信完全隐藏（免费）；
+        否则，有效通信时间 = 通信时间 - 计算时间。
+
+        三级 overlap 模型:
+        - Tile 级: compute vs DMA (在 precise.py/compute.py evaluator 中处理)
+        - Layer 级: Ring Attention (TODO: 暂未实现)
+        - Model 级: MoE dispatch/combine vs 计算 (本方法)
+        """
+        if not steps:
+            return steps
+
+        for i, step in enumerate(steps):
+            reason = step.meta.get("reason", "")
+            if "dispatch" not in reason and "combine" not in reason:
+                continue
+
+            comm_time = step.t_comm
+            if comm_time <= 0:
+                continue
+
+            # 找到可用于重叠的相邻计算 step
+            overlap_compute_time = 0.0
+            if "dispatch" in reason:
+                # dispatch 在计算之前，可以和前一个计算 step 重叠
+                for j in range(i - 1, -1, -1):
+                    if steps[j].t_compute > 0:
+                        overlap_compute_time = steps[j].t_compute
+                        break
+            else:
+                # combine 在计算之后，可以和后一个计算 step 重叠
+                for j in range(i + 1, len(steps)):
+                    if steps[j].t_compute > 0:
+                        overlap_compute_time = steps[j].t_compute
+                        break
+
+            if overlap_compute_time <= 0:
+                continue
+
+            # 计算有效通信时间
+            if overlap_compute_time >= comm_time:
+                # 计算时间足够长，通信完全隐藏
+                effective_comm = 0.0
+            else:
+                # 通信部分隐藏
+                effective_comm = comm_time - overlap_compute_time
+
+            step.t_comm = effective_comm
+            step.t_total = step.t_compute + step.t_comm + step.t_wait
+            step.meta["moe_overlap_hidden_ms"] = comm_time - effective_comm
+
+        return steps
+
+    def _apply_ring_attn_overlap(
+        self,
+        steps: list[StepMetrics],
+    ) -> list[StepMetrics]:
+        """应用 Layer 级 Ring Attention 重叠
+
+        参考 CHIPMathica (model/layers/mla.py:131-135):
+        Attention 层的计算与通信可以完全重叠。
+
+        公式:
+            comp_time = layer.elapse - layer.comm_elapse
+            layer.elapse = max(comp_time, layer.comm_elapse)
+
+        实现:
+            1. 按 layer_name 分组 steps
+            2. 对每个 attention 相关 layer，计算总时间和通信时间
+            3. 应用 overlap 公式
+            4. 按比例调整各 step 的时间
+        """
+        if not steps:
+            return steps
+
+        # 1. 按 layer_name 分组 steps
+        from collections import defaultdict
+        layer_groups: dict[str, list[StepMetrics]] = defaultdict(list)
+        for step in steps:
+            layer_name = step.meta.get("layer_name", "")
+            if layer_name:
+                layer_groups[layer_name].append(step)
+
+        # 2. 对每个 attention layer 应用 overlap
+        attention_layer_types = {"attention", "mla", "mla_absorb", "mla_v32", "mla_absorb_v32"}
+
+        for layer_name, layer_steps in layer_groups.items():
+            if not layer_steps:
+                continue
+
+            # 检查是否为 attention 相关层
+            layer_type = layer_steps[0].meta.get("layer_type", "")
+            if layer_type not in attention_layer_types:
+                continue
+
+            # 计算 Layer 的总时间和通信时间
+            total_time = sum(s.t_total for s in layer_steps)
+            comm_time = sum(s.t_comm for s in layer_steps)
+
+            if total_time <= 0:
+                continue
+
+            # 应用 CHIPMathica 的 overlap 公式
+            comp_time = total_time - comm_time
+            final_time = max(comp_time, comm_time)
+
+            # 如果没有 overlap 效果，跳过
+            if abs(final_time - total_time) < 1e-6:
+                continue
+
+            # 按比例调整各 step 的时间
+            scale_factor = final_time / total_time
+            hidden_time = total_time - final_time
+
+            for step in layer_steps:
+                step.t_compute *= scale_factor
+                step.t_comm *= scale_factor
+                step.t_wait *= scale_factor
+                step.t_total *= scale_factor
+                step.meta["ring_attn_overlap_applied"] = True
+                step.meta["ring_attn_overlap_hidden_ms"] = hidden_time * (step.t_total / final_time)
+
+        return steps
 
     def _aggregate_metrics(
         self,

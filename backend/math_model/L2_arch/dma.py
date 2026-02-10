@@ -76,14 +76,21 @@ class DMAEngineImpl:
         Returns:
             DMAEngineImpl 实例
         """
+        # bandwidth 必需（0 会导致除零）
+        if "bandwidth_gbps" not in config:
+            raise ValueError(f"Missing 'bandwidth_gbps' in DMA engine '{name}'")
+        bandwidth = config["bandwidth_gbps"]
+        if bandwidth <= 0:
+            raise ValueError(f"bandwidth_gbps must be > 0 in DMA engine '{name}' (got {bandwidth})")
+
         return cls(
             name=name,
-            bandwidth_gbps=config.get("bandwidth_gbps", 0.0),
-            startup_latency_ns=config.get("startup_latency_ns", 100.0),
-            efficiency=config.get("efficiency", 0.9),
-            supported_paths=config.get("supported_paths", []),
-            scope=config.get("scope", "chip"),
-            engine_type=config.get("engine_type"),
+            bandwidth_gbps=bandwidth,
+            startup_latency_ns=config.get("startup_latency_ns", 100.0),  # 可选
+            efficiency=config.get("efficiency", 0.9),  # 可选
+            supported_paths=config.get("supported_paths", []),  # 可选
+            scope=config.get("scope", "chip"),  # 可选
+            engine_type=config.get("engine_type"),  # 可选
         )
 
 

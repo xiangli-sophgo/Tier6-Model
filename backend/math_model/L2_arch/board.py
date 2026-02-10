@@ -118,14 +118,23 @@ class BoardSpecImpl:
         """
         # 芯片配置
         chips_config = config.get("chips", {})
-        chip_count = chips_config.get("count", config.get("chip_count", 1))
+
+        # chip_count: 优先从 chips.count，否则从顶层 chip_count（至少要有一个）
+        chip_count = None
+        if "count" in chips_config:
+            chip_count = chips_config["count"]
+        elif "chip_count" in config:
+            chip_count = config["chip_count"]
+        else:
+            raise ValueError(f"Missing 'chips.count' or 'chip_count' in board config '{name}'")
+
         chip_type = chips_config.get("chip_type", config.get("chip_type"))
         chip_config = chips_config.get("chip_config", {})
 
-        # 创建芯片列表
+        # 创建芯片列表（必须提供 chip_type 或 chip_config）
         chips: list[ChipSpecImpl] = []
         if chip_type:
-            # 从注册表创建
+            # 从注册表或配置创建
             try:
                 base_chip = chip_registry.get(chip_type)
                 for i in range(chip_count):
@@ -141,9 +150,7 @@ class BoardSpecImpl:
             for i in range(chip_count):
                 chips.append(base_chip.with_chip_id(i))
         else:
-            # 默认创建空芯片
-            for i in range(chip_count):
-                chips.append(ChipSpecImpl(name=f"chip_{i}", chip_id=i))
+            raise ValueError(f"Missing 'chip_type' or 'chip_config' in board config '{name}'")
 
         # 芯片间互联
         interconnect_config = config.get("chip_interconnect", {})
@@ -164,7 +171,7 @@ class BoardSpecImpl:
             chips=chips,
             chip_interconnect=chip_interconnect,
             board_memory=board_memory,
-            fabric_tag=config.get("fabric_tag", "intra_board"),
+            fabric_tag=config.get("fabric_tag") or "intra_board",  # 可选，默认 intra_board
         )
 
     def to_summary(self) -> dict[str, Any]:

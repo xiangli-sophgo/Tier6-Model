@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import math
-from typing import Protocol
+from typing import Callable, Protocol
 
 from math_model.L2_arch.chip import ChipSpecImpl
 from math_model.L3_mapping.plan.distributed_model import DistributedOp
@@ -17,7 +17,12 @@ class TilingEvaluator(Protocol):
     def supports(self, op: DistributedOp) -> bool: ...
 
     def select_tile(
-        self, op: DistributedOp, lmem_budget: int
+        self,
+        op: DistributedOp,
+        lmem_budget: int,
+        l4_scorer: L4TileEvaluator
+        | Callable[[DistributedOp, TileConfig, ChipSpecImpl], dict[str, int]]
+        | None = None,
     ) -> tuple[TileConfig, dict[str, int]] | None: ...
 
 
@@ -52,7 +57,12 @@ class MatmulTilingEvaluator:
         return op.op_type in {"matmul", "gemm"}
 
     def select_tile(
-        self, op: DistributedOp, lmem_budget: int
+        self,
+        op: DistributedOp,
+        lmem_budget: int,
+        l4_scorer: L4TileEvaluator
+        | Callable[[DistributedOp, TileConfig, ChipSpecImpl], dict[str, int]]
+        | None = None,
     ) -> tuple[TileConfig, dict[str, int]] | None:
         shape = op.local_shape
         if not shape:
@@ -66,8 +76,8 @@ class MatmulTilingEvaluator:
         cube_m, cube_n, cube_k, align_bytes, lane_num = self._get_tile_arch_params()
 
         best_tile: tuple[int, int, int] | None = None
-        best_traffic: int | None = None
-        best_lmem: int | None = None
+        best_score: float | None = None
+        best_meta: dict[str, int | float | str] | None = None
 
         partitions = self._valid_partitions(self.chip.core_count)
         for p_g, p_m, p_n, p_k in partitions:
@@ -93,25 +103,54 @@ class MatmulTilingEvaluator:
                 c_bytes,
             )
             for m_t, n_t, k_t in candidates:
-                for order in ("mnk", "nkm", "mkn"):
-                    traffic = self._estimate_traffic(
-                        order,
-                        m_blk,
-                        n_blk,
-                        k_blk,
-                        m_t,
-                        n_t,
-                        k_t,
-                        a_bytes,
-                        b_bytes,
-                        c_bytes,
-                        accum_bytes,
-                    )
-                    traffic = traffic * max(1, g_blk)
-                    if best_traffic is None or traffic < best_traffic:
+                if l4_scorer is not None:
+                    # L4 精评估打分：内部已枚举 loop-order
+                    tile_cfg = TileConfig(tile_m=m_t, tile_n=n_t, tile_k=k_t)
+                    if hasattr(l4_scorer, "evaluate_tile"):
+                        l4_result = l4_scorer.evaluate_tile(op, tile_cfg, self.chip)
+                    else:
+                        l4_result = l4_scorer(op, tile_cfg, self.chip)
+                    t_compute = float(l4_result.get("t_compute_ms", 0))
+                    t_memory = float(l4_result.get("t_memory_ms", 0))
+                    score = max(t_compute, t_memory) * max(1, g_blk)
+                    if best_score is None or score < best_score:
                         best_tile = (m_t, n_t, k_t)
-                        best_traffic = traffic
-                        best_lmem = self._estimate_lmem(m_t, n_t, k_t, a_bytes, b_bytes, c_bytes)
+                        best_score = score
+                        best_meta = {
+                            "traffic": int(l4_result.get("traffic", 0)),
+                            "lmem_bytes": int(l4_result.get("lmem_bytes", 0)),
+                            "t_compute_ms": t_compute,
+                            "t_memory_ms": t_memory,
+                            "bottleneck": l4_result.get("bottleneck", "unknown"),
+                            "best_loop_order": l4_result.get("best_loop_order", ""),
+                        }
+                else:
+                    # 简化 traffic 估算（无 L4 时的回退）
+                    for order in ("mnk", "nkm", "mkn"):
+                        traffic = self._estimate_traffic(
+                            order,
+                            m_blk,
+                            n_blk,
+                            k_blk,
+                            m_t,
+                            n_t,
+                            k_t,
+                            a_bytes,
+                            b_bytes,
+                            c_bytes,
+                            accum_bytes,
+                        )
+                        traffic = traffic * max(1, g_blk)
+                        score = float(traffic)
+                        if best_score is None or score < best_score:
+                            best_tile = (m_t, n_t, k_t)
+                            best_score = score
+                            best_meta = {
+                                "traffic": traffic,
+                                "lmem_bytes": self._estimate_lmem(
+                                    m_t, n_t, k_t, a_bytes, b_bytes, c_bytes
+                                ),
+                            }
 
         if best_tile is None:
             fallback = TileConfig(
@@ -122,7 +161,7 @@ class MatmulTilingEvaluator:
             return fallback, {"traffic": 0, "lmem_bytes": 0}
 
         tile_config = TileConfig(tile_m=best_tile[0], tile_n=best_tile[1], tile_k=best_tile[2])
-        return tile_config, {"traffic": best_traffic or 0, "lmem_bytes": best_lmem or 0}
+        return tile_config, best_meta or {"traffic": 0, "lmem_bytes": 0}
 
     def _align_up(self, value: int, alignment: int) -> int:
         if alignment <= 1:
@@ -196,12 +235,23 @@ class MatmulTilingEvaluator:
         return partitions
 
     def _get_tile_arch_params(self) -> tuple[int, int, int, int, int]:
-        cube_m = getattr(self.chip, "cube_m", 0) or 16
-        cube_n = getattr(self.chip, "cube_n", 0) or 8
-        cube_k = getattr(self.chip, "cube_k", 0) or 32
-        align_bytes = getattr(self.chip, "align_bytes", 0) or 32
-        lane_num = self.chip.lane_per_core or 1
-        return cube_m, cube_n, cube_k, align_bytes, lane_num
+        """获取芯片微架构参数（必需）"""
+        cube_m = self.chip.cube_m
+        cube_n = self.chip.cube_n
+        cube_k = self.chip.cube_k
+        align_bytes = self.chip.align_bytes
+        lane_num = self.chip.lane_per_core
+
+        # 校验参数有效性
+        if not cube_m or not cube_n or not cube_k:
+            raise ValueError(
+                f"Invalid chip cube dimensions: m={cube_m}, n={cube_n}, k={cube_k}. "
+                "Check compute_units.cube config."
+            )
+        if not lane_num:
+            raise ValueError("Invalid chip lane_per_core: must be > 0")
+
+        return cube_m, cube_n, cube_k, align_bytes or 32, lane_num
 
     def _legal_tiles(
         self,
@@ -232,11 +282,15 @@ class MatmulTilingEvaluator:
                 if sram_limit is None:
                     k_t = self._align_up(k_blk, cube_k)
                 else:
+                    # C tile shape = (m_t, n_t), 行对齐到 lane_num, 列字节对齐到 align_bytes
                     align_col_n = align_col(n_t, c_bytes)
-                    align_row_n = align_row(n_t)
-                    avail = sram_limit - align_row_n * align_col_n
+                    c_tile_bytes = align_row_m * align_col_n
+                    avail = sram_limit - c_tile_bytes
                     if avail <= 0:
                         continue
+                    # A tile 每增加 1 个 K: align_up(m_t, lane_num) * a_bytes
+                    # B tile 每增加 1 个 K: align_up(n_t, lane_num) * b_bytes
+                    align_row_n = align_row(n_t)
                     denom = align_row_m * a_bytes + align_row_n * b_bytes
                     max_k = int(avail / denom) if denom > 0 else 0
                     if max_k == 0:
@@ -304,7 +358,12 @@ class ElementwiseTilingEvaluator:
         return op.op_type in {"elementwise", "relu", "gelu", "silu", "add", "mul"}
 
     def select_tile(
-        self, op: DistributedOp, lmem_budget: int
+        self,
+        op: DistributedOp,
+        lmem_budget: int,
+        l4_scorer: L4TileEvaluator
+        | Callable[[DistributedOp, TileConfig, ChipSpecImpl], dict[str, int]]
+        | None = None,
     ) -> tuple[TileConfig, dict[str, int]] | None:
         shape = op.local_shape
         if not shape:
@@ -326,25 +385,46 @@ class ElementwiseTilingEvaluator:
         cube_m, cube_n, _, _, lane_num = MatmulTilingEvaluator(self.chip)._get_tile_arch_params()
 
         best_tile: tuple[int, int] | None = None
-        best_traffic: int | None = None
-        best_lmem: int | None = None
+        best_score: float | None = None
+        best_meta: dict[str, int | float | str] | None = None
 
         for m_t in self._tile_candidates(m, cube_m, lane_num):
             for n_t in self._tile_candidates(n, cube_n, lane_num):
                 lmem = (m_t * n_t) * (a_bytes + c_bytes)
                 if lmem_budget and lmem > lmem_budget:
                     continue
-                traffic = self._estimate_traffic(m, n, m_t, n_t, a_bytes, c_bytes)
-                if best_traffic is None or traffic < best_traffic:
-                    best_tile = (m_t, n_t)
-                    best_traffic = traffic
-                    best_lmem = lmem
+                if l4_scorer is not None:
+                    tile_cfg = TileConfig(tile_m=m_t, tile_n=n_t, tile_k=None)
+                    if hasattr(l4_scorer, "evaluate_tile"):
+                        l4_result = l4_scorer.evaluate_tile(op, tile_cfg, self.chip)
+                    else:
+                        l4_result = l4_scorer(op, tile_cfg, self.chip)
+                    t_compute = float(l4_result.get("t_compute_ms", 0))
+                    t_memory = float(l4_result.get("t_memory_ms", 0))
+                    score = max(t_compute, t_memory)
+                    if best_score is None or score < best_score:
+                        best_tile = (m_t, n_t)
+                        best_score = score
+                        best_meta = {
+                            "traffic": int(l4_result.get("traffic", 0)),
+                            "lmem_bytes": int(l4_result.get("lmem_bytes", 0)),
+                            "t_compute_ms": t_compute,
+                            "t_memory_ms": t_memory,
+                            "bottleneck": l4_result.get("bottleneck", "unknown"),
+                        }
+                else:
+                    traffic = self._estimate_traffic(m, n, m_t, n_t, a_bytes, c_bytes)
+                    score = float(traffic)
+                    if best_score is None or score < best_score:
+                        best_tile = (m_t, n_t)
+                        best_score = score
+                        best_meta = {"traffic": traffic, "lmem_bytes": lmem}
 
         if best_tile is None:
             return None
 
         tile_config = TileConfig(tile_m=best_tile[0], tile_n=best_tile[1], tile_k=None)
-        return tile_config, {"traffic": best_traffic or 0, "lmem_bytes": best_lmem or 0}
+        return tile_config, best_meta or {"traffic": 0, "lmem_bytes": 0}
 
     def _align_up(self, value: int, alignment: int) -> int:
         if alignment <= 1:
@@ -380,7 +460,12 @@ class FA2TilingEvaluator:
         return op.op_type in {"fa2", "flash_attention"}
 
     def select_tile(
-        self, op: DistributedOp, lmem_budget: int
+        self,
+        op: DistributedOp,
+        lmem_budget: int,
+        l4_scorer: L4TileEvaluator
+        | Callable[[DistributedOp, TileConfig, ChipSpecImpl], dict[str, int]]
+        | None = None,
     ) -> tuple[TileConfig, dict[str, int]] | None:
         shape = op.local_shape
         if not shape:
@@ -398,24 +483,48 @@ class FA2TilingEvaluator:
         cube_m, cube_n, cube_k, _, _ = MatmulTilingEvaluator(self.chip)._get_tile_arch_params()
 
         best_tile: tuple[int, int] | None = None
-        best_traffic: int | None = None
-        best_lmem: int | None = None
+        best_score: float | None = None
+        best_meta: dict[str, int | float | str] | None = None
 
         for p_b in self._valid_partitions(self.chip.core_count):
             b_blk = math.ceil(b / p_b)
             for q_t, k_t in self._legal_tiles(qs, ks, qd, vd, lmem_budget, cube_m, cube_n, cube_k, a_bytes, c_bytes):
-                traffic = self._estimate_traffic(qs, ks, qd, vd, q_t, k_t, a_bytes, c_bytes, accum_bytes)
-                traffic = traffic * max(1, b_blk)
-                if best_traffic is None or traffic < best_traffic:
-                    best_tile = (q_t, k_t)
-                    best_traffic = traffic
-                    best_lmem = self._estimate_lmem(qd, vd, q_t, k_t, a_bytes, c_bytes)
+                if l4_scorer is not None:
+                    tile_cfg = TileConfig(tile_m=q_t, tile_n=k_t, tile_k=None)
+                    if hasattr(l4_scorer, "evaluate_tile"):
+                        l4_result = l4_scorer.evaluate_tile(op, tile_cfg, self.chip)
+                    else:
+                        l4_result = l4_scorer(op, tile_cfg, self.chip)
+                    t_compute = float(l4_result.get("t_compute_ms", 0))
+                    t_memory = float(l4_result.get("t_memory_ms", 0))
+                    score = max(t_compute, t_memory) * max(1, b_blk)
+                    if best_score is None or score < best_score:
+                        best_tile = (q_t, k_t)
+                        best_score = score
+                        best_meta = {
+                            "traffic": int(l4_result.get("traffic", 0)),
+                            "lmem_bytes": int(l4_result.get("lmem_bytes", 0)),
+                            "t_compute_ms": t_compute,
+                            "t_memory_ms": t_memory,
+                            "bottleneck": l4_result.get("bottleneck", "unknown"),
+                        }
+                else:
+                    traffic = self._estimate_traffic(qs, ks, qd, vd, q_t, k_t, a_bytes, c_bytes, accum_bytes)
+                    traffic = traffic * max(1, b_blk)
+                    score = float(traffic)
+                    if best_score is None or score < best_score:
+                        best_tile = (q_t, k_t)
+                        best_score = score
+                        best_meta = {
+                            "traffic": traffic,
+                            "lmem_bytes": self._estimate_lmem(qd, vd, q_t, k_t, a_bytes, c_bytes),
+                        }
 
         if best_tile is None:
             return None
 
         tile_config = TileConfig(tile_m=best_tile[0], tile_n=best_tile[1], tile_k=None)
-        return tile_config, {"traffic": best_traffic or 0, "lmem_bytes": best_lmem or 0}
+        return tile_config, best_meta or {"traffic": 0, "lmem_bytes": 0}
 
     def _valid_partitions(self, core_count: int) -> list[int]:
         return [p_b for p_b in range(1, core_count + 1) if core_count % p_b == 0]

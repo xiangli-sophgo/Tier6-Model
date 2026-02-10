@@ -10,6 +10,7 @@
 from dataclasses import dataclass
 import math
 import copy
+import logging
 
 from math_model.L3_mapping.parallelism.parallel_spec import ParallelSpec, ParallelType
 from math_model.L3_mapping.parallelism.pattern_rules import (
@@ -28,6 +29,9 @@ from math_model.L1_workload.ir import WorkloadIR
 from math_model.L1_workload.layer import Layer
 from math_model.L1_workload.op import Op
 from math_model.L1_workload.tensor import TensorDesc
+from math_model.L4_evaluation.evaluators.moe_load_balance import get_max_expert_load
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -58,6 +62,7 @@ class DeploymentSpec:
     seq_len: int = 2048
     batch_size: int = 1
     enable_tp_sp: bool = False
+    enable_ring_attention: bool = False
     embed_tp: int = 1
     lmhead_tp: int = 1
     comm_protocol: int = 1
@@ -116,14 +121,16 @@ class ParallelismPlanner:
             raise ValueError(
                 f"TP×PP={total_chips} 超过可用 chip 数量 {self.board.num_chips}"
             )
-        if self.deployment.moe_tp > self.deployment.tp:
-            raise ValueError(
-                f"moe_tp={self.deployment.moe_tp} 不能超过 tp={self.deployment.tp}"
-            )
-        if self.deployment.moe_tp * self.deployment.ep > self.deployment.tp * self.deployment.dp:
-            raise ValueError(
-                "moe_tp×ep 不能超过 tp×dp（当前实现约束）"
-            )
+        # MoE 并行约束：dp * tp == moe_tp * ep（与 CHIPMathica 一致）
+        if self.deployment.ep > 1 or self.deployment.moe_tp > 1:
+            lhs = self.deployment.dp * self.deployment.tp
+            rhs = self.deployment.moe_tp * self.deployment.ep
+            if lhs != rhs:
+                raise ValueError(
+                    f"MoE 并行约束不满足: dp({self.deployment.dp}) * tp({self.deployment.tp}) = {lhs} "
+                    f"!= moe_tp({self.deployment.moe_tp}) * ep({self.deployment.ep}) = {rhs}. "
+                    f"必须满足 dp * tp == moe_tp * ep"
+                )
 
     def _validate_model_parallelism(self, layers: list[Layer]) -> None:
         """验证模型维度与并行配置一致性"""
@@ -238,6 +245,7 @@ class ParallelismPlanner:
                 local_shape = self._apply_moe_expert_shard(
                     local_shape, layer, layer_type, op_role
                 )
+                local_shape = self._apply_sp_shard(local_shape, layer_type)
 
                 # 4. 创建分布式 op
                 dtype_attrs = self._extract_dtype_attrs(op)
@@ -585,6 +593,16 @@ class ParallelismPlanner:
                     },
                 )
             )
+
+        # SP 通信: enable_tp_sp 模式下，attention 层插入 AllGather/ReduceScatter
+        # 与 CHIPMathica 对齐:
+        #   - kv_a 后插入 AllGather (收集 KV)
+        #   - o_proj 后插入 ReduceScatter (分散输出)
+        sp_comm_ops = self._maybe_insert_sp_comm(
+            layer, layer_type, op_role, compute_op, outputs[0],
+        )
+        comm_ops.extend(sp_comm_ops)
+
         return self._chain_comm_ops(comm_ops, compute_op.op_id)
 
     def _create_comm_op(
@@ -735,24 +753,26 @@ class ParallelismPlanner:
                 attrs[key] = str(value)
         return attrs
 
-    def _layer_param(self, layer: Layer, keys: tuple[str, ...], default: int) -> int:
+    def _layer_param(self, layer: Layer, keys: tuple[str, ...]) -> int:
+        """从 layer params 获取参数（必需，缺失时报错）"""
         for key in keys:
             value = layer.params.get(key)
             if value is not None:
                 return int(value)
-        return default
+        keys_str = "', '".join(keys)
+        raise ValueError(f"Missing required param (tried: '{keys_str}') in layer '{layer.name}'")
 
     def _get_layer_batch(self, layer: Layer) -> int:
-        return self._layer_param(layer, ("batch", "batch_size"), 1)
+        return self._layer_param(layer, ("batch", "batch_size"))
 
     def _get_layer_seq(self, layer: Layer) -> int:
-        return self._layer_param(layer, ("seq_len", "q_seq_len"), 1)
+        return self._layer_param(layer, ("seq_len", "q_seq_len"))
 
     def _get_layer_hidden(self, layer: Layer) -> int:
-        return self._layer_param(layer, ("hidden_size", "hidden_dim"), 1)
+        return self._layer_param(layer, ("hidden_size", "hidden_dim"))
 
     def _get_layer_activated_experts(self, layer: Layer) -> int:
-        return self._layer_param(layer, ("n_activated_experts",), 1)
+        return self._layer_param(layer, ("n_activated_experts",))
 
     def _moe_shared_comm_bytes(self, layer: Layer, tensor: TensorDesc) -> int:
         batch = self._get_layer_batch(layer)
@@ -761,19 +781,60 @@ class ParallelismPlanner:
         batch_local = batch // max(1, self.deployment.dp)
         return batch_local * seq_len * hidden * tensor.dtype.bytes
 
+    def _moe_load_factor(self, layer: Layer) -> float:
+        """获取 MoE 负载不均因子
+
+        通过查表/插值/蒙特卡洛计算最忙芯片的负载，除以理论均匀值得到负载因子。
+        负载因子 > 1.0 表示最忙芯片比均匀分布多处理了多少比例的 token。
+
+        Returns:
+            负载因子（>=1.0），EP<=1 时返回 1.0
+        """
+        ep = self.deployment.ep
+        if ep <= 1:
+            return 1.0
+
+        batch = self._get_layer_batch(layer)
+        batch_local = batch // max(1, self.deployment.dp)
+        seq_len = self._get_layer_seq(layer)
+        effective_batch = batch_local * seq_len  # token 数
+        if effective_batch <= 0:
+            return 1.0
+
+        n_routed = self._layer_param(layer, ("n_routed_experts",), 0)
+        if n_routed <= 0:
+            return 1.0
+
+        # 理论均匀: 每芯片负载 = n_routed / ep
+        uniform_experts_per_chip = n_routed / ep
+
+        # 查表获取最忙芯片实际加载的专家数
+        max_experts = get_max_expert_load(
+            batch_size=effective_batch, chips=ep, allow_simulation=True
+        )
+
+        load_factor = max_experts / uniform_experts_per_chip if uniform_experts_per_chip > 0 else 1.0
+        return max(1.0, load_factor)
+
     def _moe_tokens_per_ep_group(self, layer: Layer) -> int:
         batch = self._get_layer_batch(layer)
         seq_len = self._get_layer_seq(layer)
         activated = self._get_layer_activated_experts(layer)
         tokens = batch * seq_len * activated
-        return math.ceil(tokens / max(1, self.deployment.ep))
+        base = math.ceil(tokens / max(1, self.deployment.ep))
+        # 应用负载不均因子：最忙芯片需要处理更多 token
+        load_factor = self._moe_load_factor(layer)
+        return math.ceil(base * load_factor)
 
     def _moe_tokens_per_ep_group_local(self, layer: Layer) -> int:
         batch_local = self._moe_batch_local(layer)
         seq_len = self._get_layer_seq(layer)
         activated = self._get_layer_activated_experts(layer)
         tokens = batch_local * seq_len * activated
-        return math.ceil(tokens / max(1, self.deployment.ep))
+        base = math.ceil(tokens / max(1, self.deployment.ep))
+        # 应用负载不均因子
+        load_factor = self._moe_load_factor(layer)
+        return math.ceil(base * load_factor)
 
     def _moe_batch_local(self, layer: Layer) -> int:
         batch = self._get_layer_batch(layer)
@@ -788,6 +849,90 @@ class ParallelismPlanner:
         tokens = self._moe_tokens_per_ep_group(layer)
         hidden = self._get_layer_hidden(layer)
         return tokens * hidden * tensor.dtype.bytes
+
+    # ---- SP (Sequence Parallelism) 通信 ----
+
+    def _sp_comm_bytes(self, layer: Layer) -> int:
+        """计算 SP 通信字节数
+
+        与 CHIPMathica 对齐:
+            comm_size = seqs_reduced * hidden * dtype_bytes
+        其中 seqs_reduced = (batch_local // tp) * seq_len
+        """
+        tp = self.deployment.tp
+        dp = self.deployment.dp
+        batch = self._get_layer_batch(layer)
+        seq_len = self._get_layer_seq(layer)
+        hidden = self._get_layer_hidden(layer)
+        batch_local = batch // max(1, dp)
+        seqs_reduced = (batch_local // max(1, tp)) * seq_len
+        dtype_bytes = layer.inputs[0].dtype.bytes if layer.inputs else 2
+        return seqs_reduced * hidden * dtype_bytes
+
+    def _maybe_insert_sp_comm(
+        self,
+        layer: Layer,
+        layer_type: str,
+        op_role: str,
+        compute_op: DistributedOp,
+        tensor: TensorDesc,
+    ) -> list[DistributedOp]:
+        """在 attention 层插入 SP 通信算子
+
+        与 CHIPMathica 对齐:
+        - kv_a/kv_proj/v_proj 后: AllGather (收集所有 TP rank 的 KV 表示)
+        - o_proj 后: ReduceScatter (分散输出到各 TP rank)
+
+        支持:
+        - MLA: kv_a 后 AllGather
+        - 标准 attention: v_proj 后 AllGather (最后一个 KV projection)
+        """
+        if not self.deployment.enable_tp_sp:
+            return []
+        if self.deployment.tp <= 1:
+            return []
+        if layer_type not in {"mla", "mla_absorb", "attention", "mla_v32", "mla_absorb_v32"}:
+            return []
+
+        comm_bytes = self._sp_comm_bytes(layer)
+
+        # AllGather 插入点:
+        #   MLA: kv_a 后 (KV projection)
+        #   标准 attention: v_proj 后 (最后一个 KV projection)
+        #   通用: kv_proj 后
+        allgather_roles = {"kv_a", "v_proj", "kv_proj"}
+        if op_role in allgather_roles:
+            return [
+                self._create_custom_comm_op(
+                    base_op_id=compute_op.op_id,
+                    suffix="sp_allgather",
+                    compute_op=compute_op,
+                    tensor=tensor,
+                    comm_type=CommType.ALLGATHER,
+                    cause="sp_sequence_parallel",
+                    reason="sp_allgather",
+                    deps=[compute_op.op_id],
+                    comm_bytes_override=comm_bytes,
+                )
+            ]
+
+        # ReduceScatter 插入点: o_proj 后
+        if op_role == "o_proj":
+            return [
+                self._create_custom_comm_op(
+                    base_op_id=compute_op.op_id,
+                    suffix="sp_reducescatter",
+                    compute_op=compute_op,
+                    tensor=tensor,
+                    comm_type=CommType.REDUCE_SCATTER,
+                    cause="sp_sequence_parallel",
+                    reason="sp_reducescatter",
+                    deps=[compute_op.op_id],
+                    comm_bytes_override=comm_bytes,
+                )
+            ]
+
+        return []
 
     def _get_tensor_consumer_ops(self, layer: Layer, tensor: TensorDesc) -> list[Op]:
         """获取张量的消费者算子集合"""
@@ -865,18 +1010,27 @@ class ParallelismPlanner:
 
         ep_groups: list[list[int]] = []
         if self.deployment.ep > 1:
-            if self.deployment.ep > dp:
-                raise ValueError("ep 不能超过 dp（当前实现约束）")
-            for dp_rank in range(self.deployment.ep):
-                ep_groups.append(dp_groups[dp_rank])
+            # EP 约束：dp * tp == moe_tp * ep（在 _validate 中已检查）
+            # EP 组：total_chips / ep 个芯片一组
+            if total % self.deployment.ep != 0:
+                raise ValueError(
+                    f"总芯片数 ({total}) 必须能被 ep ({self.deployment.ep}) 整除"
+                )
+            chips_per_ep = total // self.deployment.ep
+            for ep_rank in range(self.deployment.ep):
+                start_idx = ep_rank * chips_per_ep
+                end_idx = start_idx + chips_per_ep
+                ep_groups.append(chips[start_idx:end_idx])
 
         rank_map: dict[int, dict[str, int]] = {}
+        chips_per_ep = total // self.deployment.ep if self.deployment.ep > 1 else total
         for chip_id in chips:
             dp_rank = chip_id // (pp * tp)
             within_dp = chip_id % (pp * tp)
             pp_rank = within_dp // tp
             tp_rank = within_dp % tp
-            ep_rank = dp_rank if self.deployment.ep > 1 else 0
+            # EP rank: 根据芯片在全局的位置均匀分配
+            ep_rank = chip_id // chips_per_ep if self.deployment.ep > 1 else 0
             rank_map[chip_id] = {
                 "dp": dp_rank,
                 "pp": pp_rank,
@@ -1102,4 +1256,32 @@ class ParallelismPlanner:
         if "G" in shaped and shaped["G"] > 0 and self.deployment.moe_tp > 1:
             shaped["G"] = shaped["G"] * self.deployment.moe_tp
         shaped["M"] = max(1, self._moe_tokens_per_ep_group_local(layer))
+        return shaped
+
+    def _apply_sp_shard(
+        self,
+        local_shape: dict[str, int],
+        layer_type: str,
+    ) -> dict[str, int]:
+        """应用 SP (Sequence Parallelism) 序列切分
+
+        当 enable_tp_sp=True 时，attention/MLA 层的 batch 维度按 TP 切分。
+        与 CHIPMathica 对齐: seqs = (local_batch // tp) * seq_len
+
+        输入:
+            - local_shape: 已完成 TP/DP/MoE 切分的 shape（单位: elements）。
+            - layer_type: 层类型。
+        输出:
+            - 对 attention 层的 M 维按 TP 再切分后的 shape。
+        """
+        if not self.deployment.enable_tp_sp:
+            return local_shape
+        if self.deployment.tp <= 1:
+            return local_shape
+        if layer_type not in {"mla", "mla_absorb", "attention", "mla_v32", "mla_absorb_v32"}:
+            return local_shape
+        if "M" not in local_shape or local_shape["M"] <= 0:
+            return local_shape
+        shaped = dict(local_shape)
+        shaped["M"] = max(1, math.ceil(shaped["M"] / self.deployment.tp))
         return shaped

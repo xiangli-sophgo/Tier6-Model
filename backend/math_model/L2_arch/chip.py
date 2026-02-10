@@ -31,6 +31,9 @@ class ChipSpecImpl:
         lane_per_core: 每核心 Lane 数
         cores: 核心规格列表
         frequency_ghz: 工作频率
+        align_bytes: 内存对齐字节数
+        compute_dma_overlap_rate: 计算与 DMA 搬运的重叠率 (0-1)
+        compute_efficiency: 计算效率 (0-1)
         compute_units: 计算单元
         memory_hierarchy: 存储层级
         dma_engines: DMA 引擎
@@ -43,6 +46,9 @@ class ChipSpecImpl:
     lane_per_core: int = 64
     cores: list[CoreSpecImpl] = field(default_factory=list)
     frequency_ghz: float = 1.0
+    align_bytes: int = 32
+    compute_dma_overlap_rate: float = 0.8
+    compute_efficiency: float = 0.9
     compute_units: dict[str, ComputeSpec] = field(default_factory=dict)
     memory_hierarchy: MemoryHierarchyImpl = field(default_factory=MemoryHierarchyImpl)
     dma_engines: dict[str, DMAEngineImpl] = field(default_factory=dict)
@@ -51,6 +57,49 @@ class ChipSpecImpl:
     def __post_init__(self) -> None:
         if not self.cores and self.core_count > 0:
             self.cores = self._derive_core_specs()
+
+    # ========== Cube 维度便捷属性 ==========
+
+    @property
+    def cube_m(self) -> int:
+        """矩阵单元 M 维度"""
+        cube = self.compute_units.get("cube")
+        if cube is not None and hasattr(cube, "dim_m"):
+            return cube.dim_m
+        return 0
+
+    @property
+    def cube_k(self) -> int:
+        """矩阵单元 K 维度"""
+        cube = self.compute_units.get("cube")
+        if cube is not None and hasattr(cube, "dim_k"):
+            return cube.dim_k
+        return 0
+
+    @property
+    def cube_n(self) -> int:
+        """矩阵单元 N 维度"""
+        cube = self.compute_units.get("cube")
+        if cube is not None and hasattr(cube, "dim_n"):
+            return cube.dim_n
+        return 0
+
+    @property
+    def eu_num(self) -> int:
+        """向量执行单元总数 (用于 Softmax 等向量操作估算)"""
+        vector = self.compute_units.get("vector")
+        if vector is not None and hasattr(vector, "eu_count"):
+            return vector.eu_count("BF16")
+        return 0
+
+    @property
+    def sram_utilization(self) -> float:
+        """SRAM 可用比例"""
+        try:
+            lmem = self.memory_hierarchy.get_level("lmem")
+            return getattr(lmem, "sram_utilization", 0.45)
+        except KeyError:
+            return 0.45
 
     def get_peak_flops(self, dtype: str, unit: str = "cube") -> float:
         """获取峰值算力
@@ -126,6 +175,9 @@ class ChipSpecImpl:
             lane_per_core=self.lane_per_core,
             cores=self.cores,
             frequency_ghz=self.frequency_ghz,
+            align_bytes=self.align_bytes,
+            compute_dma_overlap_rate=self.compute_dma_overlap_rate,
+            compute_efficiency=self.compute_efficiency,
             compute_units=self.compute_units,
             memory_hierarchy=self.memory_hierarchy,
             dma_engines=self.dma_engines,
@@ -158,6 +210,20 @@ class ChipSpecImpl:
         if "frequency_ghz" not in config:
             raise ValueError(f"Missing 'frequency_ghz' in chip config: {name}")
         frequency_ghz = config["frequency_ghz"]
+
+        if "align_bytes" not in config:
+            raise ValueError(f"Missing 'align_bytes' in chip config: {name}")
+        align_bytes = int(config["align_bytes"])
+
+        if "compute_dma_overlap_rate" not in config:
+            raise ValueError(
+                f"Missing 'compute_dma_overlap_rate' in chip config: {name}"
+            )
+        compute_dma_overlap_rate = float(config["compute_dma_overlap_rate"])
+
+        if "compute_efficiency" not in config:
+            raise ValueError(f"Missing 'compute_efficiency' in chip config: {name}")
+        compute_efficiency = float(config["compute_efficiency"])
 
         # 计算单元
         compute_units: dict[str, ComputeSpec] = {}
@@ -193,6 +259,9 @@ class ChipSpecImpl:
             core_count=core_count,
             lane_per_core=lane_per_core,
             frequency_ghz=frequency_ghz,
+            align_bytes=align_bytes,
+            compute_dma_overlap_rate=compute_dma_overlap_rate,
+            compute_efficiency=compute_efficiency,
             compute_units=compute_units,
             memory_hierarchy=memory_hierarchy,
             dma_engines=dma_engines,

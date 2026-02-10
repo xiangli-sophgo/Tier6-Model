@@ -94,8 +94,31 @@ class DeepSeekV3Model(ModelBase):
             3. MoE Layers (MLA + MoE) x num_moe_layers
             4. LM Head
         """
-        num_dense_layers = self._config.get("num_dense_layers", 3)
-        num_moe_layers = self._config.get("num_moe_layers", 58)
+        # 从 config 获取层数配置（必需）
+        if "num_layers" not in self._config:
+            raise ValueError("Missing required field 'num_layers' in DeepSeek model config")
+        total_layers = self._config["num_layers"]
+
+        # dense/moe 层数拆分：优先使用显式指定，否则从 total_layers 推导
+        if "num_dense_layers" in self._config and "num_moe_layers" in self._config:
+            num_dense_layers = self._config["num_dense_layers"]
+            num_moe_layers = self._config["num_moe_layers"]
+            # 校验一致性
+            if num_dense_layers + num_moe_layers != total_layers:
+                raise ValueError(
+                    f"num_dense_layers ({num_dense_layers}) + num_moe_layers ({num_moe_layers}) "
+                    f"!= num_layers ({total_layers})"
+                )
+        elif "num_dense_layers" in self._config:
+            num_dense_layers = self._config["num_dense_layers"]
+            num_moe_layers = total_layers - num_dense_layers
+        elif "num_moe_layers" in self._config:
+            num_moe_layers = self._config["num_moe_layers"]
+            num_dense_layers = total_layers - num_moe_layers
+        else:
+            raise ValueError(
+                "Must specify either 'num_dense_layers', 'num_moe_layers', or both in DeepSeek model config"
+            )
         is_prefill_cfg = self._config.get("is_prefill")
         if is_prefill_cfg is None:
             # 兼容历史行为：未显式指定时使用 MLALayer。
@@ -126,31 +149,39 @@ class DeepSeekV3Model(ModelBase):
 
     def _build_metadata(self) -> ModelMetadata:
         """构建模型元数据"""
+        # 必需字段检查（与 ModelMetadata.from_dict 对齐）
+        required_fields = ["hidden_size", "num_layers", "num_heads"]
+        missing = [f for f in required_fields if f not in self._config]
+        if missing:
+            raise ValueError(f"Missing required fields in DeepSeek model config: {missing}")
+
         return ModelMetadata(
             name=self.name,
-            dtype=DataType.from_string(self._config.get("dtype", "bf16")),
-            hidden_size=self._config.get("hidden_size", 7168),
-            num_layers=self._config.get("num_layers", 61),
-            num_heads=self._config.get("num_heads", 128),
-            vocab_size=self._config.get("vocab_size", 129280),
-            seq_len=self._config.get("seq_len"),
-            batch=self._config.get("batch"),
+            dtype=DataType.from_string(self._config.get("dtype", "bf16")),  # dtype 可选
+            hidden_size=self._config["hidden_size"],
+            num_layers=self._config["num_layers"],
+            num_heads=self._config["num_heads"],
+            vocab_size=self._config.get("vocab_size"),  # 可选
+            seq_len=self._config.get("seq_len"),  # 可选
+            batch=self._config.get("batch"),  # 可选
         )
 
     def get_info(self) -> dict[str, Any]:
         """获取模型汇总信息（扩展版）"""
         base_info = super().get_info()
-        # 添加 DeepSeek 特有信息
-        base_info.update(
-            {
-                "num_dense_layers": self._config.get("num_dense_layers", 3),
-                "num_moe_layers": self._config.get("num_moe_layers", 58),
-                "n_routed_experts": self._config.get("n_routed_experts", 256),
-                "n_activated_experts": self._config.get("n_activated_experts", 8),
-                "q_lora_rank": self._config.get("q_lora_rank", 1536),
-                "kv_lora_rank": self._config.get("kv_lora_rank", 512),
-            }
-        )
+        # 添加 DeepSeek 特有信息（仅包含已配置的字段）
+        if "num_dense_layers" in self._config:
+            base_info["num_dense_layers"] = self._config["num_dense_layers"]
+        if "num_moe_layers" in self._config:
+            base_info["num_moe_layers"] = self._config["num_moe_layers"]
+        if "n_routed_experts" in self._config:
+            base_info["n_routed_experts"] = self._config["n_routed_experts"]
+        if "n_activated_experts" in self._config:
+            base_info["n_activated_experts"] = self._config["n_activated_experts"]
+        if "q_lora_rank" in self._config:
+            base_info["q_lora_rank"] = self._config["q_lora_rank"]
+        if "kv_lora_rank" in self._config:
+            base_info["kv_lora_rank"] = self._config["kv_lora_rank"]
         return base_info
 
 

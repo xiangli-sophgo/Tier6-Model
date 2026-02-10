@@ -89,6 +89,9 @@ class Calibration:
         t_wait = metrics.t_wait
 
         # 重新计算总时间
+        # 注意：Tile 级 compute-DMA overlap 已在 evaluator (precise.py/compute.py) 中处理
+        # Model 级 MoE dispatch/combine overlap 在 engine.py 中处理
+        # calibration 层只做系数校准，不做 overlap 计算
         t_total = t_compute + t_comm + t_wait
 
         return StepMetrics(

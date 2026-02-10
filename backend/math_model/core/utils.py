@@ -205,26 +205,34 @@ def unflatten_dict(d: dict[str, Any], sep: str = ".") -> dict[str, Any]:
     return result
 
 
-def get_nested(d: dict[str, Any], key: str, sep: str = ".") -> Any:
+def get_nested(d: dict[str, Any], key: str, sep: str = ".", required: bool = False) -> Any:
     """获取嵌套字典值
 
     Args:
         d: 字典
         key: 点分隔的键路径
         sep: 键分隔符
+        required: 是否必需，True 时找不到抛出 KeyError
 
     Returns:
-        对应的值，不存在则返回 None
+        对应的值，不存在且 required=False 时返回 None
+
+    Raises:
+        KeyError: 当 required=True 且键不存在时
 
     Example:
         >>> get_nested({"a": {"b": 1}}, "a.b")
         1
+        >>> get_nested({}, "a.b", required=True)
+        KeyError: "Missing nested key 'a.b'"
     """
     parts = key.split(sep)
     current = d
 
     for part in parts:
         if not isinstance(current, dict) or part not in current:
+            if required:
+                raise KeyError(f"Missing nested key '{key}'")
             return None
         current = current[part]
 
@@ -345,7 +353,7 @@ def format_time(ns: float) -> str:
     if ns < 1000:
         return f"{ns:.2f} ns"
     elif ns < 1_000_000:
-        return f"{ns / 1000:.2f} µs"
+        return f"{ns / 1000:.2f} us"  # 使用 ASCII "us" 代替 Unicode "µs" (Windows GBK 兼容)
     elif ns < 1_000_000_000:
         return f"{ns / 1_000_000:.2f} ms"
     else:

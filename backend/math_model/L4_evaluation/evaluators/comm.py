@@ -54,11 +54,11 @@ class CommEvaluator(BaseEvaluator):
         comm_type = attrs.get("comm_type", op_type).lower()
         reason = attrs.get("reason", "").lower()
 
-        # 构建通信硬件口径
-        intra_bw = hardware.get("intra_board_bw_gbps", 400.0) * 1e9
-        inter_bw = hardware.get("inter_board_bw_gbps", 200.0) * 1e9
+        # 构建通信硬件口径（使用默认值是合理的，通信带宽通常有典型值）
+        intra_bw = hardware.get("intra_board_bw_gbps", 400.0) * 1e9  # 默认 400 GB/s (NVLink)
+        inter_bw = hardware.get("inter_board_bw_gbps", 200.0) * 1e9  # 默认 200 GB/s
         if path_key == "inter_node":
-            inter_bw = hardware.get("inter_node_bw_gbps", 100.0) * 1e9
+            inter_bw = hardware.get("inter_node_bw_gbps", 100.0) * 1e9  # 默认 100 GB/s
         arch = CommArchSpec(intra_bw=intra_bw, inter_bw=inter_bw)
         params = CommProtocolParams.from_mapping(hardware)
         model = CommProtocolCostModel(arch=arch, params=params)

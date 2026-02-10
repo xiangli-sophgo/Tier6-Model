@@ -58,7 +58,10 @@ class Llama2Model(ModelBase):
             - RMSNorm
             - LM Head
         """
-        num_layers = self._config.get("num_layers", 32)
+        # 从 config 获取层数（必需）
+        if "num_layers" not in self._config:
+            raise ValueError("Missing required field 'num_layers' in Llama model config")
+        num_layers = self._config["num_layers"]
 
         # 构建 Transformer 层
         for i in range(num_layers):
@@ -70,13 +73,19 @@ class Llama2Model(ModelBase):
 
     def _build_metadata(self) -> ModelMetadata:
         """构建模型元数据"""
+        # 必需字段检查（与 ModelMetadata.from_dict 对齐）
+        required_fields = ["hidden_size", "num_layers", "num_heads"]
+        missing = [f for f in required_fields if f not in self._config]
+        if missing:
+            raise ValueError(f"Missing required fields in Llama model config: {missing}")
+
         return ModelMetadata(
             name=self.name,
-            dtype=DataType.from_string(self._config.get("dtype", "fp16")),
-            hidden_size=self._config.get("hidden_size", 4096),
-            num_layers=self._config.get("num_layers", 32),
-            num_heads=self._config.get("num_heads", 32),
-            vocab_size=self._config.get("vocab_size", 32000),
-            seq_len=self._config.get("seq_len"),
-            batch=self._config.get("batch"),
+            dtype=DataType.from_string(self._config.get("dtype", "fp16")),  # dtype 可选
+            hidden_size=self._config["hidden_size"],
+            num_layers=self._config["num_layers"],
+            num_heads=self._config["num_heads"],
+            vocab_size=self._config.get("vocab_size"),  # 可选
+            seq_len=self._config.get("seq_len"),  # 可选
+            batch=self._config.get("batch"),  # 可选
         )

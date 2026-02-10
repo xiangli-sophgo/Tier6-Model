@@ -97,12 +97,18 @@ class ClusterSpecImpl:
                 node = cls._parse_node(node_config)
                 nodes.append(node)
 
+        # inter_node 网络参数（必需）
+        if "inter_node_bandwidth_gbps" not in config:
+            raise ValueError("Missing 'inter_node_bandwidth_gbps' in cluster config")
+        if "inter_node_latency_us" not in config:
+            raise ValueError("Missing 'inter_node_latency_us' in cluster config")
+
         return cls(
             num_nodes=len(nodes),
             nodes=nodes,
-            inter_node_bandwidth_gbps=config.get("inter_node_bandwidth_gbps", 100.0),
-            inter_node_latency_us=config.get("inter_node_latency_us", 5.0),
-            topology_ref=config.get("topology_ref"),
+            inter_node_bandwidth_gbps=config["inter_node_bandwidth_gbps"],
+            inter_node_latency_us=config["inter_node_latency_us"],
+            topology_ref=config.get("topology_ref"),  # 可选
         )
 
     @classmethod
