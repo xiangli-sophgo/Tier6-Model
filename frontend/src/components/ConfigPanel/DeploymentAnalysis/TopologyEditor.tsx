@@ -18,6 +18,7 @@ import { BaseCard } from '@/components/common/BaseCard'
 import type { TopologyConfig, TopologyListItem } from '@/types/math_model'
 import { getTopologies, getTopology, createTopology, updateTopology } from '@/api/math_model'
 import { countChips, countPods, countRacks, countBoards } from '@/utils/llmDeployment/topologyFormat'
+import { deepClone, errMsg } from '@/utils/nestedObjectEditor'
 
 interface TopologyEditorProps {
   value: TopologyConfig
@@ -45,16 +46,12 @@ const COMM_FIELDS: Array<{ key: string; label: string; tip: string; step?: numbe
   { key: 'die_to_die_latency_us', label: 'D2D 延迟 (us)', tip: 'Die-to-Die 互联延迟' },
 ]
 
-function deepClone<T>(obj: T): T { return JSON.parse(JSON.stringify(obj)) }
-
 function getICValue(cfg: TopologyConfig, lvl: string, f: 'bandwidth_gbps' | 'latency_us'): number | undefined {
   const links = cfg.interconnect?.links
   if (!links) return undefined
   const e = (links as Record<string, { bandwidth_gbps: number; latency_us: number } | undefined>)[lvl]
   return e?.[f]
 }
-
-function errMsg(err: unknown): string { return err instanceof Error ? err.message : String(err) }
 
 /** 统计每种芯片的总数 */
 function getChipBreakdown(value: TopologyConfig): Array<{ name: string; count: number }> {

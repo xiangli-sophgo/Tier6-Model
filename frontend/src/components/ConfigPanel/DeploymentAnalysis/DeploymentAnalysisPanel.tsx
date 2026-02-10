@@ -53,7 +53,6 @@ import {
   getModelPreset,
   getBackendModelPresets,
 } from '../../../utils/llmDeployment/presets'
-import { InfeasibleResult } from '../../../utils/llmDeployment'
 import { analyzeTopologyTraffic } from '../../../utils/llmDeployment/trafficMapper'
 import {
   submitEvaluation,
@@ -949,17 +948,6 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
   // 分析结果状态
   const [analysisResult, setAnalysisResult] = useState<PlanAnalysisResult | null>(null)
   const [topKPlans, setTopKPlans] = useState<PlanAnalysisResult[]>([])
-  const [infeasiblePlans, _setInfeasiblePlans] = useState<InfeasibleResult[]>([])
-  const [searchStats, _setSearchStats] = useState<{ evaluated: number; feasible: number; timeMs: number } | null>(null)
-  const [loading, _setLoading] = useState(false)
-  const [errorMsg, _setErrorMsg] = useState<string | null>(null)
-
-  // 标记未使用的 setter（保留状态用于兼容性）
-  void _setInfeasiblePlans
-  void _setSearchStats
-  void _setLoading
-  void _setErrorMsg
-
   // 搜索进度状态
   const [searchProgress, setSearchProgress] = useState<{
     stage: 'idle' | 'generating' | 'evaluating' | 'completed' | 'cancelled'
@@ -1202,14 +1190,14 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
       onAnalysisDataChange({
         result: analysisResult,
         topKPlans,
-        infeasiblePlans,
+        infeasiblePlans: [],
         hardware: hardwareConfig,
         // 使用显示配置（分析时的配置），而不是配置面板当前选择
         model: displayModelConfig || modelConfig,
         inference: displayInferenceConfig || inferenceConfig,
-        loading,
-        errorMsg,
-        searchStats,
+        loading: false,
+        errorMsg: null,
+        searchStats: null,
         searchProgress,
         onCancelEvaluation: handleCancelAnalysis,
         onSelectPlan: (plan) => setAnalysisResult(plan),
@@ -1226,7 +1214,7 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
         onClearHistory: handleClearHistory,
       })
     }
-  }, [analysisResult, topKPlans, infeasiblePlans, hardwareConfig, displayModelConfig, displayInferenceConfig, modelConfig, inferenceConfig, loading, errorMsg, searchStats, searchProgress, onAnalysisDataChange, handleMapToTopology, handleCancelAnalysis, topology, onTrafficResultChange, viewMode, history, handleLoadFromHistory, handleDeleteHistory, handleClearHistory])
+  }, [analysisResult, topKPlans, hardwareConfig, displayModelConfig, displayInferenceConfig, modelConfig, inferenceConfig, searchProgress, onAnalysisDataChange, handleMapToTopology, handleCancelAnalysis, topology, onTrafficResultChange, viewMode, history, handleLoadFromHistory, handleDeleteHistory, handleClearHistory])
 
   // 运行分析（提交到后端执行）
   const handleRunAnalysis = useCallback(async () => {

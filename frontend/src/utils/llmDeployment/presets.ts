@@ -174,17 +174,32 @@ export function getBackendChipPresets(): Record<string, ChipHardwareConfig> {
 
 /** 从 ChipPreset 计算 BF16 TFLOPS */
 function computeTflopsBf16(config: ChipHardwareConfig): number {
-  const cores = config.cores?.count || 1;
-  const lanes = config.cores?.lanes_per_core || 64;
-  const macBf16 = config.compute_units?.cube?.mac_per_lane?.BF16 || 500;
-  const freq = config.frequency_ghz || 1.0;
+  if (!config.cores?.count) {
+    throw new Error(`芯片 '${config.name}' 缺少 'cores.count' 字段`);
+  }
+  if (!config.cores?.lanes_per_core) {
+    throw new Error(`芯片 '${config.name}' 缺少 'cores.lanes_per_core' 字段`);
+  }
+  if (!config.compute_units?.cube?.mac_per_lane?.BF16) {
+    throw new Error(`芯片 '${config.name}' 缺少 'compute_units.cube.mac_per_lane.BF16' 字段`);
+  }
+  if (!config.frequency_ghz) {
+    throw new Error(`芯片 '${config.name}' 缺少 'frequency_ghz' 字段`);
+  }
+  const cores = config.cores.count;
+  const lanes = config.cores.lanes_per_core;
+  const macBf16 = config.compute_units.cube.mac_per_lane.BF16;
+  const freq = config.frequency_ghz;
   // TFLOPS = cores * lanes * mac * 2 * freq / 1000
   return (cores * lanes * macBf16 * 2 * freq) / 1000;
 }
 
 /** 从 ChipPreset 获取 GMEM 容量 */
 function getGmemCapacityGb(config: ChipHardwareConfig): number {
-  return config.memory?.gmem?.capacity_gb || 64;
+  if (!config.memory?.gmem?.capacity_gb) {
+    throw new Error(`芯片 '${config.name}' 缺少 'memory.gmem.capacity_gb' 字段`);
+  }
+  return config.memory.gmem.capacity_gb;
 }
 
 /** 获取芯片列表（优先使用后端预设） */

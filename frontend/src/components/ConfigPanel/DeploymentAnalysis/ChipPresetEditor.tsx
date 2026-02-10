@@ -18,41 +18,13 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { BaseCard } from '@/components/common/BaseCard'
 import type { ChipPreset } from '@/types/math_model'
 import { getChipPresets, getChipPreset, saveChipPreset, updateChipPreset } from '@/api/math_model'
+import { deepClone, setNested, getNested, errMsg, isPlainObject } from '@/utils/nestedObjectEditor'
 
 // ==================== Props ====================
 
 interface ChipPresetEditorProps {
   value: ChipPreset
   onChange: (config: ChipPreset) => void
-}
-
-// ==================== Helpers ====================
-
-function deepClone<T>(obj: T): T { return structuredClone(obj) }
-
-function setNested(obj: Record<string, unknown>, path: string, val: unknown): void {
-  const keys = path.split('.')
-  let cur: Record<string, unknown> = obj
-  for (let i = 0; i < keys.length - 1; i++) {
-    if (cur[keys[i]] == null || typeof cur[keys[i]] !== 'object') cur[keys[i]] = {}
-    cur = cur[keys[i]] as Record<string, unknown>
-  }
-  cur[keys[keys.length - 1]] = val
-}
-
-function getNested(obj: unknown, path: string): unknown {
-  let cur: unknown = obj
-  for (const k of path.split('.')) {
-    if (cur == null || typeof cur !== 'object') return undefined
-    cur = (cur as Record<string, unknown>)[k]
-  }
-  return cur
-}
-
-function errMsg(err: unknown): string { return err instanceof Error ? err.message : String(err) }
-
-function isPlainObject(v: unknown): v is Record<string, unknown> {
-  return v != null && typeof v === 'object' && !Array.isArray(v)
 }
 
 // ==================== Section 标题映射 ====================

@@ -39,7 +39,11 @@ import {
   getModelList,
   getModelPreset,
 } from '../../../utils/llmDeployment/presets'
-import { listBenchmarks, createBenchmark } from '../../../api/topology'
+import {
+  getBenchmarks as apiBenchmarkList,
+  getBenchmark as apiBenchmarkDetail,
+  createBenchmark as apiCreateBenchmark,
+} from '../../../api/math_model'
 import { ConfigLabel, getDtypeBits, generateBenchmarkName } from './ConfigSelectors'
 
 // ============================================
@@ -113,13 +117,19 @@ export const BenchmarkConfigSelector: React.FC<BenchmarkConfigSelectorProps> = (
   }, [debouncedModelConfig])
 
   useEffect(() => {
-    listBenchmarks().then((benchmarks) => {
-      const mapped = benchmarks.map(b => ({
-        id: b.id,
-        name: b.name,
-        model: b.model as unknown as LLMModelConfig,
-        inference: b.inference as unknown as InferenceConfig,
-      }))
+    apiBenchmarkList().then(async ({ benchmarks: summaries }) => {
+      // 逐个获取完整配置
+      const details = await Promise.all(
+        summaries.map(s => apiBenchmarkDetail(s.id).catch(() => null))
+      )
+      const mapped = details
+        .filter((b): b is NonNullable<typeof b> => b !== null)
+        .map(b => ({
+          id: b.id ?? b.name ?? '',
+          name: b.name ?? '',
+          model: b.model as unknown as LLMModelConfig,
+          inference: b.inference as unknown as InferenceConfig,
+        }))
       setCustomBenchmarks(mapped)
       if (mapped.length > 0) {
         const lastBenchmarkId = localStorage.getItem(LAST_BENCHMARK_KEY)
@@ -136,7 +146,7 @@ export const BenchmarkConfigSelector: React.FC<BenchmarkConfigSelectorProps> = (
           })
         }
       }
-    })
+    }).catch(err => console.error('加载 Benchmark 列表失败:', err))
   }, [])
 
   const currentBenchmarkName = generateBenchmarkName(modelConfig, inferenceConfig)
@@ -165,8 +175,8 @@ export const BenchmarkConfigSelector: React.FC<BenchmarkConfigSelectorProps> = (
   const handleSave = async () => {
     if (isConfigModified()) {
       const newBenchmark: CustomBenchmark = { id: currentBenchmarkName, name: currentBenchmarkName, model: { ...modelConfig }, inference: { ...inferenceConfig } }
-      const success = await createBenchmark({ id: currentBenchmarkName, name: currentBenchmarkName, model: modelConfig as unknown as Record<string, unknown>, inference: inferenceConfig as unknown as Record<string, unknown> })
-      if (success) {
+      try {
+        await apiCreateBenchmark({ name: currentBenchmarkName, model: modelConfig as unknown as Record<string, unknown>, inference: inferenceConfig as unknown as Record<string, unknown> })
         const existingIndex = customBenchmarks.findIndex(b => b.id === currentBenchmarkName)
         if (existingIndex >= 0) {
           const updated = [...customBenchmarks]
@@ -179,7 +189,7 @@ export const BenchmarkConfigSelector: React.FC<BenchmarkConfigSelectorProps> = (
         localStorage.setItem(LAST_BENCHMARK_KEY, currentBenchmarkName)
         onBenchmarkSelect?.(currentBenchmarkName)
         toast.success(`已保存: ${currentBenchmarkName}`)
-      } else {
+      } catch {
         toast.error('保存失败')
       }
     }
@@ -204,10 +214,11 @@ export const BenchmarkConfigSelector: React.FC<BenchmarkConfigSelectorProps> = (
       toast.warning('请输入配置名称')
       return
     }
-    const newBenchmark: CustomBenchmark = { id: saveAsName.trim(), name: saveAsName.trim(), model: { ...modelConfig }, inference: { ...inferenceConfig } }
-    const success = await createBenchmark({ id: saveAsName.trim(), name: saveAsName.trim(), model: modelConfig as unknown as Record<string, unknown>, inference: inferenceConfig as unknown as Record<string, unknown> })
-    if (success) {
-      const existingIndex = customBenchmarks.findIndex(b => b.id === saveAsName.trim())
+    const trimmedName = saveAsName.trim()
+    const newBenchmark: CustomBenchmark = { id: trimmedName, name: trimmedName, model: { ...modelConfig }, inference: { ...inferenceConfig } }
+    try {
+      await apiCreateBenchmark({ name: trimmedName, model: modelConfig as unknown as Record<string, unknown>, inference: inferenceConfig as unknown as Record<string, unknown> })
+      const existingIndex = customBenchmarks.findIndex(b => b.id === trimmedName)
       if (existingIndex >= 0) {
         const updated = [...customBenchmarks]
         updated[existingIndex] = newBenchmark
@@ -215,13 +226,13 @@ export const BenchmarkConfigSelector: React.FC<BenchmarkConfigSelectorProps> = (
       } else {
         setCustomBenchmarks([...customBenchmarks, newBenchmark])
       }
-      setPresetId(saveAsName.trim())
-      localStorage.setItem(LAST_BENCHMARK_KEY, saveAsName.trim())
-      onBenchmarkSelect?.(saveAsName.trim())
-      toast.success(`已保存: ${saveAsName.trim()}`)
+      setPresetId(trimmedName)
+      localStorage.setItem(LAST_BENCHMARK_KEY, trimmedName)
+      onBenchmarkSelect?.(trimmedName)
+      toast.success(`已保存: ${trimmedName}`)
       setSaveAsDialogOpen(false)
       setSaveAsName('')
-    } else {
+    } catch {
       toast.error('保存失败')
     }
   }
