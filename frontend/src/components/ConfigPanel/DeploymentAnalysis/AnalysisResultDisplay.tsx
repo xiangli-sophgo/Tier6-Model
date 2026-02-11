@@ -50,7 +50,6 @@ import { AnalysisHistoryItem, AnalysisViewMode } from '../shared'
 import { colors } from './ConfigSelectors'
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { BaseCard } from '@/components/common/BaseCard'
-import { MetricDetailCard } from './components/MetricDetailCard'
 import { formatNumber, formatPercent } from '../../../utils/formatters'
 
 // ============================================
@@ -286,7 +285,6 @@ interface AnalysisResultDisplayProps {
   onClearHistory?: () => void
 }
 
-type MetricType = 'ttft' | 'tpot' | 'throughput' | 'tps_batch' | 'tps_chip' | 'mfu' | 'mbu' | 'cost' | 'percentiles' | 'bottleneck' | 'e2e' | 'chips' | 'memory' | null
 
 export const AnalysisResultDisplay: React.FC<AnalysisResultDisplayProps> = ({
   result,
@@ -305,7 +303,6 @@ export const AnalysisResultDisplay: React.FC<AnalysisResultDisplayProps> = ({
   onDeleteHistory,
   onClearHistory,
 }) => {
-  const [selectedMetric, setSelectedMetric] = useState<MetricType>(null)
 
   // 各章节折叠状态
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
@@ -670,12 +667,6 @@ export const AnalysisResultDisplay: React.FC<AnalysisResultDisplayProps> = ({
             </div>
           </div>
 
-          {/* 指标详情展示 - 内嵌在性能分析中 */}
-          {selectedMetric && (
-            <div className="mt-4 pt-4" style={{ borderTop: `1px dashed ${colors.borderLight}` }}>
-              <MetricDetailCard metric={selectedMetric} result={result} />
-            </div>
-          )}
           </>
         </BaseCard>
 

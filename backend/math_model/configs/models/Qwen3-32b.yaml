@@ -1,4 +1,4 @@
-# Qwen3-32B 模型配置
+# Qwen3-32B 模型配置（Dense 模型）
 name: "Qwen3-32B"
 
 # 核心参数

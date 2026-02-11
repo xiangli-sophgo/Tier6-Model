@@ -1,5 +1,5 @@
 # DeepSeek V3.2 模型配置
-name: "DeepSeek-V3.2"
+name: "DeepSeek-V3.2-671B-A37B"
 
 # 核心参数
 max_seq_len: 4096

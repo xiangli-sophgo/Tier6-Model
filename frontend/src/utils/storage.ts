@@ -14,6 +14,26 @@ import { ChipPreset } from '../types/math_model';
 // ============================================
 
 /**
+ * 列配置方案
+ */
+export interface ColumnPreset {
+  name: string;
+  experiment_id: number;
+  visible_columns: string[];
+  column_order: string[];
+  fixed_columns: string[];
+  created_at: string;
+}
+
+/**
+ * 配置文件结构
+ */
+export interface PresetsFile {
+  version: number;
+  presets: ColumnPreset[];
+}
+
+/**
  * 网络配置 - 存储带宽和延迟参数
  */
 export interface NetworkConfig {
@@ -176,6 +196,95 @@ export function getLevelConnectionDefaults(): {
 }
 
 // ============================================
+// 列配置方案管理 API
+// ============================================
+
+/**
+ * 获取所有列配置方案
+ */
+export function getColumnPresets(): PresetsFile {
+  try {
+    const data = localStorage.getItem('tier6_column_presets');
+    if (!data) {
+      return { version: 1, presets: [] };
+    }
+    return JSON.parse(data) as PresetsFile;
+  } catch (error) {
+    console.error('Failed to load column presets:', error);
+    return { version: 1, presets: [] };
+  }
+}
+
+/**
+ * 获取指定实验的列配置方案
+ */
+export function getColumnPresetsByExperiment(experimentId: number): { presets: ColumnPreset[] } {
+  const presetsFile = getColumnPresets();
+  const filtered = presetsFile.presets.filter(p => p.experiment_id === experimentId);
+  return { presets: filtered };
+}
+
+/**
+ * 保存所有列配置方案（完全覆盖）
+ */
+export function saveColumnPresets(presetsFile: PresetsFile): { message: string; count: number } {
+  try {
+    localStorage.setItem('tier6_column_presets', JSON.stringify(presetsFile));
+    return { message: '配置已保存', count: presetsFile.presets.length };
+  } catch (error) {
+    console.error('Failed to save column presets:', error);
+    throw new Error('保存配置失败');
+  }
+}
+
+/**
+ * 添加或更新单个列配置方案
+ */
+export function addColumnPreset(preset: ColumnPreset): { message: string; preset: ColumnPreset } {
+  const presetsFile = getColumnPresets();
+
+  // 检查是否存在同名同实验ID的配置
+  const existingIndex = presetsFile.presets.findIndex(
+    p => p.name === preset.name && p.experiment_id === preset.experiment_id
+  );
+
+  if (existingIndex !== -1) {
+    // 更新现有配置
+    presetsFile.presets[existingIndex] = preset;
+  } else {
+    // 添加新配置
+    presetsFile.presets.push(preset);
+  }
+
+  saveColumnPresets(presetsFile);
+
+  const message = existingIndex !== -1
+    ? `配置方案「${preset.name}」已更新`
+    : `配置方案「${preset.name}」已保存`;
+
+  return { message, preset };
+}
+
+/**
+ * 删除列配置方案
+ */
+export function deleteColumnPreset(experimentId: number, name: string): { message: string } {
+  const presetsFile = getColumnPresets();
+
+  const originalCount = presetsFile.presets.length;
+  presetsFile.presets = presetsFile.presets.filter(
+    p => !(p.name === name && p.experiment_id === experimentId)
+  );
+
+  if (presetsFile.presets.length === originalCount) {
+    throw new Error(`配置方案「${name}」不存在`);
+  }
+
+  saveColumnPresets(presetsFile);
+  return { message: `配置方案「${name}」已删除` };
+}
+
+// ============================================
 // 缓存清理 API
 // ============================================
 
@@ -187,6 +296,7 @@ export async function clearAllCache(): Promise<void> {
   const keysToRemove = [
     'tier6_topology_config_cache',
     'tier6_sider_width_cache',
+    'tier6_column_presets',
   ];
   keysToRemove.forEach(key => localStorage.removeItem(key));
 }

@@ -94,6 +94,7 @@ const columnNameMap: Record<string, string> = {
   'cost_server': '服务器成本 ($)',
   'cost_interconnect': '互联成本 ($)',
   'cost_per_chip': '单芯成本 ($)',
+  'cost_dfop': 'DFOP ($/TPS)',
 }
 
 // 统一的列名格式化函数
@@ -798,6 +799,7 @@ export default function TaskTable({
         'server': 'server_cost',
         'interconnect': 'interconnect_cost',
         'per_chip': 'cost_per_chip',
+        'dfop': 'dfop',
       }
 
       const mappedKey = costMap[costKey]

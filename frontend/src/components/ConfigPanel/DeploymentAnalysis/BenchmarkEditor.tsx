@@ -44,7 +44,8 @@ import {
   getBenchmark as apiBenchmarkDetail,
   createBenchmark as apiCreateBenchmark,
 } from '../../../api/math_model'
-import { ConfigLabel, getDtypeBits, generateBenchmarkName } from './ConfigSelectors'
+import { ConfigLabel } from './ConfigSelectors'
+import { generateBenchmarkName } from '../../../utils/llmDeployment/benchmarkNaming'
 
 // ============================================
 // Props

@@ -49,7 +49,7 @@ export type MetricType =
   | 'mfu' | 'mbu'
   | 'score' | 'chips'
   | 'dram_occupy' | 'flops'
-  | 'cost_total' | 'cost_server' | 'cost_interconnect' | 'cost_per_chip'
+  | 'cost_total' | 'cost_server' | 'cost_interconnect' | 'cost_per_chip' | 'cost_dfop'
 
 /** 参数信息 */
 export interface ParameterInfo {
@@ -109,6 +109,9 @@ export function extractMetricValue(task: EvaluationTask, metric: MetricType): nu
     }
     if (metric === 'cost_per_chip' && task.result.cost?.cost_per_chip !== undefined) {
       return task.result.cost.cost_per_chip
+    }
+    if (metric === 'cost_dfop' && task.result.cost?.dfop !== undefined) {
+      return task.result.cost.dfop
     }
     return null
   }
@@ -363,6 +366,7 @@ export function getMetricLabel(metric: MetricType): { name: string; unit: string
     cost_server: { name: '服务器成本', unit: '$' },
     cost_interconnect: { name: '互联成本', unit: '$' },
     cost_per_chip: { name: '单芯片成本', unit: '$' },
+    cost_dfop: { name: 'DFOP', unit: '$/TPS' },
   }
   return labels[metric] || { name: metric, unit: '' }
 }

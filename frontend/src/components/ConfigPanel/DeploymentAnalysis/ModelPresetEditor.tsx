@@ -185,13 +185,23 @@ export const ModelPresetEditor: React.FC<ModelPresetEditorProps> = ({ value, onC
 
   // 参数量估算
   const [paramsStr, setParamsStr] = useState<string>('--')
+  const [activeParamsStr, setActiveParamsStr] = useState<string>('')
   const debouncedValue = useDebouncedValue(value, 300)
 
   useEffect(() => {
     let cancelled = false
     calculateModelParams(debouncedValue as unknown as Record<string, unknown>)
-      .then((res) => { if (!cancelled) setParamsStr(formatParams(res.total_params)) })
-      .catch(() => { if (!cancelled) setParamsStr('--') })
+      .then((res) => {
+        if (cancelled) return
+        setParamsStr(formatParams(res.total_params))
+        // MoE 模型：激活参数 < 总参数时显示
+        if (res.active_params > 0 && res.active_params < res.total_params) {
+          setActiveParamsStr(formatParams(res.active_params))
+        } else {
+          setActiveParamsStr('')
+        }
+      })
+      .catch(() => { if (!cancelled) { setParamsStr('--'); setActiveParamsStr('') } })
     return () => { cancelled = true }
   }, [debouncedValue])
 
@@ -434,6 +444,7 @@ export const ModelPresetEditor: React.FC<ModelPresetEditorProps> = ({ value, onC
       {/* 参数量估算 */}
       <div className="mb-3 px-2 py-1.5 bg-gray-50 rounded text-[13px] text-gray-500">
         估算参数量: <b className="text-gray-800">{paramsStr}</b>
+        {activeParamsStr && <span className="ml-3">激活参数量: <b className="text-gray-800">{activeParamsStr}</b></span>}
       </div>
 
       {/* 操作按钮 */}

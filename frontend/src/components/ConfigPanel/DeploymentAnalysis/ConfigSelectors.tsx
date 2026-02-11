@@ -38,6 +38,7 @@ import {
 } from '../../../utils/llmDeployment/types'
 import { calculateModelParams, formatParams } from '../../../api/model'
 import { useDebouncedValue } from '@/hooks/useDebouncedCallback'
+import { generateBenchmarkName } from '../../../utils/llmDeployment/benchmarkNaming'
 import {
   getModelList,
   getChipList,
@@ -115,27 +116,6 @@ export function formatSeqLen(len: number): string {
 export function getDtypeBits(dtype: string): number {
   const bitsMap: Record<string, number> = { 'fp32': 32, 'fp16': 16, 'bf16': 16, 'fp8': 8, 'int8': 8, 'int4': 4 }
   return bitsMap[dtype] || 16
-}
-
-function parseModelName(modelName: string): { name: string; size: string } {
-  const sizeMatch = modelName.match(/(\d+\.?\d*)[BMK]/i)
-  if (sizeMatch) {
-    const size = sizeMatch[1] + sizeMatch[0].slice(-1).toUpperCase()
-    const name = modelName.replace(/[-_]?\d+\.?\d*[BMK][-_]?/i, '').replace(/-+$/, '').replace(/^-+/, '').replace(/-Instruct|-Chat|-Base/i, '').trim()
-    return { name, size }
-  }
-  return { name: modelName, size: '' }
-}
-
-export function generateBenchmarkName(model: LLMModelConfig, inference: InferenceConfig): string {
-  if (!model?.model_name) return 'Unknown-Model'
-  const { name, size } = parseModelName(model.model_name)
-  const seqIn = formatSeqLen(inference.input_seq_length)
-  const seqOut = formatSeqLen(inference.output_seq_length)
-  const wBits = getDtypeBits(model.weight_dtype)
-  const aBits = getDtypeBits(model.activation_dtype)
-  const parts = [size ? `${name}-${size}` : name, `S${seqIn}`, `O${seqOut}`, `W${wBits}A${aBits}`, `B${inference.batch_size}`]
-  return parts.join('-')
 }
 
 // ============================================

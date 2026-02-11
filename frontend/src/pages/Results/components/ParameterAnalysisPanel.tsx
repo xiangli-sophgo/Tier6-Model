@@ -84,6 +84,7 @@ const METRIC_OPTIONS: { value: MetricType; label: string; group: string }[] = [
   { value: 'cost_server', label: '服务器成本', group: '成本' },
   { value: 'cost_interconnect', label: '互联成本', group: '成本' },
   { value: 'cost_per_chip', label: '单芯片成本', group: '成本' },
+  { value: 'cost_dfop', label: 'DFOP ($/TPS)', group: '成本' },
 ]
 
 export function ParameterAnalysisPanel({ experimentId, tasks }: ParameterAnalysisPanelProps) {

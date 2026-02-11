@@ -1,8 +1,11 @@
 /**
  * Benchmark 命名生成工具
  *
- * 格式: [Model]-[Size]-S[SeqLen]-O[SeqLen]-W[x]A[y]-B[BS]
- * 示例: DeepSeek-V3-S4K-O512-W8A16-B64
+ * 格式: {ModelName}-S{SeqLen}-O{SeqLen}-W{x}A{y}-B{BS}
+ * 示例: DeepSeek-V3.2-671B-A37B-S512-O256-W8A8-B8
+ *
+ * ModelName 直接使用模型配置中的 name 字段，不做解析。
+ * 模型名称已经包含了参数量信息（如 671B-A37B），无需额外推断。
  */
 
 import { LLMModelConfig, InferenceConfig } from './types'
@@ -29,51 +32,22 @@ function formatDtype(dtype: string | undefined): string {
 }
 
 /**
- * 解析模型名称，提取模型名和参数规模
- * "DeepSeek-V3-671B" → { name: "DeepSeek-V3", size: "671B" }
- * "Llama-3.1-70B-Instruct" → { name: "Llama-3.1", size: "70B" }
- */
-function parseModelName(modelName: string): { name: string; size: string } {
-  // 匹配参数规模模式: 数字+B/b (如 70B, 671B, 7b)
-  const sizeMatch = modelName.match(/(\d+\.?\d*)[Bb]/)
-
-  if (sizeMatch) {
-    const size = sizeMatch[1] + 'B'
-    // 移除参数规模部分，清理多余的连字符
-    const name = modelName
-      .replace(/[-_]?\d+\.?\d*[Bb][-_]?/, '')
-      .replace(/-+$/, '')
-      .replace(/^-+/, '')
-      .replace(/-Instruct|-Chat|-Base/i, '')
-      .trim()
-    return { name, size }
-  }
-
-  // 没有匹配到参数规模，返回原名称
-  return { name: modelName, size: '' }
-}
-
-/**
  * 生成 Benchmark 名称
+ *
+ * 直接使用模型的完整名称（含参数量），拼接推理参数。
  *
  * @param model 模型配置
  * @param inference 推理配置
- * @returns Benchmark 名称，如 "DeepSeek-V3-S4K-O512-W8A16-B64"
+ * @returns Benchmark 名称，如 "DeepSeek-V3.2-671B-A37B-S512-O256-W8A8-B8"
  */
 export function generateBenchmarkName(
   model: LLMModelConfig,
   inference: InferenceConfig
 ): string {
-  const { name, size } = parseModelName(model.model_name)
-
   const parts: string[] = []
 
-  // [Model]-[Size]
-  if (size) {
-    parts.push(`${name}-${size}`)
-  } else {
-    parts.push(name)
-  }
+  // 模型完整名称（已包含参数量，如 DeepSeek-V3.2-671B-A37B）
+  parts.push(model.model_name)
 
   // S[SeqLen] - 输入序列长度
   parts.push(`S${formatSeqLen(inference.input_seq_length)}`)
@@ -106,14 +80,13 @@ export function parseBenchmarkParts(
   model: LLMModelConfig,
   inference: InferenceConfig
 ): BenchmarkPart[] {
-  const { name, size } = parseModelName(model.model_name)
   const parts: BenchmarkPart[] = []
 
-  // 模型名称
+  // 模型名称（完整名称，已包含参数量）
   parts.push({
-    key: size ? `${name}-${size}` : name,
+    key: model.model_name,
     label: '模型',
-    value: size ? `${name}，参数 ${size}` : name,
+    value: model.model_name,
   })
 
   // 输入序列长度

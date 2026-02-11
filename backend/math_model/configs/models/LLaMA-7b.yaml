@@ -1,4 +1,4 @@
-# LLaMA 7B 模型配置
+# LLaMA 7B 模型配置（Dense 模型）
 name: "LLaMA-7B"
 
 # 核心参数

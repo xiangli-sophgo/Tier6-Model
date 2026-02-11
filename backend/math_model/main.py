@@ -12,7 +12,6 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from math_model.L0_entry.api import router
-from math_model.L0_entry.column_presets import router as column_presets_router
 from math_model.L0_entry.database import init_db
 
 # 配置日志
@@ -45,7 +44,6 @@ app.add_middleware(
 
 # 挂载路由
 app.include_router(router)  # /api/* 端点
-app.include_router(column_presets_router)  # /api/column-presets/* 端点
 
 
 @app.on_event("startup")

@@ -407,6 +407,7 @@ export const TaskDetailPanel: React.FC<TaskDetailPanelProps> = ({ task, onAnalyz
                 { label: '服务器成本 ($)', value: formatNumber(result.cost.server_cost, 2) },
                 { label: '互联成本 ($)', value: formatNumber(result.cost.interconnect_cost, 2) },
                 { label: '单芯成本 ($)', value: formatNumber(result.cost.cost_per_chip, 2) },
+                { label: 'DFOP ($/TPS)', value: formatNumber(result.cost.dfop, 2) },
               ] : []),
             ]}
           />

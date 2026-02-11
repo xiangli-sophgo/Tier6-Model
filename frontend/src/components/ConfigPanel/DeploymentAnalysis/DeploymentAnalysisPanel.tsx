@@ -1085,7 +1085,7 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
     if (update.status === 'running') {
       // 更新进度和子任务
       const updateData: Partial<AnalysisTask> = {
-        progress: { current: Math.round(update.progress), total: 100 },
+        progress: { current: Math.round(update.progress * 100), total: 100 },
       }
 
       // 如果有子任务数据，转换并更新

@@ -491,6 +491,8 @@ export interface CostAnalysis {
   lane_cost: number;
   /** 单芯片摊派成本 ($) */
   cost_per_chip: number;
+  /** DFOP: 每 TPS 成本 ($/TPS) */
+  dfop: number;
   /** 模型大小 (GB) */
   model_size_gb: number;
 }

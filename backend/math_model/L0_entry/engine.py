@@ -284,6 +284,119 @@ def _build_hardware_spec(chip: Any, eval_config: EvalConfig) -> dict[str, Any]:
 # ============================================
 
 
+def _calculate_memory_breakdown(
+    eval_config: EvalConfig,
+    aggregates: dict[str, Any],
+    step_metrics: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """计算内存分解
+
+    混合方法：
+    - 权重：使用运行时 local_weight_bytes（反映实际分布式模型）
+    - KV Cache：理论计算（支持 MLA 压缩）
+    - 激活值：理论计算（推理时占比小）
+    - 开销：估算（15%）
+
+    Args:
+        eval_config: 类型化配置
+        aggregates: 性能聚合（包含 memory_peak）
+        step_metrics: 步骤指标（包含 local_weight_bytes）
+
+    Returns:
+        dict: 内存分解（匹配前端 MemoryAnalysis 接口）
+    """
+    import logging
+    from math_model.L5_reporting.memory_analysis import MemoryAnalyzer
+
+    logger = logging.getLogger(__name__)
+
+    # 提取配置
+    mc = eval_config.model
+    dep = eval_config.deployment
+    chip_memory_gb = eval_config.board.chip_memory_gb
+
+    # 数据类型字节数映射
+    dtype_map = {"fp32": 4, "fp16": 2, "bf16": 2, "fp8": 1, "int8": 1, "int4": 0.5}
+    weight_dtype_bytes = dtype_map.get(mc.weight_dtype.lower(), 2)
+    activation_dtype_bytes = dtype_map.get(mc.activation_dtype.lower(), 2)
+
+    # 1. 权重：使用运行时数据（L4 已累加 local_weight_bytes）
+    weight_bytes = aggregates.get("memory_peak", 0)
+
+    # 回退：如果运行时数据缺失，使用理论估算
+    if weight_bytes == 0:
+        logger.warning("[WARN] No runtime weight data (memory_peak=0), using theoretical estimate")
+
+        # 简化估算（不支持 MoE/MLA 细节，但优于 0）
+        total_params = (
+            mc.num_layers * (4 * mc.hidden_size ** 2 + 3 * mc.hidden_size * mc.intermediate_size)
+            + mc.vocab_size * mc.hidden_size * 2
+        )
+        shard_factor = dep.tp * dep.pp
+        weight_bytes = int((total_params / shard_factor) * weight_dtype_bytes) if shard_factor > 0 else 0
+
+    # 2. KV Cache：理论计算
+    analyzer = MemoryAnalyzer(dtype_bytes=weight_dtype_bytes)
+
+    # 计算 head_dim
+    head_dim = mc.hidden_size // mc.num_attention_heads if mc.num_attention_heads > 0 else mc.hidden_size
+
+    # 检测 MLA 启用
+    mla_enabled = mc.mla.kv_lora_rank > 0
+
+    # num_kv_heads 处理（对于非 GQA 模型可能等于 num_attention_heads）
+    # 目前 ModelConfig 中没有单独的 num_kv_heads 字段，使用 num_attention_heads
+    num_kv_heads = mc.num_attention_heads
+    if mla_enabled:
+        logger.debug(f"[OK] MLA enabled: kv_lora_rank={mc.mla.kv_lora_rank}, qk_rope_dim={mc.mla.qk_rope_head_dim}")
+
+    kv_cache_bytes = analyzer.calculate_kv_cache_memory(
+        batch_size=dep.batch_size,
+        seq_len=dep.kv_seq_len,
+        num_layers=mc.num_layers,
+        hidden_size=mc.hidden_size,
+        num_kv_heads=num_kv_heads,
+        num_heads=mc.num_attention_heads,
+        tp_degree=dep.tp,
+        pp_degree=dep.pp,
+        mla_enabled=mla_enabled,
+        kv_lora_rank=mc.mla.kv_lora_rank if mla_enabled else 0,
+        qk_rope_dim=mc.mla.qk_rope_head_dim if mla_enabled else 0,
+    )
+
+    # 3. 激活值：理论计算
+    activation_bytes = analyzer.calculate_activation_memory(
+        batch_size=dep.batch_size,
+        seq_len=max(dep.q_seq_len, 1),  # 使用 q_seq_len（decode 时为 1）
+        hidden_size=mc.hidden_size,
+        intermediate_size=mc.intermediate_size,
+        num_layers=mc.num_layers,
+        tp_degree=dep.tp,
+        pp_degree=dep.pp,
+    )
+
+    # 4. 开销：估算
+    overhead_bytes = analyzer.calculate_overhead(weight_bytes, kv_cache_bytes)
+
+    # 5. 总计和利用率
+    total_bytes = weight_bytes + kv_cache_bytes + activation_bytes + overhead_bytes
+    total_gb = total_bytes / (1024 ** 3)
+
+    is_sufficient = total_gb <= chip_memory_gb
+    utilization = total_gb / chip_memory_gb if chip_memory_gb > 0 else 0.0
+
+    # 返回格式：完全匹配前端 MemoryAnalysis 接口
+    return {
+        "model_memory_gb": weight_bytes / (1024 ** 3),
+        "kv_cache_memory_gb": kv_cache_bytes / (1024 ** 3),
+        "activation_memory_gb": activation_bytes / (1024 ** 3),
+        "overhead_gb": overhead_bytes / (1024 ** 3),
+        "total_per_chip_gb": total_gb,
+        "is_memory_sufficient": is_sufficient,
+        "memory_utilization": utilization,
+    }
+
+
 def run_evaluation_from_request(
     config: dict[str, Any],
     progress_callback: Callable[[float], None] | None = None,
@@ -339,6 +452,9 @@ def run_evaluation_from_request(
 
         aggregates = _require(result, "aggregates", "evaluation result")
         step_metrics = _require(result, "step_metrics", "evaluation result")
+
+        # 计算内存分解
+        memory_breakdown = _calculate_memory_breakdown(eval_config, aggregates, step_metrics)
 
         # 计算成本分析
         cost_result = _calculate_deployment_cost(eval_config, aggregates)
@@ -417,6 +533,7 @@ def run_evaluation_from_request(
             "tps_per_chip": tps_per_chip,
             "tps_per_batch": tps_per_batch,
             "dram_occupy": dram_occupy,
+            "memory": memory_breakdown,
             "aggregates": aggregates,
             "step_metrics": step_metrics,
             "config": _require(result, "config", "evaluation result"),
@@ -519,28 +636,25 @@ def _calculate_deployment_cost(
     model_size_gb = total_params * bytes_per_param / 1e9
 
     tps = _require(aggregates, "tps", "aggregates")
-    tpot = aggregates.get("tpot_ms")
-    if tpot is None:
-        tpot = _require(aggregates, "total_time_ms", "aggregates")
-
-    effective_tpot = tpot if tpot > 0 else 1.0
-    bandwidth_gbps = 2 * model_size_gb * dep.tp / effective_tpot * 1000
-    lanes_per_chip = max(1, int(bandwidth_gbps / 112 * 8))
+    c2c_bandwidth_gbps = eval_config.topology.c2c_bandwidth_gbps
 
     analyzer = CostAnalyzer()
     cost_breakdown = analyzer.analyze(
         chip_type=chip_type,
         chip_count=chips,
         tps=tps,
-        lanes_per_chip=lanes_per_chip,
+        c2c_bandwidth_gbps=c2c_bandwidth_gbps,
     )
 
     return {
         "server_cost": cost_breakdown.server_cost,
+        "rdma_cost": cost_breakdown.rdma_cost,
+        "per_chip_cost": cost_breakdown.per_chip_cost,
         "interconnect_cost": cost_breakdown.interconnect_cost,
         "total_cost": cost_breakdown.total_cost,
         "cost_per_chip": cost_breakdown.cost_per_chip,
         "cost_per_million_tokens": cost_breakdown.cost_per_million_tokens,
+        "dfop": cost_breakdown.dfop,
         "model_size_gb": model_size_gb,
         "chips": chips,
     }

@@ -58,39 +58,42 @@ class MemoryBreakdown:
         """激活内存 (GB)"""
         return self.activations_bytes / (1024**3)
 
-    def to_dict(self) -> dict[str, Any]:
-        """转换为字典"""
-        return {
-            "totalBytes": self.total_bytes,
-            "totalGb": self.total_gb,
-            "weights": {
-                "bytes": self.weights_bytes,
-                "gb": self.weights_gb,
-                "percentage": self.weights_bytes / self.total_bytes * 100 if self.total_bytes > 0 else 0,
-            },
-            "kvCache": {
-                "bytes": self.kv_cache_bytes,
-                "gb": self.kv_cache_gb,
-                "percentage": self.kv_cache_bytes / self.total_bytes * 100 if self.total_bytes > 0 else 0,
-            },
-            "activations": {
-                "bytes": self.activations_bytes,
-                "gb": self.activations_gb,
-                "percentage": self.activations_bytes / self.total_bytes * 100 if self.total_bytes > 0 else 0,
-            },
-            "optimizer": {
-                "bytes": self.optimizer_bytes,
-                "gb": self.optimizer_bytes / (1024**3),
-            },
-            "gradient": {
-                "bytes": self.gradient_bytes,
-                "gb": self.gradient_bytes / (1024**3),
-            },
-            "temp": {
-                "bytes": self.temp_bytes,
-                "gb": self.temp_bytes / (1024**3),
-            },
+    def to_dict(self, chip_memory_capacity_gb: float | None = None) -> dict[str, Any]:
+        """转换为字典（匹配前端 MemoryAnalysis 接口）
+
+        Args:
+            chip_memory_capacity_gb: 芯片显存容量（GB），用于计算 is_sufficient 和 utilization
+
+        Returns:
+            dict: 前端 MemoryAnalysis 格式
+                {
+                    "model_memory_gb": float,
+                    "kv_cache_memory_gb": float,
+                    "activation_memory_gb": float,
+                    "overhead_gb": float,
+                    "total_per_chip_gb": float,
+                    "is_memory_sufficient": bool,
+                    "memory_utilization": float,
+                }
+        """
+        total_gb = self.total_bytes / (1024 ** 3)
+
+        result = {
+            "model_memory_gb": self.weights_bytes / (1024 ** 3),
+            "kv_cache_memory_gb": self.kv_cache_bytes / (1024 ** 3),
+            "activation_memory_gb": self.activations_bytes / (1024 ** 3),
+            "overhead_gb": self.temp_bytes / (1024 ** 3),  # 映射 temp_bytes 为 overhead
+            "total_per_chip_gb": total_gb,
         }
+
+        if chip_memory_capacity_gb is not None:
+            result["is_memory_sufficient"] = total_gb <= chip_memory_capacity_gb
+            result["memory_utilization"] = total_gb / chip_memory_capacity_gb if chip_memory_capacity_gb > 0 else 0.0
+        else:
+            result["is_memory_sufficient"] = True
+            result["memory_utilization"] = 0.0
+
+        return result
 
 
 class MemoryAnalyzer:
@@ -179,34 +182,68 @@ class MemoryAnalyzer:
         num_kv_heads: int | None = None,
         num_heads: int = 1,
         tp_degree: int = 1,
+        pp_degree: int = 1,
+        mla_enabled: bool = False,
+        kv_lora_rank: int = 0,
+        qk_rope_dim: int = 0,
     ) -> int:
-        """计算 KV Cache 内存
+        """计算 KV Cache 内存（支持 MLA 压缩）
 
         Args:
             batch_size: 批次大小
-            seq_len: 序列长度
+            seq_len: 序列长度（完整上下文）
             num_layers: 层数
             hidden_size: 隐藏层大小
             num_kv_heads: KV 头数 (GQA)
             num_heads: 注意力头数
             tp_degree: TP 并行度
+            pp_degree: PP 并行度
+            mla_enabled: 是否启用 MLA（DeepSeek-V2/V3/R1）
+            kv_lora_rank: MLA 压缩秩
+            qk_rope_dim: MLA RoPE 维度
 
         Returns:
-            int: KV Cache 内存 (bytes)
+            int: 每芯片 KV Cache 内存 (bytes)
+
+        Examples:
+            # LLaMA-3 70B (TP=4, PP=1, batch=32, seq=4096, BF16)
+            kv_bytes = analyzer.calculate_kv_cache_memory(
+                batch_size=32, seq_len=4096, num_layers=80,
+                hidden_size=8192, num_kv_heads=8, num_heads=64,
+                tp_degree=4, pp_degree=1
+            )
+            # 结果: ~10.7 GB
+
+            # DeepSeek-V3 (TP=8, PP=1, batch=128, seq=4096, FP8, MLA)
+            kv_bytes = analyzer.calculate_kv_cache_memory(
+                batch_size=128, seq_len=4096, num_layers=61,
+                hidden_size=7168, num_kv_heads=128, num_heads=128,
+                tp_degree=8, pp_degree=1,
+                mla_enabled=True, kv_lora_rank=512, qk_rope_dim=64
+            )
+            # 结果: ~2.3 GB (节省 96%)
         """
-        head_dim = hidden_size // num_heads if num_heads > 0 else hidden_size
-        effective_kv_heads = num_kv_heads if num_kv_heads else num_heads
+        layers_per_chip = num_layers // pp_degree if pp_degree > 0 else num_layers
 
-        # KV Cache 大小: 2 (K+V) × batch × seq × kv_heads × head_dim × layers
-        kv_cache_per_layer = (
-            2  # K and V
-            * batch_size
-            * seq_len
-            * (effective_kv_heads // tp_degree)
-            * head_dim
-        )
+        if mla_enabled:
+            # MLA: K 和 V 共享压缩向量 c_t (无因子 2)
+            # c_t 大小 = (kv_lora_rank + qk_rope_dim) / tp_degree
+            # DeepSeek-V3 (TP=8): (512/8 + 64/8) * 1 byte = 72 bytes/token
+            # MLA 的压缩向量也按 TP 切分
+            kv_lora_rank_per_chip = kv_lora_rank // tp_degree if tp_degree > 0 else kv_lora_rank
+            qk_rope_dim_per_chip = qk_rope_dim // tp_degree if tp_degree > 0 else qk_rope_dim
+            kv_per_token_per_layer = (kv_lora_rank_per_chip + qk_rope_dim_per_chip) * self.dtype_bytes
+            kv_cache_bytes = batch_size * seq_len * layers_per_chip * kv_per_token_per_layer
+        else:
+            # 标准 GQA: 2 * (K + V) * kv_heads * head_dim
+            # TP 切分 kv_heads
+            head_dim = hidden_size // num_heads if num_heads > 0 else hidden_size
+            effective_kv_heads = num_kv_heads if num_kv_heads else num_heads
+            kv_heads_per_chip = effective_kv_heads // tp_degree if tp_degree > 0 else effective_kv_heads
+            kv_per_token_per_layer = 2 * kv_heads_per_chip * head_dim * self.dtype_bytes
+            kv_cache_bytes = batch_size * seq_len * layers_per_chip * kv_per_token_per_layer
 
-        return num_layers * kv_cache_per_layer * self.dtype_bytes
+        return kv_cache_bytes
 
     def calculate_activation_memory(
         self,
@@ -216,33 +253,65 @@ class MemoryAnalyzer:
         intermediate_size: int,
         num_layers: int,
         tp_degree: int = 1,
+        pp_degree: int = 1,
     ) -> int:
-        """计算激活内存
+        """计算激活内存（推理峰值）
+
+        推理时只存储一层的激活（流水线重用），不像训练需要存储所有层。
 
         Args:
             batch_size: 批次大小
-            seq_len: 序列长度
+            seq_len: 当前阶段序列长度（prefill=prompt_length, decode=1）
             hidden_size: 隐藏层大小
             intermediate_size: FFN 中间层大小
-            num_layers: 层数
+            num_layers: 模型总层数
             tp_degree: TP 并行度
+            pp_degree: PP 并行度
 
         Returns:
-            int: 激活内存 (bytes)
+            int: 每芯片激活内存 (bytes)
         """
-        # 主要激活：hidden states
+        # 计算不同操作的激活值大小
         hidden_activation = batch_size * seq_len * hidden_size
-
-        # FFN 激活 (最大)
-        ffn_activation = batch_size * seq_len * (intermediate_size // tp_degree)
-
-        # Attention 激活
+        ffn_activation = batch_size * seq_len * (intermediate_size // tp_degree if tp_degree > 0 else intermediate_size)
         attn_activation = batch_size * seq_len * hidden_size
 
-        # 取最大激活 (流水线重用)
-        peak_activation = max(hidden_activation, ffn_activation, attn_activation)
+        # 取峰值（同时只有一个操作的激活在内存中）
+        peak_activation_per_layer = max(hidden_activation, ffn_activation, attn_activation)
 
-        return peak_activation * self.dtype_bytes
+        # 推理时只需一层的激活（不是 PP stage 中所有层）
+        activation_bytes = peak_activation_per_layer * self.dtype_bytes
+
+        return activation_bytes
+
+    def calculate_overhead(
+        self,
+        weight_bytes: int,
+        kv_cache_bytes: int,
+    ) -> int:
+        """计算系统开销
+
+        开销包括：
+        - CUDA 上下文：300-800 MB
+        - NCCL 通信缓冲区：256 MB - 1 GB
+        - 内存分配器碎片：5-10%
+
+        公式：15% of (weights + KV cache)，限制在 [500MB, 4GB]
+
+        Args:
+            weight_bytes: 权重内存
+            kv_cache_bytes: KV Cache 内存
+
+        Returns:
+            int: 开销内存 (bytes)
+        """
+        overhead = int(0.15 * (weight_bytes + kv_cache_bytes))
+
+        # 边界：最小 500 MB，最大 4 GB
+        MIN_OVERHEAD = 500 * 1024 * 1024
+        MAX_OVERHEAD = 4 * 1024 * 1024 * 1024
+
+        return max(MIN_OVERHEAD, min(overhead, MAX_OVERHEAD))
 
     def analyze(
         self,

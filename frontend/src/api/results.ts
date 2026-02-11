@@ -91,6 +91,8 @@ export interface EvaluationTask {
     flops: number         // 计算量 (FLOPs)
     cost?: {              // 成本分析结果
       server_cost: number
+      rdma_cost: number
+      per_chip_cost: number
       interconnect_cost: number
       total_cost: number
       bandwidth_gbps: number
@@ -98,6 +100,7 @@ export interface EvaluationTask {
       lane_cost: number
       cost_per_chip: number
       cost_per_million_tokens: number
+      dfop: number
       model_size_gb: number
     }
     parallelism?: {       // 并行策略
@@ -229,6 +232,8 @@ export interface TaskResultsResponse {
     flops?: number        // 计算量 (FLOPs)，后端返回
     cost?: {              // 成本评估结果
       server_cost: number           // 服务器总成本 ($)
+      rdma_cost: number             // RDMA 网卡成本 ($)
+      per_chip_cost: number         // 每芯片附加成本 ($)
       interconnect_cost: number     // 互联总成本 ($)
       total_cost: number            // 总成本 ($)
       bandwidth_gbps: number        // 互联带宽需求 (Gbps)
@@ -236,6 +241,7 @@ export interface TaskResultsResponse {
       lane_cost: number             // 单 lane 成本 ($/lane)
       cost_per_chip: number         // 单芯片摊派成本 ($)
       cost_per_million_tokens: number  // 每百万 tokens 成本 ($/M tokens)
+      dfop: number                  // DFOP: 每 TPS 成本 ($/TPS)
       model_size_gb: number         // 模型大小 (GB)
     }
     stats?: Record<string, unknown>      // 完整的统计数据
@@ -412,65 +418,53 @@ export async function executeImport(
 }
 
 // ============================================
-// 列配置方案相关 API
+// 列配置方案相关 API（使用 localStorage）
 // ============================================
 
-/**
- * 列配置方案
- */
-export interface ColumnPreset {
-  name: string
-  experiment_id: number
-  visible_columns: string[]
-  column_order: string[]
-  fixed_columns: string[]
-  created_at: string
-}
+import {
+  ColumnPreset,
+  PresetsFile,
+  getColumnPresets as _getColumnPresets,
+  getColumnPresetsByExperiment as _getColumnPresetsByExperiment,
+  saveColumnPresets as _saveColumnPresets,
+  addColumnPreset as _addColumnPreset,
+  deleteColumnPreset as _deleteColumnPreset,
+} from '../utils/storage'
 
-/**
- * 配置文件结构
- */
-export interface PresetsFile {
-  version: number
-  presets: ColumnPreset[]
-}
+// 导出类型定义
+export type { ColumnPreset, PresetsFile }
 
 /**
  * 获取所有列配置方案
  */
 export async function getColumnPresets(): Promise<PresetsFile> {
-  const response = await api.get('/column-presets/')
-  return response.data
+  return Promise.resolve(_getColumnPresets())
 }
 
 /**
  * 获取指定实验的列配置方案
  */
 export async function getColumnPresetsByExperiment(experimentId: number): Promise<{ presets: ColumnPreset[] }> {
-  const response = await api.get(`/column-presets/${experimentId}`)
-  return response.data
+  return Promise.resolve(_getColumnPresetsByExperiment(experimentId))
 }
 
 /**
  * 保存所有列配置方案
  */
 export async function saveColumnPresets(presetsFile: PresetsFile): Promise<{ message: string; count: number }> {
-  const response = await api.post('/column-presets/', presetsFile)
-  return response.data
+  return Promise.resolve(_saveColumnPresets(presetsFile))
 }
 
 /**
  * 添加或更新单个列配置方案
  */
 export async function addColumnPreset(preset: ColumnPreset): Promise<{ message: string; preset: ColumnPreset }> {
-  const response = await api.post('/column-presets/add', preset)
-  return response.data
+  return Promise.resolve(_addColumnPreset(preset))
 }
 
 /**
  * 删除列配置方案
  */
 export async function deleteColumnPreset(experimentId: number, name: string): Promise<{ message: string }> {
-  const response = await api.delete(`/column-presets/${experimentId}/${encodeURIComponent(name)}`)
-  return response.data
+  return Promise.resolve(_deleteColumnPreset(experimentId, name))
 }
