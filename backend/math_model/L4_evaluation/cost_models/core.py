@@ -21,9 +21,10 @@ class CoreCostModel(BaseCostModel):
         - num_cores: Core 数量
         - sram_per_core_kb: 每 Core SRAM 容量（KB）
         - noc_bandwidth_gbps: 片内 NoC 带宽（GB/s）
-        - intra_board_bw_gbps: 板内互联带宽（GB/s）
-        - inter_board_bw_gbps: 板间互联带宽（GB/s）
-        - inter_node_bw_gbps: 节点间互联带宽（GB/s）
+        - c2c_bandwidth_gbps: C2C 互联带宽（GB/s）
+        - b2b_bandwidth_gbps: B2B 互联带宽（GB/s）
+        - r2r_bandwidth_gbps: R2R 互联带宽（GB/s）
+        - p2p_bandwidth_gbps: P2P 互联带宽（GB/s）
     """
 
     def required_fields(self) -> set[str]:
@@ -34,9 +35,10 @@ class CoreCostModel(BaseCostModel):
             "num_cores",
             "sram_per_core_kb",
             "noc_bandwidth_gbps",
-            "intra_board_bw_gbps",
-            "inter_board_bw_gbps",
-            "inter_node_bw_gbps",
+            "c2c_bandwidth_gbps",
+            "b2b_bandwidth_gbps",
+            "r2r_bandwidth_gbps",
+            "p2p_bandwidth_gbps",
         }
 
     def estimate_compute(
@@ -62,10 +64,10 @@ class CoreCostModel(BaseCostModel):
         bytes_read, bytes_write = self.estimate_bytes(op_type, local_shape)
         total_bytes = bytes_read + bytes_write
 
-        compute_tflops = hardware.get("compute_tflops", 125.0)
-        memory_bw_gbps = hardware.get("memory_bandwidth_gbps", 2000.0)
-        num_cores = int(hardware.get("num_cores", 64))
-        sram_per_core_kb = hardware.get("sram_per_core_kb", 512.0)
+        compute_tflops = hardware["compute_tflops"]
+        memory_bw_gbps = hardware["memory_bandwidth_gbps"]
+        num_cores = int(hardware["num_cores"])
+        sram_per_core_kb = hardware["sram_per_core_kb"]
 
         # 计算多核并行效率（基于数据量与 SRAM 容量的匹配度）
         total_sram_bytes = num_cores * sram_per_core_kb * 1024
@@ -113,28 +115,32 @@ class CoreCostModel(BaseCostModel):
             - 区分片内（NoC）和片间通信
             - 根据 path_key 选择带宽
         """
-        # 片内通信使用 NoC 带宽
+        # 片内通信使用 NoC 带宽 (无默认值，缺失时 KeyError)
         if path_key in ("intra_chip", "intra_noc", "intra_core"):
-            bw_gbps = hardware.get("noc_bandwidth_gbps", 1000.0)
-            # 片内通信较简单，不需要 Ring 系数
+            bw_gbps = hardware["noc_bandwidth_gbps"]
             ring_factor = 1.0
-        elif path_key in ("intra_board",):
-            bw_gbps = hardware.get("intra_board_bw_gbps", 400.0)
+        elif path_key == "c2c":
+            bw_gbps = hardware["c2c_bandwidth_gbps"]
             ring_factor = (
                 2 * (participants - 1) / participants if participants > 1 else 1.0
             )
-        elif path_key == "inter_board":
-            bw_gbps = hardware.get("inter_board_bw_gbps", 200.0)
+        elif path_key == "b2b":
+            bw_gbps = hardware["b2b_bandwidth_gbps"]
             ring_factor = (
                 2 * (participants - 1) / participants if participants > 1 else 1.0
             )
-        elif path_key == "inter_node":
-            bw_gbps = hardware.get("inter_node_bw_gbps", 100.0)
+        elif path_key == "r2r":
+            bw_gbps = hardware["r2r_bandwidth_gbps"]
+            ring_factor = (
+                2 * (participants - 1) / participants if participants > 1 else 1.0
+            )
+        elif path_key == "p2p":
+            bw_gbps = hardware["p2p_bandwidth_gbps"]
             ring_factor = (
                 2 * (participants - 1) / participants if participants > 1 else 1.0
             )
         else:
-            bw_gbps = hardware.get("inter_node_bw_gbps", 100.0)
+            bw_gbps = hardware["p2p_bandwidth_gbps"]
             ring_factor = (
                 2 * (participants - 1) / participants if participants > 1 else 1.0
             )

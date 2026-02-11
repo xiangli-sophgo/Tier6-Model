@@ -36,9 +36,10 @@ class ChipCostModel(BaseCostModel):
     所需硬件参数:
         - compute_tflops: 峰值算力（TFLOPS）
         - memory_bandwidth_gbps: 显存带宽（GB/s）
-        - intra_board_bw_gbps: 板内互联带宽（GB/s）
-        - inter_board_bw_gbps: 板间互联带宽（GB/s）
-        - inter_node_bw_gbps: 节点间互联带宽（GB/s）
+        - c2c_bandwidth_gbps: C2C 互联带宽（GB/s）
+        - b2b_bandwidth_gbps: B2B 互联带宽（GB/s）
+        - r2r_bandwidth_gbps: R2R 互联带宽（GB/s）
+        - p2p_bandwidth_gbps: P2P 互联带宽（GB/s）
     """
 
     def required_fields(self) -> set[str]:
@@ -46,9 +47,10 @@ class ChipCostModel(BaseCostModel):
         return {
             "compute_tflops",
             "memory_bandwidth_gbps",
-            "intra_board_bw_gbps",
-            "inter_board_bw_gbps",
-            "inter_node_bw_gbps",
+            "c2c_bandwidth_gbps",
+            "b2b_bandwidth_gbps",
+            "r2r_bandwidth_gbps",
+            "p2p_bandwidth_gbps",
         }
 
     def estimate_compute(
@@ -104,7 +106,7 @@ class ChipCostModel(BaseCostModel):
 
         输入:
             - comm_bytes: 通信数据量（bytes）
-            - path_key: 路径键（intra_board/inter_board/inter_node）
+            - path_key: 路径键（c2c/b2b/r2r/p2p）
             - participants: 参与者数量
             - hardware: 硬件参数
         输出:
@@ -113,16 +115,17 @@ class ChipCostModel(BaseCostModel):
             - 根据 path_key 选择带宽
             - t_comm = bytes / BW（Ring AllReduce 需乘以 2*(n-1)/n 系数）
         """
-        # 根据 path_key 选择带宽
-        if path_key in ("intra_board", "intra_noc"):
-            bw_gbps = hardware.get("intra_board_bw_gbps", 400.0)
-        elif path_key == "inter_board":
-            bw_gbps = hardware.get("inter_board_bw_gbps", 200.0)
-        elif path_key == "inter_node":
-            bw_gbps = hardware.get("inter_node_bw_gbps", 100.0)
+        # 根据 path_key 选择带宽 (无默认值，缺失时 KeyError)
+        if path_key in ("c2c", "intra_noc"):
+            bw_gbps = hardware["c2c_bandwidth_gbps"]
+        elif path_key == "b2b":
+            bw_gbps = hardware["b2b_bandwidth_gbps"]
+        elif path_key == "r2r":
+            bw_gbps = hardware["r2r_bandwidth_gbps"]
+        elif path_key == "p2p":
+            bw_gbps = hardware["p2p_bandwidth_gbps"]
         else:
-            # 默认使用最小带宽
-            bw_gbps = hardware.get("inter_node_bw_gbps", 100.0)
+            bw_gbps = hardware["p2p_bandwidth_gbps"]
 
         if bw_gbps <= 0:
             return 0.0

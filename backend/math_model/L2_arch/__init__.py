@@ -1,10 +1,10 @@
 """L2: 硬件架构规格层
 
-定义芯片、板卡、集群等硬件规格。
+定义芯片、板卡、Pod 等硬件规格。
 
 层级结构:
-    Cluster (集群)
-    └── Node (节点)
+    Pod
+    └── Rack
         └── Board (板卡)
             └── Chip (芯片)
                 ├── Core (核心)
@@ -28,8 +28,8 @@ from math_model.L2_arch.interconnect import (
     AllReduceModel,
 )
 from math_model.L2_arch.board import BoardSpecImpl, board_registry
-from math_model.L2_arch.node import NodeSpecImpl
-from math_model.L2_arch.cluster import ClusterSpecImpl
+from math_model.L2_arch.rack import RackSpecImpl
+from math_model.L2_arch.pod import PodSpecImpl
 from math_model.L2_arch.topology import TopologySpec, TopologySpecImpl, LinkProfileImpl
 
 __all__ = [
@@ -64,10 +64,10 @@ __all__ = [
     # 板卡
     "BoardSpecImpl",
     "board_registry",
-    # 节点
-    "NodeSpecImpl",
-    # 集群
-    "ClusterSpecImpl",
+    # Rack
+    "RackSpecImpl",
+    # Pod
+    "PodSpecImpl",
     # 拓扑
     "TopologySpec",
     "TopologySpecImpl",

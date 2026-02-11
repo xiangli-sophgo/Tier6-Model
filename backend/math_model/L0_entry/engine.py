@@ -13,12 +13,18 @@ from math_model.L0_entry.config_loader import (
     load_chip,
     load_model,
 )
+from math_model.L0_entry.eval_config import (
+    EvalConfig,
+    build_eval_config,
+    _extract_first_chip_config,
+    _require,
+)
 
 logger = logging.getLogger(__name__)
 
 
 def run_evaluation(
-    config: dict[str, Any],
+    eval_config: EvalConfig,
     progress_callback: Callable[[float], None] | None = None,
 ) -> dict[str, Any]:
     """执行评估
@@ -33,17 +39,7 @@ def run_evaluation(
     7. L5: ReportingEngine -> 报告 (Gantt/成本/内存/Roofline/流量)
 
     Args:
-        config: 评估配置，支持两种格式:
-            - 方式1: scenario 引用（推荐）
-                {"scenario": "deepseek_v3_sg2262"}
-            - 方式2: 显式配置
-                {
-                    "chip": "sg2262" | chip_config_dict,
-                    "model": "deepseek_v3" | model_config_dict,
-                    "deployment": {...},
-                    "board": {...},
-                    "inference": {...}
-                }
+        eval_config: 类型化评估配置
         progress_callback: 进度回调函数 (0.0 ~ 1.0)
 
     Returns:
@@ -52,21 +48,13 @@ def run_evaluation(
     def _report(p: float) -> None:
         if progress_callback:
             progress_callback(p)
-    # 解析配置
-    chip_config = _load_chip_config(config)
-    model_config = _load_model_config(config)
-    deployment_config = _get_required(config, "deployment", "evaluation config")
-    board_config = _get_required(config, "board", "evaluation config")
-    inference_config = _get_required(config, "inference", "evaluation config")
 
     _report(0.02)
 
     # ==================== L1: 构建 WorkloadIR ====================
     from math_model.L1_workload.models.llm.deepseek import DeepSeekV3Model
 
-    # 映射模型配置为 DeepSeekV3Model 需要的格式
-    model_params = _map_model_config(model_config, deployment_config, inference_config)
-    model = DeepSeekV3Model(model_params)
+    model = DeepSeekV3Model.from_model_config(eval_config.model)
     ir = model.to_ir()
 
     print(f"[L1] WorkloadIR created: {len(ir.get_layers())} layers")
@@ -75,34 +63,38 @@ def run_evaluation(
     # ==================== L2: 加载 ChipSpec ====================
     from math_model.L2_arch.chip import ChipSpecImpl
 
-    chip = ChipSpecImpl.from_config(_get_required(chip_config, "name", "chip config"), chip_config)
+    chip_config = eval_config.chip_config
+    chip_name = _require(chip_config, "name", "chip config")
+    chip = ChipSpecImpl.from_config(chip_name, chip_config)
     print(f"[L2] ChipSpec loaded: {chip.name}")
     _report(0.08)
 
     # ==================== L3: Parallelism Planning ====================
     from math_model.L3_mapping.parallelism.planner import DeploymentSpec, ParallelismPlanner, BoardSpec
 
+    dep = eval_config.deployment
     deployment = DeploymentSpec(
-        tp=int(_get_required(deployment_config, "tp", "deployment config")),
-        pp=int(_get_required(deployment_config, "pp", "deployment config")),
-        ep=int(_get_required(deployment_config, "ep", "deployment config")),
-        dp=int(_get_required(deployment_config, "dp", "deployment config")),
-        moe_tp=int(_get_required(deployment_config, "moe_tp", "deployment config")),
-        seq_len=int(_get_required(deployment_config, "seq_len", "deployment config")),
-        batch_size=int(_get_required(deployment_config, "batch_size", "deployment config")),
-        enable_tp_sp=bool(_get_required(deployment_config, "enable_tp_sp", "deployment config")),
-        enable_ring_attention=bool(_get_required(deployment_config, "enable_ring_attention", "deployment config")),
-        embed_tp=int(_get_required(deployment_config, "embed_tp", "deployment config")),
-        lmhead_tp=int(_get_required(deployment_config, "lmhead_tp", "deployment config")),
-        comm_protocol=int(_get_required(deployment_config, "comm_protocol", "deployment config")),
-        kv_cache_rate=float(_get_required(deployment_config, "kv_cache_rate", "deployment config")),
-        is_prefill=bool(_get_required(deployment_config, "is_prefill", "deployment config")),
+        tp=dep.tp,
+        pp=dep.pp,
+        ep=dep.ep,
+        dp=dep.dp,
+        moe_tp=dep.moe_tp,
+        seq_len=dep.seq_len,
+        batch_size=dep.batch_size,
+        enable_tp_sp=dep.enable_tp_sp,
+        enable_ring_attention=dep.enable_ring_attention,
+        embed_tp=dep.embed_tp,
+        lmhead_tp=dep.lmhead_tp,
+        comm_protocol=dep.comm_protocol,
+        kv_cache_rate=dep.kv_cache_rate,
+        is_prefill=dep.is_prefill,
     )
 
+    brd = eval_config.board
     board = BoardSpec(
-        num_chips=int(_get_required(board_config, "num_chips", "board config")),
-        chip_memory_gb=int(_get_required(board_config, "chip_memory_gb", "board config")),
-        inter_chip_bw_gbps=float(_get_required(board_config, "inter_chip_bw_gbps", "board config")),
+        num_chips=brd.num_chips,
+        chip_memory_gb=brd.chip_memory_gb,
+        inter_chip_bw_gbps=brd.inter_chip_bw_gbps,
     )
 
     print("[L3] Running ParallelismPlanner...")
@@ -121,8 +113,8 @@ def run_evaluation(
     precise_evaluator = PreciseTileEvaluator(
         compute_tflops=compute_tflops,
         memory_bandwidth_gbps=memory_bw_gbps,
-        is_prefill=deployment.is_prefill,
-        enable_zigzag=bool(deployment_config.get("enable_zigzag", False)),
+        is_prefill=dep.is_prefill,
+        enable_zigzag=dep.enable_zigzag,
     )
 
     # TilingPlanner 进度映射到 12% -> 75%
@@ -148,8 +140,14 @@ def run_evaluation(
 
     print("[L4] Running EvaluationEngine...")
 
-    # 构建硬件规格（对齐 CHIPMathica）
-    hardware = _build_hardware_spec(chip, chip_config)
+    # 构建硬件规格 -- 使用 eval_config 中的拓扑/通信参数（修复数据丢失 bug）
+    hardware = _build_hardware_spec(chip, eval_config)
+
+    # deployment_config dict 用于传递给 engine (ring attention 等)
+    deployment_dict = {
+        "enable_ring_attention": dep.enable_ring_attention,
+        "tp": dep.tp,
+    }
 
     engine = EvaluationEngine()
     engine_result = engine.evaluate(
@@ -157,37 +155,36 @@ def run_evaluation(
         distributed_model=dist_model,
         hardware=hardware,
         granularity=Granularity.CHIP,
-        output_tokens=deployment.batch_size,
-        deployment_config=deployment_config,
+        output_tokens=dep.batch_size,
+        deployment_config=deployment_dict,
     )
     _report(0.85)
 
     # ==================== L5: Reporting ====================
     print("[L5] Generating reports...")
 
-    # 构建运行配置（用于报告）
+    mc = eval_config.model
     run_config = {
         "model": {
-            "name": _get_required(model_config, "name", "model config"),
-            "batch": model_params.get("batch"),
-            "q_seq_len": model_params.get("q_seq_len"),
-            "kv_seq_len": model_params.get("kv_seq_len"),
+            "name": mc.name,
+            "batch": mc.batch,
+            "q_seq_len": mc.q_seq_len,
+            "kv_seq_len": mc.kv_seq_len,
         },
         "deployment": {
-            "tp": deployment.tp,
-            "dp": deployment.dp,
-            "moe_tp": deployment.moe_tp,
-            "ep": deployment.ep,
-            "comm_protocol": deployment.comm_protocol,
-            "batch_size": deployment.batch_size,
+            "tp": dep.tp,
+            "dp": dep.dp,
+            "moe_tp": dep.moe_tp,
+            "ep": dep.ep,
+            "comm_protocol": dep.comm_protocol,
+            "batch_size": dep.batch_size,
         },
         "board": {
-            "num_chips": board.num_chips,
-            "inter_chip_bw_gbps": board.inter_chip_bw_gbps,
+            "num_chips": brd.num_chips,
+            "inter_chip_bw_gbps": brd.inter_chip_bw_gbps,
         },
     }
 
-    # 生成 L5 报告
     from dataclasses import asdict
     from math_model.L5_reporting.engine import ReportingEngine
 
@@ -195,7 +192,6 @@ def run_evaluation(
     report = reporting_engine.run(engine_result=engine_result, config=run_config)
     _report(0.95)
 
-    # 转换为字典 (使用 asdict 处理 dataclass)
     result = {
         "aggregates": asdict(report.performance) if hasattr(report.performance, '__dataclass_fields__') else report.performance,
         "step_metrics": [asdict(s) if hasattr(s, '__dataclass_fields__') else s for s in report.step_metrics],
@@ -204,7 +200,6 @@ def run_evaluation(
         "granularity": report.granularity,
     }
 
-    # 打印摘要
     perf = report.performance
     print(f"\n[Result Summary]")
     print(f"  Total time: {perf.total_time_ms:.2f} ms")
@@ -212,152 +207,18 @@ def run_evaluation(
     print(f"  Comm time: {perf.comm_time_ms:.2f} ms")
     print(f"  MFU: {perf.mfu:.4f}")
     print(f"  TPS: {perf.tps:.2f}")
-    print(f"  TPS per chip: {perf.tps / board.num_chips:.2f}")
+    print(f"  TPS per chip: {perf.tps / brd.num_chips:.2f}")
 
     return result
 
 
-def _load_chip_config(config: dict[str, Any]) -> dict[str, Any]:
-    """加载芯片配置"""
-    if "chip" in config:
-        chip_ref = config["chip"]
-        if isinstance(chip_ref, str):
-            # 引用芯片预设
-            chip_data = load_chip(chip_ref)
-            return chip_data.get("chip", chip_data)
-        else:
-            # 内联配置
-            return chip_ref
-    elif "chip_config" in config:
-        return config["chip_config"]
-    elif "chip_preset" in config:
-        return load_chip(config["chip_preset"])
-    else:
-        raise ValueError("Missing chip configuration")
+def _build_hardware_spec(chip: Any, eval_config: EvalConfig) -> dict[str, Any]:
+    """构建硬件规格字典（对齐 CHIPMathica）
 
-
-def _load_model_config(config: dict[str, Any]) -> dict[str, Any]:
-    """加载模型配置"""
-    if "model" in config:
-        model_ref = config["model"]
-        if isinstance(model_ref, str):
-            # 引用模型预设
-            return load_model(model_ref)
-        else:
-            # 内联配置
-            return model_ref
-    elif "model_config" in config:
-        return config["model_config"]
-    elif "model_preset" in config:
-        return load_model(config["model_preset"])
-    else:
-        raise ValueError("Missing model configuration")
-
-
-def _get_required(cfg: dict[str, Any], key: str, source: str) -> Any:
-    """从配置中获取必需字段，缺失时报错"""
-    if key not in cfg:
-        raise ValueError(f"Missing required field '{key}' in {source}")
-    return cfg[key]
-
-
-def _map_model_config(
-    model_cfg: dict[str, Any],
-    deployment_cfg: dict[str, Any],
-    inference_cfg: dict[str, Any],
-) -> dict[str, Any]:
-    """映射模型配置为 DeepSeekV3Model 需要的扁平结构
-
-    输入格式对齐 configs/models/*.yaml (ModelPreset):
-    - 顶层: name, hidden_size, num_layers, num_attention_heads, vocab_size,
-            intermediate_size, num_dense_layers, num_moe_layers
-    - MLA: { q_lora_rank, kv_lora_rank, qk_nope_head_dim, qk_rope_head_dim, v_head_dim }
-    - MoE: { num_routed_experts, num_shared_experts, num_activated_experts, intermediate_size }
-
-    所有必需字段缺失时报错，不使用默认值。
+    核心 Bug 修复: 使用 eval_config.topology 中的用户配置，
+    不再使用 TopologySpec() 的默认值。
     """
-    # 必需的模型字段
-    hidden_size = int(_get_required(model_cfg, "hidden_size", "model config"))
-    num_layers = int(_get_required(model_cfg, "num_layers", "model config"))
-    num_heads = int(_get_required(model_cfg, "num_attention_heads", "model config"))
-    vocab_size = int(_get_required(model_cfg, "vocab_size", "model config"))
-    intermediate_size = int(_get_required(model_cfg, "intermediate_size", "model config"))
-
-    # dense/moe 层数
-    num_dense_layers = int(_get_required(model_cfg, "num_dense_layers", "model config"))
-    num_moe_layers = int(_get_required(model_cfg, "num_moe_layers", "model config"))
-
-    # MLA 配置
-    mla = model_cfg.get("MLA")
-    if mla is None:
-        raise ValueError("Missing 'MLA' section in model config")
-    q_lora_rank = int(_get_required(mla, "q_lora_rank", "model.MLA"))
-    kv_lora_rank = int(_get_required(mla, "kv_lora_rank", "model.MLA"))
-    qk_nope_head_dim = int(_get_required(mla, "qk_nope_head_dim", "model.MLA"))
-    qk_rope_head_dim = int(_get_required(mla, "qk_rope_head_dim", "model.MLA"))
-    v_head_dim = int(_get_required(mla, "v_head_dim", "model.MLA"))
-
-    # MoE 配置
-    moe = model_cfg.get("MoE")
-    if moe is None:
-        raise ValueError("Missing 'MoE' section in model config")
-    n_routed_experts = int(_get_required(moe, "num_routed_experts", "model.MoE"))
-    n_shared_experts = int(_get_required(moe, "num_shared_experts", "model.MoE"))
-    n_activated_experts = int(_get_required(moe, "num_activated_experts", "model.MoE"))
-    moe_intermediate_size = int(_get_required(moe, "intermediate_size", "model.MoE"))
-
-    # 精度配置 - 优先从 inference_config 获取，其次从 deployment_config
-    if "weight_dtype" in inference_cfg:
-        weight_dtype = inference_cfg["weight_dtype"]
-    elif "weight_dtype" in deployment_cfg:
-        weight_dtype = deployment_cfg["weight_dtype"]
-    else:
-        raise ValueError("Missing 'weight_dtype' in inference config or deployment config")
-
-    if "activation_dtype" in inference_cfg:
-        activation_dtype = inference_cfg["activation_dtype"]
-    elif "activation_dtype" in deployment_cfg:
-        activation_dtype = deployment_cfg["activation_dtype"]
-    else:
-        raise ValueError("Missing 'activation_dtype' in inference config or deployment config")
-
-    # 运行时参数 - 从 deployment_cfg 获取
-    seq_len = int(_get_required(deployment_cfg, "seq_len", "deployment config"))
-    kv_seq_len = int(_get_required(deployment_cfg, "kv_seq_len", "deployment config"))
-    q_seq_len = int(_get_required(deployment_cfg, "q_seq_len", "deployment config"))
-    batch = int(_get_required(deployment_cfg, "batch_size", "deployment config"))
-    is_prefill = bool(_get_required(deployment_cfg, "is_prefill", "deployment config"))
-
-    return {
-        "weight_dtype": weight_dtype,
-        "activation_dtype": activation_dtype,
-        "hidden_size": hidden_size,
-        "num_layers": num_layers,
-        "num_dense_layers": num_dense_layers,
-        "num_moe_layers": num_moe_layers,
-        "num_heads": num_heads,
-        "vocab_size": vocab_size,
-        "q_lora_rank": q_lora_rank,
-        "kv_lora_rank": kv_lora_rank,
-        "qk_nope_head_dim": qk_nope_head_dim,
-        "qk_rope_head_dim": qk_rope_head_dim,
-        "v_head_dim": v_head_dim,
-        "n_routed_experts": n_routed_experts,
-        "n_shared_experts": n_shared_experts,
-        "n_activated_experts": n_activated_experts,
-        "moe_intermediate_size": moe_intermediate_size,
-        "intermediate_size": intermediate_size,
-        "seq_len": seq_len,
-        "kv_seq_len": kv_seq_len,
-        "q_seq_len": q_seq_len,
-        "batch": batch,
-        "is_prefill": is_prefill,
-    }
-
-
-def _build_hardware_spec(chip: Any, chip_config: dict[str, Any]) -> dict[str, Any]:
-    """构建硬件规格字典（对齐 CHIPMathica）"""
-    from math_model.L4_evaluation.metrics import CommProtocolSpec, HardwareSpec
+    from math_model.L4_evaluation.metrics import CommProtocolSpec, HardwareSpec, merge_specs
     from math_model.L2_arch.topology import TopologySpec
 
     # 硬件规格（从 chip 对象获取）
@@ -373,18 +234,35 @@ def _build_hardware_spec(chip: Any, chip_config: dict[str, Any]) -> dict[str, An
         noc_bandwidth_gbps=chip.interconnect.noc_bandwidth_gbps,
     )
 
-    # 拓扑规格（使用默认值初始化，后续可从拓扑配置覆盖）
-    topology_spec = TopologySpec()
+    # FIX: 使用用户配置的拓扑参数，不再用默认值！
+    topo = eval_config.topology
+    topology_spec = TopologySpec(
+        c2c_bandwidth_gbps=topo.c2c_bandwidth_gbps,
+        c2c_latency_us=topo.c2c_latency_us,
+        b2b_bandwidth_gbps=topo.b2b_bandwidth_gbps,
+        b2b_latency_us=topo.b2b_latency_us,
+        r2r_bandwidth_gbps=topo.r2r_bandwidth_gbps,
+        r2r_latency_us=topo.r2r_latency_us,
+        p2p_bandwidth_gbps=topo.p2p_bandwidth_gbps,
+        p2p_latency_us=topo.p2p_latency_us,
+        switch_latency_us=topo.switch_latency_us,
+        cable_latency_us=topo.cable_latency_us,
+        memory_read_latency_us=topo.memory_read_latency_us,
+        memory_write_latency_us=topo.memory_write_latency_us,
+        noc_latency_us=topo.noc_latency_us,
+        die_to_die_latency_us=topo.die_to_die_latency_us,
+    )
 
-    # 通信协议规格
-    comm_spec = CommProtocolSpec()
-
-    # 合并规格
-    from math_model.L4_evaluation import merge_specs
+    comm = eval_config.comm
+    comm_spec = CommProtocolSpec(
+        bw_utilization=comm.bw_utilization,
+        sync_lat_us=comm.sync_lat_us,
+    )
 
     hardware = merge_specs(hardware_spec, topology_spec, comm_spec)
 
     # compute_efficiency 从芯片配置读取
+    chip_config = eval_config.chip_config
     if "compute_efficiency" not in chip_config:
         raise ValueError(
             f"Missing 'compute_efficiency' in chip config: {chip_config.get('name', 'unknown')}"
@@ -418,132 +296,71 @@ def run_evaluation_from_request(
             - benchmark_name: Benchmark 名称
             - topology_config_name: 拓扑配置名称
             - benchmark_config: { model: {...}, inference: {...} }
-        progress_callback: 进度回调函数 (0.0 ~ 1.0)，由 TaskManager 注入
             - topology_config: 完整拓扑配置 (含 interconnect.comm_params)
             - manual_parallelism: 手动并行配置
             - search_mode: 搜索模式
+        progress_callback: 进度回调函数 (0.0 ~ 1.0)
 
     Returns:
         dict: 评估结果
     """
-    # WebSocket 广播由 TaskManager 处理，此处不需要直接调用
-
-    # === DEBUG: 打印收到的完整配置 ===
-    import json as _json
-    logger.info("=" * 60)
-    logger.info("[DEBUG] run_evaluation_from_request received config keys: %s", list(config.keys()))
-    logger.info("[DEBUG] benchmark_config keys: %s",
-                list(config.get("benchmark_config", {}).keys()) if config.get("benchmark_config") else "MISSING")
-    logger.info("[DEBUG] topology_config keys: %s",
-                list(config.get("topology_config", {}).keys()) if config.get("topology_config") else "MISSING")
-    logger.info("[DEBUG] manual_parallelism: %s", config.get("manual_parallelism"))
-    logger.info("[DEBUG] search_mode: %s", config.get("search_mode"))
-
-    # model 配置详情
-    bc = config.get("benchmark_config", {})
-    if bc:
-        model_keys = list(bc.get("model", {}).keys()) if bc.get("model") else "MISSING"
-        logger.info("[DEBUG] benchmark_config.model keys: %s", model_keys)
-        inf_keys = list(bc.get("inference", {}).keys()) if bc.get("inference") else "MISSING"
-        logger.info("[DEBUG] benchmark_config.inference keys: %s", inf_keys)
-
-    # topology 配置详情
-    tc = config.get("topology_config", {})
-    if tc:
-        logger.info("[DEBUG] topology_config.chips keys: %s",
-                    list(tc.get("chips", {}).keys()) if tc.get("chips") else "MISSING/EMPTY")
-        ic_debug = tc.get("interconnect", {})
-        logger.info("[DEBUG] topology_config.interconnect keys: %s", list(ic_debug.keys()) if ic_debug else "MISSING")
-        logger.info("[DEBUG] topology_config.interconnect.links keys: %s",
-                    list(ic_debug.get("links", {}).keys()) if ic_debug.get("links") else "MISSING")
-        logger.info("[DEBUG] topology_config.pods present: %s, type: %s",
-                    tc.get("pods") is not None, type(tc.get("pods")).__name__)
-    logger.info("=" * 60)
-
     # 提取配置
-    benchmark_config = _get_required(config, "benchmark_config", "evaluation request")
-    topology_config = _get_required(config, "topology_config", "evaluation request")
-    manual_parallelism = _get_required(config, "manual_parallelism", "evaluation request")
+    benchmark_config = _require(config, "benchmark_config", "evaluation request")
+    topology_config = _require(config, "topology_config", "evaluation request")
+    manual_parallelism = _require(config, "manual_parallelism", "evaluation request")
 
-    # 从 benchmark_config 提取模型和推理配置
-    model_config = _get_required(benchmark_config, "model", "benchmark_config")
-    inference_config = _get_required(benchmark_config, "inference", "benchmark_config")
-
-    logger.info("[DEBUG] model_config top-level keys: %s", list(model_config.keys()))
-    logger.info("[DEBUG] model_config MLA: %s", model_config.get("MLA"))
-    logger.info("[DEBUG] model_config MoE: %s", model_config.get("MoE"))
-    logger.info("[DEBUG] model_config num_dense_layers: %s", model_config.get("num_dense_layers"))
-    logger.info("[DEBUG] model_config num_moe_layers: %s", model_config.get("num_moe_layers"))
+    model_config = _require(benchmark_config, "model", "benchmark_config")
+    inference_config = _require(benchmark_config, "inference", "benchmark_config")
 
     # 从 topology_config.chips 提取芯片配置
     chips_dict = topology_config.get("chips")
     if not chips_dict:
         raise ValueError("Missing 'chips' in topology_config")
-    logger.info("[DEBUG] First chip config: %s", _json.dumps(next(iter(chips_dict.values())), indent=2, default=str)[:500])
     chip_config = _extract_first_chip_config(chips_dict)
 
-    # 提取通信延迟配置 (interconnect.comm_params)
-    ic = topology_config.get("interconnect", {})
-    comm_latency_config = ic.get("comm_params")
-    if not comm_latency_config:
-        raise ValueError("Missing 'interconnect.comm_params' in topology_config")
+    # 单一转换点: dict -> EvalConfig
+    eval_config = build_eval_config(
+        chip_config=chip_config,
+        model_config=model_config,
+        topology_config=topology_config,
+        manual_parallelism=manual_parallelism,
+        inference_config=inference_config,
+    )
 
-    # 从 topology_config 提取 BoardSpec
-    logger.info("[DEBUG] Extracting board_spec...")
-    board_spec = _extract_board_spec(topology_config)
-    logger.info("[DEBUG] board_spec: %s", board_spec)
-
-    # 映射通信延迟配置到 tier6 格式
-    topology_overrides, comm_overrides = _map_comm_latency_config(comm_latency_config)
-
-    # 构建部署配置
-    logger.info("[DEBUG] Building deployment_config from manual_parallelism...")
-    deployment_config = _build_deployment_config(manual_parallelism, inference_config)
-    logger.info("[DEBUG] deployment_config: %s", deployment_config)
-
-    # 构建内部评估配置
-    internal_config = {
-        "chip_config": chip_config,
-        "model_config": model_config,
-        "deployment": deployment_config,
-        "board": {
-            "num_chips": board_spec["num_chips"],
-            "chip_memory_gb": board_spec["chip_memory_gb"],
-            "inter_chip_bw_gbps": board_spec["inter_chip_bw_gbps"],
-        },
-        "inference": inference_config,
-        "topology_overrides": topology_overrides,
-        "comm_overrides": comm_overrides,
-    }
-
+    dep = eval_config.deployment
     logger.info(f"Running evaluation: {config.get('experiment_name', 'N/A')}")
-    logger.info(f"  Model: {model_config.get('name', 'N/A')}")
-    logger.info(f"  Chips: {board_spec['num_chips']}")
-    logger.info(f"  Parallelism: TP={deployment_config['tp']}, PP={deployment_config['pp']}, "
-                f"DP={deployment_config['dp']}, EP={deployment_config['ep']}")
+    logger.info(f"  Model: {eval_config.model.name}")
+    logger.info(f"  Chips: {eval_config.board.num_chips}")
+    logger.info(f"  Parallelism: TP={dep.tp}, PP={dep.pp}, DP={dep.dp}, EP={dep.ep}")
 
     # 执行评估
     try:
-        result = run_evaluation(internal_config, progress_callback=progress_callback)
+        result = run_evaluation(eval_config, progress_callback=progress_callback)
 
-        # 提取性能指标
-        aggregates = _get_required(result, "aggregates", "evaluation result")
-        step_metrics = _get_required(result, "step_metrics", "evaluation result")
+        aggregates = _require(result, "aggregates", "evaluation result")
+        step_metrics = _require(result, "step_metrics", "evaluation result")
 
         # 计算成本分析
-        cost_result = _calculate_deployment_cost(
-            deployment_config=deployment_config,
-            model_config=model_config,
-            aggregates=aggregates,
-            chip_config=chip_config,
-        )
+        cost_result = _calculate_deployment_cost(eval_config, aggregates)
 
         # 生成与前端兼容的 gantt_chart 和 stats
         from math_model.L0_entry.compat import convert_to_gantt_chart, convert_to_stats
 
+        # 构建 deployment_config dict (前端兼容层需要)
+        deployment_dict = {
+            "tp": dep.tp, "pp": dep.pp, "dp": dep.dp, "ep": dep.ep,
+            "moe_tp": dep.moe_tp, "seq_len": dep.seq_len,
+            "batch_size": dep.batch_size, "enable_tp_sp": dep.enable_tp_sp,
+            "embed_tp": dep.embed_tp, "lmhead_tp": dep.lmhead_tp,
+            "comm_protocol": dep.comm_protocol, "kv_cache_rate": dep.kv_cache_rate,
+            "is_prefill": dep.is_prefill, "enable_zigzag": dep.enable_zigzag,
+            "enable_ring_attention": dep.enable_ring_attention,
+            "q_seq_len": dep.q_seq_len, "kv_seq_len": dep.kv_seq_len,
+        }
+
         gantt_chart = convert_to_gantt_chart(
             step_metrics=step_metrics,
-            parallelism=deployment_config,
+            parallelism=deployment_dict,
             aggregates=aggregates,
             topology_config=topology_config,
         )
@@ -551,29 +368,24 @@ def run_evaluation_from_request(
             aggregates=aggregates,
             step_metrics=step_metrics,
             inference_config=inference_config,
-            parallelism=deployment_config,
+            parallelism=deployment_dict,
             topology_config=topology_config,
         )
 
         # 构建与前端兼容的返回格式
-        tps = _get_required(aggregates, "tps", "aggregates")
+        tps = _require(aggregates, "tps", "aggregates")
         tpot = aggregates.get("tpot_ms")
         if tpot is None:
-            total_time_ms = _get_required(aggregates, "total_time_ms", "aggregates")
-            output_seq_length = _get_required(inference_config, "output_seq_length", "inference config")
+            total_time_ms = _require(aggregates, "total_time_ms", "aggregates")
+            output_seq_length = _require(inference_config, "output_seq_length", "inference config")
             tpot = total_time_ms / max(output_seq_length, 1)
 
-        # 计算芯片数和每芯片/每批次 TPS
-        tp = deployment_config["tp"]
-        pp = deployment_config["pp"]
-        dp = deployment_config["dp"]
-        ep = deployment_config["ep"]
-        chips = tp * pp * dp * ep
-        batch_size = deployment_config["batch_size"]
+        chips = dep.tp * dep.pp * dep.dp * dep.ep
+        batch_size = dep.batch_size
         tps_per_chip = tps / chips if chips > 0 else 0
         tps_per_batch = tps / batch_size if batch_size > 0 else 0
 
-        # 显存占用（从 aggregates 获取，单位转换为 bytes）
+        # 显存占用
         if "memory_peak_mb" in aggregates:
             memory_peak_mb = aggregates["memory_peak_mb"]
         elif "memory_peak" in aggregates:
@@ -582,12 +394,10 @@ def run_evaluation_from_request(
             raise ValueError("Missing 'memory_peak_mb' or 'memory_peak' in aggregates")
         dram_occupy = memory_peak_mb * 1024 * 1024  # MB -> bytes
 
-        # ttft: 优先 ttft_ms，否则用 total_time_ms
         ttft = aggregates.get("ttft_ms")
         if ttft is None:
-            ttft = _get_required(aggregates, "total_time_ms", "aggregates")
+            ttft = _require(aggregates, "total_time_ms", "aggregates")
 
-        # mbu: 优先 mbu，否则 memory_utilization
         mbu = aggregates.get("mbu")
         if mbu is None:
             mbu = aggregates.get("memory_utilization")
@@ -595,31 +405,26 @@ def run_evaluation_from_request(
                 raise ValueError("Missing 'mbu' or 'memory_utilization' in aggregates")
 
         plan = {
-            "parallelism": deployment_config,
+            "parallelism": deployment_dict,
             "tps": tps,
             "ttft": ttft,
             "tpot": tpot,
-            "mfu": _get_required(aggregates, "mfu", "aggregates"),
+            "mfu": _require(aggregates, "mfu", "aggregates"),
             "mbu": mbu,
-            "score": tps,  # 使用 TPS 作为 score
+            "score": tps,
             "is_feasible": True,
-            # 前端期望的额外字段
             "chips": chips,
             "tps_per_chip": tps_per_chip,
             "tps_per_batch": tps_per_batch,
             "dram_occupy": dram_occupy,
-            # 保留原始结果
             "aggregates": aggregates,
             "step_metrics": step_metrics,
-            "config": _get_required(result, "config", "evaluation result"),
-            # 成本分析
+            "config": _require(result, "config", "evaluation result"),
             "cost": cost_result,
-            # 前端可视化兼容数据
             "gantt_chart": gantt_chart,
             "stats": stats,
         }
 
-        # 返回与 llm_simulator 兼容的格式
         if progress_callback:
             progress_callback(0.98)
         return {
@@ -634,16 +439,15 @@ def run_evaluation_from_request(
                 "experiment_name": config.get("experiment_name"),
                 "benchmark_name": config.get("benchmark_name"),
                 "topology_config_name": config.get("topology_config_name"),
-                "parallelism": deployment_config,
+                "parallelism": deployment_dict,
                 "inference": inference_config,
             },
         }
 
     except Exception as e:
         logger.exception("Evaluation failed")
-        # 返回失败结果（deployment_config 可能在异常前未定义）
         _locals = locals()
-        parallelism_info = _locals.get('deployment_config', manual_parallelism)
+        parallelism_info = _locals.get('deployment_dict', manual_parallelism)
         inference_info = _locals.get('inference_config', {})
         return {
             "top_k_plans": [],
@@ -667,181 +471,42 @@ def run_evaluation_from_request(
         }
 
 
-def _extract_first_chip_config(chips_dict: dict[str, Any]) -> dict[str, Any]:
-    """从芯片字典中提取第一个芯片配置
-
-    Args:
-        chips_dict: 芯片配置字典 { chip_name: chip_config, ... }
-
-    Returns:
-        dict: 芯片配置
-    """
-    if not chips_dict:
-        raise ValueError("No chip configuration found in topology_config.chips")
-
-    # 获取第一个芯片
-    first_chip_name = next(iter(chips_dict))
-    first_chip = chips_dict[first_chip_name]
-
-    # 确保 name 字段存在
-    if "name" not in first_chip:
-        first_chip["name"] = first_chip_name
-
-    return first_chip
-
-
-def _extract_board_spec(topology_config: dict[str, Any]) -> dict[str, Any]:
-    """从拓扑配置提取板卡规格
-
-    Args:
-        topology_config: 完整拓扑配置 (grouped_pods 格式, 含 chips + interconnect)
-
-    Returns:
-        dict: 板卡规格 { num_chips, chip_memory_gb, inter_chip_bw_gbps }
-    """
-    from .topology_format import count_chips
-
-    # 计算芯片总数 - 从 pods 结构
-    num_chips = count_chips(topology_config)
-
-    # 获取互联带宽 - 从 interconnect.links
-    ic = topology_config.get("interconnect", {})
-    links = ic.get("links", {})
-    if not links:
-        raise ValueError("Missing 'interconnect.links' in topology_config")
-    c2c = _get_required(links, "c2c", "topology config interconnect.links")
-    inter_chip_bw = _get_required(c2c, "bandwidth_gbps", "topology config interconnect.links.c2c")
-
-    # 获取芯片内存 - 从 chips
-    chips = topology_config.get("chips")
-    if not chips:
-        raise ValueError("Missing 'chips' in topology_config")
-
-    first_chip = next(iter(chips.values()))
-    memory = _get_required(first_chip, "memory", "chip config")
-    gmem = _get_required(memory, "gmem", "chip config memory")
-    chip_memory = _get_required(gmem, "capacity_gb", "chip config memory.gmem")
-
-    return {
-        "num_chips": num_chips,
-        "chip_memory_gb": chip_memory,
-        "inter_chip_bw_gbps": inter_chip_bw,
-    }
-
-
-def _count_topology_chips(topology: dict[str, Any]) -> int:
-    """计算拓扑中的芯片总数
-
-    Args:
-        topology: 拓扑配置 (grouped_pods 格式)
-
-    Returns:
-        int: 芯片总数
-    """
-    from .topology_format import count_chips
-    return count_chips(topology)
-
-
-def _map_comm_latency_config(frontend_config: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
-    """将前端 comm_latency_config 映射到 tier6 TopologySpec 和 CommProtocolSpec
-
-    Args:
-        frontend_config: 前端通信延迟配置
-
-    Returns:
-        tuple: (topology_overrides, comm_overrides)
-    """
-    topology_overrides: dict[str, Any] = {}
-    comm_overrides: dict[str, Any] = {}
-
-    # TopologySpec 字段映射
-    if "switch_delay_us" in frontend_config:
-        topology_overrides["switch_delay_us"] = frontend_config["switch_delay_us"]
-    if "cable_delay_us" in frontend_config:
-        topology_overrides["cable_delay_us"] = frontend_config["cable_delay_us"]
-    if "memory_read_latency_us" in frontend_config:
-        topology_overrides["ddr_r_lat_us"] = frontend_config["memory_read_latency_us"]
-    if "memory_write_latency_us" in frontend_config:
-        topology_overrides["ddr_w_lat_us"] = frontend_config["memory_write_latency_us"]
-    if "noc_latency_us" in frontend_config:
-        topology_overrides["noc_lat_us"] = frontend_config["noc_latency_us"]
-    if "die_to_die_latency_us" in frontend_config:
-        topology_overrides["d2d_lat_us"] = frontend_config["die_to_die_latency_us"]
-    if "c2c_latency_us" in frontend_config:
-        topology_overrides["c2c_lat_us"] = frontend_config["c2c_latency_us"]
-
-    # 带宽映射
-    if "intra_board_bw_gbps" in frontend_config:
-        topology_overrides["intra_board_bw_gbps"] = frontend_config["intra_board_bw_gbps"]
-    if "inter_board_bw_gbps" in frontend_config:
-        topology_overrides["inter_board_bw_gbps"] = frontend_config["inter_board_bw_gbps"]
-    if "inter_node_bw_gbps" in frontend_config:
-        topology_overrides["inter_node_bw_gbps"] = frontend_config["inter_node_bw_gbps"]
-
-    # CommProtocolSpec 字段映射
-    if "bandwidth_utilization" in frontend_config:
-        comm_overrides["bw_utilization"] = frontend_config["bandwidth_utilization"]
-    if "sync_latency_us" in frontend_config:
-        comm_overrides["sync_lat_us"] = frontend_config["sync_latency_us"]
-
-    return topology_overrides, comm_overrides
-
-
 def _calculate_deployment_cost(
-    deployment_config: dict[str, Any],
-    model_config: dict[str, Any],
+    eval_config: EvalConfig,
     aggregates: dict[str, Any],
-    chip_config: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """计算部署成本
 
     Args:
-        deployment_config: 部署配置（含并行策略）
-        model_config: 模型配置
+        eval_config: 类型化配置
         aggregates: 性能聚合指标
-        chip_config: 芯片配置（含 name 字段）
 
     Returns:
         dict: 成本分析结果
     """
     from math_model.L5_reporting.cost_analysis import CostAnalyzer
 
-    # 计算芯片数
-    tp = _get_required(deployment_config, "tp", "deployment config")
-    pp = _get_required(deployment_config, "pp", "deployment config")
-    dp = _get_required(deployment_config, "dp", "deployment config")
-    ep = _get_required(deployment_config, "ep", "deployment config")
-    chips = tp * pp * dp * ep
+    dep = eval_config.deployment
+    mc = eval_config.model
+    chips = dep.tp * dep.pp * dep.dp * dep.ep
 
     # 获取芯片类型
-    if chip_config and "name" in chip_config:
-        chip_type = chip_config["name"]
-    elif "chip_type" in deployment_config:
-        chip_type = deployment_config["chip_type"]
-    else:
-        raise ValueError("Cannot determine chip_type: missing chip_config.name and deployment_config.chip_type")
+    chip_type = _require(eval_config.chip_config, "name", "chip config")
 
-    # 估算模型大小（粗略）
-    hidden_size = _get_required(model_config, "hidden_size", "model config")
-    num_layers = _get_required(model_config, "num_layers", "model config")
-    vocab_size = _get_required(model_config, "vocab_size", "model config")
-    moe = model_config.get("MoE", model_config.get("moe"))
-    if moe is None:
-        raise ValueError("Missing 'MoE' section in model config")
-    num_experts = _get_required(moe, "num_routed_experts", "model config MoE")
+    # 估算模型大小
+    hidden_size = mc.hidden_size
+    num_layers = mc.num_layers
+    vocab_size = mc.vocab_size
+    num_experts = mc.moe.num_routed_experts
 
-    # 简化的模型参数估算
-    # Embedding + Attention + FFN/MoE + LMHead
     embed_params = hidden_size * vocab_size
     attn_params = 4 * hidden_size * hidden_size * num_layers
 
-    # FFN/MoE 参数（使用配置而非硬编码）
-    intermediate_size = model_config.get("intermediate_size", hidden_size * 4)
+    intermediate_size = mc.intermediate_size
     if num_experts > 0:
-        # MoE: 从配置获取 dense/moe 层数拆分
-        num_dense_layers = model_config.get("num_dense_layers", 0)
-        num_moe_layers = model_config.get("num_moe_layers", num_layers)
-        moe_intermediate_size = moe.get("intermediate_size", intermediate_size // 4)
+        num_dense_layers = mc.num_dense_layers
+        num_moe_layers = mc.num_moe_layers
+        moe_intermediate_size = mc.moe.intermediate_size
         ffn_params = (
             3 * hidden_size * intermediate_size * num_dense_layers
             + num_experts * 3 * hidden_size * moe_intermediate_size * num_moe_layers
@@ -853,18 +518,15 @@ def _calculate_deployment_cost(
     bytes_per_param = 2  # BF16
     model_size_gb = total_params * bytes_per_param / 1e9
 
-    # 获取性能指标
-    tps = _get_required(aggregates, "tps", "aggregates")
+    tps = _require(aggregates, "tps", "aggregates")
     tpot = aggregates.get("tpot_ms")
     if tpot is None:
-        tpot = _get_required(aggregates, "total_time_ms", "aggregates")
+        tpot = _require(aggregates, "total_time_ms", "aggregates")
 
-    # 从模型参数估算互联带宽需求 -> lanes_per_chip
     effective_tpot = tpot if tpot > 0 else 1.0
-    bandwidth_gbps = 2 * model_size_gb * tp / effective_tpot * 1000
-    lanes_per_chip = max(1, int(bandwidth_gbps / 112 * 8))  # 8 modules/server
+    bandwidth_gbps = 2 * model_size_gb * dep.tp / effective_tpot * 1000
+    lanes_per_chip = max(1, int(bandwidth_gbps / 112 * 8))
 
-    # 使用 L5 CostAnalyzer 计算成本
     analyzer = CostAnalyzer()
     cost_breakdown = analyzer.analyze(
         chip_type=chip_type,
@@ -881,51 +543,4 @@ def _calculate_deployment_cost(
         "cost_per_million_tokens": cost_breakdown.cost_per_million_tokens,
         "model_size_gb": model_size_gb,
         "chips": chips,
-    }
-
-
-def _build_deployment_config(
-    manual_parallelism: dict[str, Any],
-    inference_config: dict[str, Any],
-) -> dict[str, Any]:
-    """构建部署配置
-
-    Args:
-        manual_parallelism: 手动并行配置
-        inference_config: 推理配置
-
-    Returns:
-        dict: 部署配置
-    """
-    # 从 manual_parallelism 获取并行参数
-    tp = _get_required(manual_parallelism, "tp", "manual_parallelism")
-    pp = _get_required(manual_parallelism, "pp", "manual_parallelism")
-    dp = _get_required(manual_parallelism, "dp", "manual_parallelism")
-    ep = _get_required(manual_parallelism, "ep", "manual_parallelism")
-    moe_tp = _get_required(manual_parallelism, "moe_tp", "manual_parallelism")
-
-    # 从 inference_config 获取推理参数
-    batch_size = _get_required(inference_config, "batch_size", "inference config")
-    input_seq_length = _get_required(inference_config, "input_seq_length", "inference config")
-    output_seq_length = _get_required(inference_config, "output_seq_length", "inference config")
-
-    return {
-        "tp": tp,
-        "pp": pp,
-        "dp": dp,
-        "ep": ep,
-        "moe_tp": moe_tp,
-        "seq_len": _get_required(manual_parallelism, "seq_len", "manual_parallelism"),
-        "batch_size": batch_size,
-        "enable_tp_sp": _get_required(manual_parallelism, "enable_tp_sp", "manual_parallelism"),
-        "embed_tp": _get_required(manual_parallelism, "embed_tp", "manual_parallelism"),
-        "lmhead_tp": _get_required(manual_parallelism, "lmhead_tp", "manual_parallelism"),
-        "comm_protocol": _get_required(manual_parallelism, "comm_protocol", "manual_parallelism"),
-        "kv_cache_rate": _get_required(manual_parallelism, "kv_cache_rate", "manual_parallelism"),
-        "is_prefill": _get_required(manual_parallelism, "is_prefill", "manual_parallelism"),
-        "enable_zigzag": _get_required(manual_parallelism, "enable_zigzag", "manual_parallelism"),
-        "enable_ring_attention": _get_required(manual_parallelism, "enable_ring_attention", "manual_parallelism"),
-        # 推理参数
-        "q_seq_len": input_seq_length,
-        "kv_seq_len": input_seq_length + output_seq_length,
     }

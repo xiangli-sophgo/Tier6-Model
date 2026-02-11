@@ -200,8 +200,8 @@ export const ConfigPanel: React.FC<ConfigPanelProps> = ({
   const [commLatencyConfig, setCommLatencyConfig] = useState({
     bandwidth_utilization: 0.95,
     sync_latency_us: 0,
-    switch_delay_us: 1.0,
-    cable_delay_us: 0.025,
+    switch_latency_us: 1.0,
+    cable_latency_us: 0.025,
     memory_read_latency_us: 0.15,
     memory_write_latency_us: 0.01,
     noc_latency_us: 0.05,
@@ -1261,8 +1261,8 @@ export const ConfigPanel: React.FC<ConfigPanelProps> = ({
                   min={0}
                   max={10}
                   step={0.05}
-                  value={commLatencyConfig.switch_delay_us}
-                  onChange={(v) => setCommLatencyConfig(prev => ({ ...prev, switch_delay_us: v ?? 1.0 }))}
+                  value={commLatencyConfig.switch_latency_us}
+                  onChange={(v) => setCommLatencyConfig(prev => ({ ...prev, switch_latency_us: v ?? 1.0 }))}
                 />
                 <FormInputField
                   label="Cable Latency (µs)"
@@ -1270,8 +1270,8 @@ export const ConfigPanel: React.FC<ConfigPanelProps> = ({
                   min={0}
                   max={1}
                   step={0.005}
-                  value={commLatencyConfig.cable_delay_us}
-                  onChange={(v) => setCommLatencyConfig(prev => ({ ...prev, cable_delay_us: v ?? 0.025 }))}
+                  value={commLatencyConfig.cable_latency_us}
+                  onChange={(v) => setCommLatencyConfig(prev => ({ ...prev, cable_latency_us: v ?? 0.025 }))}
                 />
             </div>
 
@@ -1349,7 +1349,7 @@ export const ConfigPanel: React.FC<ConfigPanelProps> = ({
                 <div className="p-2 bg-gray-100 rounded border border-gray-300 cursor-help">
                   <span className="text-xs text-gray-500">Dispatch/Combine start_lat</span>
                   <div className="text-sm font-medium text-purple-500">
-                    {(2 * hardwareParams.interconnect.c2c.latency_us + commLatencyConfig.memory_read_latency_us + commLatencyConfig.memory_write_latency_us + commLatencyConfig.noc_latency_us + 2 * commLatencyConfig.die_to_die_latency_us + 2 * commLatencyConfig.switch_delay_us + 2 * commLatencyConfig.cable_delay_us).toFixed(2)} µs
+                    {(2 * hardwareParams.interconnect.c2c.latency_us + commLatencyConfig.memory_read_latency_us + commLatencyConfig.memory_write_latency_us + commLatencyConfig.noc_latency_us + 2 * commLatencyConfig.die_to_die_latency_us + 2 * commLatencyConfig.switch_latency_us + 2 * commLatencyConfig.cable_latency_us).toFixed(2)} µs
                   </div>
                 </div>
               </InfoTooltip>

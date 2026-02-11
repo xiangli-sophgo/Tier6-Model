@@ -39,7 +39,7 @@ class BoardSpecImpl:
         default_factory=ChipInterconnectSpecImpl
     )
     board_memory: BoardMemorySpecImpl | None = None
-    fabric_tag: str = "intra_board"
+    fabric_tag: str = "c2c"
 
     def __post_init__(self) -> None:
         if self.board_id is None:
@@ -171,7 +171,7 @@ class BoardSpecImpl:
             chips=chips,
             chip_interconnect=chip_interconnect,
             board_memory=board_memory,
-            fabric_tag=config.get("fabric_tag") or "intra_board",  # 可选，默认 intra_board
+            fabric_tag=config.get("fabric_tag") or "c2c",  # 可选，默认 c2c
         )
 
     def to_summary(self) -> dict[str, Any]:

@@ -15,92 +15,6 @@ interface TaskDetailPanelProps {
   onAnalyze: () => void
 }
 
-// ============================================
-// 字段中文名称映射
-// ============================================
-const FIELD_LABELS: Record<string, string> = {
-  // 模型配置
-  model_name: '模型名称',
-  model_type: '模型类型',
-  hidden_size: '隐藏层维度',
-  num_layers: '层数',
-  num_attention_heads: '注意力头数',
-  num_kv_heads: 'KV 头数',
-  intermediate_size: 'FFN 中间层',
-  vocab_size: '词表大小',
-  dtype: '数据类型',
-  weight_dtype: '权重数据类型',
-  activation_dtype: '激活数据类型',
-  max_seq_length: '最大序列长度',
-  attention_type: '注意力类型',
-  norm_type: '归一化类型',
-
-  // MoE 配置
-  moe_config: 'MoE 配置',
-  num_experts: '专家数量',
-  experts_per_token: '每 Token 激活专家数',
-  num_shared_experts: '共享专家数',
-  router_topk_policy: '路由 TopK 策略',
-
-  // MLA 配置
-  mla_config: 'MLA 配置',
-  kv_lora_rank: 'KV LoRA 秩',
-  q_lora_rank: 'Q LoRA 秩',
-  qk_rope_dim: 'QK RoPE 维度',
-  qk_nope_dim: 'QK Non-RoPE 维度',
-  v_head_dim: 'V 头维度',
-
-  // 推理配置
-  batch_size: '批次大小',
-  input_seq_length: '输入序列长度',
-  output_seq_length: '输出序列长度',
-  num_micro_batches: '微批次数量',
-
-  // 硬件配置
-  name: '名称',
-  num_cores: '计算核心数',
-  compute_tflops_fp8: 'FP8 算力 (TFLOPS)',
-  compute_tflops_bf16: 'BF16 算力 (TFLOPS)',
-  memory_capacity_gb: '显存容量 (GB)',
-  memory_bandwidth_gbps: '显存带宽 (GB/s)',
-  memory_bandwidth_utilization: '显存带宽利用率',
-  lmem_capacity_mb: 'LMEM 容量 (MB)',
-  lmem_bandwidth_gbps: 'LMEM 带宽 (GB/s)',
-  cube_m: 'Cube M 维度',
-  cube_k: 'Cube K 维度',
-  cube_n: 'Cube N 维度',
-  sram_size_kb: 'SRAM 大小 (KB)',
-  sram_utilization: 'SRAM 利用率',
-  lane_num: 'Lane 数量',
-  align_bytes: '对齐字节数',
-  compute_dma_overlap_rate: '计算-搬运重叠率',
-
-  // 互联配置
-  c2c: '芯片间 (C2C)',
-  b2b: '板间 (B2B)',
-  r2r: '机架间 (R2R)',
-  p2p: 'Pod 间 (P2P)',
-  bandwidth_gbps: '带宽 (GB/s)',
-  latency_us: '延迟 (μs)',
-
-  // 通信配置
-  allreduce_algorithm: 'AllReduce 算法',
-  alltoall_algorithm: 'AllToAll 算法',
-  enable_compute_comm_overlap: '计算-通信重叠',
-  network_efficiency: '网络效率',
-
-  // 拓扑配置
-  pod_count: 'Pod 数量',
-  racks_per_pod: '每 Pod Rack 数',
-  count: '数量',
-  chips: '芯片配置',
-  preset_id: '预设 ID',
-}
-
-// 获取字段的中文名称
-const getFieldLabel = (key: string): string => {
-  return FIELD_LABELS[key] || key
-}
 
 // 信息项组件（单个条目）
 const InfoItem: React.FC<{
@@ -189,42 +103,46 @@ const renderSimpleFields = (
   return Object.entries(config)
     .filter(([key, value]) => typeof value !== 'object' && !excludeKeys.includes(key))
     .map(([key, value]) => ({
-      label: getFieldLabel(key),
+      label: key,
       value: formatConfigValue(value),
     }))
 }
 
-// 渲染嵌套对象字段
+// 递归渲染嵌套对象字段（支持任意深度）
 const renderNestedFields = (
   config: Record<string, unknown>,
   color: string,
-  excludeKeys: string[] = []
+  excludeKeys: string[] = [],
+  depth: number = 0
 ): React.ReactNode => {
   const nestedEntries = Object.entries(config).filter(
-    ([key, value]) => typeof value === 'object' && value !== null && !excludeKeys.includes(key)
+    ([key, value]) => typeof value === 'object' && value !== null && !Array.isArray(value) && !excludeKeys.includes(key)
   )
 
   if (nestedEntries.length === 0) return null
 
-  return nestedEntries.map(([key, value]) => (
-    <div key={key} className="mt-3 ml-4">
-      <h6
-        className="text-xs font-medium text-text-secondary mb-2 px-2 py-1 border-l-2"
-        style={{
-          backgroundColor: `${color}10`,
-          borderLeftColor: color,
-        }}
-      >
-        {getFieldLabel(key)}
-      </h6>
-      <InfoGrid
-        items={Object.entries(value as Record<string, unknown>).map(([subKey, subValue]) => ({
-          label: getFieldLabel(subKey),
-          value: formatConfigValue(subValue),
-        }))}
-      />
-    </div>
-  ))
+  return nestedEntries.map(([key, value]) => {
+    const obj = value as Record<string, unknown>
+    // 分离简单字段和嵌套对象字段
+    const simpleItems = renderSimpleFields(obj)
+    const hasNested = Object.values(obj).some(v => typeof v === 'object' && v !== null && !Array.isArray(v))
+
+    return (
+      <div key={key} className="mt-3 ml-4">
+        <h6
+          className="text-xs font-medium text-text-secondary mb-2 px-2 py-1 border-l-2"
+          style={{
+            backgroundColor: `${color}${depth === 0 ? '10' : '08'}`,
+            borderLeftColor: color,
+          }}
+        >
+          {key}
+        </h6>
+        {simpleItems.length > 0 && <InfoGrid items={simpleItems} />}
+        {hasNested && renderNestedFields(obj, color, [], depth + 1)}
+      </div>
+    )
+  })
 }
 
 export const TaskDetailPanel: React.FC<TaskDetailPanelProps> = ({ task, onAnalyze }) => {
@@ -350,20 +268,16 @@ export const TaskDetailPanel: React.FC<TaskDetailPanelProps> = ({ task, onAnalyz
         >
           <div className="space-y-4">
             {/* 并行策略 */}
-            {result?.parallelism && (
-              <ConfigSection title="并行策略" color="#6366f1">
-                <InfoGrid
-                  items={[
-                    { label: 'DP (数据并行)', value: result.parallelism.dp || '-' },
-                    { label: 'TP (张量并行)', value: result.parallelism.tp || '-' },
-                    { label: 'PP (流水线并行)', value: result.parallelism.pp || '-' },
-                    { label: 'EP (专家并行)', value: result.parallelism.ep || '-' },
-                    { label: 'SP (序列并行)', value: result.parallelism.enable_tp_sp ? 'ON' : 'OFF' },
-                    { label: 'MoE_TP', value: result.parallelism.moe_tp || '-' },
-                  ]}
-                />
-              </ConfigSection>
-            )}
+            {(() => {
+              const parallelismConfig = (task.manual_parallelism || result?.parallelism) as Record<string, unknown> | undefined
+              if (!parallelismConfig) return null
+              return (
+                <ConfigSection title="并行策略" color="#6366f1">
+                  <InfoGrid items={renderSimpleFields(parallelismConfig)} />
+                  {renderNestedFields(parallelismConfig, '#6366f1')}
+                </ConfigSection>
+              )
+            })()}
 
             {/* 模型配置 */}
             {Object.keys(modelConfig).length > 0 && (
@@ -408,14 +322,8 @@ export const TaskDetailPanel: React.FC<TaskDetailPanelProps> = ({ task, onAnalyz
                         >
                           芯片: {chipKey}
                         </h6>
-                        <InfoGrid
-                          items={[
-                            { label: 'FP8 算力', value: chipSpec.compute_tflops_fp8 ? `${chipSpec.compute_tflops_fp8} TFLOPS` : '-' },
-                            { label: 'BF16 算力', value: chipSpec.compute_tflops_bf16 ? `${chipSpec.compute_tflops_bf16} TFLOPS` : '-' },
-                            { label: '显存容量', value: chipSpec.memory_capacity_gb ? `${chipSpec.memory_capacity_gb} GB` : '-' },
-                            { label: '显存带宽', value: chipSpec.memory_bandwidth_gbps ? `${chipSpec.memory_bandwidth_gbps} GB/s` : '-' },
-                          ]}
-                        />
+                        <InfoGrid items={renderSimpleFields(chipSpec)} />
+                        {renderNestedFields(chipSpec, '#f97316')}
                       </div>
                     ))}
                   </div>
@@ -435,7 +343,7 @@ export const TaskDetailPanel: React.FC<TaskDetailPanelProps> = ({ task, onAnalyz
                     </h6>
                     <InfoGrid
                       items={Object.entries(interconnectConfig).map(([level, spec]) => ({
-                        label: getFieldLabel(level),
+                        label: level,
                         value: `${spec.bandwidth_gbps || '-'} GB/s, ${spec.latency_us || '-'} μs`,
                       }))}
                       columns={4}
@@ -459,7 +367,7 @@ export const TaskDetailPanel: React.FC<TaskDetailPanelProps> = ({ task, onAnalyz
                       items={Object.entries(commLatencyConfig)
                         .filter(([_, value]) => typeof value !== 'object')
                         .map(([key, value]) => ({
-                          label: getFieldLabel(key),
+                          label: key,
                           value: formatConfigValue(value),
                         }))}
                     />

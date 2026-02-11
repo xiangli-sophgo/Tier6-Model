@@ -9,7 +9,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from math_model.L2_arch.protocols import ClusterSpec
+    from math_model.L2_arch.protocols import PodSpec
     from math_model.L4_evaluation.metrics import Aggregates
 
 
@@ -232,23 +232,23 @@ class CostAnalyzer:
             depreciation_years=self.depreciation_years,
         )
 
-    def analyze_from_cluster(
+    def analyze_from_pod(
         self,
-        cluster: "ClusterSpec",
+        pod: "PodSpec",
         aggregates: "Aggregates | None" = None,
     ) -> CostBreakdown:
-        """从集群规格分析成本
+        """从 Pod 规格分析成本
 
         Args:
-            cluster: 集群规格
+            pod: Pod 规格
             aggregates: 聚合指标 (可选，用于计算 TPS)
 
         Returns:
             CostBreakdown: 成本分解
         """
-        chip = cluster.get_primary_chip()
+        chip = pod.get_primary_chip()
         chip_type = chip.name
-        chip_count = cluster.total_chips
+        chip_count = pod.total_chips
         tps = aggregates.tps if aggregates else 0.0
 
         return self.analyze(chip_type, chip_count, tps)

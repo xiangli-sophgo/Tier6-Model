@@ -3,8 +3,8 @@
 定义硬件规格层的核心协议接口，供 L3/L4 使用。
 
 层级结构:
-    Cluster (集群)
-    └── Node (节点)
+    Pod
+    └── Rack
         └── Board (板卡)
             └── Chip (芯片)
                 ├── Core (核心)
@@ -23,32 +23,32 @@ if TYPE_CHECKING:
 
 
 # ============================================================================
-# Cluster/Node Level Protocols (集群/节点级)
+# Pod/Rack Level Protocols (Pod/Rack 级)
 # ============================================================================
 
 
 @runtime_checkable
-class ClusterSpec(Protocol):
-    """集群规格接口"""
+class PodSpec(Protocol):
+    """Pod 规格接口"""
 
     @property
-    def num_nodes(self) -> int:
-        """节点数量"""
+    def num_racks(self) -> int:
+        """Rack 数量"""
         ...
 
     @property
-    def nodes(self) -> list["NodeSpec"]:
-        """节点列表"""
+    def racks(self) -> list["RackSpec"]:
+        """Rack 列表"""
         ...
 
     @property
-    def inter_node_bandwidth_gbps(self) -> "Bandwidth":
-        """跨节点带宽 (Gbps)"""
+    def r2r_bandwidth_gbps(self) -> "Bandwidth":
+        """跨 Rack 带宽 (Gbps)"""
         ...
 
     @property
-    def inter_node_latency_us(self) -> "Latency":
-        """跨节点延迟 (us)"""
+    def r2r_latency_us(self) -> "Latency":
+        """跨 Rack 延迟 (us)"""
         ...
 
     @property
@@ -56,22 +56,22 @@ class ClusterSpec(Protocol):
         """拓扑引用键"""
         ...
 
-    def get_node(self, node_id: str) -> "NodeSpec":
-        """获取指定节点"""
+    def get_rack(self, rack_id: str) -> "RackSpec":
+        """获取指定 Rack"""
         ...
 
-    def list_nodes(self) -> list["NodeSpec"]:
-        """按稳定顺序返回节点"""
+    def list_racks(self) -> list["RackSpec"]:
+        """按稳定顺序返回 Rack"""
         ...
 
 
 @runtime_checkable
-class NodeSpec(Protocol):
-    """节点规格接口"""
+class RackSpec(Protocol):
+    """Rack 规格接口"""
 
     @property
-    def node_id(self) -> str:
-        """节点标识"""
+    def rack_id(self) -> str:
+        """Rack 标识"""
         ...
 
     @property
@@ -80,22 +80,22 @@ class NodeSpec(Protocol):
         ...
 
     @property
-    def chips_per_node(self) -> int:
-        """每节点芯片数"""
+    def chips_per_rack(self) -> int:
+        """每 Rack 芯片数"""
         ...
 
     @property
-    def intra_node_bandwidth_gbps(self) -> "Bandwidth":
-        """节点内带宽 (Gbps)"""
+    def b2b_bandwidth_gbps(self) -> "Bandwidth":
+        """Board 间带宽 (Gbps)"""
         ...
 
     @property
-    def intra_node_latency_us(self) -> "Latency":
-        """节点内延迟 (us)"""
+    def b2b_latency_us(self) -> "Latency":
+        """Board 间延迟 (us)"""
         ...
 
     def list_chips(self) -> list[int]:
-        """返回节点内所有芯片 ID"""
+        """返回 Rack 内所有芯片 ID"""
         ...
 
 
@@ -482,8 +482,13 @@ class TopologySpec(Protocol):
     """通信拓扑规格接口"""
 
     @property
-    def nodes(self) -> dict[str, list[str]]:
-        """节点与板卡从属关系"""
+    def pods(self) -> dict[str, list[str]]:
+        """Pod 与 Rack 从属关系"""
+        ...
+
+    @property
+    def racks(self) -> dict[str, list[str]]:
+        """Rack 与 Board 从属关系"""
         ...
 
     @property

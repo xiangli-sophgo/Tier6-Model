@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 if TYPE_CHECKING:
     from math_model.L1_workload.ir import Model
-    from math_model.L2_arch.protocols import ClusterSpec
+    from math_model.L2_arch.protocols import PodSpec
 
 
 class ParallelMode(str, Enum):
@@ -143,14 +143,14 @@ class ParallelismPlanner(Protocol):
     def plan(
         self,
         model: "Model",
-        cluster: "ClusterSpec",
+        pod: "PodSpec",
         config: ParallelismConfig,
     ) -> ParallelGroupAssignment:
         """规划并行策略
 
         Args:
             model: 模型 IR
-            cluster: 集群规格
+            pod: Pod 规格
             config: 并行配置
 
         Returns:
@@ -166,14 +166,14 @@ class TilingPlanner(Protocol):
     def plan(
         self,
         model: "Model",
-        cluster: "ClusterSpec",
+        pod: "PodSpec",
         parallel_assignment: ParallelGroupAssignment,
     ) -> "TilePlan":
         """规划切片策略
 
         Args:
             model: 模型 IR
-            cluster: 集群规格
+            pod: Pod 规格
             parallel_assignment: 并行组分配
 
         Returns:
@@ -189,7 +189,7 @@ class Scheduler(Protocol):
     def schedule(
         self,
         model: "Model",
-        cluster: "ClusterSpec",
+        pod: "PodSpec",
         parallel_assignment: ParallelGroupAssignment,
         tile_plan: "TilePlan | None" = None,
     ) -> "ExecPlan":
@@ -197,7 +197,7 @@ class Scheduler(Protocol):
 
         Args:
             model: 模型 IR
-            cluster: 集群规格
+            pod: Pod 规格
             parallel_assignment: 并行组分配
             tile_plan: 切片计划 (可选)
 

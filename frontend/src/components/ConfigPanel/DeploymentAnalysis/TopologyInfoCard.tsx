@@ -598,33 +598,33 @@ export const TopologyInfoCard: React.FC<TopologyInfoCardProps> = ({
                   <SectionHeader title="Network Latency" color="green" />
                   {isEditable && onCommLatencyChange ? (
                     <div className="grid grid-cols-2 gap-2">
-                      <div className={`p-2 rounded -m-2 mb-0 ${isCommLatencyModified('switch_delay_us') ? 'bg-blue-50/50' : ''}`}>
+                      <div className={`p-2 rounded -m-2 mb-0 ${isCommLatencyModified('switch_latency_us') ? 'bg-blue-50/50' : ''}`}>
                         <div className="mb-1 flex items-center gap-1.5 text-xs text-gray-600">
                           Switch Latency (µs)
-                          {isCommLatencyModified('switch_delay_us') && (
+                          {isCommLatencyModified('switch_latency_us') && (
                             <Badge variant="outline" className="text-[9px] px-1 py-0 h-3.5 bg-blue-100 text-blue-700 border-blue-300">已修改</Badge>
                           )}
                         </div>
                         <NumberInput
                           min={0}
                           step={0.01}
-                          value={commLatencyConfig.switch_delay_us}
-                          onChange={(v) => updateCommLatency('switch_delay_us', v ?? 1.0)}
+                          value={commLatencyConfig.switch_latency_us}
+                          onChange={(v) => updateCommLatency('switch_latency_us', v ?? 1.0)}
                           className="h-7"
                         />
                       </div>
-                      <div className={`p-2 rounded -m-2 mb-0 ${isCommLatencyModified('cable_delay_us') ? 'bg-blue-50/50' : ''}`}>
+                      <div className={`p-2 rounded -m-2 mb-0 ${isCommLatencyModified('cable_latency_us') ? 'bg-blue-50/50' : ''}`}>
                         <div className="mb-1 flex items-center gap-1.5 text-xs text-gray-600">
                           Cable Latency (µs)
-                          {isCommLatencyModified('cable_delay_us') && (
+                          {isCommLatencyModified('cable_latency_us') && (
                             <Badge variant="outline" className="text-[9px] px-1 py-0 h-3.5 bg-blue-100 text-blue-700 border-blue-300">已修改</Badge>
                           )}
                         </div>
                         <NumberInput
                           min={0}
                           step={0.005}
-                          value={commLatencyConfig.cable_delay_us}
-                          onChange={(v) => updateCommLatency('cable_delay_us', v ?? 0.025)}
+                          value={commLatencyConfig.cable_latency_us}
+                          onChange={(v) => updateCommLatency('cable_latency_us', v ?? 0.025)}
                           className="h-7"
                         />
                       </div>
@@ -632,8 +632,8 @@ export const TopologyInfoCard: React.FC<TopologyInfoCardProps> = ({
                   ) : (
                     <InfoGrid
                       items={[
-                        { label: 'Switch Latency', value: `${commLatencyConfig.switch_delay_us} µs` },
-                        { label: 'Cable Latency', value: `${commLatencyConfig.cable_delay_us} µs` },
+                        { label: 'Switch Latency', value: `${commLatencyConfig.switch_latency_us} µs` },
+                        { label: 'Cable Latency', value: `${commLatencyConfig.cable_latency_us} µs` },
                       ]}
                       columns={2}
                     />
@@ -722,8 +722,8 @@ export const TopologyInfoCard: React.FC<TopologyInfoCardProps> = ({
                               (commLatencyConfig.memory_write_latency_us || 0) +
                               (commLatencyConfig.noc_latency_us || 0) +
                               2 * (commLatencyConfig.die_to_die_latency_us || 0) +
-                              2 * (commLatencyConfig.switch_delay_us || 0) +
-                              2 * (commLatencyConfig.cable_delay_us || 0)).toFixed(2)} µs
+                              2 * (commLatencyConfig.switch_latency_us || 0) +
+                              2 * (commLatencyConfig.cable_latency_us || 0)).toFixed(2)} µs
                           </span>
                         )
                       },

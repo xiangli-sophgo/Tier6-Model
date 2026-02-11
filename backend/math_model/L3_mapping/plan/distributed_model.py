@@ -38,7 +38,7 @@ class DistributedOp:
         comm_bytes: 通信数据量 (仅 COMM 节点)
         scope: 通信范围 (inter_chip/intra_chip)
         cause: 触发原因 (layout_mismatch/tiling_reduce/tiling_barrier/tiling_relayout)
-        topology_path_key: 路径键 (如 intra_board/inter_board/inter_node/intra_noc)
+        topology_path_key: 路径键 (如 c2c/b2b/r2r/p2p/intra_noc)
         participants: 参与者列表
         src: 源端 (P2P)
         dst: 目的端 (P2P)

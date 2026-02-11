@@ -181,8 +181,8 @@ export const ConfigSnapshotDisplay: React.FC<ConfigSnapshotDisplayProps> = ({
                   : '-'}
               </DescItem>
               <DescItem label="Sync Latency (μs)">{commLatencyConfig.sync_latency_us ?? '-'}</DescItem>
-              <DescItem label="Switch Latency (μs)">{commLatencyConfig.switch_delay_us ?? '-'}</DescItem>
-              <DescItem label="Cable Latency (μs)">{commLatencyConfig.cable_delay_us ?? '-'}</DescItem>
+              <DescItem label="Switch Latency (μs)">{commLatencyConfig.switch_latency_us ?? '-'}</DescItem>
+              <DescItem label="Cable Latency (μs)">{commLatencyConfig.cable_latency_us ?? '-'}</DescItem>
               <DescItem label="DDR Read Latency (μs)">{commLatencyConfig.memory_read_latency_us ?? '-'}</DescItem>
               <DescItem label="DDR Write Latency (μs)">{commLatencyConfig.memory_write_latency_us ?? '-'}</DescItem>
               <DescItem label="NoC Latency (μs)">{commLatencyConfig.noc_latency_us ?? '-'}</DescItem>

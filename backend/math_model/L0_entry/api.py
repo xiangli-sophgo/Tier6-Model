@@ -28,7 +28,6 @@ from math_model.L0_entry.config_schema import (
     ImportExecuteRequest,
     ModelPresetCreateRequest,
     ModelPresetUpdateRequest,
-    SimulateRequest,
     TopologyCreateRequest,
     TopologyUpdateRequest,
     ValidateRequest,
@@ -421,24 +420,14 @@ async def delete_topology(name: str):
 
 
 @router.post("/simulate")
-async def simulate(request: SimulateRequest):
-    """同步仿真 - 立即返回结果"""
-    from math_model.L0_entry.engine import run_evaluation
+async def simulate(request: EvaluationRequest):
+    """同步仿真 - 立即返回结果 (使用 EvaluationRequest 统一格式)"""
+    from math_model.L0_entry.engine import run_evaluation_from_request
 
-    # 构建配置
-    config = {
-        "chip_preset": request.chip_preset,
-        "model_preset": request.model_preset,
-        "topology_preset": request.topology_preset,
-        "chip_config": request.chip_config,
-        "model_config": request.model_params,
-        "topology_config": request.topology_config,
-        "deployment": request.parallelism.model_dump() if request.parallelism else {},
-        "inference": request.inference,
-    }
+    config = request.model_dump()
 
     try:
-        result = run_evaluation(config)
+        result = run_evaluation_from_request(config)
         return result
     except Exception as e:
         logger.exception("Simulation failed")

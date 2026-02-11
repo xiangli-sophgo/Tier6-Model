@@ -63,8 +63,8 @@ export const PARAMETER_DESCRIPTIONS: Record<string, string> = {
   // === 通信延迟配置 ===
   'interconnect.comm_params.bandwidth_utilization': '网络带宽利用率（考虑拥塞）',
   'interconnect.comm_params.sync_latency_us': 'AllReduce同步延迟',
-  'interconnect.comm_params.switch_delay_us': '交换机转发延迟',
-  'interconnect.comm_params.cable_delay_us': '线缆传输延迟',
+  'interconnect.comm_params.switch_latency_us': '交换机转发延迟',
+  'interconnect.comm_params.cable_latency_us': '线缆传输延迟',
   'interconnect.comm_params.memory_read_latency_us': 'HBM读取延迟',
   'interconnect.comm_params.memory_write_latency_us': 'HBM写入延迟',
   'interconnect.comm_params.noc_latency_us': '片上网络（NoC）延迟',

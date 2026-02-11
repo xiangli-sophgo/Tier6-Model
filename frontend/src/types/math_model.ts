@@ -281,8 +281,8 @@ export interface TopologyConfig {
 export interface CommLatencyConfig {
   bandwidth_utilization?: number;
   sync_latency_us?: number;
-  switch_delay_us?: number;
-  cable_delay_us?: number;
+  switch_latency_us?: number;
+  cable_latency_us?: number;
   memory_read_latency_us?: number;
   memory_write_latency_us?: number;
   noc_latency_us?: number;

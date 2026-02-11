@@ -30,9 +30,8 @@ class CommProtocolParams:
     d2d_lat: float = 0.04
     sync_lat: float = 0.0
     bw_urate: float = 0.95
-    link_delay: float = 0.0
-    switch_delay: float = 0.25
-    cable_delay: float = 0.025
+    switch_latency: float = 0.25
+    cable_latency: float = 0.025
     cpu_fetch_delay: float = 0.0
     topk: int = 8
     prefill_factor: float = 8 / 128
@@ -42,67 +41,29 @@ class CommProtocolParams:
         """从外部字典读取通信协议参数.
 
         输入:
-            - config: 参数字典，支持 `comm_` 前缀或无前缀键。
+            - config: 由 merge_specs() 输出的标准 key name 字典。
         输出:
             - CommProtocolParams
         关键步骤:
-            - 优先读取 `comm_xxx`，缺失时回退读取 `xxx`，都缺失则使用默认值。
-
-        注意: 此方法的默认值用于向后兼容和可选配置，通信协议参数通常为可选。
+            - merge_specs() 保证标准 key name 存在，直接读取。
+            - cpu_fetch_delay / topk / prefill_factor 为评估协议可选参数，保留默认值。
         """
         defaults = cls()
 
-        def _read(default: float | int, *keys: str) -> float | int:
-            for key in keys:
-                if key in config:
-                    return config[key]
-            return default
-
         return cls(
-            c2c_lat=float(_read(defaults.c2c_lat, "c2c_lat_us", "comm_c2c_lat", "c2c_lat")),
-            ddr_r_lat=float(
-                _read(defaults.ddr_r_lat, "ddr_r_lat_us", "comm_ddr_r_lat", "ddr_r_lat")
-            ),
-            ddr_w_lat=float(
-                _read(defaults.ddr_w_lat, "ddr_w_lat_us", "comm_ddr_w_lat", "ddr_w_lat")
-            ),
-            noc_lat=float(_read(defaults.noc_lat, "noc_lat_us", "comm_noc_lat", "noc_lat")),
-            d2d_lat=float(_read(defaults.d2d_lat, "d2d_lat_us", "comm_d2d_lat", "d2d_lat")),
-            sync_lat=float(_read(defaults.sync_lat, "sync_lat_us", "comm_sync_lat", "sync_lat")),
-            bw_urate=float(
-                _read(defaults.bw_urate, "bw_utilization", "comm_bw_urate", "bw_urate")
-            ),
-            link_delay=float(
-                _read(defaults.link_delay, "link_delay_us", "comm_link_delay", "link_delay")
-            ),
-            switch_delay=float(
-                _read(
-                    defaults.switch_delay,
-                    "switch_delay_us",
-                    "comm_switch_delay",
-                    "switch_delay",
-                )
-            ),
-            cable_delay=float(
-                _read(defaults.cable_delay, "cable_delay_us", "comm_cable_delay", "cable_delay")
-            ),
-            cpu_fetch_delay=float(
-                _read(
-                    defaults.cpu_fetch_delay,
-                    "cpu_fetch_delay_us",
-                    "comm_cpu_fetch_delay",
-                    "cpu_fetch_delay",
-                )
-            ),
-            topk=int(_read(defaults.topk, "moe_topk", "comm_topk", "topk")),
-            prefill_factor=float(
-                _read(
-                    defaults.prefill_factor,
-                    "prefill_topk_factor",
-                    "comm_prefill_factor",
-                    "prefill_factor",
-                )
-            ),
+            c2c_lat=float(config["c2c_latency_us"]),
+            ddr_r_lat=float(config["memory_read_latency_us"]),
+            ddr_w_lat=float(config["memory_write_latency_us"]),
+            noc_lat=float(config["noc_latency_us"]),
+            d2d_lat=float(config["die_to_die_latency_us"]),
+            sync_lat=float(config["sync_lat_us"]),
+            bw_urate=float(config["bw_utilization"]),
+            switch_latency=float(config["switch_latency_us"]),
+            cable_latency=float(config["cable_latency_us"]),
+            # 以下为评估协议可选参数，保留默认值
+            cpu_fetch_delay=float(config.get("cpu_fetch_delay_us", defaults.cpu_fetch_delay)),
+            topk=int(config.get("moe_topk", defaults.topk)),
+            prefill_factor=float(config.get("prefill_topk_factor", defaults.prefill_factor)),
         )
 
 
@@ -144,7 +105,7 @@ class CommProtocolCostModel:
             ) * (self.start_lat + self.params.sync_lat)
             lat_2 = (comm_2 / self.arch.inter_bw / self.params.bw_urate) * 1e6 + (
                 num_groups - 1
-            ) * (self.start_lat + self.params.sync_lat + self.params.link_delay)
+            ) * (self.start_lat + self.params.sync_lat + self.params.switch_latency + self.params.cable_latency)
             lat_3 = (comm_3 / self.arch.intra_bw / self.params.bw_urate) * 1e6 + (
                 group_size - 1
             ) * (self.start_lat + self.params.sync_lat)
@@ -170,7 +131,7 @@ class CommProtocolCostModel:
             ) * (self.start_lat + self.params.sync_lat)
             lat_2 = (comm_2 / self.arch.inter_bw / self.params.bw_urate) * 1e6 + (
                 num_groups - 1
-            ) * (self.start_lat + self.params.sync_lat + self.params.link_delay)
+            ) * (self.start_lat + self.params.sync_lat + self.params.switch_latency + self.params.cable_latency)
             latency_us = max(lat_1, lat_2, comm_3)
             comm_size = comm_1 * num_groups + comm_2 + comm_3 * num_groups
             return latency_us, comm_size
@@ -195,7 +156,7 @@ class CommProtocolCostModel:
             ) * (self.start_lat + self.params.sync_lat)
             lat_2 = (comm_2 / self.arch.inter_bw / self.params.bw_urate) * 1e6 + (
                 num_groups - 1
-            ) * (self.start_lat + self.params.sync_lat + self.params.link_delay)
+            ) * (self.start_lat + self.params.sync_lat + self.params.switch_latency + self.params.cable_latency)
             latency_us = max(lat_1, lat_2, comm_3)
             comm_size = comm_1 * num_groups + comm_2 + comm_3 * num_groups
             return latency_us, comm_size

@@ -84,8 +84,8 @@ interconnect:
   comm_params:
     bandwidth_utilization: 0.95
     sync_latency_us: 0
-    switch_delay_us: 1
-    cable_delay_us: 0.025
+    switch_latency_us: 1
+    cable_latency_us: 0.025
     memory_read_latency_us: 0.15
     memory_write_latency_us: 0.01
     noc_latency_us: 0.05

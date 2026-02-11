@@ -80,6 +80,50 @@ class DeepSeekV3Model(ModelBase):
         >>> print(ir.get_ops_breakdown())
     """
 
+    @classmethod
+    def from_model_config(cls, mc: "ModelConfig") -> DeepSeekV3Model:
+        """从 EvalConfig.ModelConfig 构建模型
+
+        将结构化 ModelConfig 转为 layer 层期望的 flat dict，
+        这样 EmbeddingLayer / MLALayer 等无需修改。
+
+        Args:
+            mc: 类型化模型配置 (from math_model.L0_entry.eval_config)
+
+        Returns:
+            DeepSeekV3Model 实例
+        """
+        from math_model.L0_entry.eval_config import ModelConfig  # noqa: F811
+        config = {
+            "hidden_size": mc.hidden_size,
+            "num_layers": mc.num_layers,
+            "num_dense_layers": mc.num_dense_layers,
+            "num_moe_layers": mc.num_moe_layers,
+            "num_heads": mc.num_attention_heads,
+            "vocab_size": mc.vocab_size,
+            "intermediate_size": mc.intermediate_size,
+            # MLA (从嵌套提取为 flat)
+            "q_lora_rank": mc.mla.q_lora_rank,
+            "kv_lora_rank": mc.mla.kv_lora_rank,
+            "qk_nope_head_dim": mc.mla.qk_nope_head_dim,
+            "qk_rope_head_dim": mc.mla.qk_rope_head_dim,
+            "v_head_dim": mc.mla.v_head_dim,
+            # MoE (key rename 对齐 layer 层期望)
+            "n_routed_experts": mc.moe.num_routed_experts,
+            "n_shared_experts": mc.moe.num_shared_experts,
+            "n_activated_experts": mc.moe.num_activated_experts,
+            "moe_intermediate_size": mc.moe.intermediate_size,
+            # 运行时参数
+            "weight_dtype": mc.weight_dtype,
+            "activation_dtype": mc.activation_dtype,
+            "seq_len": mc.seq_len,
+            "kv_seq_len": mc.kv_seq_len,
+            "q_seq_len": mc.q_seq_len,
+            "batch": mc.batch,
+            "is_prefill": mc.is_prefill,
+        }
+        return cls(config)
+
     @property
     def name(self) -> str:
         """模型名称"""

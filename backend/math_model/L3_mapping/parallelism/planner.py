@@ -717,9 +717,9 @@ class ParallelismPlanner:
     def _resolve_path_key(self, chip_ids: list[int]) -> str:
         """解析 topology_path_key"""
         if self.topology is None or not chip_ids:
-            return "intra_board"
+            return "c2c"
         if len(chip_ids) <= 1:
-            return "intra_board"
+            return "c2c"
         src = chip_ids[0]
         dst = chip_ids[-1]
         path_key, _ = self.topology.resolve_path(src, dst)

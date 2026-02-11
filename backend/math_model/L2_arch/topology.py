@@ -12,46 +12,57 @@ from dataclasses import dataclass, field
 class TopologySpec:
     """L2 拓扑通信参数口径
 
+    每层级包含 bandwidth + latency（从 YAML interconnect.links 来）
+
     Attributes:
-        intra_board_bw_gbps: 板内互联带宽（GB/s）
-        inter_board_bw_gbps: 板间互联带宽（GB/s）
-        inter_node_bw_gbps: 节点间互联带宽（GB/s）
-        c2c_lat_us: C2C 固定延迟（us）
-        ddr_r_lat_us: DDR 读延迟（us）
-        ddr_w_lat_us: DDR 写延迟（us）
-        noc_lat_us: NoC 延迟（us）
-        d2d_lat_us: Die-to-Die 延迟（us）
-        link_delay_us: 链路附加延迟（us）
-        switch_delay_us: 交换机延迟（us）
-        cable_delay_us: 线缆延迟（us）
+        c2c_bandwidth_gbps: C2C 互联带宽（GB/s）
+        c2c_latency_us: C2C 互联延迟（us）
+        b2b_bandwidth_gbps: B2B 互联带宽（GB/s）
+        b2b_latency_us: B2B 互联延迟（us）
+        r2r_bandwidth_gbps: R2R 互联带宽（GB/s）
+        r2r_latency_us: R2R 互联延迟（us）
+        p2p_bandwidth_gbps: P2P 互联带宽（GB/s）
+        p2p_latency_us: P2P 互联延迟（us）
+        memory_read_latency_us: DDR 读延迟（us）
+        memory_write_latency_us: DDR 写延迟（us）
+        noc_latency_us: NoC 延迟（us）
+        die_to_die_latency_us: Die-to-Die 延迟（us）
+        switch_latency_us: 交换机延迟（us）
+        cable_latency_us: 线缆延迟（us）
     """
 
-    intra_board_bw_gbps: float = 400.0
-    inter_board_bw_gbps: float = 200.0
-    inter_node_bw_gbps: float = 100.0
-    c2c_lat_us: float = 0.15
-    ddr_r_lat_us: float = 0.15
-    ddr_w_lat_us: float = 0.01
-    noc_lat_us: float = 0.05
-    d2d_lat_us: float = 0.04
-    link_delay_us: float = 0.0
-    switch_delay_us: float = 0.25
-    cable_delay_us: float = 0.025
+    c2c_bandwidth_gbps: float = 400.0
+    c2c_latency_us: float = 0.15
+    b2b_bandwidth_gbps: float = 200.0
+    b2b_latency_us: float = 0.35
+    r2r_bandwidth_gbps: float = 100.0
+    r2r_latency_us: float = 2.0
+    p2p_bandwidth_gbps: float = 50.0
+    p2p_latency_us: float = 5.0
+    memory_read_latency_us: float = 0.15
+    memory_write_latency_us: float = 0.01
+    noc_latency_us: float = 0.05
+    die_to_die_latency_us: float = 0.04
+    switch_latency_us: float = 0.25
+    cable_latency_us: float = 0.025
 
     def to_dict(self) -> dict[str, float]:
         """转换为字典"""
         return {
-            "intra_board_bw_gbps": self.intra_board_bw_gbps,
-            "inter_board_bw_gbps": self.inter_board_bw_gbps,
-            "inter_node_bw_gbps": self.inter_node_bw_gbps,
-            "c2c_lat_us": self.c2c_lat_us,
-            "ddr_r_lat_us": self.ddr_r_lat_us,
-            "ddr_w_lat_us": self.ddr_w_lat_us,
-            "noc_lat_us": self.noc_lat_us,
-            "d2d_lat_us": self.d2d_lat_us,
-            "link_delay_us": self.link_delay_us,
-            "switch_delay_us": self.switch_delay_us,
-            "cable_delay_us": self.cable_delay_us,
+            "c2c_bandwidth_gbps": self.c2c_bandwidth_gbps,
+            "c2c_latency_us": self.c2c_latency_us,
+            "b2b_bandwidth_gbps": self.b2b_bandwidth_gbps,
+            "b2b_latency_us": self.b2b_latency_us,
+            "r2r_bandwidth_gbps": self.r2r_bandwidth_gbps,
+            "r2r_latency_us": self.r2r_latency_us,
+            "p2p_bandwidth_gbps": self.p2p_bandwidth_gbps,
+            "p2p_latency_us": self.p2p_latency_us,
+            "memory_read_latency_us": self.memory_read_latency_us,
+            "memory_write_latency_us": self.memory_write_latency_us,
+            "noc_latency_us": self.noc_latency_us,
+            "die_to_die_latency_us": self.die_to_die_latency_us,
+            "switch_latency_us": self.switch_latency_us,
+            "cable_latency_us": self.cable_latency_us,
         }
 
 
@@ -75,7 +86,8 @@ class TopologySpecImpl:
     """通信拓扑规格实现
 
     Attributes:
-        nodes: node_id -> board_id 列表
+        pods: pod_id -> rack_id 列表
+        racks: rack_id -> board_id 列表
         boards: board_id -> chip_id 列表
         chips: chip_id 列表
         rank_map: chip_id -> rank 映射
@@ -83,7 +95,8 @@ class TopologySpecImpl:
         path_keys: 路径键列表
     """
 
-    nodes: dict[str, list[str]] = field(default_factory=dict)
+    pods: dict[str, list[str]] = field(default_factory=dict)
+    racks: dict[str, list[str]] = field(default_factory=dict)
     boards: dict[str, list[str]] = field(default_factory=dict)
     chips: list[str] = field(default_factory=list)
     rank_map: dict[str, int] = field(default_factory=dict)
@@ -104,13 +117,17 @@ class TopologySpecImpl:
             self.path_keys = list(self.link_profiles.keys())
 
         self._chip_to_board: dict[str, str] = {}
-        self._board_to_node: dict[str, str] = {}
+        self._board_to_rack: dict[str, str] = {}
+        self._rack_to_pod: dict[str, str] = {}
         for board_id, chip_ids in self.boards.items():
             for chip_id in chip_ids:
                 self._chip_to_board[str(chip_id)] = board_id
-        for node_id, board_ids in self.nodes.items():
+        for rack_id, board_ids in self.racks.items():
             for board_id in board_ids:
-                self._board_to_node[board_id] = node_id
+                self._board_to_rack[board_id] = rack_id
+        for pod_id, rack_ids in self.pods.items():
+            for rack_id in rack_ids:
+                self._rack_to_pod[rack_id] = pod_id
 
     def get_link_profile(self, path_key: str) -> LinkProfileImpl:
         """获取链路参数"""
@@ -123,19 +140,24 @@ class TopologySpecImpl:
         src = str(src_chip)
         dst = str(dst_chip)
         if src == dst:
-            return "intra_board", 0
+            return "c2c", 0
 
         src_board = self._chip_to_board.get(src)
         dst_board = self._chip_to_board.get(dst)
         if src_board is None or dst_board is None:
-            return "inter_node", 3
+            return "p2p", 4
 
         if src_board == dst_board:
-            return "intra_board", 1
+            return "c2c", 1
 
-        src_node = self._board_to_node.get(src_board)
-        dst_node = self._board_to_node.get(dst_board)
-        if src_node is not None and src_node == dst_node:
-            return "inter_board", 2
+        src_rack = self._board_to_rack.get(src_board)
+        dst_rack = self._board_to_rack.get(dst_board)
+        if src_rack is not None and src_rack == dst_rack:
+            return "b2b", 2
 
-        return "inter_node", 3
+        src_pod = self._rack_to_pod.get(src_rack) if src_rack else None
+        dst_pod = self._rack_to_pod.get(dst_rack) if dst_rack else None
+        if src_pod is not None and src_pod == dst_pod:
+            return "r2r", 3
+
+        return "p2p", 4

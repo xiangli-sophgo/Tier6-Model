@@ -283,7 +283,7 @@ class EvaluationEngine:
         # 通信 Op 特殊处理
         if op.role == NodeRole.COMM:
             attrs["comm_bytes"] = str(op.comm_bytes)
-            attrs["path_key"] = op.topology_path_key or "inter_board"
+            attrs["path_key"] = op.topology_path_key or "b2b"
             attrs["participants"] = str(len(op.participants) if op.participants else 2)
             if op.comm_type:
                 attrs["comm_type"] = op.comm_type.name.lower()
@@ -501,7 +501,7 @@ class EvaluationEngine:
         tps = output_tokens / (decode_time / 1000) if decode_time > 0 else 0
 
         # 计算 MFU（Model FLOPS Utilization）
-        compute_tflops = hardware.get("compute_tflops", 125.0)
+        compute_tflops = hardware["compute_tflops"]
         peak_flops = compute_tflops * 1e12  # FLOPS
         achieved_flops = (
             total_flops / (total_time / 1000) if total_time > 0 else 0
@@ -509,7 +509,7 @@ class EvaluationEngine:
         mfu = achieved_flops / peak_flops if peak_flops > 0 else 0
 
         # 计算 MBU（Memory Bandwidth Utilization）
-        memory_bw_gbps = hardware.get("memory_bandwidth_gbps", 2000.0)
+        memory_bw_gbps = hardware["memory_bandwidth_gbps"]
         peak_bw = memory_bw_gbps * 1e9  # Bytes/s
         achieved_bw = total_bytes / (total_time / 1000) if total_time > 0 else 0
         mbu = achieved_bw / peak_bw if peak_bw > 0 else 0
@@ -542,19 +542,22 @@ def create_default_hardware_spec(
     num_cores: int = 64,
     sram_per_core_kb: float = 512.0,
     noc_bandwidth_gbps: float = 1000.0,
-    # TopologySpec: chip 间通信参数
-    intra_board_bw_gbps: float = 400.0,
-    inter_board_bw_gbps: float = 200.0,
-    inter_node_bw_gbps: float = 100.0,
-    # TopologySpec: 通信硬件延迟参数（L2/L4 共享口径）
-    c2c_lat_us: float = 0.15,
-    ddr_r_lat_us: float = 0.15,
-    ddr_w_lat_us: float = 0.01,
-    noc_lat_us: float = 0.05,
-    d2d_lat_us: float = 0.04,
-    link_delay_us: float = 0.0,
-    switch_delay_us: float = 0.25,
-    cable_delay_us: float = 0.025,
+    # TopologySpec: chip 间通信参数（每层级 bandwidth + latency）
+    c2c_bandwidth_gbps: float = 400.0,
+    c2c_latency_us: float = 0.15,
+    b2b_bandwidth_gbps: float = 200.0,
+    b2b_latency_us: float = 0.35,
+    r2r_bandwidth_gbps: float = 100.0,
+    r2r_latency_us: float = 2.0,
+    p2p_bandwidth_gbps: float = 50.0,
+    p2p_latency_us: float = 5.0,
+    # TopologySpec: 共享通信参数
+    memory_read_latency_us: float = 0.15,
+    memory_write_latency_us: float = 0.01,
+    noc_latency_us: float = 0.05,
+    die_to_die_latency_us: float = 0.04,
+    switch_latency_us: float = 0.25,
+    cable_latency_us: float = 0.025,
     # CommProtocolSpec: 评估协议参数（L4 口径）
     sync_lat_us: float = 0.0,
     bw_utilization: float = 0.95,
@@ -572,9 +575,10 @@ def create_default_hardware_spec(
         noc_bandwidth_gbps: 片内 NoC 带宽（GB/s，Core 级需要）
 
     TopologySpec（chip 间通信参数）:
-        intra_board_bw_gbps: 板内互联带宽（GB/s）
-        inter_board_bw_gbps: 板间互联带宽（GB/s）
-        inter_node_bw_gbps: 节点间互联带宽（GB/s）
+        c2c_bandwidth_gbps: C2C 互联带宽（GB/s）
+        b2b_bandwidth_gbps: B2B 互联带宽（GB/s）
+        r2r_bandwidth_gbps: R2R 互联带宽（GB/s）
+        p2p_bandwidth_gbps: P2P 互联带宽（GB/s）
 
     Returns:
         合并后的硬件参数字典
@@ -587,17 +591,20 @@ def create_default_hardware_spec(
         noc_bandwidth_gbps=noc_bandwidth_gbps,
     )
     topo = TopologySpec(
-        intra_board_bw_gbps=intra_board_bw_gbps,
-        inter_board_bw_gbps=inter_board_bw_gbps,
-        inter_node_bw_gbps=inter_node_bw_gbps,
-        c2c_lat_us=c2c_lat_us,
-        ddr_r_lat_us=ddr_r_lat_us,
-        ddr_w_lat_us=ddr_w_lat_us,
-        noc_lat_us=noc_lat_us,
-        d2d_lat_us=d2d_lat_us,
-        link_delay_us=link_delay_us,
-        switch_delay_us=switch_delay_us,
-        cable_delay_us=cable_delay_us,
+        c2c_bandwidth_gbps=c2c_bandwidth_gbps,
+        c2c_latency_us=c2c_latency_us,
+        b2b_bandwidth_gbps=b2b_bandwidth_gbps,
+        b2b_latency_us=b2b_latency_us,
+        r2r_bandwidth_gbps=r2r_bandwidth_gbps,
+        r2r_latency_us=r2r_latency_us,
+        p2p_bandwidth_gbps=p2p_bandwidth_gbps,
+        p2p_latency_us=p2p_latency_us,
+        memory_read_latency_us=memory_read_latency_us,
+        memory_write_latency_us=memory_write_latency_us,
+        noc_latency_us=noc_latency_us,
+        die_to_die_latency_us=die_to_die_latency_us,
+        switch_latency_us=switch_latency_us,
+        cable_latency_us=cable_latency_us,
     )
     comm = CommProtocolSpec(
         sync_lat_us=sync_lat_us,

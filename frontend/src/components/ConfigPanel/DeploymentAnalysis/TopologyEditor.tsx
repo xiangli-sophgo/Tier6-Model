@@ -36,8 +36,8 @@ const IC_LABELS: Record<string, { label: string; tip: string }> = {
 const COMM_FIELDS: Array<{ key: string; label: string; tip: string; step?: number }> = [
   { key: 'bandwidth_utilization', label: 'Bandwidth Utilization', tip: 'Actual BW / Peak BW (0~1)', step: 0.01 },
   { key: 'sync_latency_us', label: 'Sync Latency (us)', tip: 'Synchronization barrier latency' },
-  { key: 'switch_delay_us', label: 'Switch Latency (us)', tip: 'Switch forwarding latency' },
-  { key: 'cable_delay_us', label: 'Cable Latency (us)', tip: 'Cable transmission latency' },
+  { key: 'switch_latency_us', label: 'Switch Latency (us)', tip: 'Switch forwarding latency' },
+  { key: 'cable_latency_us', label: 'Cable Latency (us)', tip: 'Cable transmission latency' },
   { key: 'memory_read_latency_us', label: 'DDR Read Latency (us)', tip: 'HBM/GDDR read latency' },
   { key: 'memory_write_latency_us', label: 'DDR Write Latency (us)', tip: 'HBM/GDDR write latency' },
   { key: 'noc_latency_us', label: 'NoC Latency (us)', tip: 'Network-on-Chip latency' },

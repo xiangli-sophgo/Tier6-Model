@@ -43,7 +43,7 @@ class CommEvaluator(BaseEvaluator):
         """
         # 从 attrs 获取通信参数
         comm_bytes = int(attrs.get("comm_bytes", "0"))
-        path_key = attrs.get("path_key", "inter_board")
+        path_key = attrs.get("path_key", "b2b")
         participants = int(attrs.get("participants", "2"))
         comm_protocol = int(attrs.get("comm_protocol", "1"))
         tp = int(attrs.get("tp", str(participants)))
@@ -54,11 +54,13 @@ class CommEvaluator(BaseEvaluator):
         comm_type = attrs.get("comm_type", op_type).lower()
         reason = attrs.get("reason", "").lower()
 
-        # 构建通信硬件口径（使用默认值是合理的，通信带宽通常有典型值）
-        intra_bw = hardware.get("intra_board_bw_gbps", 400.0) * 1e9  # 默认 400 GB/s (NVLink)
-        inter_bw = hardware.get("inter_board_bw_gbps", 200.0) * 1e9  # 默认 200 GB/s
-        if path_key == "inter_node":
-            inter_bw = hardware.get("inter_node_bw_gbps", 100.0) * 1e9  # 默认 100 GB/s
+        # 构建通信硬件口径 (无默认值，缺失时 KeyError)
+        intra_bw = hardware["c2c_bandwidth_gbps"] * 1e9
+        inter_bw = hardware["b2b_bandwidth_gbps"] * 1e9
+        if path_key == "r2r":
+            inter_bw = hardware["r2r_bandwidth_gbps"] * 1e9
+        elif path_key == "p2p":
+            inter_bw = hardware["p2p_bandwidth_gbps"] * 1e9
         arch = CommArchSpec(intra_bw=intra_bw, inter_bw=inter_bw)
         params = CommProtocolParams.from_mapping(hardware)
         model = CommProtocolCostModel(arch=arch, params=params)

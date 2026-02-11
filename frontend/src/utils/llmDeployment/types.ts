@@ -830,9 +830,9 @@ export interface CommLatencyConfig {
   /** Sync Latency (us) */
   sync_latency_us: number;
   /** Switch Latency (us) */
-  switch_delay_us: number;
+  switch_latency_us: number;
   /** Cable Latency (us) */
-  cable_delay_us: number;
+  cable_latency_us: number;
   /** DDR Read Latency (us) */
   memory_read_latency_us: number;
   /** DDR Write Latency (us) */
@@ -847,8 +847,8 @@ export interface CommLatencyConfig {
 export const DEFAULT_COMM_LATENCY_CONFIG: CommLatencyConfig = {
   bandwidth_utilization: 0.95,
   sync_latency_us: 0.0,
-  switch_delay_us: 1.0,
-  cable_delay_us: 0.025,
+  switch_latency_us: 1.0,
+  cable_latency_us: 0.025,
   memory_read_latency_us: 0.15,
   memory_write_latency_us: 0.01,
   noc_latency_us: 0.05,

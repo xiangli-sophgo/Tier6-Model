@@ -98,8 +98,8 @@ export interface SavedConfig {
       bandwidth_utilization: number;
       sync_latency_us: number;
       // 网络基础设施
-      switch_delay_us: number;
-      cable_delay_us: number;
+      switch_latency_us: number;
+      cable_latency_us: number;
       // 芯片延迟
       memory_read_latency_us: number;
       memory_write_latency_us: number;

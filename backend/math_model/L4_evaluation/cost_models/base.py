@@ -51,7 +51,7 @@ class BaseCostModel(ABC):
 
         Args:
             comm_bytes: 通信数据量（bytes）
-            path_key: 路径键（如 "intra_board", "inter_board", "inter_node"）
+            path_key: 路径键（如 "c2c", "b2b", "r2r", "p2p"）
             participants: 参与者数量
             hardware: 硬件参数
 
