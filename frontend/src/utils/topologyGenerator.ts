@@ -74,6 +74,7 @@ export interface TopologyGenerateRequest {
   switch_config?: GlobalSwitchConfig;
   manual_connections?: ManualConnectionConfig;
   interconnect_config?: InterconnectConfig;  // 互联参数配置
+  connections?: ConnectionConfig[];  // 预设连接（加载配置时使用，跳过自动生成）
 }
 
 /**
@@ -131,6 +132,7 @@ export class HierarchicalTopologyGenerator {
       switch_config,
       manual_connections,
       interconnect_config,
+      connections: presetConnections,
     } = request;
 
     // 合并用户配置与默认值，统一转换为 { bandwidth, latency } 格式
@@ -497,9 +499,12 @@ export class HierarchicalTopologyGenerator {
       }
     }
 
+    // 如果传入了预设连接（从已保存配置加载），使用预设连接替换自动生成的
+    const finalConnections = presetConnections ? presetConnections : connections;
+
     const topology: HierarchicalTopology = {
       pods,
-      connections,
+      connections: finalConnections,
       switches,
       switch_config,
       manual_connections: manualConfig,
@@ -601,7 +606,7 @@ export class HierarchicalTopologyGenerator {
   ): ChipConfig[] {
     const chips: ChipConfig[] = [];
 
-    const totalChips = flexChips.reduce((sum, fc) => sum + (fc.count ?? 1), 0);
+    const totalChips = flexChips.reduce((sum, fc) => sum + fc.count, 0);
     if (totalChips === 0) return chips;
 
     const cols = Math.ceil(Math.sqrt(totalChips));
@@ -609,15 +614,17 @@ export class HierarchicalTopologyGenerator {
     const chipList: Array<{ type: string; label: string }> = [];
 
     for (const fc of flexChips) {
-      const chipName = fc.name ?? 'CHIP';
-      const chipCount = fc.count ?? 1;
-      let chipType = chipName.toLowerCase();
-      if (!['npu', 'cpu'].includes(chipType)) {
-        chipType = 'npu';
+      if (!fc.name) {
+        throw new Error(`[FAIL] flexChips 配置中缺少 name 字段: ${JSON.stringify(fc)}`)
       }
+      if (fc.count == null) {
+        throw new Error(`[FAIL] flexChips 配置中缺少 count 字段: ${JSON.stringify(fc)}`)
+      }
+      const chipName = fc.name;
+      const chipCount = fc.count;
 
       for (let i = 0; i < chipCount; i++) {
-        chipList.push({ type: chipType, label: `${chipName}-${i}` });
+        chipList.push({ type: 'chip', label: `${chipName}-${i}` });
       }
     }
 

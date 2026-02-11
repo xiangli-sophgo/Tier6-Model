@@ -1328,6 +1328,7 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
             links: localHardwareParams?.interconnect || {},
             comm_params: commLatencyConfig,
           },
+          hierarchical_topology: topology || undefined,
         },
 
         search_mode: parallelismMode,
@@ -1473,6 +1474,7 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
               links: overriddenConfig.hardware?.interconnect || localHardwareParams?.interconnect || {},
               comm_params: commLatencyConfig,
             },
+            hierarchical_topology: topology || undefined,
           },
 
           search_mode: 'manual',

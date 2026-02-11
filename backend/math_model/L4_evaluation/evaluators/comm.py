@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from typing import TYPE_CHECKING
 
 from math_model.L4_evaluation.cost_models import (
@@ -112,6 +113,9 @@ class CommEvaluator(BaseEvaluator):
                 "op_type": op_type,
                 "path_key": path_key,
                 "participants": participants,
+                "chip_ids": json.loads(attrs.get("chip_ids", "[]")),
+                "comm_bytes": comm_bytes,
+                "comm_type": comm_type,
                 "comm_protocol": comm_protocol,
                 "tp": tp,
                 "ep": ep,

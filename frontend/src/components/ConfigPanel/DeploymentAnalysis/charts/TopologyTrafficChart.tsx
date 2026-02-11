@@ -39,9 +39,14 @@ export const TopologyTrafficChart: React.FC<TopologyTrafficChartProps> = ({
       pod.racks?.forEach((rack) => {
         rack.boards?.forEach((board) => {
           board.chips?.forEach((chip) => {
-            // 获取芯片型号名称（后端存储在 name 字段，如 SG2262）
+            // 获取芯片型号名称 (label 来自 topologyGenerator, 格式: "SG2262-0")
+            // 提取型号部分 (去掉 -N 后缀)
             const chipAny = chip as any
-            const chipName = chipAny.name || chip.type || 'Chip'
+            const rawLabel = chip.label || chipAny.name
+            if (!rawLabel) {
+              throw new Error(`[FAIL] 芯片 '${chip.id}' 缺少 label 和 name 字段`)
+            }
+            const chipName = rawLabel.replace(/-\d+$/, '')
             // 获取该型号的当前计数
             const count = chipCounters[chipName] || 0
             // 节点显示只用芯片型号（不带编号）

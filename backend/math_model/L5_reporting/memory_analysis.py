@@ -119,29 +119,38 @@ class MemoryAnalyzer:
         num_kv_heads: int | None = None,
         num_heads: int = 1,
         tp_degree: int = 1,
+        num_moe_layers: int = 0,
+        num_routed_experts: int = 0,
+        num_shared_experts: int = 0,
+        moe_intermediate_size: int = 0,
+        ep_degree: int = 1,
     ) -> int:
-        """计算权重内存
+        """计算权重内存 (支持 MoE)
+
+        对于 MoE 模型，必须计算**全部专家**的权重（而非仅激活专家），
+        因为所有专家都需要常驻 GPU 显存。
 
         Args:
             hidden_size: 隐藏层大小
             num_layers: 层数
-            intermediate_size: FFN 中间层大小
+            intermediate_size: Dense FFN 中间层大小
             vocab_size: 词表大小
             num_kv_heads: KV 头数 (GQA)
             num_heads: 注意力头数
             tp_degree: TP 并行度
+            num_moe_layers: MoE 层数 (e.g. DeepSeek-V3: 58)
+            num_routed_experts: 路由专家总数 (e.g. 256)
+            num_shared_experts: 共享专家数 (e.g. 1)
+            moe_intermediate_size: 每专家 FFN 中间层大小
+            ep_degree: Expert Parallelism 并行度
 
         Returns:
-            int: 权重内存 (bytes)
+            int: 每芯片权重内存 (bytes)
         """
         head_dim = hidden_size // num_heads if num_heads > 0 else hidden_size
         effective_kv_heads = num_kv_heads if num_kv_heads else num_heads
 
-        # Attention 权重: Q, K, V, O projections
-        # Q: hidden_size -> hidden_size
-        # K: hidden_size -> kv_heads * head_dim
-        # V: hidden_size -> kv_heads * head_dim
-        # O: hidden_size -> hidden_size
+        # Attention 权重: Q, K, V, O projections (每层相同，不区分 dense/MoE)
         attn_weights_per_layer = (
             hidden_size * hidden_size  # Q
             + hidden_size * effective_kv_heads * head_dim  # K
@@ -149,28 +158,60 @@ class MemoryAnalyzer:
             + hidden_size * hidden_size  # O
         )
 
-        # FFN 权重: gate, up, down
-        ffn_weights_per_layer = (
+        # LayerNorm 权重
+        ln_weights_per_layer = hidden_size * 2  # 2 LayerNorms
+
+        # Dense FFN 权重: gate, up, down
+        dense_ffn_weights = (
             hidden_size * intermediate_size  # gate
             + hidden_size * intermediate_size  # up
             + intermediate_size * hidden_size  # down
         )
 
-        # LayerNorm 权重
-        ln_weights_per_layer = hidden_size * 2  # 2 LayerNorms
+        num_dense_layers = num_layers - num_moe_layers
 
-        # 每层总权重
-        weights_per_layer = (
-            attn_weights_per_layer + ffn_weights_per_layer + ln_weights_per_layer
-        )
+        # Dense 层总权重
+        dense_layer_weights = attn_weights_per_layer + dense_ffn_weights + ln_weights_per_layer
+        total_dense_params = num_dense_layers * dense_layer_weights
 
-        # 所有层 + Embedding + LM Head
+        # MoE 层总权重
+        total_moe_params = 0
+        if num_moe_layers > 0 and num_routed_experts > 0:
+            # 每个专家的 FFN 权重 (gate, up, down)
+            expert_ffn_weights = (
+                hidden_size * moe_intermediate_size  # gate
+                + hidden_size * moe_intermediate_size  # up
+                + moe_intermediate_size * hidden_size  # down
+            )
+
+            # 路由专家: 按 EP 切分 (每芯片只存 num_routed_experts / ep 个专家)
+            routed_experts_per_chip = num_routed_experts // ep_degree
+            routed_ffn_total = routed_experts_per_chip * expert_ffn_weights
+
+            # 共享专家: 不按 EP 切分，每芯片都有完整副本 (但按 TP 切分)
+            shared_ffn_total = num_shared_experts * expert_ffn_weights
+
+            # Router gate 权重: hidden_size -> num_routed_experts (不按 TP/EP 切分，很小)
+            router_weights = hidden_size * num_routed_experts
+
+            # MoE 层 = attention + router + routed_experts + shared_experts + layernorm
+            moe_layer_weights = (
+                attn_weights_per_layer
+                + router_weights
+                + routed_ffn_total
+                + shared_ffn_total
+                + ln_weights_per_layer
+            )
+            total_moe_params = num_moe_layers * moe_layer_weights
+
+        # Embedding
         embedding_weights = vocab_size * hidden_size
-        lm_head_weights = hidden_size * vocab_size  # 通常与 embedding 共享
 
-        total_params = num_layers * weights_per_layer + embedding_weights
+        # Dense 部分按 TP 切分; MoE 部分中 attention/shared_experts 按 TP 切分，
+        # routed_experts 已按 EP 切分，router 不切分
+        # 简化处理: 整体按 TP 切分 (router 权重占比极小，误差可忽略)
+        total_params = total_dense_params + total_moe_params + embedding_weights
 
-        # TP 切分
         return (total_params // tp_degree) * self.dtype_bytes
 
     def calculate_kv_cache_memory(

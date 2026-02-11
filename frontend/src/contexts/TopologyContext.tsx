@@ -4,7 +4,7 @@
  */
 import React, { createContext, useContext, useState, useCallback, useEffect, ReactNode } from 'react'
 import { toast } from 'sonner'
-import { HierarchicalTopology, ManualConnectionConfig } from '../types'
+import { HierarchicalTopology, ManualConnectionConfig, ConnectionConfig } from '../types'
 import { getTopology, generateTopology } from '../api/topology'
 
 // ============================================
@@ -61,6 +61,7 @@ export interface GenerateConfig {
     r2r?: InterconnectParams  // Rack-to-Rack
     p2p?: InterconnectParams  // Pod-to-Pod
   }
+  connections?: ConnectionConfig[]  // 预设连接（加载配置时使用）
 }
 
 // 拓扑状态接口
@@ -142,6 +143,10 @@ export const TopologyProvider: React.FC<TopologyProviderProps> = ({ children }) 
   const handleGenerate = useCallback(async (config: GenerateConfig) => {
     try {
       const data = await generateTopology(config)
+      // 如果传入了预设连接，用预设连接替换自动生成的
+      if (config.connections) {
+        data.connections = config.connections
+      }
       setTopology(data)
       // 更新用于部署分析的配置数据
       setPodCount(config.pod_count || 1)

@@ -109,6 +109,12 @@ core_count = config["cores"]["count"]
 - → → `->`
 - ⚠️ → `[WARN]`
 
+### 6. 代码回退规则
+
+**禁止使用 `git checkout <file>` 或 `git restore <file>` 来回退代码修改**。因为文件中可能包含本次会话中其他任务的修改，整文件回退会导致这些修改丢失。
+
+**正确做法**: 找到需要回退的具体代码位置，使用 Edit 工具精确还原对应的代码段。
+
 ## Architecture
 
 ### Frontend (React + TypeScript + Three.js)

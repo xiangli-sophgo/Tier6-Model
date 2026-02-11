@@ -43,13 +43,11 @@ from math_model.L5_reporting.roofline import (
     build_roofline_from_engine_result,
 )
 from math_model.L5_reporting.traffic_analysis import (
-    CommType,
     DeviceTraffic,
     LinkTraffic,
     LinkType,
     TrafficAnalyzer,
     TrafficReport,
-    analyze_traffic_from_exec_plan,
 )
 
 __all__ = [
@@ -78,10 +76,8 @@ __all__ = [
     "build_roofline_from_engine_result",
     # Traffic
     "LinkType",
-    "CommType",
     "LinkTraffic",
     "DeviceTraffic",
     "TrafficReport",
     "TrafficAnalyzer",
-    "analyze_traffic_from_exec_plan",
 ]

@@ -11,6 +11,7 @@ pods:
       chips:
       - name: SG2262
         count: 8
+        preset_id: SG2262
     total_u: 42
 chips:
   SG2262:
@@ -90,3 +91,120 @@ interconnect:
     memory_write_latency_us: 0.01
     noc_latency_us: 0.05
     die_to_die_latency_us: 0.04
+switch_config:
+  switch_types:
+  - id: switch_48
+    name: Switch
+    port_count: 48
+  inter_pod:
+    enabled: false
+    layers: []
+    downlink_redundancy: 1
+    connect_to_upper_level: true
+    keep_direct_topology: false
+  inter_rack:
+    enabled: false
+    layers: []
+    downlink_redundancy: 1
+    connect_to_upper_level: true
+    keep_direct_topology: false
+  inter_board:
+    enabled: false
+    layers: []
+    downlink_redundancy: 1
+    connect_to_upper_level: true
+    keep_direct_topology: false
+    switch_position: top
+    switch_u_height: 1
+  inter_chip:
+    enabled: false
+    layers: []
+    downlink_redundancy: 1
+    connect_to_upper_level: true
+    direct_topology: full_mesh
+    keep_direct_topology: false
+connections:
+- source: pod_0/rack_0/board_0/chip_0
+  target: pod_0/rack_0/board_0/chip_1
+  type: c2c
+- source: pod_0/rack_0/board_0/chip_0
+  target: pod_0/rack_0/board_0/chip_2
+  type: c2c
+- source: pod_0/rack_0/board_0/chip_0
+  target: pod_0/rack_0/board_0/chip_3
+  type: c2c
+- source: pod_0/rack_0/board_0/chip_0
+  target: pod_0/rack_0/board_0/chip_4
+  type: c2c
+- source: pod_0/rack_0/board_0/chip_0
+  target: pod_0/rack_0/board_0/chip_5
+  type: c2c
+- source: pod_0/rack_0/board_0/chip_0
+  target: pod_0/rack_0/board_0/chip_6
+  type: c2c
+- source: pod_0/rack_0/board_0/chip_0
+  target: pod_0/rack_0/board_0/chip_7
+  type: c2c
+- source: pod_0/rack_0/board_0/chip_1
+  target: pod_0/rack_0/board_0/chip_2
+  type: c2c
+- source: pod_0/rack_0/board_0/chip_1
+  target: pod_0/rack_0/board_0/chip_3
+  type: c2c
+- source: pod_0/rack_0/board_0/chip_1
+  target: pod_0/rack_0/board_0/chip_4
+  type: c2c
+- source: pod_0/rack_0/board_0/chip_1
+  target: pod_0/rack_0/board_0/chip_5
+  type: c2c
+- source: pod_0/rack_0/board_0/chip_1
+  target: pod_0/rack_0/board_0/chip_6
+  type: c2c
+- source: pod_0/rack_0/board_0/chip_1
+  target: pod_0/rack_0/board_0/chip_7
+  type: c2c
+- source: pod_0/rack_0/board_0/chip_2
+  target: pod_0/rack_0/board_0/chip_3
+  type: c2c
+- source: pod_0/rack_0/board_0/chip_2
+  target: pod_0/rack_0/board_0/chip_4
+  type: c2c
+- source: pod_0/rack_0/board_0/chip_2
+  target: pod_0/rack_0/board_0/chip_5
+  type: c2c
+- source: pod_0/rack_0/board_0/chip_2
+  target: pod_0/rack_0/board_0/chip_6
+  type: c2c
+- source: pod_0/rack_0/board_0/chip_2
+  target: pod_0/rack_0/board_0/chip_7
+  type: c2c
+- source: pod_0/rack_0/board_0/chip_3
+  target: pod_0/rack_0/board_0/chip_4
+  type: c2c
+- source: pod_0/rack_0/board_0/chip_3
+  target: pod_0/rack_0/board_0/chip_5
+  type: c2c
+- source: pod_0/rack_0/board_0/chip_3
+  target: pod_0/rack_0/board_0/chip_6
+  type: c2c
+- source: pod_0/rack_0/board_0/chip_3
+  target: pod_0/rack_0/board_0/chip_7
+  type: c2c
+- source: pod_0/rack_0/board_0/chip_4
+  target: pod_0/rack_0/board_0/chip_5
+  type: c2c
+- source: pod_0/rack_0/board_0/chip_4
+  target: pod_0/rack_0/board_0/chip_6
+  type: c2c
+- source: pod_0/rack_0/board_0/chip_4
+  target: pod_0/rack_0/board_0/chip_7
+  type: c2c
+- source: pod_0/rack_0/board_0/chip_5
+  target: pod_0/rack_0/board_0/chip_6
+  type: c2c
+- source: pod_0/rack_0/board_0/chip_5
+  target: pod_0/rack_0/board_0/chip_7
+  type: c2c
+- source: pod_0/rack_0/board_0/chip_6
+  target: pod_0/rack_0/board_0/chip_7
+  type: c2c

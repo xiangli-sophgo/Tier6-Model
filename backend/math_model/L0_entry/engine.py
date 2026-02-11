@@ -23,6 +23,49 @@ from math_model.L0_entry.eval_config import (
 logger = logging.getLogger(__name__)
 
 
+def build_chip_id_mapping(topology_config: dict[str, Any]) -> dict[int, str]:
+    """构建芯片索引 -> 前端物理设备 ID 映射
+
+    遍历顺序: pod -> rack -> board -> chip，与 L3 并行规划器的线性编号一致。
+    前端设备 ID 格式: pod_X/rack_X/board_X/chip_X
+
+    Args:
+        topology_config: 拓扑配置 (包含 pods 或 rack_config)
+
+    Returns:
+        dict[int, str]: 芯片索引 -> 前端设备 ID
+    """
+    mapping: dict[int, str] = {}
+    chip_index = 0
+
+    pods = topology_config.get("pods", [])
+    for pod_entry in pods:
+        pod_count = pod_entry.get("count", 1)
+        racks = pod_entry.get("racks", [])
+        for pod_idx in range(pod_count):
+            for rack_entry in racks:
+                rack_count = rack_entry.get("count", 1)
+                boards = rack_entry.get("boards", [])
+                for rack_idx in range(rack_count):
+                    for board in boards:
+                        board_count = board.get("count", 1)
+                        chips = board.get("chips", [])
+                        for board_idx in range(board_count):
+                            local_chip_idx = 0
+                            for chip_group in chips:
+                                chip_count = chip_group.get("count", 1)
+                                for _ in range(chip_count):
+                                    device_id = (
+                                        f"pod_{pod_idx}/rack_{rack_idx}"
+                                        f"/board_{board_idx}/chip_{local_chip_idx}"
+                                    )
+                                    mapping[chip_index] = device_id
+                                    chip_index += 1
+                                    local_chip_idx += 1
+
+    return mapping
+
+
 def run_evaluation(
     eval_config: EvalConfig,
     progress_callback: Callable[[float], None] | None = None,
@@ -195,6 +238,7 @@ def run_evaluation(
     result = {
         "aggregates": asdict(report.performance) if hasattr(report.performance, '__dataclass_fields__') else report.performance,
         "step_metrics": [asdict(s) if hasattr(s, '__dataclass_fields__') else s for s in report.step_metrics],
+        "step_metrics_objects": engine_result.step_metrics,
         "config": run_config,
         "schema_version": report.schema_version,
         "granularity": report.granularity,
@@ -320,33 +364,31 @@ def _calculate_memory_breakdown(
     weight_dtype_bytes = dtype_map.get(mc.weight_dtype.lower(), 2)
     activation_dtype_bytes = dtype_map.get(mc.activation_dtype.lower(), 2)
 
-    # 1. 权重：使用运行时数据（L4 已累加 local_weight_bytes）
-    weight_bytes = aggregates.get("memory_peak", 0)
-
-    # 回退：如果运行时数据缺失，使用理论估算
-    if weight_bytes == 0:
-        logger.warning("[WARN] No runtime weight data (memory_peak=0), using theoretical estimate")
-
-        # 简化估算（不支持 MoE/MLA 细节，但优于 0）
-        total_params = (
-            mc.num_layers * (4 * mc.hidden_size ** 2 + 3 * mc.hidden_size * mc.intermediate_size)
-            + mc.vocab_size * mc.hidden_size * 2
-        )
-        shard_factor = dep.tp * dep.pp
-        weight_bytes = int((total_params / shard_factor) * weight_dtype_bytes) if shard_factor > 0 else 0
-
-    # 2. KV Cache：理论计算
+    # 1. 权重：理论计算（支持 MoE 全部专家权重）
+    #    注意: 运行时 memory_peak 只包含激活专家权重，对 MoE 模型严重低估
     analyzer = MemoryAnalyzer(dtype_bytes=weight_dtype_bytes)
 
-    # 计算 head_dim
-    head_dim = mc.hidden_size // mc.num_attention_heads if mc.num_attention_heads > 0 else mc.hidden_size
+    num_kv_heads = mc.num_attention_heads
+
+    weight_bytes = analyzer.calculate_weights_memory(
+        hidden_size=mc.hidden_size,
+        num_layers=mc.num_layers,
+        intermediate_size=mc.intermediate_size,
+        vocab_size=mc.vocab_size,
+        num_kv_heads=num_kv_heads,
+        num_heads=mc.num_attention_heads,
+        tp_degree=dep.tp,
+        num_moe_layers=mc.num_moe_layers,
+        num_routed_experts=mc.moe.num_routed_experts,
+        num_shared_experts=mc.moe.num_shared_experts,
+        moe_intermediate_size=mc.moe.intermediate_size,
+        ep_degree=dep.ep,
+    )
+
+    # 2. KV Cache：理论计算
 
     # 检测 MLA 启用
     mla_enabled = mc.mla.kv_lora_rank > 0
-
-    # num_kv_heads 处理（对于非 GQA 模型可能等于 num_attention_heads）
-    # 目前 ModelConfig 中没有单独的 num_kv_heads 字段，使用 num_attention_heads
-    num_kv_heads = mc.num_attention_heads
     if mla_enabled:
         logger.debug(f"[OK] MLA enabled: kv_lora_rank={mc.mla.kv_lora_rank}, qk_rope_dim={mc.mla.qk_rope_head_dim}")
 
@@ -460,7 +502,11 @@ def run_evaluation_from_request(
         cost_result = _calculate_deployment_cost(eval_config, aggregates)
 
         # 生成与前端兼容的 gantt_chart 和 stats
-        from math_model.L0_entry.compat import convert_to_gantt_chart, convert_to_stats
+        from math_model.L0_entry.compat import (
+            convert_to_gantt_chart,
+            convert_to_stats,
+            convert_traffic_report_to_stats,
+        )
 
         # 构建 deployment_config dict (前端兼容层需要)
         deployment_dict = {
@@ -474,6 +520,22 @@ def run_evaluation_from_request(
             "q_seq_len": dep.q_seq_len, "kv_seq_len": dep.kv_seq_len,
         }
 
+        # 流量分析: 使用 L4 StepMetrics 对象 (转 dict 之前)
+        link_traffic_stats: list[dict[str, Any]] = []
+        step_metrics_objects = result.get("step_metrics_objects")
+        if step_metrics_objects:
+            from math_model.L5_reporting.traffic_analysis import TrafficAnalyzer as TA
+
+            chip_id_map = build_chip_id_mapping(topology_config)
+            traffic_report = TA().analyze(
+                step_metrics=step_metrics_objects,
+                topology_config=topology_config,
+                chip_id_mapping=chip_id_map,
+            )
+            link_traffic_stats = convert_traffic_report_to_stats(
+                traffic_report, topology_config,
+            )
+
         gantt_chart = convert_to_gantt_chart(
             step_metrics=step_metrics,
             parallelism=deployment_dict,
@@ -486,6 +548,7 @@ def run_evaluation_from_request(
             inference_config=inference_config,
             parallelism=deployment_dict,
             topology_config=topology_config,
+            link_traffic_stats=link_traffic_stats,
         )
 
         # 构建与前端兼容的返回格式
@@ -501,14 +564,8 @@ def run_evaluation_from_request(
         tps_per_chip = tps / chips if chips > 0 else 0
         tps_per_batch = tps / batch_size if batch_size > 0 else 0
 
-        # 显存占用
-        if "memory_peak_mb" in aggregates:
-            memory_peak_mb = aggregates["memory_peak_mb"]
-        elif "memory_peak" in aggregates:
-            memory_peak_mb = aggregates["memory_peak"] / (1024 * 1024)
-        else:
-            raise ValueError("Missing 'memory_peak_mb' or 'memory_peak' in aggregates")
-        dram_occupy = memory_peak_mb * 1024 * 1024  # MB -> bytes
+        # 显存占用: 使用理论计算的总内存 (memory_breakdown 已包含权重+KV+激活+overhead)
+        dram_occupy = memory_breakdown["total_per_chip_gb"] * (1024 ** 3)  # GB -> bytes
 
         ttft = aggregates.get("ttft_ms")
         if ttft is None:

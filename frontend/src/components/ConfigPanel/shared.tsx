@@ -2,6 +2,7 @@ import React from 'react'
 import {
   GlobalSwitchConfig,
   ManualConnectionConfig,
+  ConnectionConfig,
   ConnectionMode,
   HierarchyLevel,
   LayoutType,
@@ -251,6 +252,7 @@ export interface ConfigPanelProps {
       r2r?: InterconnectParams  // Rack-to-Rack
       p2p?: InterconnectParams  // Pod-to-Pod
     }
+    connections?: ConnectionConfig[]  // 预设连接（加载配置时使用）
   }) => void
   loading: boolean
   currentLevel?: 'datacenter' | 'pod' | 'rack' | 'board'

@@ -274,6 +274,8 @@ export interface TopologyConfig {
   pods?: TopologyPodGroup[];
   chips?: Record<string, ChipPreset>;
   interconnect?: InterconnectConfig;
+  switch_config?: import('../types').GlobalSwitchConfig;
+  connections?: import('../types').ConnectionConfig[];
   [key: string]: unknown;  // 允许额外字段
 }
 

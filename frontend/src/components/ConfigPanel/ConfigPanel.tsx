@@ -46,6 +46,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { GlobalSwitchConfig } from '../../types'
 import { getTopologies, getTopology as getTopology, createTopology, updateTopology, deleteTopology } from '../../api/math_model'
 import type { TopologyListItem, TopologyConfig } from '../../types/math_model'
+import type { ConnectionConfig } from '../../types'
 import { clearAllCache } from '../../utils/storage'
 import {
   ChipIcon,
@@ -234,6 +235,9 @@ export const ConfigPanel: React.FC<ConfigPanelProps> = ({
     saveCachedConfig({ podCount, racksPerPod, rackConfig, switchConfig, manualConnectionConfig, hardwareParams })
   }, [podCount, racksPerPod, rackConfig, switchConfig, manualConnectionConfig, hardwareParams])
 
+  // 加载配置时暂存的 connections（用于在拓扑重新生成时恢复）
+  const loadedConnectionsRef = useRef<ConnectionConfig[] | null>(null)
+
   // 配置变化时自动生成拓扑（防抖500ms）
   const isFirstRender = useRef(true)
   useEffect(() => {
@@ -244,24 +248,20 @@ export const ConfigPanel: React.FC<ConfigPanelProps> = ({
     }
 
     const timer = setTimeout(() => {
-      // console.log('🔧 [ConfigPanel] 生成拓扑配置:', {
-      //   podCount,
-      //   racksPerPod,
-      //   rackConfig: {
-      //     total_u: rackConfig.total_u,
-      //     boards: rackConfig.boards,
-      //     boardsCount: rackConfig.boards.length,
-      //   },
-      //   switchConfig: switchConfig?.inter_board,
-      // })
-      onGenerate({
+      const generateConfig: Parameters<typeof onGenerate>[0] = {
         pod_count: podCount,
         racks_per_pod: racksPerPod,
         rack_config: rackConfig,
         switch_config: switchConfig,
         manual_connections: manualConnectionConfig,
         interconnect_config: hardwareParams.interconnect,
-      })
+      }
+      // 如果有从保存配置加载的 connections，传入并清空 ref
+      if (loadedConnectionsRef.current) {
+        generateConfig.connections = loadedConnectionsRef.current
+        loadedConnectionsRef.current = null
+      }
+      onGenerate(generateConfig)
     }, 500)
 
     return () => clearTimeout(timer)
@@ -351,6 +351,8 @@ export const ConfigPanel: React.FC<ConfigPanelProps> = ({
           links: hardwareParams?.interconnect,
           comm_params: commLatencyConfig,
         },
+        switch_config: switchConfig,
+        connections: topology?.connections,
       }
 
       // 检查是否已存在同名配置
@@ -413,6 +415,16 @@ export const ConfigPanel: React.FC<ConfigPanelProps> = ({
       // 加载通信延迟配置
       if (config.interconnect?.comm_params) {
         setCommLatencyConfig(config.interconnect.comm_params as any)
+      }
+
+      // 加载 switch_config（芯片/板卡/机柜间连接拓扑配置）
+      if (config.switch_config) {
+        setSwitchConfig(config.switch_config)
+      }
+
+      // 暂存 connections，等拓扑重新生成时恢复
+      if (config.connections && config.connections.length > 0) {
+        loadedConnectionsRef.current = config.connections
       }
 
       setLoadModalOpen(false)

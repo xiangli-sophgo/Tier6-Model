@@ -1,17 +1,15 @@
 """链路流量分析模块
 
-生成网络链路流量统计和可视化数据。
+基于 L4 StepMetrics 的真实仿真数据生成网络链路流量统计。
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
-if TYPE_CHECKING:
-    from math_model.L3_mapping.plan import ExecPlan, ExecStep
-    from math_model.L3_mapping.protocols import ParallelGroupAssignment
+from math_model.L4_evaluation.metrics import StepMetrics
 
 
 class LinkType(str, Enum):
@@ -23,30 +21,19 @@ class LinkType(str, Enum):
     P2P = "p2p"  # Pod-to-Pod (Ethernet)
 
 
-class CommType(str, Enum):
-    """通信类型"""
-
-    TP_ALLREDUCE = "tp_allreduce"
-    PP_P2P = "pp_p2p"
-    DP_ALLREDUCE = "dp_allreduce"
-    EP_ALLTOALL = "ep_alltoall"
-    SP_ALLGATHER = "sp_allgather"
-    SP_REDUCESCATTER = "sp_reducescatter"
-
-
 @dataclass
 class LinkTraffic:
     """链路流量
 
     Attributes:
-        src: 源设备 ID
+        src: 源设备 ID (前端格式: pod_X/rack_X/board_X/chip_X)
         dst: 目标设备 ID
         link_type: 链路类型
         total_bytes: 总传输字节数
         total_time_us: 总传输时间 (us)
         bandwidth_gbps: 带宽 (Gbps)
         utilization: 带宽利用率 (0-1)
-        comm_breakdown: 按通信类型分解
+        comm_breakdown: 按通信类型分解 (reason -> bytes)
     """
 
     src: str
@@ -138,7 +125,7 @@ class TrafficReport:
         return {
             "totalBytes": self.total_bytes,
             "totalTimeUs": self.total_time_us,
-            "links": [l.to_dict() for l in self.links],
+            "links": [link.to_dict() for link in self.links],
             "devices": [d.to_dict() for d in self.devices],
             "commBreakdown": self.comm_breakdown,
             "phaseBreakdown": self.phase_breakdown,
@@ -148,192 +135,212 @@ class TrafficReport:
 class TrafficAnalyzer:
     """流量分析器
 
-    分析执行计划中的通信流量。
+    基于 L4 StepMetrics 的真实仿真数据分析通信流量，
+    将芯片索引映射为前端设备 ID，按通信类型分配链路流量。
     """
 
-    def __init__(self) -> None:
-        """初始化"""
-        self._link_traffic: dict[str, LinkTraffic] = {}
-        self._device_traffic: dict[str, DeviceTraffic] = {}
-        self._comm_breakdown: dict[str, int] = {}
-        self._phase_breakdown: dict[str, int] = {}
-        self._total_bytes = 0
-        self._total_time_us = 0.0
-
-    def _get_link_type(self, src: str, dst: str) -> LinkType:
-        """推断链路类型
-
-        简化实现：根据设备 ID 前缀判断
-
-        Args:
-            src: 源设备 ID
-            dst: 目标设备 ID
-
-        Returns:
-            LinkType: 链路类型
-        """
-        # 简化实现：假设 ID 格式为 "pod_rack_board_chip"
-        # 实际应根据拓扑信息判断
-        src_parts = src.split("_")
-        dst_parts = dst.split("_")
-
-        if len(src_parts) >= 4 and len(dst_parts) >= 4:
-            if src_parts[:3] == dst_parts[:3]:  # 同 board
-                return LinkType.C2C
-            if src_parts[:2] == dst_parts[:2]:  # 同 rack
-                return LinkType.B2B
-            if src_parts[0] == dst_parts[0]:  # 同 pod
-                return LinkType.R2R
-
-        return LinkType.P2P
-
-    def _get_link(self, src: str, dst: str) -> LinkTraffic:
-        """获取或创建链路流量对象"""
-        link_id = f"{src}->{dst}"
-        if link_id not in self._link_traffic:
-            self._link_traffic[link_id] = LinkTraffic(
-                src=src,
-                dst=dst,
-                link_type=self._get_link_type(src, dst),
-            )
-        return self._link_traffic[link_id]
-
-    def _get_device(self, device_id: str) -> DeviceTraffic:
-        """获取或创建设备流量对象"""
-        if device_id not in self._device_traffic:
-            self._device_traffic[device_id] = DeviceTraffic(device_id=device_id)
-        return self._device_traffic[device_id]
-
-    def add_comm(
+    def analyze(
         self,
-        src: str,
-        dst: str,
-        bytes_transferred: int,
-        time_us: float,
-        comm_type: str,
-        phase: str,
-    ) -> None:
-        """添加一次通信
+        step_metrics: list[StepMetrics],
+        topology_config: dict[str, Any],
+        chip_id_mapping: dict[int, str],
+    ) -> TrafficReport:
+        """分析流量
 
         Args:
-            src: 源设备 ID
-            dst: 目标设备 ID
-            bytes_transferred: 传输字节数
-            time_us: 传输时间 (us)
-            comm_type: 通信类型
-            phase: 阶段 (prefill/decode)
-        """
-        # 更新链路流量
-        link = self._get_link(src, dst)
-        link.total_bytes += bytes_transferred
-        link.total_time_us += time_us
-        link.comm_breakdown[comm_type] = (
-            link.comm_breakdown.get(comm_type, 0) + bytes_transferred
-        )
-
-        # 更新设备流量
-        src_device = self._get_device(src)
-        src_device.total_send_bytes += bytes_transferred
-        src_device.send_breakdown[comm_type] = (
-            src_device.send_breakdown.get(comm_type, 0) + bytes_transferred
-        )
-
-        dst_device = self._get_device(dst)
-        dst_device.total_recv_bytes += bytes_transferred
-        dst_device.recv_breakdown[comm_type] = (
-            dst_device.recv_breakdown.get(comm_type, 0) + bytes_transferred
-        )
-
-        # 更新总计
-        self._total_bytes += bytes_transferred
-        self._total_time_us += time_us
-        self._comm_breakdown[comm_type] = (
-            self._comm_breakdown.get(comm_type, 0) + bytes_transferred
-        )
-        self._phase_breakdown[phase] = (
-            self._phase_breakdown.get(phase, 0) + bytes_transferred
-        )
-
-    def analyze(self, exec_plan: "ExecPlan") -> TrafficReport:
-        """分析执行计划中的流量
-
-        Args:
-            exec_plan: 执行计划
+            step_metrics: L4 输出的 StepMetrics 列表 (含增强的 meta 字段)
+            topology_config: 拓扑配置 (含 interconnect 信息)
+            chip_id_mapping: 芯片索引 -> 前端设备 ID 映射
 
         Returns:
             TrafficReport: 流量报告
         """
-        # 分析 prefill 步骤
-        for step in exec_plan.prefill_steps:
-            if step.comm and step.comm.bytes_to_transfer > 0:
-                self._analyze_step(step, "prefill")
+        link_map: dict[str, LinkTraffic] = {}
+        device_map: dict[str, DeviceTraffic] = {}
+        comm_breakdown: dict[str, int] = {}
+        total_bytes = 0
+        total_time_us = 0.0
 
-        # 分析 decode 步骤
-        for step in exec_plan.decode_steps:
-            if step.comm and step.comm.bytes_to_transfer > 0:
-                self._analyze_step(step, "decode")
-
-        return self._build_report()
-
-    def _analyze_step(self, step: "ExecStep", phase: str) -> None:
-        """分析单个步骤"""
-        comm = step.comm
-        if not comm:
-            return
-
-        bytes_transferred = comm.bytes_to_transfer
-        time_us = step.estimated_ns / 1000 if step.estimated_ns > 0 else 0.0
-        comm_type = comm.comm_type.value
-
-        # P2P 通信
-        if comm.src_device and comm.dst_device:
-            self.add_comm(
-                src=comm.src_device,
-                dst=comm.dst_device,
-                bytes_transferred=bytes_transferred,
-                time_us=time_us,
-                comm_type=comm_type,
-                phase=phase,
+        # 获取互联带宽配置
+        if "interconnect" not in topology_config:
+            raise ValueError(
+                "topology_config 中缺少 'interconnect' 字段"
             )
-        # 组通信 (AllReduce, AllGather, AllToAll)
-        elif comm.group_devices and len(comm.group_devices) > 1:
-            # 简化：假设 Ring 拓扑，每个设备向下一个发送
-            devices = comm.group_devices
-            per_device_bytes = bytes_transferred // len(devices)
-            per_device_time = time_us / len(devices)
+        interconnect = topology_config["interconnect"]
+        if "links" not in interconnect:
+            raise ValueError(
+                "topology_config.interconnect 中缺少 'links' 字段"
+            )
+        links_config = interconnect["links"]
 
-            for i in range(len(devices)):
-                src = devices[i]
-                dst = devices[(i + 1) % len(devices)]
-                self.add_comm(
-                    src=src,
-                    dst=dst,
-                    bytes_transferred=per_device_bytes,
-                    time_us=per_device_time,
-                    comm_type=comm_type,
-                    phase=phase,
+        for step in step_metrics:
+            if step.t_comm <= 0:
+                continue
+
+            meta = step.meta
+            if meta.get("evaluator") != "comm":
+                continue
+
+            # CommEvaluator 保证以下字段存在
+            if "chip_ids" not in meta:
+                raise ValueError(f"comm step '{step.op_id}' meta 中缺少 'chip_ids'")
+            if "comm_bytes" not in meta:
+                raise ValueError(f"comm step '{step.op_id}' meta 中缺少 'comm_bytes'")
+            if "comm_type" not in meta:
+                raise ValueError(f"comm step '{step.op_id}' meta 中缺少 'comm_type'")
+            if "path_key" not in meta:
+                raise ValueError(f"comm step '{step.op_id}' meta 中缺少 'path_key'")
+
+            chip_ids: list[int] = meta["chip_ids"]
+            comm_bytes: int = meta["comm_bytes"]
+            comm_type: str = meta["comm_type"]
+            path_key: str = meta["path_key"]
+            reason: str = meta.get("reason", comm_type)
+            participants: int = meta.get("participants", len(chip_ids))
+
+            if not chip_ids or comm_bytes <= 0:
+                continue
+
+            # 获取链路配置
+            if path_key not in links_config:
+                raise ValueError(
+                    f"links_config 中缺少 '{path_key}' 链路配置"
+                )
+            link_config = links_config[path_key]
+            if "bandwidth_gbps" not in link_config:
+                raise ValueError(
+                    f"links_config.{path_key} 中缺少 'bandwidth_gbps' 字段"
+                )
+            bandwidth_gbps = link_config["bandwidth_gbps"]
+
+            # 通信时间 (ms -> us)
+            comm_time_us = step.t_comm * 1000.0
+
+            # 将芯片索引转换为前端设备 ID
+            device_ids = []
+            for cid in chip_ids:
+                did = chip_id_mapping.get(cid)
+                if did is not None:
+                    device_ids.append(did)
+
+            if len(device_ids) < 2:
+                continue
+
+            # 确定链路类型
+            try:
+                link_type = LinkType(path_key)
+            except ValueError:
+                link_type = LinkType.C2C
+
+            # 根据通信类型分配流量到链路
+            n = len(device_ids)
+            link_entries = self._distribute_traffic(
+                comm_type, device_ids, comm_bytes, n,
+            )
+
+            # 更新链路和设备统计
+            label = reason if reason else comm_type
+            for src_id, dst_id, per_link_bytes in link_entries:
+                # 链路统计
+                lk = f"{src_id}->{dst_id}"
+                if lk not in link_map:
+                    link_map[lk] = LinkTraffic(
+                        src=src_id,
+                        dst=dst_id,
+                        link_type=link_type,
+                        bandwidth_gbps=bandwidth_gbps,
+                    )
+                link = link_map[lk]
+                link.total_bytes += per_link_bytes
+                link.total_time_us += comm_time_us / max(len(link_entries), 1)
+                link.comm_breakdown[label] = (
+                    link.comm_breakdown.get(label, 0) + per_link_bytes
                 )
 
-    def _build_report(self) -> TrafficReport:
-        """构建报告"""
+                # 设备发送统计
+                if src_id not in device_map:
+                    device_map[src_id] = DeviceTraffic(device_id=src_id)
+                src_dev = device_map[src_id]
+                src_dev.total_send_bytes += per_link_bytes
+                src_dev.send_breakdown[label] = (
+                    src_dev.send_breakdown.get(label, 0) + per_link_bytes
+                )
+
+                # 设备接收统计
+                if dst_id not in device_map:
+                    device_map[dst_id] = DeviceTraffic(device_id=dst_id)
+                dst_dev = device_map[dst_id]
+                dst_dev.total_recv_bytes += per_link_bytes
+                dst_dev.recv_breakdown[label] = (
+                    dst_dev.recv_breakdown.get(label, 0) + per_link_bytes
+                )
+
+            # 全局统计
+            total_bytes += comm_bytes
+            total_time_us += comm_time_us
+            comm_breakdown[label] = comm_breakdown.get(label, 0) + comm_bytes
+
+        # 计算利用率
+        for link in link_map.values():
+            if link.bandwidth_gbps > 0 and link.total_time_us > 0:
+                bw_bytes_per_us = link.bandwidth_gbps * 1e9 / 8 / 1e6  # bytes/us
+                max_bytes = bw_bytes_per_us * link.total_time_us
+                link.utilization = min(1.0, link.total_bytes / max_bytes) if max_bytes > 0 else 0.0
+
         return TrafficReport(
-            total_bytes=self._total_bytes,
-            total_time_us=self._total_time_us,
-            links=list(self._link_traffic.values()),
-            devices=list(self._device_traffic.values()),
-            comm_breakdown=self._comm_breakdown,
-            phase_breakdown=self._phase_breakdown,
+            total_bytes=total_bytes,
+            total_time_us=total_time_us,
+            links=list(link_map.values()),
+            devices=list(device_map.values()),
+            comm_breakdown=comm_breakdown,
         )
 
+    def _distribute_traffic(
+        self,
+        comm_type: str,
+        device_ids: list[str],
+        total_bytes: int,
+        n: int,
+    ) -> list[tuple[str, str, int]]:
+        """根据通信类型分配流量到各链路
 
-def analyze_traffic_from_exec_plan(exec_plan: "ExecPlan") -> TrafficReport:
-    """从执行计划分析流量
+        Returns:
+            list of (src_device_id, dst_device_id, bytes_per_link)
+        """
+        entries: list[tuple[str, str, int]] = []
 
-    Args:
-        exec_plan: 执行计划
+        if n <= 1:
+            return entries
 
-    Returns:
-        TrafficReport: 流量报告
-    """
-    analyzer = TrafficAnalyzer()
-    return analyzer.analyze(exec_plan)
+        # P2P: 直接 src -> dst
+        if comm_type == "p2p" or n == 2:
+            entries.append((device_ids[0], device_ids[1], total_bytes))
+            return entries
+
+        # AllReduce / AllGather / ReduceScatter: Ring 模式
+        if comm_type in {"allreduce", "allgather", "reduce_scatter", "reducescatter"}:
+            # Ring AllReduce: 每条链路传输 total_bytes * (n-1) / n / n
+            # 总共 n 条链路 (环形)，每条链路上的流量
+            per_link = int(total_bytes * (n - 1) / n / n) if n > 0 else 0
+            for i in range(n):
+                src = device_ids[i]
+                dst = device_ids[(i + 1) % n]
+                entries.append((src, dst, per_link))
+            return entries
+
+        # All2All: 全连接模式
+        if comm_type in {"all2all", "alltoall"}:
+            per_pair = int(total_bytes / (n * (n - 1))) if n > 1 else 0
+            for i in range(n):
+                for j in range(n):
+                    if i != j:
+                        entries.append((device_ids[i], device_ids[j], per_pair))
+            return entries
+
+        # 其他未知类型: 退化为 Ring 模式
+        per_link = int(total_bytes / n) if n > 0 else 0
+        for i in range(n):
+            src = device_ids[i]
+            dst = device_ids[(i + 1) % n]
+            entries.append((src, dst, per_link))
+        return entries

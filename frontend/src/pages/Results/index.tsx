@@ -395,33 +395,27 @@ export const Results: React.FC = () => {
     if (!taskResults || !taskResults.top_k_plans) return []
 
     // 从任务配置快照中提取芯片容量
-    // 兼容新旧格式：新格式用 topology_config，旧格式用 topology
-    const topology = (selectedTask?.config_snapshot?.topology ||
-                      selectedTask?.config_snapshot?.topology_config) as any
+    const topology = selectedTask?.config_snapshot?.topology as any
     if (!topology) {
-      console.error('无法获取任务配置快照中的拓扑信息')
+      console.error('[FAIL] config_snapshot 中缺少 topology 字段')
       return []
     }
 
-    // 尝试多种路径获取芯片配置
-    // 1. chips (新格式 v2.2+)
-    // 2. hardware_params.chips (旧格式兼容)
-    const chips = topology.chips || topology.hardware_params?.chips || {}
+    const chips = topology.chips as Record<string, any> | undefined
+    if (!chips || Object.keys(chips).length === 0) {
+      console.error('[FAIL] config_snapshot.topology 中缺少 chips 字段')
+      return []
+    }
+
     const firstChipName = Object.keys(chips)[0]
+    const firstChip = chips[firstChipName]
 
-    // 尝试多种路径获取 memory_capacity_gb
-    let chipCapacityGB = 64  // 默认值
-    if (firstChipName && chips[firstChipName]) {
-      const chipConfig = chips[firstChipName]
-      chipCapacityGB = chipConfig.memory_capacity_gb ||
-                       chipConfig.memory?.gmem?.capacity_gb ||
-                       chipConfig.memory_gb ||
-                       64
+    if (!firstChip?.memory?.gmem?.capacity_gb) {
+      console.error(`[FAIL] 芯片 '${firstChipName}' 缺少 memory.gmem.capacity_gb 字段`)
+      return []
     }
 
-    if (!firstChipName) {
-      console.warn('无法从拓扑配置中获取芯片配置，使用默认值')
-    }
+    const chipCapacityGB = firstChip.memory.gmem.capacity_gb
 
     return taskResults.top_k_plans.map(plan => {
       // 从 stats 中提取更多数据
@@ -549,114 +543,25 @@ export const Results: React.FC = () => {
       const inferenceConfig = selectedTask.config_snapshot?.inference as Record<string, unknown> || {}
       const topology = selectedTask.config_snapshot?.topology as Record<string, unknown> || {}
 
-      // 从拓扑中提取硬件配置（支持多种格式）
+      // 从 config_snapshot.topology 直接提取硬件配置
+      // topology 中 chips 是 ChipPreset 格式，interconnect 包含 links + comm_params
+      const topoChips = (topology as any).chips as Record<string, any> | undefined
+      const topoInterconnect = (topology as any).interconnect as any | undefined
+
       const hardwareConfig: HardwareConfig | undefined = (() => {
-        // 格式1: 旧版格式 (pods 数组结构，向后兼容)
-        const pods = (topology.pods as any[]) || []
-        if (pods.length > 0 && pods[0].racks && pods[0].racks[0].boards && pods[0].racks[0].boards[0].chips) {
-          const board = pods[0].racks[0].boards[0]
-          const chip = board.chips[0]
-
-          // 构建芯片字典（新格式）
-          const chips: Record<string, any> = {
-            [chip.name]: {
-              name: chip.name,
-              num_cores: (chip as any).num_cores || 256,
-              compute_tflops_fp8: (chip as any).compute_tflops_fp8 || 1600,
-              compute_tflops_bf16: (chip as any).compute_tflops_bf16 || 800,
-              memory_capacity_gb: (chip as any).memory_capacity_gb || 64,
-              memory_bandwidth_gbps: chip.memory_bandwidth_gbps || 1200,
-              memory_bandwidth_utilization: chip.memory_bandwidth_utilization || 0.85,
-              lmem_capacity_mb: (chip as any).lmem_capacity_mb || 128,
-              lmem_bandwidth_gbps: (chip as any).lmem_bandwidth_gbps || 12000,
-              cube_m: (chip as any).cube_m || 16,
-              cube_k: (chip as any).cube_k || 32,
-              cube_n: (chip as any).cube_n || 8,
-              sram_size_kb: (chip as any).sram_size_kb || 2048,
-              sram_utilization: (chip as any).sram_utilization || 0.45,
-              lane_num: (chip as any).lane_num || 16,
-              align_bytes: (chip as any).align_bytes || 32,
-              compute_dma_overlap_rate: (chip as any).compute_dma_overlap_rate || 0.8,
-            }
-          }
-
-          const interconnect = {
-            c2c: { bandwidth_gbps: 448, latency_us: 0.2 },
-            b2b: { bandwidth_gbps: 900, latency_us: 1 },
-            r2r: { bandwidth_gbps: 400, latency_us: 2 },
-            p2p: { bandwidth_gbps: 400, latency_us: 2 }
-          }
-
-          return { chips, interconnect: { links: interconnect } } as HardwareConfig
+        if (!topoChips || Object.keys(topoChips).length === 0) {
+          console.error('[FAIL] config_snapshot.topology 中缺少 chips 字段')
+          return undefined
+        }
+        if (!topoInterconnect) {
+          console.error('[FAIL] config_snapshot.topology 中缺少 interconnect 字段')
+          return undefined
         }
 
-        // 格式2: 后端格式 (chips 或 hardware_params.chips 结构)
-        const topologyChips = (topology.chips || (topology as any).hardware_params?.chips) as Record<string, any> | undefined
-        if (topologyChips) {
-          const chipDict = topologyChips
-          const firstChipName = Object.keys(chipDict)[0]
-          const chipPreset = chipDict[firstChipName]
-
-          if (chipPreset) {
-            // 转换后端芯片格式到前端期望的格式
-            const chips: Record<string, any> = {
-              [firstChipName]: {
-                name: firstChipName,
-                num_cores: chipPreset.cores?.count || 256,
-                // 计算 TFLOPS: cores * lanes * mac_per_lane * frequency / 1000
-                compute_tflops_fp8: chipPreset.compute_units?.cube?.mac_per_lane?.FP8
-                  ? (chipPreset.cores?.count || 4) * (chipPreset.cores?.lanes_per_core || 64) * chipPreset.compute_units.cube.mac_per_lane.FP8 * (chipPreset.frequency_ghz || 1) / 1000
-                  : 256,
-                compute_tflops_bf16: chipPreset.compute_units?.cube?.mac_per_lane?.BF16
-                  ? (chipPreset.cores?.count || 4) * (chipPreset.cores?.lanes_per_core || 64) * chipPreset.compute_units.cube.mac_per_lane.BF16 * (chipPreset.frequency_ghz || 1) / 1000
-                  : 128,
-                memory_capacity_gb: chipPreset.memory?.gmem?.capacity_gb || 64,
-                memory_bandwidth_gbps: chipPreset.memory?.gmem?.bandwidth_gbps || 273,
-                memory_bandwidth_utilization: 0.85,
-                lmem_capacity_mb: chipPreset.memory?.lmem?.capacity_mb || 64,
-                lmem_bandwidth_gbps: chipPreset.memory?.lmem?.bandwidth_gbps || 2000,
-                sram_size_kb: chipPreset.memory?.smem?.capacity_kb || 256,
-                sram_utilization: 0.45,
-              }
-            }
-
-            // 获取互联配置
-            const topoInterconnect = (topology as any).interconnect?.links || (topology as any).hardware_params?.interconnect || {}
-            const interconnect = {
-              c2c: {
-                bandwidth_gbps: topoInterconnect.c2c?.bandwidth_gbps || 448,
-                latency_us: topoInterconnect.c2c?.latency_us || 0.2
-              },
-              b2b: {
-                bandwidth_gbps: topoInterconnect.b2b?.bandwidth_gbps || 450,
-                latency_us: topoInterconnect.b2b?.latency_us || 0.35
-              },
-              r2r: {
-                bandwidth_gbps: topoInterconnect.r2r?.bandwidth_gbps || 200,
-                latency_us: topoInterconnect.r2r?.latency_us || 2
-              },
-              p2p: {
-                bandwidth_gbps: topoInterconnect.p2p?.bandwidth_gbps || 100,
-                latency_us: topoInterconnect.p2p?.latency_us || 5
-              }
-            }
-
-            return { chips, interconnect: { links: interconnect } } as HardwareConfig
-          }
-        }
-
-        // 格式3: 已经有 chips 和 interconnect（直接返回）
-        if ((topology as any).chips) {
-          return { chips: (topology as any).chips, interconnect: (topology as any).interconnect || {} } as HardwareConfig
-        }
-
-        // 格式4 (旧格式兼容): hardware_params 格式
-        if ((topology as any).hardware_params) {
-          const hp = (topology as any).hardware_params
-          return { chips: hp.chips || {}, interconnect: { links: hp.interconnect } } as HardwareConfig
-        }
-
-        return undefined
+        return {
+          chips: topoChips,
+          interconnect: topoInterconnect,
+        } as HardwareConfig
       })()
 
       // 使用缓存的分析结果（由 useMemo 计算）
@@ -725,7 +630,7 @@ export const Results: React.FC = () => {
                       hardware={hardwareConfig!}
                       model={modelConfig as unknown as LLMModelConfig}
                       inference={inferenceConfig as unknown as InferenceConfig}
-                      topology={topology as any}
+                      topology={((topology as any)?.hierarchical_topology ?? null) as any}
                       externalGanttData={taskResults?.top_k_plans?.[0]?.gantt_chart as any}
                       externalStats={taskResults?.top_k_plans?.[0]?.stats as any}
                     />

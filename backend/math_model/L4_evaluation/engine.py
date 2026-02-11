@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import json
 from typing import TYPE_CHECKING, Any
 
 from math_model.L4_evaluation.calibration import Calibration, CalibrationConfig
@@ -285,6 +286,7 @@ class EvaluationEngine:
             attrs["comm_bytes"] = str(op.comm_bytes)
             attrs["path_key"] = op.topology_path_key or "b2b"
             attrs["participants"] = str(len(op.participants) if op.participants else 2)
+            attrs["chip_ids"] = json.dumps(op.chip_ids)
             if op.comm_type:
                 attrs["comm_type"] = op.comm_type.name.lower()
             if op.reason:
