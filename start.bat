@@ -19,8 +19,25 @@ echo   Tier6+ Environment Setup
 echo ==========================================
 echo.
 
+:: Check and create .env file
+echo [0/4] Checking environment configuration...
+if not exist ".env" (
+    if exist ".env.example" (
+        echo Creating .env from .env.example...
+        copy .env.example .env >nul
+        echo .env file created [OK]
+    ) else (
+        echo [ERROR] .env.example not found
+        pause
+        exit /b 1
+    )
+) else (
+    echo .env file already exists [OK]
+)
+echo.
+
 :: Check Python
-echo [1/3] Checking Python environment...
+echo [1/4] Checking Python environment...
 python3 --version >nul 2>&1
 if %errorlevel% neq 0 (
     echo [ERROR] Python not found in PATH
@@ -33,7 +50,7 @@ echo Python OK
 
 :: Check Node.js and pnpm
 echo.
-echo [2/3] Checking Node.js and pnpm...
+echo [2/4] Checking Node.js and pnpm...
 node --version >nul 2>&1
 if %errorlevel% neq 0 (
     echo [ERROR] Node.js not found
@@ -54,7 +71,7 @@ echo pnpm OK
 
 :: Install dependencies
 echo.
-echo [3/3] Installing project dependencies...
+echo [3/4] Installing project dependencies...
 echo.
 echo Installing backend dependencies...
 cd backend

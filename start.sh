@@ -11,37 +11,53 @@ if [ "$1" = "--setup" ] || [ "$1" = "-s" ]; then
     echo "=========================================="
     echo ""
 
+    # 检查并创建 .env 文件
+    echo "[0/4] 检查环境配置文件..."
+    if [ ! -f "$SCRIPT_DIR/.env" ]; then
+        if [ -f "$SCRIPT_DIR/.env.example" ]; then
+            echo "从 .env.example 创建 .env 文件..."
+            cp "$SCRIPT_DIR/.env.example" "$SCRIPT_DIR/.env"
+            echo ".env 文件创建成功 [OK]"
+        else
+            echo "[错误] .env.example 文件不存在"
+            exit 1
+        fi
+    else
+        echo ".env 文件已存在 [OK]"
+    fi
+    echo ""
+
     # 检查 Python
-    echo "[1/3] 检查 Python 环境..."
+    echo "[1/4] 检查 Python 环境..."
     if ! command -v python3 &> /dev/null; then
         echo "[错误] Python 未安装"
         echo "请访问 https://www.python.org/downloads/ 安装 Python 3.9+"
         exit 1
     fi
     python3 --version
-    echo "Python ✓"
+    echo "Python [OK]"
 
     # 检查 Node.js 和 pnpm
     echo ""
-    echo "[2/3] 检查 Node.js 和 pnpm..."
+    echo "[2/4] 检查 Node.js 和 pnpm..."
     if ! command -v node &> /dev/null; then
         echo "[错误] Node.js 未安装"
         echo "请访问 https://nodejs.org/ 安装 Node.js"
         exit 1
     fi
     node --version
-    echo "Node.js ✓"
+    echo "Node.js [OK]"
 
     if ! command -v pnpm &> /dev/null; then
         echo "pnpm 未安装，正在安装..."
         npm install -g pnpm
     fi
     pnpm --version
-    echo "pnpm ✓"
+    echo "pnpm [OK]"
 
     # 安装依赖
     echo ""
-    echo "[3/3] 安装项目依赖..."
+    echo "[3/4] 安装项目依赖..."
     echo ""
     echo "安装后端依赖..."
     cd "$SCRIPT_DIR/backend"
@@ -50,7 +66,7 @@ if [ "$1" = "--setup" ] || [ "$1" = "-s" ]; then
         echo "[错误] 后端依赖安装失败"
         exit 1
     fi
-    echo "后端依赖 ✓"
+    echo "后端依赖 [OK]"
 
     echo ""
     echo "安装前端依赖..."
@@ -60,7 +76,7 @@ if [ "$1" = "--setup" ] || [ "$1" = "-s" ]; then
         echo "[错误] 前端依赖安装失败"
         exit 1
     fi
-    echo "前端依赖 ✓"
+    echo "前端依赖 [OK]"
 
     echo ""
     echo "=========================================="
