@@ -50,7 +50,7 @@ import { AnalysisHistoryItem, AnalysisViewMode } from '../shared'
 import { colors } from './ConfigSelectors'
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { BaseCard } from '@/components/common/BaseCard'
-import { formatNumber, formatPercent } from '../../../utils/formatters'
+import { formatNumber, getMetricDecimals } from '../../../utils/formatters'
 
 // ============================================
 // 历史记录列表组件
@@ -248,7 +248,7 @@ const HistoryList: React.FC<HistoryListProps> = ({
       )}
 
       <div className="mt-3 p-2 px-3 bg-gray-100 rounded-md text-xs text-gray-500 text-center">
-        💡 点击行查看详细分析结果
+        [TIP] 点击行查看详细分析结果
       </div>
     </div>
   )
@@ -306,7 +306,7 @@ export const AnalysisResultDisplay: React.FC<AnalysisResultDisplayProps> = ({
 
   // 各章节折叠状态
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
-    performance: false,
+    performance: true,
     suggestions: false,
     candidates: false,
   })
@@ -595,74 +595,74 @@ export const AnalysisResultDisplay: React.FC<AnalysisResultDisplayProps> = ({
             <div style={metricCardStyle} className={metricCardClassName}>
               <span className="text-xs" style={{ color: colors.textSecondary }}>TTFT</span>
               <div className="text-xl font-bold mt-0.5" style={{ color: colors.text }}>
-                {formatNumber(latency?.prefill_total_latency_ms, 1) || '0.0'} <span className="text-xs font-normal" style={{ color: colors.textSecondary }}>ms</span>
+                {formatNumber(latency?.prefill_total_latency_ms, getMetricDecimals('ttft'))} <span className="text-xs font-normal" style={{ color: colors.textSecondary }}>ms</span>
               </div>
             </div>
             <div style={metricCardStyle} className={metricCardClassName}>
               <span className="text-xs" style={{ color: colors.textSecondary }}>TPOT</span>
               <div className="text-xl font-bold mt-0.5" style={{ color: colors.text }}>
-                {formatNumber(latency?.decode_per_token_latency_ms, 2) || '0.00'} <span className="text-xs font-normal" style={{ color: colors.textSecondary }}>ms</span>
+                {formatNumber(latency?.decode_per_token_latency_ms, getMetricDecimals('tpot'))} <span className="text-xs font-normal" style={{ color: colors.textSecondary }}>ms</span>
               </div>
             </div>
             <div style={metricCardStyle} className={metricCardClassName}>
               <span className="text-xs" style={{ color: colors.textSecondary }}>Total TPS</span>
               <div className="text-xl font-bold mt-0.5" style={{ color: colors.text }}>
-                {formatNumber(throughput?.tokens_per_second, 0) || '0'} <span className="text-xs font-normal" style={{ color: colors.textSecondary }}>tok/s</span>
+                {formatNumber(throughput?.tokens_per_second, getMetricDecimals('tps'))} <span className="text-xs font-normal" style={{ color: colors.textSecondary }}>tok/s</span>
               </div>
             </div>
             <div style={metricCardStyle} className={metricCardClassName}>
               <span className="text-xs" style={{ color: colors.textSecondary }}>TPS/Batch</span>
               <div className="text-xl font-bold mt-0.5" style={{ color: (throughput?.tps_per_batch || 0) >= 10 ? colors.text : colors.error }}>
-                {formatNumber(throughput?.tps_per_batch, 1) || '0.0'} <span className="text-xs font-normal" style={{ color: colors.textSecondary }}>tok/s</span>
+                {formatNumber(throughput?.tps_per_batch, getMetricDecimals('tps_per_batch'))} <span className="text-xs font-normal" style={{ color: colors.textSecondary }}>tok/s</span>
               </div>
             </div>
             <div style={metricCardStyle} className={metricCardClassName}>
               <span className="text-xs" style={{ color: colors.textSecondary }}>TPS/Chip</span>
               <div className="text-xl font-bold mt-0.5" style={{ color: colors.text }}>
-                {formatNumber(throughput?.tps_per_chip, 0) || '0'} <span className="text-xs font-normal" style={{ color: colors.textSecondary }}>tok/s</span>
+                {formatNumber(throughput?.tps_per_chip, getMetricDecimals('tps_per_chip'))} <span className="text-xs font-normal" style={{ color: colors.textSecondary }}>tok/s</span>
               </div>
             </div>
             <div style={metricCardStyle} className={metricCardClassName}>
               <span className="text-xs" style={{ color: colors.textSecondary }}>MFU</span>
               <div className="text-xl font-bold mt-0.5" style={{ color: colors.text }}>
-                {formatNumber((throughput?.model_flops_utilization || 0) * 100, 1)} <span className="text-xs font-normal" style={{ color: colors.textSecondary }}>%</span>
+                {formatNumber((throughput?.model_flops_utilization || 0) * 100, getMetricDecimals('mfu'))} <span className="text-xs font-normal" style={{ color: colors.textSecondary }}>%</span>
               </div>
             </div>
 
             <div style={metricCardStyle} className={metricCardClassName}>
               <span className="text-xs" style={{ color: colors.textSecondary }}>MBU</span>
               <div className="text-xl font-bold mt-0.5" style={{ color: colors.text }}>
-                {formatNumber((throughput?.memory_bandwidth_utilization || 0) * 100, 1)} <span className="text-xs font-normal" style={{ color: colors.textSecondary }}>%</span>
+                {formatNumber((throughput?.memory_bandwidth_utilization || 0) * 100, getMetricDecimals('mbu'))} <span className="text-xs font-normal" style={{ color: colors.textSecondary }}>%</span>
               </div>
             </div>
             <div style={metricCardStyle} className={metricCardClassName}>
-              <span className="text-xs" style={{ color: colors.textSecondary }}>显存占用</span>
+              <span className="text-xs" style={{ color: colors.textSecondary }}>内存占用</span>
               <div className="text-xl font-bold mt-0.5" style={{ color: memory?.is_memory_sufficient ? colors.text : colors.error }}>
-                {formatNumber(memory?.total_per_chip_gb, 1) || '0.0'} <span className="text-xs font-normal" style={{ color: colors.textSecondary }}>/ 80G</span>
+                {formatNumber(memory?.total_per_chip_gb, getMetricDecimals('dram_occupy'))} <span className="text-xs font-normal" style={{ color: colors.textSecondary }}>/ 80G</span>
               </div>
             </div>
             <div style={metricCardStyle} className={metricCardClassName}>
               <span className="text-xs" style={{ color: colors.textSecondary }}>硬件成本</span>
               <div className="text-xl font-bold mt-0.5" style={{ color: colors.text }}>
-                ${result.cost ? formatNumber(result.cost.total_cost / 1000, 0) : '-'}<span className="text-xs font-normal" style={{ color: colors.textSecondary }}>K</span>
+                ${result.cost ? formatNumber(result.cost.total_cost / 1000, getMetricDecimals('cost_total')) : '-'}<span className="text-xs font-normal" style={{ color: colors.textSecondary }}>K</span>
               </div>
             </div>
             <div style={metricCardStyle} className={metricCardClassName}>
               <span className="text-xs" style={{ color: colors.textSecondary }}>服务器成本</span>
               <div className="text-xl font-bold mt-0.5" style={{ color: colors.text }}>
-                ${result.cost ? formatNumber(result.cost.server_cost / 1000, 0) : '-'}<span className="text-xs font-normal" style={{ color: colors.textSecondary }}>K</span>
+                ${result.cost ? formatNumber(result.cost.server_cost / 1000, getMetricDecimals('cost_server')) : '-'}<span className="text-xs font-normal" style={{ color: colors.textSecondary }}>K</span>
               </div>
             </div>
             <div style={metricCardStyle} className={metricCardClassName}>
               <span className="text-xs" style={{ color: colors.textSecondary }}>互联成本</span>
               <div className="text-xl font-bold mt-0.5" style={{ color: colors.text }}>
-                ${result.cost ? formatNumber(result.cost.interconnect_cost / 1000, 0) : '-'}<span className="text-xs font-normal" style={{ color: colors.textSecondary }}>K</span>
+                ${result.cost ? formatNumber(result.cost.interconnect_cost / 1000, getMetricDecimals('cost_interconnect')) : '-'}<span className="text-xs font-normal" style={{ color: colors.textSecondary }}>K</span>
               </div>
             </div>
             <div style={metricCardStyle} className={metricCardClassName}>
               <span className="text-xs" style={{ color: colors.textSecondary }}>单芯片成本</span>
               <div className="text-xl font-bold mt-0.5" style={{ color: colors.text }}>
-                ${result.cost ? formatNumber(result.cost.cost_per_chip / 1000, 1) : '-'}<span className="text-xs font-normal" style={{ color: colors.textSecondary }}>K</span>
+                ${result.cost ? formatNumber(result.cost.cost_per_chip / 1000, getMetricDecimals('cost_per_chip')) : '-'}<span className="text-xs font-normal" style={{ color: colors.textSecondary }}>K</span>
               </div>
             </div>
           </div>

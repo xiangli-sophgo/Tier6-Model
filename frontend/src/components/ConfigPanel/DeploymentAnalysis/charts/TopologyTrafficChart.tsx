@@ -3,12 +3,16 @@
  *
  * 在拓扑图上可视化链路流量和带宽利用率
  * 复用 TopologyGraph 组件实现 2D 拓扑可视化
+ * 支持面包屑导航、布局切换、多层级视图等交互
  */
 
-import React, { useMemo } from 'react'
-import type { HierarchicalTopology, PodConfig, RackConfig, BoardConfig } from '@/types'
+import React, { useMemo, useState, useCallback } from 'react'
+import type { HierarchicalTopology, LayoutType, MultiLevelViewOptions } from '@/types'
 import type { LinkTrafficStats, TopologyTrafficResult } from '@/utils/llmDeployment/types'
 import { TopologyGraph } from '@/components/TopologyGraph'
+import type { BreadcrumbItem } from '@/components/TopologyGraph/shared'
+
+type ViewLevel = 'datacenter' | 'pod' | 'rack' | 'board'
 
 interface TopologyTrafficChartProps {
   topology: HierarchicalTopology | null
@@ -16,11 +20,37 @@ interface TopologyTrafficChartProps {
   height?: number
 }
 
+// 热力图颜色函数（纯函数，无组件依赖）
+function getHeatmapColor(utilizationPercent: number): string {
+  const u = Math.min(Math.max(utilizationPercent, 0), 100)
+
+  if (u < 30) {
+    return '#52c41a' // 绿色：低负载
+  } else if (u < 60) {
+    return '#faad14' // 黄色：中等负载
+  } else if (u < 80) {
+    return '#fa8c16' // 橙色：高负载
+  } else {
+    return '#f5222d' // 红色：瓶颈
+  }
+}
+
 export const TopologyTrafficChart: React.FC<TopologyTrafficChartProps> = ({
   topology,
   linkTrafficStats,
   height,
 }) => {
+  // ============================================
+  // 导航状态管理
+  // ============================================
+  const [viewPath, setViewPath] = useState<string[]>([])
+  const [layoutType, setLayoutType] = useState<LayoutType>('auto')
+  const [multiLevelOptions, setMultiLevelOptions] = useState<MultiLevelViewOptions>({
+    enabled: false,
+    levelPair: 'datacenter_pod',
+    expandedContainers: new Set<string>(),
+  })
+
   // 构建芯片 ID 到 label 的映射（用于显示友好名称）
   // 同时为芯片设置正确的 label（芯片型号，如 SG2262）
   const { topologyWithConnections, chipIdToLabel } = useMemo(() => {
@@ -76,20 +106,181 @@ export const TopologyTrafficChart: React.FC<TopologyTrafficChartProps> = ({
     return { topologyWithConnections: updatedTopology, chipIdToLabel: idToLabel }
   }, [topology, linkTrafficStats])
 
-  // 从修改后的拓扑中提取层级信息（确保使用修改后的 chip.label）
-  const { currentPod, currentRack, currentBoard } = useMemo(() => {
+  // 根据导航路径计算当前层级和节点
+  const { currentLevel, currentPod, currentRack, currentBoard } = useMemo(() => {
     if (!topologyWithConnections?.pods?.[0]) {
-      return { currentPod: null, currentRack: null, currentBoard: null }
+      return { currentLevel: 'datacenter' as ViewLevel, currentPod: null, currentRack: null, currentBoard: null }
     }
-    const pod = topologyWithConnections.pods[0] as PodConfig
-    const rack = pod.racks?.[0] as RackConfig | undefined
-    const board = rack?.boards?.[0] as BoardConfig | undefined
+
+    // 根据 viewPath 确定层级
+    if (viewPath.length === 0) {
+      // 顶层：如果只有一个 Pod，自动进入 Pod 内部
+      const pods = topologyWithConnections.pods
+      if (pods.length === 1) {
+        const pod = pods[0]
+        const racks = pod.racks
+        if (racks.length === 1) {
+          const rack = racks[0]
+          const boards = rack.boards
+          if (boards.length === 1) {
+            // 只有一个 Board，直接显示 Board 内部（芯片视图）
+            return {
+              currentLevel: 'board' as ViewLevel,
+              currentPod: pod,
+              currentRack: rack,
+              currentBoard: boards[0],
+            }
+          }
+          // 多个 Board，显示 Rack 内部
+          return {
+            currentLevel: 'rack' as ViewLevel,
+            currentPod: pod,
+            currentRack: rack,
+            currentBoard: null,
+          }
+        }
+        // 多个 Rack，显示 Pod 内部
+        return {
+          currentLevel: 'pod' as ViewLevel,
+          currentPod: pod,
+          currentRack: null,
+          currentBoard: null,
+        }
+      }
+      // 多个 Pod，显示数据中心级别
+      return {
+        currentLevel: 'datacenter' as ViewLevel,
+        currentPod: null,
+        currentRack: null,
+        currentBoard: null,
+      }
+    }
+
+    // 有导航路径，逐级查找
+    const podId = viewPath[0]
+    const pod = topologyWithConnections.pods.find(p => p.id === podId) ?? null
+    if (!pod || viewPath.length === 1) {
+      return {
+        currentLevel: 'pod' as ViewLevel,
+        currentPod: pod,
+        currentRack: null,
+        currentBoard: null,
+      }
+    }
+
+    const rackId = viewPath[1]
+    const rack = pod.racks.find(r => r.id === rackId) ?? null
+    if (!rack || viewPath.length === 2) {
+      return {
+        currentLevel: 'rack' as ViewLevel,
+        currentPod: pod,
+        currentRack: rack,
+        currentBoard: null,
+      }
+    }
+
+    const boardId = viewPath[2]
+    const board = rack.boards.find(b => b.id === boardId) ?? null
     return {
+      currentLevel: 'board' as ViewLevel,
       currentPod: pod,
-      currentRack: rack ?? null,
-      currentBoard: board ?? null,
+      currentRack: rack,
+      currentBoard: board,
     }
-  }, [topologyWithConnections])
+  }, [topologyWithConnections, viewPath])
+
+  // 生成面包屑
+  const breadcrumbs = useMemo((): BreadcrumbItem[] => {
+    const items: BreadcrumbItem[] = [
+      { level: 'datacenter', id: 'root', label: '数据中心' },
+    ]
+
+    if (!topologyWithConnections || viewPath.length === 0) {
+      // 即使没有显式 viewPath，如果自动深入了也要显示面包屑
+      if (currentPod) {
+        items.push({ level: 'pod', id: currentPod.id, label: currentPod.label })
+      }
+      if (currentRack) {
+        items.push({ level: 'rack', id: currentRack.id, label: currentRack.label })
+      }
+      if (currentBoard) {
+        items.push({ level: 'board', id: currentBoard.id, label: currentBoard.label })
+      }
+      return items
+    }
+
+    // 根据 viewPath 构建面包屑
+    const podId = viewPath[0]
+    const pod = topologyWithConnections.pods.find(p => p.id === podId)
+    if (pod) {
+      items.push({ level: 'pod', id: podId, label: pod.label })
+    }
+
+    if (viewPath.length >= 2 && pod) {
+      const rackId = viewPath[1]
+      const rack = pod.racks.find(r => r.id === rackId)
+      if (rack) {
+        items.push({ level: 'rack', id: rackId, label: rack.label })
+      }
+    }
+
+    if (viewPath.length >= 3 && pod) {
+      const rackId = viewPath[1]
+      const rack = pod.racks.find(r => r.id === rackId)
+      if (rack) {
+        const boardId = viewPath[2]
+        const board = rack.boards.find(b => b.id === boardId)
+        if (board) {
+          items.push({ level: 'board', id: boardId, label: board.label })
+        }
+      }
+    }
+
+    return items
+  }, [topologyWithConnections, viewPath, currentPod, currentRack, currentBoard])
+
+  // 面包屑点击导航
+  const handleBreadcrumbClick = useCallback((index: number) => {
+    if (index === 0) {
+      // 回到顶层
+      setViewPath([])
+    } else {
+      // 截断到对应层级
+      // 需要根据面包屑的实际 path 计算
+      // index=1 对应 pod, index=2 对应 rack, index=3 对应 board
+      // 但如果是自动深入的（viewPath 为空），需要手动构建 path
+      if (viewPath.length > 0) {
+        setViewPath(viewPath.slice(0, index))
+      } else {
+        // 自动深入场景：根据 index 和当前节点重建路径
+        const newPath: string[] = []
+        if (index >= 1 && currentPod) newPath.push(currentPod.id)
+        if (index >= 2 && currentRack) newPath.push(currentRack.id)
+        if (index >= 3 && currentBoard) newPath.push(currentBoard.id)
+        // 截断到点击的层级（不包含当前层级，因为面包屑点击意味着回到该层级）
+        setViewPath(newPath.slice(0, index))
+      }
+    }
+  }, [viewPath, currentPod, currentRack, currentBoard])
+
+  // 双击节点导航到下一层
+  const handleNodeDoubleClick = useCallback((nodeId: string, _nodeType: string) => {
+    if (!topologyWithConnections) return
+
+    // 根据当前层级确定要导航的路径
+    if (viewPath.length === 0) {
+      // 自动深入场景：根据当前实际层级判断
+      if (currentLevel === 'datacenter') {
+        setViewPath([nodeId])
+      } else if (currentLevel === 'pod' && currentPod) {
+        setViewPath([currentPod.id, nodeId])
+      } else if (currentLevel === 'rack' && currentPod && currentRack) {
+        setViewPath([currentPod.id, currentRack.id, nodeId])
+      }
+    } else {
+      setViewPath([...viewPath, nodeId])
+    }
+  }, [topologyWithConnections, viewPath, currentLevel, currentPod, currentRack])
 
   // 检查数据有效性
   if (!topology || !linkTrafficStats || linkTrafficStats.length === 0) {
@@ -134,21 +325,6 @@ export const TopologyTrafficChart: React.FC<TopologyTrafficChartProps> = ({
       avgUtilization,
     }
   }, [linkTrafficStats])
-
-  // 热力图颜色函数
-  const getHeatmapColor = (utilizationPercent: number): string => {
-    const u = Math.min(Math.max(utilizationPercent, 0), 100)
-
-    if (u < 30) {
-      return '#52c41a' // 绿色：低负载
-    } else if (u < 60) {
-      return '#faad14' // 黄色：中等负载
-    } else if (u < 80) {
-      return '#fa8c16' // 橙色：高负载
-    } else {
-      return '#f5222d' // 红色：瓶颈
-    }
-  }
 
   // 统计信息
   const statsInfo = useMemo(() => {
@@ -217,13 +393,21 @@ export const TopologyTrafficChart: React.FC<TopologyTrafficChartProps> = ({
           visible={true}
           onClose={() => {}}
           topology={topologyWithConnections}
-          currentLevel="board"
+          currentLevel={currentLevel}
           currentPod={currentPod}
           currentRack={currentRack}
           currentBoard={currentBoard}
           embedded={true}
           trafficResult={trafficResult as TopologyTrafficResult}
-          layoutType="auto"
+          layoutType={layoutType}
+          onLayoutTypeChange={setLayoutType}
+          multiLevelOptions={multiLevelOptions}
+          onMultiLevelOptionsChange={setMultiLevelOptions}
+          breadcrumbs={breadcrumbs}
+          onBreadcrumbClick={handleBreadcrumbClick}
+          onNodeDoubleClick={handleNodeDoubleClick}
+          canGoBack={viewPath.length > 0}
+          onNavigateBack={() => setViewPath(prev => prev.slice(0, -1))}
         />
       </div>
     </div>

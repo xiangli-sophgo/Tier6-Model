@@ -12,7 +12,7 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { InfoTooltip } from '@/components/ui/info-tooltip'
 import { BaseCard } from '@/components/common/BaseCard'
 import { getExperimentDetail, Experiment } from '@/api/results'
-import { formatNumber, formatPercentValue } from '@/utils/formatters'
+import { formatNumber, formatPercentValue, formatDate } from '@/utils/formatters'
 
 // 统计项组件
 interface StatItemProps {
@@ -191,8 +191,8 @@ export const ResultAnalysis: React.FC<ResultAnalysisProps> = ({ experimentId, on
               {/* 创建时间 */}
               <BaseCard title="元数据" className="mb-4">
                 <div className="grid grid-cols-2 gap-4">
-                  <StatItem label="创建时间" value={new Date(experiment.created_at).toLocaleString('zh-CN')} />
-                  <StatItem label="最后更新" value={new Date(experiment.updated_at).toLocaleString('zh-CN')} />
+                  <StatItem label="创建时间" value={formatDate(experiment.created_at)} />
+                  <StatItem label="最后更新" value={formatDate(experiment.updated_at)} />
                 </div>
               </BaseCard>
             </TabsContent>
@@ -217,7 +217,7 @@ export const ResultAnalysis: React.FC<ResultAnalysisProps> = ({ experimentId, on
                       </div>
                       <div className="mb-1 text-xs">
                         <span className="text-gray-500">创建时间:</span>
-                        <span className="ml-2">{new Date(task.created_at).toLocaleString('zh-CN')}</span>
+                        <span className="ml-2">{formatDate(task.created_at)}</span>
                       </div>
                       {task.message && (
                         <div className="text-xs">

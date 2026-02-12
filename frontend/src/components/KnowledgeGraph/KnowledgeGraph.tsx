@@ -129,7 +129,7 @@ export const KnowledgeGraph: React.FC<KnowledgeGraphProps> = ({ renderMode }) =>
 
     // 数据完整性检查
     if (!allNodes || allNodes.length === 0) {
-      console.warn('⚠️ 搜索时 allNodes 为空', {
+      console.warn('[WARN] 搜索时 allNodes 为空', {
         allNodes: allNodes?.length || 0,
         cachedNodes: cachedNodes.length,
       })
@@ -246,7 +246,7 @@ export const KnowledgeGraph: React.FC<KnowledgeGraphProps> = ({ renderMode }) =>
     const actions = knowledgeGraphActions || graphRef.current
 
     if (!actions) {
-      console.warn('⚠️ 无法聚焦节点：graphRef 和 knowledgeGraphActions 均不可用')
+      console.warn('[WARN] 无法聚焦节点：graphRef 和 knowledgeGraphActions 均不可用')
       return
     }
 
@@ -261,7 +261,7 @@ export const KnowledgeGraph: React.FC<KnowledgeGraphProps> = ({ renderMode }) =>
         console.log(`🎯 聚焦到节点: ${node.name} (${node.x}, ${node.y})`)
       }
     } else {
-      console.warn(`⚠️ 节点 ${node.name} 没有坐标信息`)
+      console.warn(`[WARN] 节点 ${node.name} 没有坐标信息`)
     }
   }, [addKnowledgeSelectedNode, knowledgeGraphActions])
 
@@ -363,7 +363,7 @@ export const KnowledgeGraph: React.FC<KnowledgeGraphProps> = ({ renderMode }) =>
   // 数据加载调试
   useEffect(() => {
     if (allNodes.length === 0) {
-      console.warn('⚠️ KnowledgeGraph: allNodes 为空', {
+      console.warn('[WARN] KnowledgeGraph: allNodes 为空', {
         cachedNodesLength: cachedNodes.length,
         allNodesLength: allNodes.length,
         hasKnowledgeData: !!knowledgeData,

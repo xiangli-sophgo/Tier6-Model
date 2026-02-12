@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button'
 import { BaseCard } from '@/components/common/BaseCard'
 import { BarChart3 } from 'lucide-react'
 import type { EvaluationTask } from '@/api/results'
-import { formatPercent } from '@/utils/formatters'
+import { formatMetricValue, formatDate } from '@/utils/formatters'
 
 interface TaskDetailPanelProps {
   task: EvaluationTask
@@ -67,24 +67,6 @@ const STATUS_MAP: Record<string, { label: string; variant: 'default' | 'secondar
   'completed': { label: '已完成', variant: 'success' },
   'failed': { label: '失败', variant: 'destructive' },
   'cancelled': { label: '已取消', variant: 'warning' },
-}
-
-// 格式化数值
-const formatNumber = (value: any, decimals = 2): string => {
-  if (value === undefined || value === null) return '-'
-  if (typeof value !== 'number') {
-    const num = Number(value)
-    if (isNaN(num)) return String(value)
-    value = num
-  }
-  if (Number.isInteger(value)) return String(value)
-  return value.toFixed(decimals)
-}
-
-// 格式化日期
-const formatDate = (dateStr: string | undefined): string => {
-  if (!dateStr) return '-'
-  return new Date(dateStr).toLocaleString('zh-CN')
 }
 
 // 格式化配置值
@@ -391,23 +373,23 @@ export const TaskDetailPanel: React.FC<TaskDetailPanelProps> = ({ task, onAnalyz
         >
           <InfoGrid
             items={[
-              { label: '综合得分', value: formatNumber(result.score) },
-              { label: '芯片数', value: result.chips || '-' },
-              { label: '吞吐量 (TPS)', value: formatNumber(result.tps) },
-              { label: '单芯片吞吐 (TPS/Chip)', value: formatNumber(result.tps_per_chip) },
-              { label: '单请求吞吐 (TPS/Batch)', value: formatNumber(result.tps_per_batch) },
-              { label: 'TPOT (ms)', value: formatNumber(result.tpot, 4) },
-              { label: 'TTFT (ms)', value: formatNumber(result.ttft, 4) },
-              { label: 'MFU', value: formatPercent(result.mfu) },
-              { label: 'MBU', value: formatPercent(result.mbu) },
-              { label: '显存占用 (GB)', value: formatNumber(result.dram_occupy / (1024 ** 3), 2) },
-              { label: '计算量 (TFLOPs)', value: formatNumber(result.flops / 1e12, 2) },
+              { label: '综合得分', value: formatMetricValue('score', result.score) },
+              { label: '芯片数', value: formatMetricValue('chips', result.chips) },
+              { label: '吞吐量 (TPS)', value: formatMetricValue('tps', result.tps) },
+              { label: '单芯片吞吐 (TPS/Chip)', value: formatMetricValue('tps_per_chip', result.tps_per_chip) },
+              { label: '单请求吞吐 (TPS/Batch)', value: formatMetricValue('tps_per_batch', result.tps_per_batch) },
+              { label: 'TPOT (ms)', value: formatMetricValue('tpot', result.tpot) },
+              { label: 'TTFT (ms)', value: formatMetricValue('ttft', result.ttft) },
+              { label: 'MFU', value: formatMetricValue('mfu', result.mfu) },
+              { label: 'MBU', value: formatMetricValue('mbu', result.mbu) },
+              { label: '内存占用 (GB)', value: formatMetricValue('dram_occupy', result.dram_occupy) },
+              { label: '计算量 (TFLOPs)', value: formatMetricValue('flops', result.flops) },
               ...(result.cost ? [
-                { label: '总成本 ($)', value: formatNumber(result.cost.total_cost, 2) },
-                { label: '服务器成本 ($)', value: formatNumber(result.cost.server_cost, 2) },
-                { label: '互联成本 ($)', value: formatNumber(result.cost.interconnect_cost, 2) },
-                { label: '单芯成本 ($)', value: formatNumber(result.cost.cost_per_chip, 2) },
-                { label: 'DFOP ($/TPS)', value: formatNumber(result.cost.dfop, 2) },
+                { label: '总成本 ($)', value: formatMetricValue('cost_total', result.cost.total_cost) },
+                { label: '服务器成本 ($)', value: formatMetricValue('cost_server', result.cost.server_cost) },
+                { label: '互联成本 ($)', value: formatMetricValue('cost_interconnect', result.cost.interconnect_cost) },
+                { label: '单芯成本 ($)', value: formatMetricValue('cost_per_chip', result.cost.cost_per_chip) },
+                { label: 'DFOP ($/TPS)', value: formatMetricValue('cost_dfop', result.cost.dfop) },
               ] : []),
             ]}
           />

@@ -82,7 +82,7 @@
   {
     "id": "moe",
     "name": "MoE",
-    "definition": "**MoE**（Mixture of Experts，混合专家模型）是一种**稀疏激活**的神经网络架构，通过**门控机制**（Router）动态选择部分专家子网络来处理每个输入。\n**实现方式**：在Transformer中，MoE通常替换**FFN**层：将一个大FFN拆分为多个小专家FFN，每个token只激活其中一部分（如Top-2）。\n**优势**：模型参数量可以很大（提供更强的表示能力），但计算量保持可控（仅激活部分专家）。\n**示例**：Mixtral 8x7B有8个专家共47B参数，但每次推理只激活2个专家，计算量约等于14B密集模型。\n**挑战**：\n1）**负载均衡**：防止所有token路由到少数专家\n2）**通信开销**：EP需要AllToAll通信\n3）**显存占用**：所有专家都要加载\n**应用**：DeepSeek-V2、GPT-4等顶级模型据信都采用MoE架构。",
+    "definition": "**MoE**（Mixture of Experts，混合专家模型）是一种**稀疏激活**的神经网络架构，通过**门控机制**（Router）动态选择部分专家子网络来处理每个输入。\n**实现方式**：在Transformer中，MoE通常替换**FFN**层：将一个大FFN拆分为多个小专家FFN，每个token只激活其中一部分（如Top-2）。\n**优势**：模型参数量可以很大（提供更强的表示能力），但计算量保持可控（仅激活部分专家）。\n**示例**：Mixtral 8x7B有8个专家共47B参数，但每次推理只激活2个专家，计算量约等于14B密集模型。\n**挑战**：\n1）**负载均衡**：防止所有token路由到少数专家\n2）**通信开销**：EP需要AllToAll通信\n3）**内存占用**：所有专家都要加载\n**应用**：DeepSeek-V2、GPT-4等顶级模型据信都采用MoE架构。",
     "category": "model",
     "source": "Shazeer et al. (2017). Outrageously Large Neural Networks: The Sparsely-Gated Mixture-of-Experts Layer. ICLR",
     "url": "https://arxiv.org/abs/1701.06538"

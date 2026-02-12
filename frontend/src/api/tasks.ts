@@ -4,15 +4,7 @@
  * 任务管理相关的 HTTP 请求封装
  */
 
-import axios from 'axios'
-
-const API_BASE_URL = '/api'
-
-const api = axios.create({
-  baseURL: API_BASE_URL,
-  timeout: 120000, // 2分钟超时
-  withCredentials: true, // 支持跨域请求携带凭证
-})
+import { longApiClient as api } from './client'
 
 // ============================================
 // 类型定义
@@ -156,42 +148,6 @@ export async function getTasks(params?: {
  */
 export async function getRunningTasks(): Promise<{ tasks: TaskListItem[] }> {
   const response = await api.get<{ tasks: TaskListItem[] }>('/evaluation/running')
-  return response.data
-}
-
-/**
- * 获取实验列表
- */
-export async function getExperiments(): Promise<{
-  experiments: Array<{
-    id: number
-    name: string
-    description: string
-    total_tasks: number
-    completed_tasks: number
-    created_at: string
-  }>
-}> {
-  const response = await api.get('/evaluation/experiments')
-  return response.data
-}
-
-/**
- * 获取实验详情
- */
-export async function getExperimentDetails(experimentId: number): Promise<{
-  id: number
-  name: string
-  description: string
-  model_config: Record<string, unknown>
-  hardware_config: Record<string, unknown>
-  inference_config: Record<string, unknown>
-  total_tasks: number
-  completed_tasks: number
-  created_at: string
-  tasks: TaskListItem[]
-}> {
-  const response = await api.get(`/evaluation/experiments/${experimentId}`)
   return response.data
 }
 

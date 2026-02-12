@@ -7,6 +7,7 @@ import { InfoTooltip } from '@/components/ui/info-tooltip'
 import { FormulaVsSimComparison } from '../../../../utils/llmDeployment/types'
 import { tableStyle, thStyle, tdStyle } from '../../../ui/common-styles'
 import { COLORS } from '../../../../utils/design-tokens'
+import { formatNumber, getMetricDecimals } from '../../../../utils/formatters'
 
 // 格式化偏差显示
 const formatDeviation = (pct: number): string => {
@@ -29,7 +30,7 @@ const TABLE_ROWS = [
     key: 'ttft',
     label: 'TTFT',
     tooltip: '首 Token 延迟 (Time To First Token)',
-    formatValue: (v: number) => `${v.toFixed(2)} ms`,
+    formatValue: (v: number) => `${formatNumber(v, getMetricDecimals('ttft'))} ms`,
     getFormula: (c: FormulaVsSimComparison) => c.formula.ttft_ms,
     getSim: (c: FormulaVsSimComparison) => c.simulation.ttft_ms,
     getDev: (c: FormulaVsSimComparison) => c.deviation.ttft_pct,
@@ -38,7 +39,7 @@ const TABLE_ROWS = [
     key: 'tpot',
     label: 'TPOT',
     tooltip: '平均每 Token 延迟 (Time Per Output Token)',
-    formatValue: (v: number) => `${v.toFixed(2)} ms`,
+    formatValue: (v: number) => `${formatNumber(v, getMetricDecimals('tpot'))} ms`,
     getFormula: (c: FormulaVsSimComparison) => c.formula.tpot_ms,
     getSim: (c: FormulaVsSimComparison) => c.simulation.tpot_ms,
     getDev: (c: FormulaVsSimComparison) => c.deviation.tpot_pct,
@@ -47,7 +48,7 @@ const TABLE_ROWS = [
     key: 'mfu',
     label: 'MFU',
     tooltip: '模型算力利用率 (Model FLOPs Utilization)',
-    formatValue: (v: number) => `${(v * 100).toFixed(1)}%`,
+    formatValue: (v: number) => `${formatNumber(v * 100, getMetricDecimals('mfu'))}%`,
     getFormula: (c: FormulaVsSimComparison) => c.formula.mfu,
     getSim: (c: FormulaVsSimComparison) => c.simulation.mfu,
     getDev: (c: FormulaVsSimComparison) => c.deviation.mfu_pct,
@@ -56,7 +57,7 @@ const TABLE_ROWS = [
     key: 'mbu',
     label: 'MBU',
     tooltip: '内存带宽利用率 (Memory Bandwidth Utilization)',
-    formatValue: (v: number) => `${(v * 100).toFixed(1)}%`,
+    formatValue: (v: number) => `${formatNumber(v * 100, getMetricDecimals('mbu'))}%`,
     getFormula: (c: FormulaVsSimComparison) => c.formula.mbu,
     getSim: (c: FormulaVsSimComparison) => c.simulation.mbu,
     getDev: (c: FormulaVsSimComparison) => c.deviation.mbu_pct,
@@ -65,7 +66,7 @@ const TABLE_ROWS = [
     key: 'score',
     label: '综合评分',
     tooltip: '加权综合评分 (0-100)',
-    formatValue: (v: number) => v.toFixed(1),
+    formatValue: (v: number) => formatNumber(v, getMetricDecimals('score')),
     getFormula: (c: FormulaVsSimComparison) => c.formula.score,
     getSim: (c: FormulaVsSimComparison) => c.simulation.score,
     getDev: (c: FormulaVsSimComparison) => c.deviation.score_pct,

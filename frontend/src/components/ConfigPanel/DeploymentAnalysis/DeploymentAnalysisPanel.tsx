@@ -182,7 +182,7 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
   // 当前选中的 Benchmark 配置文件名
   const [selectedBenchmark, setSelectedBenchmark] = useState<string | undefined>()
 
-  // ✅ 新增：完整的拓扑配置（从后端加载，保存时保持结构完整）
+  // [OK] 新增：完整的拓扑配置（从后端加载，保存时保持结构完整）
   const [fullTopologyConfig, setFullTopologyConfig] = useState<TopologyConfig | null>(null)
 
   // 当前使用的拓扑配置（从完整配置中提取，用于本地编辑）
@@ -252,7 +252,7 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
 
   // 从 TopologyConfig 格式（pods 数组）中提取并设置各个独立 state
   const handleTopologyConfigChange = useCallback((config: TopologyConfig) => {
-    // ✅ 保存完整配置（用于保存时保持结构完整）
+    // [OK] 保存完整配置（用于保存时保持结构完整）
     setFullTopologyConfig(config)
     console.log('[DeploymentAnalysis] 加载完整拓扑配置:', config.name, '芯片数:', config.pods?.[0]?.racks?.[0]?.boards?.[0]?.count)
 
@@ -455,7 +455,7 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
   // 并行策略状态
   const [parallelismMode, setParallelismMode] = useState<'manual' | 'auto' | 'sweep'>('manual')
   const [manualStrategy, setManualStrategy] = useState<ParallelismStrategy>({
-    dp: 1, tp: 1, pp: 1, ep: 1, enable_tp_sp: false, moe_tp: 1,
+    dp: 1, tp: 1, pp: 1, ep: 1, sp: 1, enable_tp_sp: false, moe_tp: 1,
   })
 
   // 参数遍历状态
@@ -532,7 +532,7 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
   }, [])
 
   // 构造 TopologyConfig 供 TopologyEditor 使用
-  // ✅ 优先使用 fullTopologyConfig.pods（保持后端原始结构），只覆盖可编辑的硬件参数
+  // [OK] 优先使用 fullTopologyConfig.pods（保持后端原始结构），只覆盖可编辑的硬件参数
   const topologyConfigForEditor = useMemo<TopologyConfig>(() => ({
     name: selectedTopologyConfig || '',
     pods: fullTopologyConfig?.pods || (localRackConfig ? [{
@@ -897,7 +897,7 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
     }
     setSaveLoading(true)
     try {
-      // ✅ 保持完整结构
+      // [OK] 保持完整结构
       const newConfig: TopologyConfig = {
         ...fullTopologyConfig,
         name: newConfigName.trim(),
@@ -939,11 +939,11 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
     console.log('[DeploymentAnalysis] 保存前检查 - localHardwareParams:', localHardwareParams)
 
     try {
-      // ✅ 保持原有的 pods 结构不变，只更新硬件参数
+      // [OK] 保持原有的 pods 结构不变，只更新硬件参数
       const updatedConfig: TopologyConfig = {
         ...fullTopologyConfig,  // ← 保留完整结构（pods、switch_config 等）
         name: selectedTopologyConfig,
-        // ✅ 只更新用户编辑的部分
+        // [OK] 只更新用户编辑的部分
         chips: localHardwareParams?.chips || fullTopologyConfig.chips,
         interconnect: {
           ...fullTopologyConfig.interconnect,  // ← 保留原有的 interconnect 配置
@@ -957,7 +957,7 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
       await updateTopology(selectedTopologyConfig, updatedConfig)
       toast.success(`已保存配置: ${selectedTopologyConfig}`)
 
-      // ✅ 更新完整配置缓存
+      // [OK] 更新完整配置缓存
       setFullTopologyConfig(updatedConfig)
     } catch (error) {
       console.error('保存配置失败:', error)
@@ -973,7 +973,7 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
     }
 
     try {
-      // ✅ 保持完整结构，只更新名称和硬件参数
+      // [OK] 保持完整结构，只更新名称和硬件参数
       const newConfig: TopologyConfig = {
         ...fullTopologyConfig,
         name,
@@ -987,7 +987,7 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
       }
       await createTopology(newConfig)
       setSelectedTopologyConfig(name)
-      setFullTopologyConfig(newConfig)  // ✅ 更新缓存
+      setFullTopologyConfig(newConfig)  // [OK] 更新缓存
       toast.success(`已创建新配置: ${name}`)
     } catch (error) {
       console.error('另存为配置失败:', error)
@@ -1092,7 +1092,11 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
       if (update.search_stats?.sub_tasks) {
         updateData.subTasks = update.search_stats.sub_tasks.map(st => ({
           candidateIndex: st.candidate_index,
-          parallelism: st.parallelism,
+          parallelism: {
+            ...st.parallelism,
+            sp: st.parallelism.sp ?? 1,
+            enable_tp_sp: st.parallelism.sp > 1,
+          },
           status: st.status,
           progress: st.progress,
           chips: st.chips,
@@ -1269,7 +1273,7 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
 
   // 运行分析（提交到后端执行）
   const handleRunAnalysis = useCallback(async () => {
-    const strategy = parallelismMode === 'manual' ? manualStrategy : { dp: 1, tp: 1, pp: 1, ep: 1, enable_tp_sp: false, moe_tp: 1 }
+    const strategy = parallelismMode === 'manual' ? manualStrategy : { dp: 1, tp: 1, pp: 1, ep: 1, sp: 1, enable_tp_sp: false, moe_tp: 1 }
 
     // 基于当前配置内容生成名称
     const benchmarkName = generateBenchmarkName(modelConfig, inferenceConfig)

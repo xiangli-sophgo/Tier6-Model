@@ -12,9 +12,10 @@ import {
   GitFork,
   Rocket,
 } from 'lucide-react'
-import { getTasks, getRunningTasks } from '@/api/tasks'
+import { getTasks } from '@/api/tasks'
 import { QuickAction } from './QuickAction'
 import { RecentTasks } from './RecentTasks'
+import { PageHeader } from '@/components/ui/page-header'
 import { useWorkbench, ViewMode } from '@/contexts/WorkbenchContext'
 
 export const Dashboard: React.FC = () => {
@@ -25,12 +26,6 @@ export const Dashboard: React.FC = () => {
     ui.setViewMode(mode)
   }
 
-  const [, setStats] = useState({
-    totalTasks: 0,
-    runningTasks: 0,
-    completedToday: 0,
-    totalExperiments: 0,
-  })
   const [recentTasks, setRecentTasks] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
 
@@ -47,29 +42,6 @@ export const Dashboard: React.FC = () => {
       // 过滤掉无效任务（缺少必要字段）
       const validTasks = tasks.filter((t: any) => t.task_id && t.status)
       setRecentTasks(validTasks)
-
-      // 加载运行中任务
-      const runningData = await getRunningTasks()
-      const runningCount = runningData.tasks.length
-
-      // 计算今日完成任务
-      const today = new Date().toDateString()
-      const completedToday = tasks.filter(
-        (t: any) =>
-          t.status === 'completed' &&
-          t.completed_at &&
-          new Date(t.completed_at).toDateString() === today
-      ).length
-
-      // 统计唯一实验数
-      const uniqueExperiments = new Set(tasks.map((t: any) => t.experiment_name))
-
-      setStats({
-        totalTasks: tasks.length,
-        runningTasks: runningCount,
-        completedToday: completedToday,
-        totalExperiments: uniqueExperiments.size,
-      })
     } catch (error) {
       console.error('加载 Dashboard 数据失败:', error)
     } finally {
@@ -80,11 +52,7 @@ export const Dashboard: React.FC = () => {
   return (
     <div className="h-full flex flex-col bg-gradient-to-b from-gray-50 to-white">
       {/* 标题栏 */}
-      <div className="px-8 py-6 border-b border-blue-100 bg-gradient-to-r from-blue-50 to-white flex-shrink-0" style={{boxShadow: '0 2px 12px rgba(37, 99, 235, 0.08)'}}>
-        <h3 className="m-0 bg-gradient-to-r from-blue-600 to-blue-400 bg-clip-text text-2xl font-bold text-transparent">
-          Tier6+ 互联建模平台
-        </h3>
-      </div>
+      <PageHeader title="Tier6+ 互联建模平台" />
 
       {/* 内容区 */}
       <div className="flex-1 overflow-auto p-8">

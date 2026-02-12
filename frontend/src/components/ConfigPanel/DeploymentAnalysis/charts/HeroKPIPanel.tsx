@@ -2,12 +2,12 @@
  * Hero KPI 面板 - 顶部关键指标卡片组
  */
 
-import React from 'react'
+import React, { useMemo } from 'react'
 import { Clock, Zap, Gauge, Rocket } from 'lucide-react'
 import { conditionalTooltip } from '@/components/ui/info-tooltip'
 import { PlanAnalysisResult } from '../../../../utils/llmDeployment/types'
 import { COLORS } from '../../../../utils/design-tokens'
-import { formatNumber } from '../../../../utils/formatters'
+import { formatNumber, getMetricDecimals } from '../../../../utils/formatters'
 
 interface HeroKPIPanelProps {
   result: PlanAnalysisResult
@@ -127,65 +127,61 @@ export const HeroKPIPanel: React.FC<HeroKPIPanelProps> = ({
 }) => {
   const { latency, throughput, memory, score } = result
 
-  // 计算 TTFT 状态
-  const getTTFTStatus = (): 'good' | 'warning' | 'bad' => {
-    const ttft = latency.prefill_total_latency_ms
-    if (ttft < 200) return 'good'
-    if (ttft < 500) return 'warning'
-    return 'bad'
-  }
-
-  // 计算 TPOT 状态
-  const getTPOTStatus = (): 'good' | 'warning' | 'bad' => {
-    const tpot = latency.decode_per_token_latency_ms
-    if (tpot < 20) return 'good'
-    if (tpot < 50) return 'warning'
-    return 'bad'
-  }
-
-  // 计算 MFU 状态
-  const getMFUStatus = (): 'good' | 'warning' | 'bad' => {
-    const mfu = throughput.model_flops_utilization * 100
-    if (mfu >= 40) return 'good'
-    if (mfu >= 20) return 'warning'
-    return 'bad'
-  }
-
-  // 格式化数值
-  const formatValue = (value: number, decimals: number = 1): string => {
+  // 格式化数值（KPI卡片紧凑显示，大数值缩写，精度使用统一配置）
+  const formatKPIValue = (value: number, metric: string): string => {
+    const decimals = getMetricDecimals(metric)
     if (value >= 10000) return (value / 1000).toFixed(1) + 'k'
-    if (value >= 1000) return value.toFixed(0)
-    if (value >= 100) return value.toFixed(0)
-    if (value >= 10) return value.toFixed(decimals)
-    return value.toFixed(decimals + 1)
+    if (value >= 1000) return value.toFixed(Math.min(decimals, 1))
+    return formatNumber(value, decimals)
   }
 
-  const kpiItems = [
+  const kpiItems = useMemo(() => {
+    // 计算状态
+    const ttftStatus = (() => {
+      const ttft = latency.prefill_total_latency_ms
+      if (ttft < 200) return 'good' as const
+      if (ttft < 500) return 'warning' as const
+      return 'bad' as const
+    })()
+    const tpotStatus = (() => {
+      const tpot = latency.decode_per_token_latency_ms
+      if (tpot < 20) return 'good' as const
+      if (tpot < 50) return 'warning' as const
+      return 'bad' as const
+    })()
+    const mfuStatus = (() => {
+      const mfu = throughput.model_flops_utilization * 100
+      if (mfu >= 40) return 'good' as const
+      if (mfu >= 20) return 'warning' as const
+      return 'bad' as const
+    })()
+
+    return [
     {
       id: 'ttft',
       icon: <Clock className="h-4 w-4" />,
       label: 'TTFT',
-      value: formatValue(latency.prefill_total_latency_ms),
+      value: formatKPIValue(latency.prefill_total_latency_ms, 'ttft'),
       unit: 'ms',
       subValue: `延迟评分 ${score.latency_score.toFixed(0)}`,
-      status: getTTFTStatus(),
+      status: ttftStatus,
       tooltip: 'Time To First Token - 首个Token延迟',
     },
     {
       id: 'tpot',
       icon: <Rocket className="h-4 w-4" />,
       label: 'TPOT',
-      value: formatValue(latency.decode_per_token_latency_ms, 2),
+      value: formatKPIValue(latency.decode_per_token_latency_ms, 'tpot'),
       unit: 'ms',
-      subValue: `E2E ${formatValue(latency.end_to_end_latency_ms)}ms`,
-      status: getTPOTStatus(),
+      subValue: `E2E ${formatKPIValue(latency.end_to_end_latency_ms, 'end_to_end_latency')}ms`,
+      status: tpotStatus,
       tooltip: 'Time Per Output Token - 每Token延迟',
     },
     {
       id: 'throughput',
       icon: <Zap className="h-4 w-4" />,
       label: 'Throughput',
-      value: formatValue(throughput.tokens_per_second),
+      value: formatKPIValue(throughput.tokens_per_second, 'tps'),
       unit: 'tok/s',
       subValue: `${throughput.requests_per_second.toFixed(1)} req/s`,
       status: 'good' as const,
@@ -195,13 +191,14 @@ export const HeroKPIPanel: React.FC<HeroKPIPanelProps> = ({
       id: 'mfu',
       icon: <Gauge className="h-4 w-4" />,
       label: 'MFU',
-      value: (throughput.model_flops_utilization * 100).toFixed(1),
+      value: formatNumber(throughput.model_flops_utilization * 100, getMetricDecimals('mfu')),
       unit: '%',
-      subValue: `显存 ${memory.total_per_chip_gb.toFixed(1)}GB/芯片`,
-      status: getMFUStatus(),
+      subValue: `显存 ${formatNumber(memory.total_per_chip_gb, getMetricDecimals('dram_occupy'))}GB/芯片`,
+      status: mfuStatus,
       tooltip: 'Model FLOPs Utilization - 模型算力利用率',
     },
   ]
+  }, [latency, throughput, memory, score])
 
   return (
     <div

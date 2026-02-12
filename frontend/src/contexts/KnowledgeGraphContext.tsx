@@ -124,7 +124,7 @@ export const KnowledgeGraphProvider: React.FC<KnowledgeGraphProviderProps> = ({ 
 
       // 数据验证
       if (!data || !Array.isArray(data.nodes) || data.nodes.length === 0) {
-        console.error('❌ 知识图谱初始化失败：nodes 为空或未定义', { data })
+        console.error('[FAIL] 知识图谱初始化失败：nodes 为空或未定义', { data })
         setKnowledgeInitialized(true)  // 标记为已初始化，避免重复尝试
         return
       }

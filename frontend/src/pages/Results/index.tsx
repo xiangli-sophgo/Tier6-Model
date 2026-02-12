@@ -70,9 +70,19 @@ import { AnalysisResultDisplay } from '@/components/ConfigPanel/DeploymentAnalys
 import { ChartsPanel } from '@/components/ConfigPanel/DeploymentAnalysis/charts'
 import { PlanAnalysisResult, HardwareConfig, LLMModelConfig, InferenceConfig, isMemorySufficient } from '@/utils/llmDeployment/types'
 import { calculateScores, extractScoreInputFromPlan } from '@/utils/llmDeployment/scoreCalculator'
+import { formatDate } from '@/utils/formatters'
 import TaskTable from './components/TaskTable'
 import TaskDetailPanel from './components/TaskDetailPanel'
 import { ParameterAnalysisPanel } from './components/ParameterAnalysisPanel'
+import { PageHeader } from '@/components/ui/page-header'
+import {
+  Breadcrumb,
+  BreadcrumbList,
+  BreadcrumbItem,
+  BreadcrumbLink,
+  BreadcrumbSeparator,
+  BreadcrumbPage,
+} from '@/components/ui/breadcrumb'
 import { useWorkbench } from '@/contexts/WorkbenchContext'
 
 // 分页组件
@@ -185,7 +195,7 @@ export const Results: React.FC = () => {
   const [importResult, setImportResult] = useState<any>(null)
 
   // 加载实验列表
-  const loadExperiments = async () => {
+  const loadExperiments = useCallback(async () => {
     setLoading(true)
     try {
       const data = await listExperiments()
@@ -196,14 +206,14 @@ export const Results: React.FC = () => {
     } finally {
       setLoading(false)
     }
-  }
+  }, [])
 
   // 当切换到结果管理页面时自动刷新
   useEffect(() => {
     if (ui.viewMode === 'results') {
       loadExperiments()
     }
-  }, [ui.viewMode])
+  }, [ui.viewMode, loadExperiments])
 
   // 加载实验详情
   const loadExperimentDetail = async (id: number) => {
@@ -503,6 +513,8 @@ export const Results: React.FC = () => {
           throughput_score: calculatedScores.throughputScore,
           efficiency_score: calculatedScores.efficiencyScore,
           balance_score: calculatedScores.balanceScore,
+          memory_score: calculatedScores.memoryScore,
+          communication_score: calculatedScores.communicationScore,
         },
         suggestions: [],
       } as unknown as PlanAnalysisResult
@@ -528,11 +540,11 @@ export const Results: React.FC = () => {
   }, [])
 
   // 分页数据
-  const paginatedExperiments = experiments.slice(
+  const paginatedExperiments = useMemo(() => experiments.slice(
     (currentPage - 1) * pageSize,
     currentPage * pageSize
-  )
-  const totalPages = Math.ceil(experiments.length / pageSize)
+  ), [experiments, currentPage, pageSize])
+  const totalPages = useMemo(() => Math.ceil(experiments.length / pageSize), [experiments, pageSize])
 
   // 如果选中了实验，显示详情视图
   if (selectedExperiment) {
@@ -572,36 +584,37 @@ export const Results: React.FC = () => {
         <TooltipProvider>
           <div className="h-full w-full bg-gradient-to-b from-gray-50 to-white flex flex-col">
             {/* 标题栏 */}
-            <div className="px-8 py-6 border-b border-blue-100 bg-gradient-to-r from-blue-50 to-white flex justify-between items-center flex-shrink-0" style={{boxShadow: '0 2px 12px rgba(37, 99, 235, 0.08)'}}>
-              <h3 className="m-0 bg-gradient-to-r from-blue-600 to-blue-400 bg-clip-text text-2xl font-bold text-transparent">
-                任务分析
-              </h3>
-            </div>
+            <PageHeader title="任务分析" />
 
             {/* 面包屑导航 */}
             <div className="px-8 py-3 border-b border-gray-100 bg-white flex-shrink-0">
-              <div className="flex items-center gap-1.5 text-sm">
-                <span
-                  className="text-blue-600 hover:underline cursor-pointer"
-                  onClick={() => {
-                    setSelectedExperimentId(null)
-                    setSelectedExperiment(null)
-                    setSelectedTask(null)
-                    setTaskResults(null)
-                  }}
-                >
-                  结果管理
-                </span>
-                <ChevronRight className="h-4 w-4 text-gray-400" />
-                <span
-                  className="text-blue-600 hover:underline cursor-pointer"
-                  onClick={handleBackToTasks}
-                >
-                  {selectedExperiment?.name}
-                </span>
-                <ChevronRight className="h-4 w-4 text-gray-400" />
-                <span className="text-gray-500">任务分析</span>
-              </div>
+              <Breadcrumb>
+                <BreadcrumbList>
+                  <BreadcrumbItem>
+                    <BreadcrumbLink
+                      className="cursor-pointer"
+                      onClick={() => {
+                        setSelectedExperimentId(null)
+                        setSelectedExperiment(null)
+                        setSelectedTask(null)
+                        setTaskResults(null)
+                      }}
+                    >
+                      结果管理
+                    </BreadcrumbLink>
+                  </BreadcrumbItem>
+                  <BreadcrumbSeparator />
+                  <BreadcrumbItem>
+                    <BreadcrumbLink className="cursor-pointer" onClick={handleBackToTasks}>
+                      {selectedExperiment?.name}
+                    </BreadcrumbLink>
+                  </BreadcrumbItem>
+                  <BreadcrumbSeparator />
+                  <BreadcrumbItem>
+                    <BreadcrumbPage>任务分析</BreadcrumbPage>
+                  </BreadcrumbItem>
+                </BreadcrumbList>
+              </Breadcrumb>
             </div>
 
             {/* 内容区 - 内部滚动 */}
@@ -647,10 +660,7 @@ export const Results: React.FC = () => {
       <TooltipProvider>
         <div className="h-full w-full bg-gradient-to-b from-gray-50 to-white flex flex-col">
           {/* 标题栏 */}
-          <div className="px-8 py-6 border-b border-blue-100 bg-gradient-to-r from-blue-50 to-white flex justify-between items-center flex-shrink-0" style={{boxShadow: '0 2px 12px rgba(37, 99, 235, 0.08)'}}>
-            <h3 className="m-0 bg-gradient-to-r from-blue-600 to-blue-400 bg-clip-text text-2xl font-bold text-transparent">
-              实验详情
-            </h3>
+          <PageHeader title="实验详情">
             <div className="flex items-center gap-2">
               <Tooltip>
                 <TooltipTrigger asChild>
@@ -669,23 +679,29 @@ export const Results: React.FC = () => {
                 <TooltipContent>刷新</TooltipContent>
               </Tooltip>
             </div>
-          </div>
+          </PageHeader>
 
           {/* 面包屑导航 */}
           <div className="px-8 py-3 border-b border-gray-100 bg-white flex-shrink-0">
-            <div className="flex items-center gap-1.5 text-sm">
-              <span
-                className="text-blue-600 hover:underline cursor-pointer"
-                onClick={() => {
-                  setSelectedExperimentId(null)
-                  setSelectedExperiment(null)
-                }}
-              >
-                结果管理
-              </span>
-              <ChevronRight className="h-4 w-4 text-gray-400" />
-              <span className="text-gray-500">{selectedExperiment.name}</span>
-            </div>
+            <Breadcrumb>
+              <BreadcrumbList>
+                <BreadcrumbItem>
+                  <BreadcrumbLink
+                    className="cursor-pointer"
+                    onClick={() => {
+                      setSelectedExperimentId(null)
+                      setSelectedExperiment(null)
+                    }}
+                  >
+                    结果管理
+                  </BreadcrumbLink>
+                </BreadcrumbItem>
+                <BreadcrumbSeparator />
+                <BreadcrumbItem>
+                  <BreadcrumbPage>{selectedExperiment.name}</BreadcrumbPage>
+                </BreadcrumbItem>
+              </BreadcrumbList>
+            </Breadcrumb>
           </div>
 
           {/* 内容区 - 内部滚动 */}
@@ -816,11 +832,7 @@ export const Results: React.FC = () => {
     <TooltipProvider>
       <div className="h-full w-full bg-gradient-to-b from-gray-50 to-white flex flex-col">
         {/* 标题栏 */}
-        <div className="px-8 py-6 border-b border-blue-100 bg-gradient-to-r from-blue-50 to-white flex-shrink-0" style={{boxShadow: '0 2px 12px rgba(37, 99, 235, 0.08)'}}>
-          <h3 className="m-0 bg-gradient-to-r from-blue-600 to-blue-400 bg-clip-text text-2xl font-bold text-transparent">
-            结果管理
-          </h3>
-        </div>
+        <PageHeader title="结果管理" />
 
         {/* 内容区 - 内部滚动 */}
         <div className="flex-1 overflow-auto p-8">
@@ -959,7 +971,7 @@ export const Results: React.FC = () => {
                                 {record.total_tasks}
                               </TableCell>
                               <TableCell className="text-center">
-                                {record.created_at ? new Date(record.created_at).toLocaleString('zh-CN') : '-'}
+                                {formatDate(record.created_at)}
                               </TableCell>
                               <TableCell className="text-center">
                                 {editingId === record.id ? (

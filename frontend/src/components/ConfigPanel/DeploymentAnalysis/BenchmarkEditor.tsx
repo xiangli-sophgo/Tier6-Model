@@ -33,7 +33,8 @@ import {
   LLMModelConfig,
   InferenceConfig,
 } from '../../../utils/llmDeployment/types'
-import { calculateModelParams, formatParams } from '../../../api/model'
+import { calculateModelParams } from '../../../api/model'
+import { formatParams } from '@/utils/formatters'
 import { useDebouncedValue } from '@/hooks/useDebouncedCallback'
 import {
   getModelList,

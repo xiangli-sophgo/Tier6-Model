@@ -6,6 +6,7 @@
  */
 
 import React, { useState } from 'react'
+import { formatNumber, getMetricDecimals } from '@/utils/formatters'
 import {
   Loader2,
   CheckCircle,
@@ -349,7 +350,7 @@ const HistoryTaskItem: React.FC<HistoryTaskItemProps> = ({ task, onView, onDelet
           <div className="text-xs mt-1">
             {task.status === 'completed' ? (
               <span className="text-green-600">
-                TTFT: {task.ttft?.toFixed(1)}ms · TPOT: {task.tpot?.toFixed(2)}ms · {formatDuration(task.startTime, task.endTime)}
+                TTFT: {formatNumber(task.ttft, getMetricDecimals('ttft'))}ms · TPOT: {formatNumber(task.tpot, getMetricDecimals('tpot'))}ms · {formatDuration(task.startTime, task.endTime)}
               </span>
             ) : task.status === 'failed' ? (
               <InfoTooltip content={task.error || ''}>

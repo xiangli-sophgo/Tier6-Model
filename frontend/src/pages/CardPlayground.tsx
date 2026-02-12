@@ -254,7 +254,7 @@ const PerformanceMetricsCard: React.FC = () => {
           </div>
         </div>
         <div style={metricCardStyle} className="hover:shadow-md hover:border-orange-300">
-          <div className="text-xs text-gray-500">显存占用</div>
+          <div className="text-xs text-gray-500">内存占用</div>
           <div className="text-xl font-bold text-gray-800 mt-0.5">
             {data.memoryUsedGB.toFixed(1)}
             <span className="text-xs font-normal text-gray-400 ml-1">/ {data.memoryCapacityGB}G</span>
@@ -506,7 +506,7 @@ const HybridStyleCard: React.FC = () => {
               </td>
             </tr>
             <tr>
-              <td className="px-4 py-2.5 text-gray-700">显存占用</td>
+              <td className="px-4 py-2.5 text-gray-700">内存占用</td>
               <td className="px-4 py-2.5 text-right font-medium">{data.memoryUsedGB.toFixed(1)} / {data.memoryCapacityGB} GB</td>
               <td className="px-4 py-2.5 text-right">
                 <span className="text-xs px-2 py-0.5 rounded-full bg-green-100 text-green-700">充足</span>
@@ -786,11 +786,11 @@ export default function CardPlayground() {
               ['defaultExpanded', 'boolean', '默认展开'],
               ['expanded', 'boolean', '受控展开状态'],
               ['onExpandChange', 'function', '展开状态回调'],
-              ['contentClassName', 'string', '内容区自定义样式 ⭐', true],
-              ['titleless', 'boolean', '无标题模式 ⭐', true],
-              ['glassmorphism', 'boolean', '毛玻璃效果 ⭐', true],
-              ['collapsibleCount', 'number', '折叠区计数 ⭐', true],
-              ['onEdit', 'function', '编辑按钮回调 ⭐', true],
+              ['contentClassName', 'string', '内容区自定义样式 [*]', true],
+              ['titleless', 'boolean', '无标题模式 [*]', true],
+              ['glassmorphism', 'boolean', '毛玻璃效果 [*]', true],
+              ['collapsibleCount', 'number', '折叠区计数 [*]', true],
+              ['onEdit', 'function', '编辑按钮回调 [*]', true],
               ['editLabel', 'string', '编辑按钮文字'],
             ].map(([prop, type, desc, highlight]) => (
               <div key={prop as string} className={`grid grid-cols-3 gap-4 py-2 border-b ${highlight ? 'bg-blue-50' : ''}`}>

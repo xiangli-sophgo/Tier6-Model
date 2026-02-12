@@ -1,5 +1,5 @@
 /**
- * 显存占用可视化 - 堆叠柱状图
+ * 内存占用可视化 - 堆叠柱状图
  */
 
 import React, { useMemo } from 'react'

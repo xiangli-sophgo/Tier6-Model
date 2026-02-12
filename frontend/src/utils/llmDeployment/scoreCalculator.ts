@@ -17,7 +17,7 @@ export interface ScoreInput {
   mfu: number
   /** MBU 显存带宽利用率 (0-1) */
   mbu: number
-  /** 显存占用 (GB) */
+  /** 内存占用 (GB) */
   memoryUsedGB: number
   /** 芯片显存容量 (GB) */
   memoryCapacityGB: number
@@ -219,7 +219,7 @@ export function calcCommunicationScore(
   const totalCompute = prefillComputeLatency + decodeComputeLatency
   const total = totalComm + totalCompute
 
-  if (total <= 0) return 100 // 无数据时默认满分
+  if (total <= 0) return 0 // 无数据时返回0分
 
   const commRatio = totalComm / total
   const score = (1 - commRatio) * 100

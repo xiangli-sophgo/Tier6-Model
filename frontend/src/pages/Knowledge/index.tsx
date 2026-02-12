@@ -5,6 +5,7 @@
 
 import React, { useState, useRef } from 'react'
 import { KnowledgeGraph, KnowledgeNodeCards } from '@/components/KnowledgeGraph'
+import { PageHeader } from '@/components/ui/page-header'
 import { useWorkbench } from '@/contexts/WorkbenchContext'
 
 export const Knowledge: React.FC = () => {
@@ -49,11 +50,7 @@ export const Knowledge: React.FC = () => {
   return (
     <div className="h-full w-full bg-gradient-to-b from-gray-50 to-white flex flex-col overflow-hidden">
       {/* 标题栏 */}
-      <div className="px-8 py-6 border-b border-blue-100 bg-gradient-to-r from-blue-50 to-white flex-shrink-0" style={{boxShadow: '0 2px 12px rgba(37, 99, 235, 0.08)'}}>
-        <h3 className="m-0 bg-gradient-to-r from-blue-700 to-blue-500 bg-clip-text text-2xl font-bold text-transparent">
-          知识网络
-        </h3>
-      </div>
+      <PageHeader title="知识网络" />
 
       {/* 工具栏 - 独立层级，横跨整个宽度，在卡片上方 */}
       <div style={{ width: '100%', minWidth: 0, flexShrink: 0, position: 'relative', zIndex: 1 }}>

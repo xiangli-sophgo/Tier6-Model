@@ -12,7 +12,7 @@ import 'handsontable/dist/handsontable.full.min.css'
 import type { EvaluationTask } from '@/api/results'
 import { getColumnPresetsByExperiment, addColumnPreset, deleteColumnPreset, type ColumnPreset } from '@/api/results'
 import { classifyTaskFieldsWithHierarchy, extractTaskFields } from '../utils/taskFieldClassifier'
-import { formatNumber } from '@/utils/formatters'
+import { formatMetricValue, formatDate } from '@/utils/formatters'
 import {
   DndContext,
   closestCenter,
@@ -77,7 +77,7 @@ const columnNameMap: Record<string, string> = {
   'mbu': 'MBU (%)',
   'score': '综合得分',
   'chips': '芯片数',
-  'dram_occupy': '显存占用 (GB)',
+  'dram_occupy': '内存占用 (GB)',
   'flops': '计算量 (TFLOPs)',
   'end_to_end_latency': 'E2E延迟 (ms)',
   'parallelism_dp': 'DP',
@@ -758,18 +758,18 @@ export default function TaskTable({
       return result[field] ?? '-'
     }
 
-    // 显存占用字段（从 result 转换为 GB）
+    // 内存占用字段（返回原始字节值，由 formatMetricValue 统一转换为 GB）
     if (field === 'dram_occupy') {
       const result = (task as any).result
-      if (!result || !result.dram_occupy) return '-'
-      return result.dram_occupy / (1024 * 1024 * 1024) // 字节转 GB
+      if (!result || result.dram_occupy === undefined || result.dram_occupy === null) return '-'
+      return result.dram_occupy
     }
 
-    // 计算量字段（从 result 转换为 TFLOPs）
+    // 计算量字段（返回原始 FLOPs 值，由 formatMetricValue 统一转换为 TFLOPs）
     if (field === 'flops') {
       const result = (task as any).result
-      if (!result || !result.flops) return '-'
-      return result.flops / 1e12 // FLOPs 转 TFLOPs
+      if (!result || result.flops === undefined || result.flops === null) return '-'
+      return result.flops
     }
 
     // E2E延迟（通过 ttft + tpot * output_length 计算，这里简化为 ttft + tpot * 100）
@@ -819,16 +819,11 @@ export default function TaskTable({
       return allColumns.map((col) => {
         const value = getTaskFieldValue(task, col)
         if (typeof value === 'number') {
-          // MFU/MBU 百分比字段
-          if (col === 'mfu' || col === 'mbu') {
-            return `${formatNumber(value * 100, 2)}%`
-          }
-          // 浮点数保留两位
-          return Number.isInteger(value) ? value : formatNumber(value, 2)
+          return formatMetricValue(col, value)
         }
         // 时间字段格式化
         if (col.endsWith('_at') && typeof value === 'string' && value !== '-') {
-          return new Date(value).toLocaleString('zh-CN')
+          return formatDate(value)
         }
         return value
       })
@@ -1070,7 +1065,7 @@ export default function TaskTable({
                         {preset.visible_columns.length} 列 · {preset.fixed_columns.length} 固定
                       </div>
                       <div className="text-xs text-gray-400 mt-1">
-                        {new Date(preset.created_at).toLocaleString('zh-CN')}
+                        {formatDate(preset.created_at)}
                       </div>
                     </div>
                     <div className="flex items-center gap-1 ml-2">

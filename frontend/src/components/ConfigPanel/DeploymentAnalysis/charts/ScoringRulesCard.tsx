@@ -3,7 +3,7 @@
  */
 
 import React from 'react'
-import { Clock, Zap, Gauge, Target, Calculator, Info } from 'lucide-react'
+import { Clock, Zap, Gauge, Target, Calculator, Info, HardDrive, Radio } from 'lucide-react'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import { Badge } from '@/components/ui/badge'
 import { InfoTooltip } from '@/components/ui/info-tooltip'
@@ -96,12 +96,42 @@ export const ScoringRulesCard: React.FC<ScoringRulesCardProps> = ({
         '不均匀切分会降低分数',
       ],
     },
+    {
+      key: 'memory',
+      name: '显存评分',
+      weight: weights.memory,
+      icon: <HardDrive className="h-4 w-4 text-purple-500" />,
+      color: 'purple' as const,
+      description: '显存利用率评估，过高或过低均扣分',
+      formula: 'score = utilization-based (50%-90% optimal)',
+      details: [
+        '显存利用率 50%-90% 为最优区间',
+        '超过 100% (OOM) 直接零分',
+        '低于 30% 说明资源浪费',
+      ],
+    },
+    {
+      key: 'communication',
+      name: '通信评分',
+      weight: weights.communication,
+      icon: <Radio className="h-4 w-4 text-orange-500" />,
+      color: 'orange' as const,
+      description: '通信开销占比评估，越低越好',
+      formula: 'score = max(0, 100 - comm_ratio × 200)',
+      details: [
+        '通信占比 0% → 100分',
+        '通信占比 50% → 0分',
+        '平衡计算与通信开销',
+      ],
+    },
   ]
 
   const badgeColorMap = {
     blue: 'bg-blue-100 text-blue-800 border-blue-200',
     green: 'bg-green-100 text-green-800 border-green-200',
     yellow: 'bg-yellow-100 text-yellow-800 border-yellow-200',
+    purple: 'bg-purple-100 text-purple-800 border-purple-200',
+    orange: 'bg-orange-100 text-orange-800 border-orange-200',
   } as const
 
   return (
@@ -149,7 +179,7 @@ export const ScoringRulesCard: React.FC<ScoringRulesCardProps> = ({
               <span className="font-semibold text-sm">综合评分公式</span>
             </div>
             <div style={{ ...formulaStyle, background: '#fff' }}>
-              综合评分 = {(weights.latency * 100).toFixed(0)}% × 延迟 + {(weights.throughput * 100).toFixed(0)}% × 吞吐 + {(weights.efficiency * 100).toFixed(0)}% × 效率 + {(weights.balance * 100).toFixed(0)}% × 均衡
+              综合评分 = {(weights.latency * 100).toFixed(0)}% × 延迟 + {(weights.throughput * 100).toFixed(0)}% × 吞吐 + {(weights.efficiency * 100).toFixed(0)}% × 效率 + {(weights.balance * 100).toFixed(0)}% × 均衡 + {(weights.memory * 100).toFixed(0)}% × 显存 + {(weights.communication * 100).toFixed(0)}% × 通信
             </div>
           </div>
         </div>

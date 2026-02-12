@@ -564,7 +564,7 @@ def run_evaluation_from_request(
         tps_per_chip = tps / chips if chips > 0 else 0
         tps_per_batch = tps / batch_size if batch_size > 0 else 0
 
-        # 显存占用: 使用理论计算的总内存 (memory_breakdown 已包含权重+KV+激活+overhead)
+        # 内存占用: 使用理论计算的总内存 (memory_breakdown 已包含权重+KV+激活+overhead)
         dram_occupy = memory_breakdown["total_per_chip_gb"] * (1024 ** 3)  # GB -> bytes
 
         ttft = aggregates.get("ttft_ms")

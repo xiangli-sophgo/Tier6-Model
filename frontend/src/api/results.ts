@@ -4,15 +4,7 @@
  * 结果管理相关的 HTTP 请求封装
  */
 
-import axios from 'axios'
-
-const API_BASE_URL = '/api'
-
-const api = axios.create({
-  baseURL: API_BASE_URL,
-  timeout: 120000,
-  withCredentials: true, // 支持跨域请求携带凭证
-})
+import { longApiClient as api } from './client'
 
 // ============================================
 // 类型定义
@@ -87,7 +79,7 @@ export interface EvaluationTask {
     mbu: number           // 内存带宽利用率
     score: number         // 综合得分
     chips: number         // 芯片数
-    dram_occupy: number   // 显存占用 (字节)
+    dram_occupy: number   // 内存占用 (字节)
     flops: number         // 计算量 (FLOPs)
     cost?: {              // 成本分析结果
       server_cost: number
@@ -228,7 +220,7 @@ export interface TaskResultsResponse {
     mfu: number
     mbu: number
     score: number
-    dram_occupy?: number  // 显存占用 (字节)，后端返回
+    dram_occupy?: number  // 内存占用 (字节)，后端返回
     flops?: number        // 计算量 (FLOPs)，后端返回
     cost?: {              // 成本评估结果
       server_cost: number           // 服务器总成本 ($)

@@ -18,50 +18,9 @@ import {
   ThroughputAnalysis,
   UtilizationAnalysis,
   OverallScore,
-  SimulationStats,
-  ScoreWeights,
-  DEFAULT_SCORE_WEIGHTS,
   isMemorySufficient,
 } from './types';
-
-/**
- * 简化的评分计算（基于后端仿真结果）
- */
-function calculateScoreFromStats(
-  stats: SimulationStats,
-  weights: ScoreWeights = DEFAULT_SCORE_WEIGHTS
-): OverallScore {
-  // 延迟评分 (TTFT < 100ms 满分, > 1000ms 零分)
-  const ttft = stats.ttft;
-  const latencyScore = Math.max(0, Math.min(100, 100 - (ttft - 100) / 9));
-
-  // 吞吐评分 (MFU > 50% 满分)
-  const mfu = stats.dynamicMfu;
-  const throughputScore = Math.min(100, mfu * 200);
-
-  // 效率评分 (综合 MFU 和 MBU)
-  const avgUtilization = (stats.dynamicMfu + stats.dynamicMbu) / 2;
-  const efficiencyScore = avgUtilization * 100;
-
-  // 均衡评分 (基于气泡比)
-  const bubbleRatio = stats.maxPpBubbleRatio;
-  const balanceScore = (1 - bubbleRatio) * 100;
-
-  // 综合评分 (加权平均)
-  const overallScore =
-    latencyScore * weights.latency +
-    throughputScore * weights.throughput +
-    efficiencyScore * weights.efficiency +
-    balanceScore * weights.balance;
-
-  return {
-    latency_score: latencyScore,
-    throughput_score: throughputScore,
-    efficiency_score: efficiencyScore,
-    balance_score: balanceScore,
-    overall_score: overallScore,
-  };
-}
+import { calculateScores, type ScoreInput } from './scoreCalculator';
 
 /**
  * 将后端仿真结果适配为前端 PlanAnalysisResult 格式
@@ -144,8 +103,31 @@ export function adaptSimulationResult(
     load_balance_score: 1 - stats.maxPpBubbleRatio,
   };
 
-  // 6. 评分
-  const score = calculateScoreFromStats(stats);
+  // 6. 评分 (使用统一的六维评分器)
+  const scoreInput: ScoreInput = {
+    ttft: stats.ttft,
+    tpot: stats.avgTpot / 1000.0,
+    tps: throughput.tokens_per_second,
+    tpsPerChip: throughput.tps_per_chip,
+    mfu: stats.dynamicMfu,
+    mbu: stats.dynamicMbu,
+    memoryUsedGB: totalMemoryGB,
+    memoryCapacityGB: chipCapacityGB,
+    prefillCommLatency: stats.prefill.commTime,
+    prefillComputeLatency: stats.prefill.computeTime,
+    decodeCommLatency: stats.decode.commTime,
+    decodeComputeLatency: stats.decode.computeTime,
+  };
+  const scoreResult = calculateScores(scoreInput);
+  const score: OverallScore = {
+    latency_score: scoreResult.latencyScore,
+    throughput_score: scoreResult.throughputScore,
+    efficiency_score: scoreResult.efficiencyScore,
+    balance_score: scoreResult.balanceScore,
+    memory_score: scoreResult.memoryScore,
+    communication_score: scoreResult.communicationScore,
+    overall_score: scoreResult.overallScore,
+  };
 
   // 7. 检查是否可行
   const is_feasible = stats.ttft > 0 && stats.ttft < Infinity;

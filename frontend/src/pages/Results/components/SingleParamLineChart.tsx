@@ -7,6 +7,7 @@ import { useMemo, useRef } from 'react'
 import ReactECharts from 'echarts-for-react'
 import type { EChartsOption } from 'echarts'
 import { CHART_COLORS } from '@/components/ConfigPanel/DeploymentAnalysis/charts/chartTheme'
+import { getMetricDecimals } from '@/utils/formatters'
 import type { SensitivityDataPoint } from '../utils/parameterAnalysis'
 
 interface SingleParamLineChartProps {
@@ -18,6 +19,8 @@ interface SingleParamLineChartProps {
   metricName: string
   /** 指标单位 */
   metricUnit?: string
+  /** 指标 key（如 'tps', 'mfu'），用于统一精度 */
+  metricKey?: string
   /** 图表高度 */
   height?: number
 }
@@ -27,6 +30,7 @@ export function SingleParamLineChart({
   paramName,
   metricName,
   metricUnit = '',
+  metricKey,
   height = 400,
 }: SingleParamLineChartProps) {
   const chartRef = useRef<ReactECharts>(null)
@@ -36,10 +40,12 @@ export function SingleParamLineChart({
       return {}
     }
 
-    // 计算数值范围以确定小数位数
+    // 使用统一精度配置，未指定 metricKey 时回退到基于范围的动态计算
     const values = data.map(d => d.mean_performance)
     const range = Math.max(...values) - Math.min(...values)
-    const decimalPlaces = range > 100 ? 0 : range > 10 ? 1 : 2
+    const decimalPlaces = metricKey
+      ? getMetricDecimals(metricKey)
+      : (range > 100 ? 0 : range > 10 ? 1 : 2)
 
     return {
       tooltip: {
@@ -140,7 +146,7 @@ export function SingleParamLineChart({
         bottom: 50,
       },
     }
-  }, [data, paramName, metricName, metricUnit])
+  }, [data, paramName, metricName, metricUnit, metricKey])
 
   // 导出图片
   const handleExport = () => {

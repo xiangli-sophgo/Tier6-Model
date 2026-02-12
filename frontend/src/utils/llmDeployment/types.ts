@@ -339,6 +339,8 @@ export interface ParallelismStrategy {
   pp: number;
   /** 专家并行度 (MoE) */
   ep: number;
+  /** 序列并行度 (与后端 ParallelismConfig.sp 对应) */
+  sp: number;
   /** 启用 TP Sequence Parallelism (SP 跟随 TP，序列按 TP 度切分) */
   enable_tp_sp: boolean;
   /** 启用 Ring Attention overlap (Layer 级，计算与通信完全重叠) */
@@ -519,6 +521,10 @@ export interface OverallScore {
   efficiency_score: number;
   /** 均衡评分 (0-100) */
   balance_score: number;
+  /** 显存评分 (0-100) */
+  memory_score: number;
+  /** 通信评分 (0-100) */
+  communication_score: number;
   /** 综合评分 (0-100) */
   overall_score: number;
 }
@@ -565,7 +571,7 @@ export interface PlanAnalysisResult {
 // 方案搜索
 // ============================================
 
-/** 评分权重配置 */
+/** 评分权重配置 (六维) */
 export interface ScoreWeights {
   /** 延迟权重 (0-1) */
   latency: number;
@@ -575,22 +581,30 @@ export interface ScoreWeights {
   efficiency: number;
   /** 均衡权重 (0-1) */
   balance: number;
+  /** 显存权重 (0-1) */
+  memory: number;
+  /** 通信权重 (0-1) */
+  communication: number;
 }
 
-/** 默认评分权重 */
+/** 默认评分权重 (六维) */
 export const DEFAULT_SCORE_WEIGHTS: ScoreWeights = {
-  latency: 0.3,
-  throughput: 0.35,
+  latency: 0.2,
+  throughput: 0.2,
   efficiency: 0.2,
-  balance: 0.15,
+  balance: 0.1,
+  memory: 0.15,
+  communication: 0.15,
 };
 
 /** TPS per chip 优化权重 (文档推荐: max TPS per chip) */
 export const TPS_OPTIMIZED_WEIGHTS: ScoreWeights = {
   latency: 0.1,       // 仅作为约束，不主导评分
-  throughput: 0.7,    // TPS per chip 主导
-  efficiency: 0.15,   // 资源利用率
+  throughput: 0.55,   // TPS per chip 主导
+  efficiency: 0.1,    // 资源利用率
   balance: 0.05,      // 负载均衡
+  memory: 0.1,        // 显存利用
+  communication: 0.1, // 通信开销
 };
 
 /** Batch Size 候选值 (包含非 2 幂次值) */
@@ -606,7 +620,7 @@ export interface SearchConstraints {
   max_latency_ms?: number;
   /** 最小吞吐量 (tokens/s) */
   min_throughput?: number;
-  /** 最大显存占用比 (0-1) */
+  /** 最大内存占用比 (0-1) */
   max_memory_ratio?: number;
   /** TP 必须整除 attention_heads */
   tp_divides_heads?: boolean;

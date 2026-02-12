@@ -1,0 +1,10 @@
+id: DeepSeek-V3.2-671B-A37B-S4K-O1-W16A16-B64
+name: DeepSeek-V3.2-671B-A37B-S4K-O1-W8A8-B64
+model: DeepSeek-V3.2-671B-A37B
+topology: P1-R1-B4-C32
+inference:
+  batch_size: 64
+  input_seq_length: 4096
+  output_seq_length: 1
+  weight_dtype: fp8
+  activation_dtype: fp8

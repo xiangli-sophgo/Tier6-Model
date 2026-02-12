@@ -116,7 +116,7 @@ export function extractMetricValue(task: EvaluationTask, metric: MetricType): nu
     return null
   }
 
-  // 显存占用需要转换单位（字节 -> GB）
+  // 内存占用需要转换单位（字节 -> GB）
   if (metric === 'dram_occupy') {
     const value = task.result.dram_occupy
     if (typeof value === 'number') {
@@ -359,7 +359,7 @@ export function getMetricLabel(metric: MetricType): { name: string; unit: string
     // 资源指标
     score: { name: '综合得分', unit: '' },
     chips: { name: '芯片数量', unit: '' },
-    dram_occupy: { name: '显存占用', unit: 'GB' },
+    dram_occupy: { name: '内存占用', unit: 'GB' },
     flops: { name: '计算量', unit: 'TFLOPs' },
     // 成本指标
     cost_total: { name: '总成本', unit: '$' },

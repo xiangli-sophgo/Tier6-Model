@@ -254,7 +254,7 @@ class TaskManager:
         """
         task = self._tasks.get(task_id)
         if task:
-            task.progress = max(0.0, min(1.0, progress))
+            task.progress = max(task.progress, min(1.0, progress))
             self._notify_callbacks(task_id)
 
     def add_callback(

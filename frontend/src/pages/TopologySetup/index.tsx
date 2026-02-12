@@ -10,6 +10,7 @@ import { Badge } from '@/components/ui/badge'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import { TopologyGraph, NodeDetail } from '@/components/TopologyGraph'
 import { ConfigPanel } from '@/components/ConfigPanel'
+import { PageHeader } from '@/components/ui/page-header'
 import { useWorkbench } from '@/contexts/WorkbenchContext'
 
 // 懒加载 Scene3D 组件（只在需要时加载 Three.js 相关代码）
@@ -227,11 +228,7 @@ export const TopologySetup: React.FC = () => {
   return (
     <div className="h-full w-full bg-gradient-to-b from-gray-50 to-white flex flex-col">
       {/* 标题栏 */}
-      <div className="px-8 py-6 border-b border-blue-100 bg-gradient-to-r from-blue-50 to-white flex-shrink-0" style={{boxShadow: '0 2px 12px rgba(37, 99, 235, 0.08)'}}>
-        <h3 className="m-0 bg-gradient-to-r from-blue-600 to-blue-400 bg-clip-text text-2xl font-bold text-transparent">
-          互联拓扑
-        </h3>
-      </div>
+      <PageHeader title="互联拓扑" />
 
       {/* 主内容区 */}
       <div className="flex-1 flex" style={{ height: 'calc(100% - 73px)' }}>

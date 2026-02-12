@@ -340,7 +340,7 @@ export const ConfigPanel: React.FC<ConfigPanelProps> = ({
               chips: board.chips.map(chip => ({
                 name: chip.name,
                 count: chip.count,
-                preset_id: (chip as any).preset_id,  // ✅ 保留 preset_id
+                preset_id: (chip as any).preset_id,  // [OK] 保留 preset_id
               })),
             })) : [],
             total_u: rackConfig?.total_u ?? 42,

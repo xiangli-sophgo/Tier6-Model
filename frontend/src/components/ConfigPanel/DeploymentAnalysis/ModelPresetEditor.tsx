@@ -30,7 +30,8 @@ import {
 import { BaseCard } from '@/components/common/BaseCard'
 import type { ModelPreset } from '@/types/math_model'
 import { getModelPresets, getModelPreset, updateModelPreset, saveModelPreset } from '@/api/math_model'
-import { calculateModelParams, formatParams } from '@/api/model'
+import { calculateModelParams } from '@/api/model'
+import { formatParams } from '@/utils/formatters'
 import { useDebouncedValue } from '@/hooks/useDebouncedCallback'
 
 // ============================================

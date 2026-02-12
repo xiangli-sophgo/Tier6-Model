@@ -7,6 +7,7 @@ import { useState, useMemo, useRef, useCallback } from 'react'
 import ReactECharts from 'echarts-for-react'
 import type { EChartsOption } from 'echarts'
 import { Button } from '@/components/ui/button'
+import { getMetricDecimals } from '@/utils/formatters'
 import type { HeatmapData } from '../utils/parameterAnalysis'
 
 interface DualParamHeatmapProps {
@@ -16,12 +17,15 @@ interface DualParamHeatmapProps {
   metricName: string
   /** 指标单位 */
   metricUnit?: string
+  /** 指标 key（如 'tps', 'mfu'），用于统一精度 */
+  metricKey?: string
 }
 
 export function DualParamHeatmap({
   data,
   metricName,
   metricUnit = '',
+  metricKey,
 }: DualParamHeatmapProps) {
   const chartRef = useRef<ReactECharts>(null)
   const [baseValue, setBaseValue] = useState<number | null>(null)
@@ -47,7 +51,9 @@ export function DualParamHeatmap({
     const max = Math.max(...values)
     const effectiveBase = baseValue !== null ? baseValue : max
     const range = max - min
-    const decimals = range > 100 ? 0 : range > 10 ? 1 : 2
+    const decimals = metricKey
+      ? getMetricDecimals(metricKey)
+      : (range > 100 ? 0 : range > 10 ? 1 : 2)
 
     return {
       minVal: min,
@@ -55,7 +61,7 @@ export function DualParamHeatmap({
       effectiveBaseValue: effectiveBase,
       decimalPlaces: decimals,
     }
-  }, [chartData, baseValue])
+  }, [chartData, baseValue, metricKey])
 
   // 计算单元格大小和图表尺寸
   const { cellSize, chartWidth, chartHeight, fontSize } = useMemo(() => {

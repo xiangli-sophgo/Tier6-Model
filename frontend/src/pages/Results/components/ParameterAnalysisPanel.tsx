@@ -77,7 +77,7 @@ const METRIC_OPTIONS: { value: MetricType; label: string; group: string }[] = [
   // 资源
   { value: 'score', label: '综合得分', group: '资源' },
   { value: 'chips', label: '芯片数量', group: '资源' },
-  { value: 'dram_occupy', label: '显存占用 (GB)', group: '资源' },
+  { value: 'dram_occupy', label: '内存占用 (GB)', group: '资源' },
   { value: 'flops', label: '计算量 (TFLOPs)', group: '资源' },
   // 成本
   { value: 'cost_total', label: '总成本', group: '成本' },
@@ -285,6 +285,7 @@ export function ParameterAnalysisPanel({ experimentId, tasks }: ParameterAnalysi
                     paramName={paramInfo?.title || selectedParams[0]}
                     metricName={metricLabel.name}
                     metricUnit={metricLabel.unit}
+                    metricKey={metric}
                     height={300}
                   />
                 </CardContent>
@@ -303,6 +304,7 @@ export function ParameterAnalysisPanel({ experimentId, tasks }: ParameterAnalysi
                     data={data}
                     metricName={metricLabel.name}
                     metricUnit={metricLabel.unit}
+                    metricKey={metric}
                   />
                 </CardContent>
               </Card>

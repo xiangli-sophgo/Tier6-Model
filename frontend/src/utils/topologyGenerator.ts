@@ -223,7 +223,7 @@ export class HierarchicalTopologyGenerator {
 
             for (let i = 0; i < boardCount; i++) {
               if (currentU + uHeight - 1 > rackTotalU) {
-                console.warn(`  ⚠️ [跳过Board] 超出容量: currentU=${currentU}, uHeight=${uHeight}, rackTotalU=${rackTotalU}`)
+                console.warn(`  [WARN] [跳过Board] 超出容量: currentU=${currentU}, uHeight=${uHeight}, rackTotalU=${rackTotalU}`)
                 break; // 超出机柜容量
               }
 
