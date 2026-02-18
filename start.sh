@@ -132,7 +132,7 @@ echo ""
 echo "启动后端服务 (端口 $API_PORT)..."
 echo "使用 Python: $PYTHON_CMD"
 cd "$SCRIPT_DIR/backend"
-$PYTHON_CMD -m math_model.main &
+$PYTHON_CMD -m perf_model.main &
 BACKEND_PID=$!
 echo "后端 PID: $BACKEND_PID"
 

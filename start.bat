@@ -160,7 +160,7 @@ echo.
 echo.
 echo Starting backend service (port %API_PORT%)...
 cd /d %SCRIPT_DIR%backend
-start "Tier6 Backend (%API_PORT%)" cmd /k "python3 -m math_model.main"
+start "Tier6 Backend (%API_PORT%)" cmd /k "python3 -m perf_model.main"
 echo Backend started in a new window
 
 :: Wait for backend startup and record PID

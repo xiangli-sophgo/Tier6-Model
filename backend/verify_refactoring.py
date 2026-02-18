@@ -18,7 +18,7 @@ print()
 # 1. 检查数据库表结构
 print("[1/4] 检查数据库表结构...")
 try:
-    from math_model.L0_entry.database import engine, Experiment, EvaluationResult
+    from perf_model.L0_entry.database import engine, Experiment, EvaluationResult
     from sqlalchemy import inspect
 
     inspector = inspect(engine)
@@ -54,7 +54,7 @@ except Exception as e:
 # 2. 检查API导入
 print("[2/4] 检查API导入...")
 try:
-    from math_model.L0_entry import api
+    from perf_model.L0_entry import api
 
     # 检查关键端点存在
     assert hasattr(api, 'submit_evaluation')
@@ -77,7 +77,7 @@ try:
 
     # 搜索 DBEvaluationTask 引用
     result = subprocess.run(
-        ["grep", "-r", "DBEvaluationTask", "math_model/L0_entry/api.py"],
+        ["grep", "-r", "DBEvaluationTask", "perf_model/L0_entry/api.py"],
         capture_output=True,
         text=True,
         cwd=Path(__file__).parent
@@ -91,7 +91,7 @@ try:
 
     # 搜索 DBTaskStatus 引用
     result = subprocess.run(
-        ["grep", "-r", "DBTaskStatus", "math_model/L0_entry/api.py"],
+        ["grep", "-r", "DBTaskStatus", "perf_model/L0_entry/api.py"],
         capture_output=True,
         text=True,
         cwd=Path(__file__).parent
@@ -109,7 +109,7 @@ except Exception as e:
 # 4. 测试CRUD操作
 print("[4/4] 测试CRUD操作...")
 try:
-    from math_model.L0_entry.database import get_db_session
+    from perf_model.L0_entry.database import get_db_session
     import uuid
 
     with get_db_session() as db:

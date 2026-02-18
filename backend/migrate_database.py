@@ -13,7 +13,7 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 
 # 数据库路径
-DB_DIR = Path(__file__).parent / "math_model" / "data"
+DB_DIR = Path(__file__).parent / "perf_model" / "data"
 DB_PATH = DB_DIR / "llm_evaluations.db"
 BACKUP_PATH = DB_DIR / f"llm_evaluations_backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}.db"
 
@@ -40,7 +40,7 @@ def migrate_database():
     if not has_existing_data:
         # 如果没有现有数据库，直接初始化新结构
         print("[INFO] 初始化新数据库结构...")
-        from math_model.L0_entry.database import init_db
+        from perf_model.L0_entry.database import init_db
         init_db()
         print("[OK] 新数据库结构创建完成")
         return
@@ -104,7 +104,7 @@ def migrate_database():
 
         # 7. 创建新表结构
         print("[INFO] 创建新表结构...")
-        from math_model.L0_entry.database import Base, engine as new_engine
+        from perf_model.L0_entry.database import Base, engine as new_engine
         Base.metadata.create_all(bind=new_engine)
         print("[OK] 新表结构创建完成")
 

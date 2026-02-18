@@ -13,8 +13,8 @@ import math
 # 加入项目路径
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from math_model.L0_entry.config_loader import load_chip, load_model, load_topology
-from math_model.L0_entry.eval_config import (
+from perf_model.L0_entry.config_loader import load_chip, load_model, load_topology
+from perf_model.L0_entry.eval_config import (
     EvalConfig,
     build_eval_config,
     _extract_first_chip_config,
@@ -57,7 +57,7 @@ def build_config():
 
 def trace_l1(eval_config: EvalConfig):
     """L1: 追踪 WorkloadIR 的层和算子"""
-    from math_model.L1_workload.models.llm.deepseek import DeepSeekV3Model
+    from perf_model.L1_workload.models.llm.deepseek import DeepSeekV3Model
 
     model = DeepSeekV3Model.from_model_config(eval_config.model)
     ir = model.to_ir()
@@ -91,9 +91,9 @@ def trace_l1(eval_config: EvalConfig):
 
 def trace_l3(eval_config: EvalConfig, ir):
     """L3: 追踪并行切分和 Tiling"""
-    from math_model.L2_arch.chip import ChipSpecImpl
-    from math_model.L3_mapping.parallelism.planner import DeploymentSpec, ParallelismPlanner, BoardSpec
-    from math_model.L0_entry.eval_config import _require
+    from perf_model.L2_arch.chip import ChipSpecImpl
+    from perf_model.L3_mapping.common.parallelism.planner import DeploymentSpec, ParallelismPlanner, BoardSpec
+    from perf_model.L0_entry.eval_config import _require
 
     # L2: ChipSpec
     chip_config = eval_config.chip_config
@@ -185,8 +185,8 @@ def trace_l3(eval_config: EvalConfig, ir):
 
 def trace_l3_tiling(eval_config: EvalConfig, dist_model, chip):
     """L3: 追踪 Tiling"""
-    from math_model.L3_mapping.tiling.planner import TilingPlanner
-    from math_model.L4_evaluation.evaluators.precise import PreciseTileEvaluator
+    from perf_model.L3_mapping.math.tiling.planner import TilingPlanner
+    from perf_model.L4_evaluation.math.evaluators.precise import PreciseTileEvaluator
 
     dep = eval_config.deployment
     cube_dtype = eval_config.inference.weight_dtype.upper()
@@ -239,10 +239,10 @@ def trace_l3_tiling(eval_config: EvalConfig, dist_model, chip):
 
 def trace_l4(eval_config: EvalConfig, dist_model, chip, tile_plan):
     """L4: 追踪评估引擎"""
-    from math_model.L3_mapping.scheduling.scheduler import Scheduler
-    from math_model.L4_evaluation.engine import EvaluationEngine
-    from math_model.L4_evaluation.metrics import Granularity
-    from math_model.L0_entry.engine import _build_hardware_spec
+    from perf_model.L3_mapping.math.scheduling.scheduler import Scheduler
+    from perf_model.L4_evaluation.math.engine import EvaluationEngine
+    from perf_model.L4_evaluation.common.metrics import Granularity
+    from perf_model.L0_entry.engine import _build_hardware_spec
 
     dep = eval_config.deployment
 
