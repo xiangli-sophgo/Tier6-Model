@@ -171,6 +171,7 @@ export interface ModelPreset {
   v_head_dim?: number;
   max_seq_len?: number;
   hidden_act?: string;
+  norm_type?: string;
   rms_norm_eps?: number;
   attention_bias?: boolean;
   attention_dropout?: number;
@@ -324,6 +325,7 @@ export interface ManualParallelism {
   kv_cache_rate?: number;
   is_prefill?: boolean;
   enable_zigzag?: boolean;
+  enable_tbo?: boolean;
   [key: string]: unknown;  // 允许额外字段
 }
 

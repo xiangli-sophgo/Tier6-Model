@@ -1,0 +1,233 @@
+<mxfile host="app.diagrams.net" modified="2026-02-18" agent="Claude" version="24.7.17">
+  <diagram id="sim-flow" name="TPUPerf Simulation Flow">
+    <mxGraphModel dx="1600" dy="1200" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1400" pageHeight="1400" math="0" shadow="0">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+
+        <!-- Title -->
+        <mxCell id="title" value="TPUPerf End-to-End Simulation Flow" style="text;html=1;align=center;verticalAlign=middle;fontSize=20;fontStyle=1;fontColor=#333333;" vertex="1" parent="1">
+          <mxGeometry x="350" y="15" width="700" height="35" as="geometry"/>
+        </mxCell>
+
+        <!-- ===== Phase 1: Initialization ===== -->
+        <mxCell id="phase1" value="Phase 1: Initialization" style="swimlane;html=1;startSize=25;fillColor=#E3F2FD;strokeColor=#1565C0;fontStyle=1;fontSize=12;rounded=1;horizontal=1;" vertex="1" parent="1">
+          <mxGeometry x="40" y="70" width="1320" height="160" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="cli" value="&lt;b&gt;CLI Entry&lt;/b&gt;&lt;br&gt;&lt;font style='font-size:8px;color:#555'&gt;./sg2262_top -c config.json&lt;br&gt;or --tiuBuf/--dmaBuf&lt;/font&gt;" style="ellipse;whiteSpace=wrap;html=1;fillColor=#BBDEFB;strokeColor=#1565C0;fontSize=10;" vertex="1" parent="phase1">
+          <mxGeometry x="20" y="40" width="145" height="65" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="parse_args" value="&lt;b&gt;Parser.compile_arg()&lt;/b&gt;&lt;br&gt;&lt;font style='font-size:8px;color:#555'&gt;Parse CLI args&lt;br&gt;Load JSON config&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#BBDEFB;strokeColor=#1565C0;fontSize=10;" vertex="1" parent="phase1">
+          <mxGeometry x="190" y="40" width="155" height="65" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="load_param" value="&lt;b&gt;Parser.load_param()&lt;/b&gt;&lt;br&gt;&lt;font style='font-size:8px;color:#555'&gt;Load arch params to&lt;br&gt;all SystemC modules&lt;br&gt;(freq, latency, size...)&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#BBDEFB;strokeColor=#1565C0;fontSize=10;" vertex="1" parent="phase1">
+          <mxGeometry x="370" y="40" width="160" height="65" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="create_modules" value="&lt;b&gt;sc_main: Create Modules&lt;/b&gt;&lt;br&gt;&lt;font style='font-size:8px;color:#555'&gt;64x TpuSubsys&lt;br&gt;64x DdrWrapper + ARE&lt;br&gt;SimpleBus, CDMA, C2C&lt;br&gt;Testbench, IFE, Clocks&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#BBDEFB;strokeColor=#1565C0;fontSize=10;" vertex="1" parent="phase1">
+          <mxGeometry x="555" y="35" width="175" height="75" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="bind_ports" value="&lt;b&gt;Port Binding&lt;/b&gt;&lt;br&gt;&lt;font style='font-size:8px;color:#555'&gt;TLM sockets: GDMA/SDMA&lt;br&gt;-&gt; Bus -&gt; ARE -&gt; DDR&lt;br&gt;Sync signals: tiu/tdma_sync_id&lt;br&gt;Clock/reset/enable&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#BBDEFB;strokeColor=#1565C0;fontSize=10;" vertex="1" parent="phase1">
+          <mxGeometry x="755" y="35" width="185" height="75" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="load_cmds" value="&lt;b&gt;Parser.load_*_cmd()&lt;/b&gt;&lt;br&gt;&lt;font style='font-size:8px;color:#555'&gt;Per core (0~63):&lt;br&gt;load_tiu_cmd(.BD.i)&lt;br&gt;load_gdma_cmd(.GDMA.i)&lt;br&gt;load_hau_cmd(.HAU.i)&lt;br&gt;load_sdma_cmd(.SDMA.i)&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#BBDEFB;strokeColor=#1565C0;fontSize=10;" vertex="1" parent="phase1">
+          <mxGeometry x="965" y="30" width="170" height="85" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="elab" value="&lt;b&gt;end_of_elaboration()&lt;/b&gt;&lt;br&gt;&lt;font style='font-size:8px;color:#555'&gt;Init profiler&lt;br&gt;Validate config&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#BBDEFB;strokeColor=#1565C0;fontSize=10;" vertex="1" parent="phase1">
+          <mxGeometry x="1160" y="40" width="140" height="65" as="geometry"/>
+        </mxCell>
+
+        <!-- Phase 1 arrows -->
+        <mxCell id="p1a" style="rounded=0;html=1;strokeColor=#1565C0;" edge="1" parent="phase1" source="cli" target="parse_args"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="p1b" style="rounded=0;html=1;strokeColor=#1565C0;" edge="1" parent="phase1" source="parse_args" target="load_param"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="p1c" style="rounded=0;html=1;strokeColor=#1565C0;" edge="1" parent="phase1" source="load_param" target="create_modules"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="p1d" style="rounded=0;html=1;strokeColor=#1565C0;" edge="1" parent="phase1" source="create_modules" target="bind_ports"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="p1e" style="rounded=0;html=1;strokeColor=#1565C0;" edge="1" parent="phase1" source="bind_ports" target="load_cmds"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="p1f" style="rounded=0;html=1;strokeColor=#1565C0;" edge="1" parent="phase1" source="load_cmds" target="elab"><mxGeometry relative="1" as="geometry"/></mxCell>
+
+        <!-- ===== Phase 2: sc_start() Simulation ===== -->
+        <mxCell id="phase2" value="Phase 2: SystemC Simulation (sc_start)" style="swimlane;html=1;startSize=25;fillColor=#FFF3E0;strokeColor=#E65100;fontStyle=1;fontSize=12;rounded=1;" vertex="1" parent="1">
+          <mxGeometry x="40" y="250" width="1320" height="570" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="sc_start" value="&lt;b&gt;sc_start()&lt;/b&gt;&lt;br&gt;&lt;font style='font-size:9px;color:#555'&gt;SystemC kernel&lt;br&gt;begins event loop&lt;/font&gt;" style="ellipse;whiteSpace=wrap;html=1;fillColor=#FFE0B2;strokeColor=#E65100;fontSize=11;fontStyle=0;" vertex="1" parent="phase2">
+          <mxGeometry x="20" y="40" width="130" height="60" as="geometry"/>
+        </mxCell>
+
+        <!-- Per-Clock-Cycle Loop -->
+        <mxCell id="cycle_loop" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#BF360C;strokeWidth=2;dashed=1;" vertex="1" parent="phase2">
+          <mxGeometry x="170" y="30" width="1130" height="300" as="geometry"/>
+        </mxCell>
+        <mxCell id="cycle_label" value="Per Clock Cycle (event-driven, all 64 cores in parallel)" style="text;html=1;align=left;verticalAlign=top;fontSize=11;fontStyle=1;fontColor=#BF360C;" vertex="1" parent="phase2">
+          <mxGeometry x="180" y="32" width="400" height="20" as="geometry"/>
+        </mxCell>
+
+        <!-- TIU per cycle -->
+        <mxCell id="tiu_cycle" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF8E1;strokeColor=#F9A825;strokeWidth=1.5;" vertex="1" parent="phase2">
+          <mxGeometry x="190" y="60" width="350" height="255" as="geometry"/>
+        </mxCell>
+        <mxCell id="tiu_cycle_label" value="TIU Engine (per core)" style="text;html=1;align=left;verticalAlign=top;fontSize=11;fontStyle=1;fontColor=#F57F17;" vertex="1" parent="phase2">
+          <mxGeometry x="200" y="63" width="200" height="20" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="tiu_s_init" value="Check dep:&lt;br&gt;&lt;font style='font-size:8px'&gt;cmd.cmd_id_dep&lt;br&gt;&lt;= tdma_sync_id?&lt;/font&gt;" style="rhombus;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=9;" vertex="1" parent="phase2">
+          <mxGeometry x="205" y="90" width="130" height="70" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="tiu_wait" value="WAIT&lt;br&gt;&lt;font style='font-size:8px'&gt;Stall until&lt;br&gt;DMA done&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFCDD2;strokeColor=#C62828;fontSize=9;" vertex="1" parent="phase2">
+          <mxGeometry x="205" y="180" width="80" height="45" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="tiu_calc" value="&lt;b&gt;cal_cycle()&lt;/b&gt;&lt;br&gt;&lt;font style='font-size:8px'&gt;Lookup instr type&lt;br&gt;CONV/MM2/SFU/AR...&lt;br&gt;+ bank conflict check&lt;br&gt;= total cycles&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=9;" vertex="1" parent="phase2">
+          <mxGeometry x="355" y="85" width="145" height="80" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="tiu_countdown" value="cycle_count--&lt;br&gt;&lt;font style='font-size:8px'&gt;Each clock tick&lt;br&gt;decrement counter&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=9;" vertex="1" parent="phase2">
+          <mxGeometry x="375" y="180" width="115" height="45" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="tiu_done" value="Write&lt;br&gt;&lt;b&gt;tiu_sync_id++&lt;/b&gt;&lt;br&gt;&lt;font style='font-size:8px'&gt;Record to profiler&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#C8E6C9;strokeColor=#2E7D32;fontSize=9;" vertex="1" parent="phase2">
+          <mxGeometry x="310" y="240" width="130" height="55" as="geometry"/>
+        </mxCell>
+
+        <!-- TIU arrows -->
+        <mxCell id="ta1" value="Yes" style="rounded=0;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;strokeColor=#F57F17;fontSize=8;" edge="1" parent="phase2" source="tiu_s_init" target="tiu_calc"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="ta2" value="No" style="rounded=0;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;strokeColor=#C62828;fontSize=8;" edge="1" parent="phase2" source="tiu_s_init" target="tiu_wait"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="ta3" style="rounded=0;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;strokeColor=#F57F17;" edge="1" parent="phase2" source="tiu_calc" target="tiu_countdown"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="ta4" value="=0" style="rounded=0;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;strokeColor=#2E7D32;fontSize=8;" edge="1" parent="phase2" source="tiu_countdown" target="tiu_done"><mxGeometry relative="1" as="geometry"/></mxCell>
+
+        <!-- DMA per cycle -->
+        <mxCell id="dma_cycle" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E8F5E9;strokeColor=#2E7D32;strokeWidth=1.5;" vertex="1" parent="phase2">
+          <mxGeometry x="560" y="60" width="350" height="255" as="geometry"/>
+        </mxCell>
+        <mxCell id="dma_cycle_label" value="DMA Engine (per core, GDMA + SDMA)" style="text;html=1;align=left;verticalAlign=top;fontSize=11;fontStyle=1;fontColor=#1B5E20;" vertex="1" parent="phase2">
+          <mxGeometry x="570" y="63" width="300" height="20" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="dma_dep" value="Check dep:&lt;br&gt;&lt;font style='font-size:8px'&gt;cmd.cmd_id_dep&lt;br&gt;&lt;= tiu_sync_id?&lt;/font&gt;" style="rhombus;whiteSpace=wrap;html=1;fillColor=#C8E6C9;strokeColor=#2E7D32;fontSize=9;" vertex="1" parent="phase2">
+          <mxGeometry x="575" y="90" width="130" height="70" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="dma_seg" value="&lt;b&gt;Segmentation&lt;/b&gt;&lt;br&gt;&lt;font style='font-size:8px'&gt;4D tensor -&gt; 1D segs&lt;br&gt;Check NCHW continuity&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#C8E6C9;strokeColor=#2E7D32;fontSize=9;" vertex="1" parent="phase2">
+          <mxGeometry x="725" y="85" width="150" height="55" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="dma_bus_req" value="&lt;b&gt;Bus Request&lt;/b&gt;&lt;br&gt;&lt;font style='font-size:8px'&gt;AXI burst via TLM&lt;br&gt;GmemAgent / LmemAgent&lt;br&gt;Outstanding semaphore&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#C8E6C9;strokeColor=#2E7D32;fontSize=9;" vertex="1" parent="phase2">
+          <mxGeometry x="725" y="150" width="155" height="60" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="dma_resp" value="&lt;b&gt;Response + Complete&lt;/b&gt;&lt;br&gt;&lt;font style='font-size:8px'&gt;ROB ordered completion&lt;br&gt;tdma_sync_id++&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#C8E6C9;strokeColor=#2E7D32;fontSize=9;" vertex="1" parent="phase2">
+          <mxGeometry x="660" y="230" width="160" height="55" as="geometry"/>
+        </mxCell>
+
+        <!-- DMA arrows -->
+        <mxCell id="da1" value="Yes" style="rounded=0;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;strokeColor=#2E7D32;fontSize=8;" edge="1" parent="phase2" source="dma_dep" target="dma_seg"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="da2" style="rounded=0;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;strokeColor=#2E7D32;" edge="1" parent="phase2" source="dma_seg" target="dma_bus_req"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="da3" style="rounded=0;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;strokeColor=#2E7D32;" edge="1" parent="phase2" source="dma_bus_req" target="dma_resp"><mxGeometry relative="1" as="geometry"/></mxCell>
+
+        <!-- Memory access -->
+        <mxCell id="mem_access" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FCE4EC;strokeColor=#C62828;strokeWidth=1.5;" vertex="1" parent="phase2">
+          <mxGeometry x="930" y="60" width="350" height="255" as="geometry"/>
+        </mxCell>
+        <mxCell id="mem_label" value="Memory + Interconnect" style="text;html=1;align=left;verticalAlign=top;fontSize=11;fontStyle=1;fontColor=#C62828;" vertex="1" parent="phase2">
+          <mxGeometry x="940" y="63" width="200" height="20" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="bus_arb" value="&lt;b&gt;Bus Arbitration&lt;/b&gt;&lt;br&gt;&lt;font style='font-size:8px'&gt;SimpleBus route request&lt;br&gt;Latency = f(distance)&lt;br&gt;45 cycles * Manhattan dist&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFCDD2;strokeColor=#C62828;fontSize=9;" vertex="1" parent="phase2">
+          <mxGeometry x="945" y="90" width="160" height="65" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="are_route" value="&lt;b&gt;ARE Routing&lt;/b&gt;&lt;br&gt;&lt;font style='font-size:8px'&gt;Address decode&lt;br&gt;Interleave mapping&lt;br&gt;3 cycle pipeline&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFCDD2;strokeColor=#C62828;fontSize=9;" vertex="1" parent="phase2">
+          <mxGeometry x="1120" y="90" width="140" height="65" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="ddr_access" value="&lt;b&gt;DDR Access&lt;/b&gt;&lt;br&gt;&lt;font style='font-size:8px'&gt;150ns base latency&lt;br&gt;Bank conflict check&lt;br&gt;Row buffer hit/miss&lt;br&gt;Outstanding FIFO (128)&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFCDD2;strokeColor=#C62828;fontSize=9;" vertex="1" parent="phase2">
+          <mxGeometry x="945" y="170" width="160" height="70" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="lmem_access" value="&lt;b&gt;LMEM Access&lt;/b&gt;&lt;br&gt;&lt;font style='font-size:8px'&gt;29ns base latency&lt;br&gt;16 banks, conflict&lt;br&gt;detection&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFCDD2;strokeColor=#C62828;fontSize=9;" vertex="1" parent="phase2">
+          <mxGeometry x="1120" y="170" width="140" height="70" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="cdma_op" value="&lt;b&gt;CDMA (if multi-chip)&lt;/b&gt;&lt;br&gt;&lt;font style='font-size:8px'&gt;Credit flow control&lt;br&gt;C2C link transfer&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFCDD2;strokeColor=#C62828;fontSize=9;dashed=1;" vertex="1" parent="phase2">
+          <mxGeometry x="1020" y="255" width="160" height="45" as="geometry"/>
+        </mxCell>
+
+        <!-- Memory arrows -->
+        <mxCell id="ma1" style="rounded=0;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;strokeColor=#C62828;" edge="1" parent="phase2" source="bus_arb" target="are_route"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="ma2" style="rounded=0;html=1;exitX=0;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;strokeColor=#C62828;" edge="1" parent="phase2" source="are_route" target="ddr_access"><mxGeometry relative="1" as="geometry"/></mxCell>
+
+        <!-- Termination -->
+        <mxCell id="term_check" value="&lt;b&gt;Termination Check&lt;/b&gt;&lt;br&gt;&lt;font style='font-size:9px;color:#555'&gt;Testbench monitors idle signals&lt;br&gt;All 64 cores idle for 100+ cycles?&lt;/font&gt;" style="rhombus;whiteSpace=wrap;html=1;fillColor=#FFE0B2;strokeColor=#E65100;fontSize=10;" vertex="1" parent="phase2">
+          <mxGeometry x="170" y="360" width="250" height="80" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="continue" value="Continue&lt;br&gt;next cycle" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFE0B2;strokeColor=#E65100;fontSize=9;" vertex="1" parent="phase2">
+          <mxGeometry x="100" y="380" width="80" height="40" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="sc_stop" value="&lt;b&gt;sc_stop()&lt;/b&gt;&lt;br&gt;&lt;font style='font-size:9px'&gt;Simulation ends&lt;/font&gt;" style="ellipse;whiteSpace=wrap;html=1;fillColor=#C8E6C9;strokeColor=#2E7D32;fontSize=11;" vertex="1" parent="phase2">
+          <mxGeometry x="170" y="470" width="130" height="55" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="tc1" value="No" style="rounded=0;html=1;exitX=0;exitY=0.5;exitDx=0;exitDy=0;entryX=1;entryY=0.5;entryDx=0;entryDy=0;strokeColor=#E65100;fontSize=8;" edge="1" parent="phase2" source="term_check" target="continue"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="tc2" value="Yes" style="rounded=0;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;strokeColor=#2E7D32;fontSize=8;strokeWidth=2;" edge="1" parent="phase2" source="term_check" target="sc_stop"><mxGeometry relative="1" as="geometry"/></mxCell>
+
+        <!-- Profiling in parallel -->
+        <mxCell id="profiling" value="&lt;b&gt;Profiler (runs in parallel)&lt;/b&gt;&lt;br&gt;&lt;font style='font-size:9px;color:#555'&gt;Each TIU/DMA instruction records:&lt;br&gt;start_cycle, end_cycle, asic_cycle, stall_cycle&lt;br&gt;alg_ops, u_arch_ops, bank_conflict_ratio&lt;br&gt;bandwidth (DDR/LMEM), burst length&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F3E5F5;strokeColor=#7B1FA2;fontSize=10;dashed=1;" vertex="1" parent="phase2">
+          <mxGeometry x="500" y="370" width="340" height="90" as="geometry"/>
+        </mxCell>
+
+        <!-- Output generation -->
+        <mxCell id="gen_output" value="&lt;b&gt;Generate Output Files&lt;/b&gt;&lt;br&gt;&lt;font style='font-size:9px;color:#555'&gt;tiuRegInfo*.txt (per core)&lt;br&gt;tdmaRegInfo*.txt (per core)&lt;br&gt;simTotalCycle.txt&lt;br&gt;Traffic/trace.txt&lt;br&gt;config/config.json&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F3E5F5;strokeColor=#7B1FA2;fontSize=10;" vertex="1" parent="phase2">
+          <mxGeometry x="900" y="360" width="200" height="100" as="geometry"/>
+        </mxCell>
+
+        <!-- ===== Phase 3: Post-Processing ===== -->
+        <mxCell id="phase3" value="Phase 3: Post-Processing (Python)" style="swimlane;html=1;startSize=25;fillColor=#F3E5F5;strokeColor=#7B1FA2;fontStyle=1;fontSize=12;rounded=1;" vertex="1" parent="1">
+          <mxGeometry x="40" y="840" width="1320" height="130" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="perfai_run" value="&lt;b&gt;PerfAI run_doc.py&lt;/b&gt;&lt;br&gt;&lt;font style='font-size:8px;color:#555'&gt;python3 run_doc.py . 64&lt;br&gt;--output result.xlsx&lt;br&gt;--style 1 --speedup 1&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E1BEE7;strokeColor=#7B1FA2;fontSize=10;" vertex="1" parent="phase3">
+          <mxGeometry x="20" y="35" width="180" height="75" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="layer_map" value="&lt;b&gt;Layer Mapping&lt;/b&gt;&lt;br&gt;&lt;font style='font-size:8px;color:#555'&gt;global.profile maps&lt;br&gt;instructions to layers&lt;br&gt;(QKV, FFN, etc.)&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E1BEE7;strokeColor=#7B1FA2;fontSize=10;" vertex="1" parent="phase3">
+          <mxGeometry x="220" y="35" width="160" height="75" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="excel_gen" value="&lt;b&gt;Excel Report&lt;/b&gt;&lt;br&gt;&lt;font style='font-size:8px;color:#555'&gt;Summary sheet&lt;br&gt;TIU/GDMA detail sheets&lt;br&gt;Analysis: layer timing&lt;br&gt;parallelism, bandwidth&lt;/font&gt;" style="shape=document;whiteSpace=wrap;html=1;fillColor=#E1BEE7;strokeColor=#7B1FA2;fontSize=10;" vertex="1" parent="phase3">
+          <mxGeometry x="400" y="32" width="170" height="80" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="web_gen" value="&lt;b&gt;Web Visualization&lt;/b&gt;&lt;br&gt;&lt;font style='font-size:8px;color:#555'&gt;PerfWeb/result.html&lt;br&gt;ECharts timeline&lt;br&gt;Layer breakdown&lt;br&gt;Bandwidth heatmap&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E1BEE7;strokeColor=#7B1FA2;fontSize=10;" vertex="1" parent="phase3">
+          <mxGeometry x="590" y="35" width="160" height="75" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="metrics" value="&lt;b&gt;Key Metrics&lt;/b&gt;&lt;br&gt;&lt;font style='font-size:8px;font-family:monospace;color:#555'&gt;Total Cycles&lt;br&gt;TIU Utilization (%)&lt;br&gt;Bank Conflict Ratio&lt;br&gt;DMA Bandwidth (GB/s)&lt;br&gt;Layer Parallelism (%)&lt;br&gt;Stall Ratio (%)&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E1BEE7;strokeColor=#7B1FA2;fontSize=10;align=left;spacingLeft=8;" vertex="1" parent="phase3">
+          <mxGeometry x="770" y="30" width="175" height="85" as="geometry"/>
+        </mxCell>
+
+        <!-- Phase 3 arrows -->
+        <mxCell id="p3a" style="rounded=0;html=1;strokeColor=#7B1FA2;" edge="1" parent="phase3" source="perfai_run" target="layer_map"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="p3b" style="rounded=0;html=1;strokeColor=#7B1FA2;" edge="1" parent="phase3" source="layer_map" target="excel_gen"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="p3c" style="rounded=0;html=1;strokeColor=#7B1FA2;" edge="1" parent="phase3" source="layer_map" target="web_gen"><mxGeometry relative="1" as="geometry"/></mxCell>
+
+        <!-- Phase connections -->
+        <mxCell id="phase_conn1" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#333;strokeWidth=2;exitX=0.5;exitY=1;exitDx=0;exitDy=0;" edge="1" parent="1" source="phase1" target="phase2">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="phase_conn2" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#333;strokeWidth=2;exitX=0.5;exitY=1;exitDx=0;exitDy=0;" edge="1" parent="1" source="phase2" target="phase3">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

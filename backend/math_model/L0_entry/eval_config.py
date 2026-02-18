@@ -28,6 +28,7 @@ class MLAConfig:
     qk_nope_head_dim: int
     qk_rope_head_dim: int
     v_head_dim: int
+    mla_mode: str  # standard / absorb / auto
 
 
 @dataclass
@@ -106,6 +107,7 @@ class DeploymentConfig:
     enable_tp_sp: bool
     enable_ring_attention: bool
     enable_zigzag: bool
+    enable_tbo: bool
     embed_tp: int
     lmhead_tp: int
     comm_protocol: int
@@ -237,6 +239,7 @@ def _build_model_config(
         qk_nope_head_dim=int(_require(mla_raw, "qk_nope_head_dim", "model.MLA")),
         qk_rope_head_dim=int(_require(mla_raw, "qk_rope_head_dim", "model.MLA")),
         v_head_dim=int(_require(mla_raw, "v_head_dim", "model.MLA")),
+        mla_mode=str(_require(mla_raw, "mla_mode", "model.MLA")),
     )
 
     # MoE
@@ -299,7 +302,7 @@ def _build_deployment_config(
 ) -> DeploymentConfig:
     """从手动并行配置 + 推理配置构建 DeploymentConfig"""
     input_seq_length = int(_require(inference_cfg, "input_seq_length", "inference config"))
-    output_seq_length = int(_require(inference_cfg, "output_seq_length", "inference config"))
+    is_prefill = bool(_require(manual_parallelism, "is_prefill", "manual_parallelism"))
 
     return DeploymentConfig(
         tp=int(_require(manual_parallelism, "tp", "manual_parallelism")),
@@ -312,13 +315,14 @@ def _build_deployment_config(
         enable_tp_sp=bool(_require(manual_parallelism, "enable_tp_sp", "manual_parallelism")),
         enable_ring_attention=bool(_require(manual_parallelism, "enable_ring_attention", "manual_parallelism")),
         enable_zigzag=bool(_require(manual_parallelism, "enable_zigzag", "manual_parallelism")),
+        enable_tbo=bool(manual_parallelism.get("enable_tbo", False)),
         embed_tp=int(_require(manual_parallelism, "embed_tp", "manual_parallelism")),
         lmhead_tp=int(_require(manual_parallelism, "lmhead_tp", "manual_parallelism")),
         comm_protocol=int(_require(manual_parallelism, "comm_protocol", "manual_parallelism")),
         kv_cache_rate=float(_require(manual_parallelism, "kv_cache_rate", "manual_parallelism")),
-        is_prefill=bool(_require(manual_parallelism, "is_prefill", "manual_parallelism")),
-        q_seq_len=input_seq_length,
-        kv_seq_len=input_seq_length + output_seq_length,
+        is_prefill=is_prefill,
+        q_seq_len=input_seq_length if is_prefill else 1,
+        kv_seq_len=input_seq_length,
     )
 
 

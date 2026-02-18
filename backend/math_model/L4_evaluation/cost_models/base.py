@@ -78,6 +78,19 @@ class BaseCostModel(ABC):
         if op_type in ("matmul", "linear", "gemm"):
             # MatMul: 2 * M * N * K
             return 2 * g * m * n * k
+        if op_type == "fa2":
+            for key in ("B", "QS", "KS", "QD", "VD"):
+                if key not in local_shape:
+                    raise ValueError(
+                        f"Missing '{key}' in FA2 local_shape. "
+                        f"Available keys: {list(local_shape.keys())}"
+                    )
+            b = local_shape["B"]
+            qs = local_shape["QS"]
+            ks = local_shape["KS"]
+            qd = local_shape["QD"]
+            vd = local_shape["VD"]
+            return 2 * b * qs * ks * (qd + vd)
         if op_type in ("softmax", "layernorm", "rmsnorm"):
             # Elementwise: ~5 ops per element
             b = local_shape.get("B", 1)
@@ -108,6 +121,22 @@ class BaseCostModel(ABC):
             # MatMul: read A[M,K] + B[K,N], write C[M,N]
             bytes_read = g * (m * k + k * n) * dtype_bytes
             bytes_write = g * m * n * dtype_bytes
+            return bytes_read, bytes_write
+
+        if op_type == "fa2":
+            for key in ("B", "QS", "KS", "QD", "VD"):
+                if key not in local_shape:
+                    raise ValueError(
+                        f"Missing '{key}' in FA2 local_shape. "
+                        f"Available keys: {list(local_shape.keys())}"
+                    )
+            b = local_shape["B"]
+            qs = local_shape["QS"]
+            ks = local_shape["KS"]
+            qd = local_shape["QD"]
+            vd = local_shape["VD"]
+            bytes_read = b * (qs * qd + ks * qd + ks * vd) * dtype_bytes
+            bytes_write = b * qs * vd * dtype_bytes
             return bytes_read, bytes_write
 
         # 默认：输入输出 shape 相同

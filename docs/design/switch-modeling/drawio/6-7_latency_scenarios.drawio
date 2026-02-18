@@ -1,0 +1,323 @@
+<mxfile host="app.diagrams.net" modified="2026-02-15T00:00:00.000Z" agent="Claude" version="24.0.0" type="device">
+  <diagram id="latency" name="6. Latency Model">
+    <mxGraphModel dx="1100" dy="380" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1100" pageHeight="380" math="0" shadow="0">
+      <root>
+        <mxCell id="t1_0" />
+        <mxCell id="t1_1" parent="t1_0" />
+
+        <!-- Title -->
+        <mxCell id="t1_title" value="&lt;b&gt;6. 交换机延迟模型&lt;/b&gt;" style="text;html=1;align=center;fontSize=16;fontColor=#333;verticalAlign=middle;" vertex="1" parent="t1_1">
+          <mxGeometry x="350" y="5" width="400" height="30" as="geometry" />
+        </mxCell>
+
+        <!-- Formula -->
+        <mxCell id="t1_formula" value="T_total = T_paxi_tx + T_rclink_tx + T_cesoc_tx + T_link1 + &lt;b&gt;&lt;font color=&quot;#2885ca&quot;&gt;T_switch&lt;/font&gt;&lt;/b&gt; + T_link2 + T_cesoc_rx + T_rclink_rx + T_paxi_rx" style="text;html=1;align=center;fontSize=12;fontColor=#333;verticalAlign=middle;fillColor=#f5f5f5;strokeColor=#E0E0E0;rounded=1;shadow=1;" vertex="1" parent="t1_1">
+          <mxGeometry x="80" y="38" width="940" height="28" as="geometry" />
+        </mxCell>
+
+        <!-- T_switch decomposition label -->
+        <mxCell id="t1_decomp" value="&lt;b&gt;T_switch 分解:&lt;/b&gt;" style="text;html=1;align=left;fontSize=13;fontColor=#2885ca;verticalAlign=middle;" vertex="1" parent="t1_1">
+          <mxGeometry x="30" y="70" width="160" height="20" as="geometry" />
+        </mxCell>
+
+        <!-- Pipeline Box 1: T_ingress -->
+        <mxCell id="t1_ingress" value="&lt;b&gt;T_ingress&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:10px;&quot; color=&quot;#666&quot;&gt;帧解析 + QoS 分类 + MAC 查表&lt;/font&gt;&lt;br&gt;&lt;font style=&quot;font-size:11px;&quot; color=&quot;#2885ca&quot;&gt;&lt;b&gt;50-200 ns&lt;/b&gt; (固定)&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fontSize=12;fillColor=#d6e9f8;strokeColor=#2885ca;strokeWidth=2;" vertex="1" parent="t1_1">
+          <mxGeometry x="30" y="90" width="200" height="70" as="geometry" />
+        </mxCell>
+
+        <!-- Pipeline Box 2: T_queueing -->
+        <mxCell id="t1_queueing" value="&lt;b&gt;T_queueing&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:10px;&quot; color=&quot;#666&quot;&gt;VOQ 排队 + iSLIP 调度&lt;/font&gt;&lt;br&gt;&lt;font style=&quot;font-size:11px;&quot; color=&quot;#e8a838&quot;&gt;&lt;b&gt;0 ~ 数 us&lt;/b&gt; (负载相关)&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fontSize=12;fillColor=#fef3e0;strokeColor=#e8a838;strokeWidth=2;" vertex="1" parent="t1_1">
+          <mxGeometry x="260" y="90" width="200" height="70" as="geometry" />
+        </mxCell>
+
+        <!-- Pipeline Box 3: T_crossbar -->
+        <mxCell id="t1_crossbar" value="&lt;b&gt;T_crossbar&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:10px;&quot; color=&quot;#666&quot;&gt;Crossbar 穿越&lt;/font&gt;&lt;br&gt;&lt;font style=&quot;font-size:11px;&quot; color=&quot;#e8a838&quot;&gt;&lt;b&gt;10-50 ns&lt;/b&gt; (固定)&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fontSize=12;fillColor=#fef9f0;strokeColor=#e8a838;strokeWidth=2;" vertex="1" parent="t1_1">
+          <mxGeometry x="490" y="90" width="170" height="70" as="geometry" />
+        </mxCell>
+
+        <!-- Pipeline Box 4: T_egress -->
+        <mxCell id="t1_egress" value="&lt;b&gt;T_egress&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:10px;&quot; color=&quot;#666&quot;&gt;出口调度 + 串行化&lt;/font&gt;&lt;br&gt;&lt;font style=&quot;font-size:11px;&quot; color=&quot;#43a047&quot;&gt;&lt;b&gt;帧大小相关&lt;/b&gt;&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fontSize=12;fillColor=#e2f0e2;strokeColor=#43a047;strokeWidth=2;" vertex="1" parent="t1_1">
+          <mxGeometry x="690" y="90" width="180" height="70" as="geometry" />
+        </mxCell>
+
+        <!-- Arrow: ingress -> queueing -->
+        <mxCell id="t1_arrow1" value="" style="edgeStyle=orthogonalEdgeStyle;orthogonalLoop=1;jettySize=auto;rounded=0;html=1;strokeWidth=2;endArrow=block;endFill=1;strokeColor=#2885ca;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" source="t1_ingress" target="t1_queueing" parent="t1_1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- Arrow: queueing -> crossbar -->
+        <mxCell id="t1_arrow2" value="" style="edgeStyle=orthogonalEdgeStyle;orthogonalLoop=1;jettySize=auto;rounded=0;html=1;strokeWidth=2;endArrow=block;endFill=1;strokeColor=#e8a838;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" source="t1_queueing" target="t1_crossbar" parent="t1_1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- Arrow: crossbar -> egress -->
+        <mxCell id="t1_arrow3" value="" style="edgeStyle=orthogonalEdgeStyle;orthogonalLoop=1;jettySize=auto;rounded=0;html=1;strokeWidth=2;endArrow=block;endFill=1;strokeColor=#e8a838;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" source="t1_crossbar" target="t1_egress" parent="t1_1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- Forwarding Modes Label -->
+        <mxCell id="t1_fwd_label" value="&lt;b&gt;转发模式:&lt;/b&gt;" style="text;html=1;align=left;fontSize=13;fontColor=#333;verticalAlign=middle;" vertex="1" parent="t1_1">
+          <mxGeometry x="30" y="172" width="120" height="20" as="geometry" />
+        </mxCell>
+
+        <!-- Cut-Through -->
+        <mxCell id="t1_cutthrough" value="&lt;b&gt;Cut-Through (推荐)&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:10px;&quot; color=&quot;#666&quot;&gt;固定 ~300-500 ns (与帧大小无关), 入口/出口速率相同时适用&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fontSize=12;fillColor=#e2f0e2;strokeColor=#43a047;strokeWidth=2;" vertex="1" parent="t1_1">
+          <mxGeometry x="30" y="192" width="300" height="50" as="geometry" />
+        </mxCell>
+
+        <!-- Store-and-Forward -->
+        <mxCell id="t1_storeforward" value="&lt;b&gt;Store-and-Forward&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:10px;&quot; color=&quot;#666&quot;&gt;T_serialization + T_processing (帧大小相关), 速率不匹配或需 CRC 校验时&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fontSize=12;fillColor=#fef3e0;strokeColor=#e8a838;strokeWidth=2;" vertex="1" parent="t1_1">
+          <mxGeometry x="360" y="192" width="300" height="50" as="geometry" />
+        </mxCell>
+
+        <!-- Serialization Reference Label -->
+        <mxCell id="t1_ser_label" value="&lt;b&gt;PAXI 帧串行化延迟:&lt;/b&gt;" style="text;html=1;align=left;fontSize=13;fontColor=#333;verticalAlign=middle;" vertex="1" parent="t1_1">
+          <mxGeometry x="30" y="254" width="200" height="20" as="geometry" />
+        </mxCell>
+
+        <!-- TYPE1 max frame -->
+        <mxCell id="t1_type1_max" value="&lt;b&gt;TYPE1 最大帧 ~1406B&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fontSize=11;fillColor=#FFFFFF;strokeColor=#2885ca;strokeWidth=1;" vertex="1" parent="t1_1">
+          <mxGeometry x="30" y="276" width="160" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="t1_type1_max_val" value="&lt;font color=&quot;#666&quot;&gt;100G: 112ns | 200G: 56ns | 400G: 28ns&lt;/font&gt;" style="text;html=1;align=left;fontSize=11;fontColor=#666;verticalAlign=middle;" vertex="1" parent="t1_1">
+          <mxGeometry x="210" y="276" width="300" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="t1_type1_max_arrow" value="" style="edgeStyle=orthogonalEdgeStyle;orthogonalLoop=1;jettySize=auto;rounded=0;html=1;strokeWidth=1;endArrow=block;endFill=1;strokeColor=#2885ca;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" source="t1_type1_max" target="t1_type1_max_val" parent="t1_1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- TYPE1 ACK frame -->
+        <mxCell id="t1_type1_ack" value="&lt;b&gt;TYPE1 ACK ~54B&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fontSize=11;fillColor=#FFFFFF;strokeColor=#2885ca;strokeWidth=1;" vertex="1" parent="t1_1">
+          <mxGeometry x="30" y="312" width="160" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="t1_type1_ack_val" value="&lt;font color=&quot;#666&quot;&gt;100G: 4.3ns | 200G: 2.2ns | 400G: 1.1ns&lt;/font&gt;" style="text;html=1;align=left;fontSize=11;fontColor=#666;verticalAlign=middle;" vertex="1" parent="t1_1">
+          <mxGeometry x="210" y="312" width="300" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="t1_type1_ack_arrow" value="" style="edgeStyle=orthogonalEdgeStyle;orthogonalLoop=1;jettySize=auto;rounded=0;html=1;strokeWidth=1;endArrow=block;endFill=1;strokeColor=#2885ca;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" source="t1_type1_ack" target="t1_type1_ack_val" parent="t1_1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- Detail panel: Multi-hop latency -->
+        <mxCell id="t1_multihop" value="&lt;b&gt;多跳延迟&lt;/b&gt;&lt;br&gt;&lt;br&gt;&lt;font style=&quot;font-size:11px;&quot; color=&quot;#333&quot;&gt;T_network = N x (T_prop + T_switch_fixed)&lt;br&gt;+ T_serialization (仅最后一跳)&lt;br&gt;+ sum(T_queueing_i)&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fontSize=12;fillColor=#f5f5f5;strokeColor=#E0E0E0;shadow=1;" vertex="1" parent="t1_1">
+          <mxGeometry x="700" y="185" width="280" height="100" as="geometry" />
+        </mxCell>
+
+        <!-- Legend -->
+        <mxCell id="t1_legend_bg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#E0E0E0;" vertex="1" parent="t1_1">
+          <mxGeometry x="30" y="350" width="760" height="24" as="geometry" />
+        </mxCell>
+        <mxCell id="t1_leg1" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d6e9f8;strokeColor=#2885ca;strokeWidth=1;" vertex="1" parent="t1_1">
+          <mxGeometry x="40" y="354" width="16" height="16" as="geometry" />
+        </mxCell>
+        <mxCell id="t1_leg1t" value="&lt;font color=&quot;#666&quot; style=&quot;font-size:10px;&quot;&gt;固定延迟&lt;/font&gt;" style="text;html=1;align=left;fontSize=10;fontColor=#666;" vertex="1" parent="t1_1">
+          <mxGeometry x="60" y="352" width="60" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="t1_leg2" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fef3e0;strokeColor=#e8a838;strokeWidth=1;" vertex="1" parent="t1_1">
+          <mxGeometry x="130" y="354" width="16" height="16" as="geometry" />
+        </mxCell>
+        <mxCell id="t1_leg2t" value="&lt;font color=&quot;#666&quot; style=&quot;font-size:10px;&quot;&gt;可变延迟 / 排队&lt;/font&gt;" style="text;html=1;align=left;fontSize=10;fontColor=#666;" vertex="1" parent="t1_1">
+          <mxGeometry x="150" y="352" width="100" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="t1_leg3" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e2f0e2;strokeColor=#43a047;strokeWidth=1;" vertex="1" parent="t1_1">
+          <mxGeometry x="260" y="354" width="16" height="16" as="geometry" />
+        </mxCell>
+        <mxCell id="t1_leg3t" value="&lt;font color=&quot;#666&quot; style=&quot;font-size:10px;&quot;&gt;出口 / 推荐&lt;/font&gt;" style="text;html=1;align=left;fontSize=10;fontColor=#666;" vertex="1" parent="t1_1">
+          <mxGeometry x="280" y="352" width="80" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="t1_leg4" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#E0E0E0;shadow=1;" vertex="1" parent="t1_1">
+          <mxGeometry x="370" y="354" width="16" height="16" as="geometry" />
+        </mxCell>
+        <mxCell id="t1_leg4t" value="&lt;font color=&quot;#666&quot; style=&quot;font-size:10px;&quot;&gt;说明面板&lt;/font&gt;" style="text;html=1;align=left;fontSize=10;fontColor=#666;" vertex="1" parent="t1_1">
+          <mxGeometry x="390" y="352" width="60" height="20" as="geometry" />
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+  <diagram id="scenarios" name="7. Network Scenarios">
+    <mxGraphModel dx="1100" dy="660" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1100" pageHeight="660" math="0" shadow="0">
+      <root>
+        <mxCell id="t2_0" />
+        <mxCell id="t2_1" parent="t2_0" />
+
+        <!-- Title -->
+        <mxCell id="t2_title" value="&lt;b&gt;7. 三种典型组网场景对比&lt;/b&gt;" style="text;html=1;align=center;fontSize=16;fontColor=#333;verticalAlign=middle;" vertex="1" parent="t2_1">
+          <mxGeometry x="300" y="5" width="500" height="30" as="geometry" />
+        </mxCell>
+
+        <!-- ====== Scenario A ====== -->
+        <mxCell id="t2_scenA" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#2885ca;strokeWidth=1;dashed=1;dashPattern=8 4;" vertex="1" parent="t2_1">
+          <mxGeometry x="20" y="50" width="1060" height="160" as="geometry" />
+        </mxCell>
+        <mxCell id="t2_scenA_label" value="&lt;b&gt;&lt;font color=&quot;#2885ca&quot;&gt;场景 A: 点对点直连 (无交换机)&lt;/font&gt;&lt;/b&gt;" style="text;html=1;align=left;fontSize=13;fontColor=#2885ca;verticalAlign=middle;" vertex="1" parent="t2_1">
+          <mxGeometry x="35" y="52" width="300" height="24" as="geometry" />
+        </mxCell>
+
+        <!-- Chip A -->
+        <mxCell id="t2_a_chipA" value="&lt;b&gt;Chip A&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fontSize=12;fillColor=#d6e9f8;strokeColor=#2885ca;strokeWidth=2;" vertex="1" parent="t2_1">
+          <mxGeometry x="120" y="100" width="120" height="44" as="geometry" />
+        </mxCell>
+
+        <!-- Chip B -->
+        <mxCell id="t2_a_chipB" value="&lt;b&gt;Chip B&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fontSize=12;fillColor=#d6e9f8;strokeColor=#2885ca;strokeWidth=2;" vertex="1" parent="t2_1">
+          <mxGeometry x="400" y="100" width="120" height="44" as="geometry" />
+        </mxCell>
+
+        <!-- Link A->B -->
+        <mxCell id="t2_a_link" value="&lt;font color=&quot;#2885ca&quot; style=&quot;font-size:11px;&quot;&gt;&lt;b&gt;200G/400G Link&lt;/b&gt;&lt;/font&gt;" style="edgeStyle=orthogonalEdgeStyle;orthogonalLoop=1;jettySize=auto;rounded=0;html=1;strokeWidth=3;endArrow=none;endFill=0;strokeColor=#2885ca;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" source="t2_a_chipA" target="t2_a_chipB" parent="t2_1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- Info panel A -->
+        <mxCell id="t2_a_info" value="&lt;div style=&quot;text-align:left;font-size:11px;line-height:1.6;&quot;&gt;&lt;b&gt;流控:&lt;/b&gt; CBFC (推荐) 或 PFC&lt;br&gt;&lt;b&gt;格式:&lt;/b&gt; AFH_GEN1/GEN2 (低头开销)&lt;br&gt;&lt;b&gt;重传:&lt;/b&gt; Go-Back-N (TYPE1)&lt;br&gt;&lt;b&gt;延迟:&lt;/b&gt; T_switch = 0, 最低延迟&lt;/div&gt;" style="rounded=1;whiteSpace=wrap;html=1;fontSize=11;fillColor=#f5f5f5;strokeColor=#E0E0E0;shadow=1;align=left;spacingLeft=10;spacingRight=10;" vertex="1" parent="t2_1">
+          <mxGeometry x="600" y="78" width="260" height="100" as="geometry" />
+        </mxCell>
+
+        <!-- Latency badge A -->
+        <mxCell id="t2_a_badge" value="&lt;font color=&quot;#43a047&quot;&gt;&lt;b&gt;[OK] 最低延迟&lt;/b&gt;&lt;/font&gt;" style="text;html=1;align=center;fontSize=11;fontColor=#43a047;verticalAlign=middle;" vertex="1" parent="t2_1">
+          <mxGeometry x="200" y="152" width="160" height="20" as="geometry" />
+        </mxCell>
+
+        <!-- ====== Scenario B ====== -->
+        <mxCell id="t2_scenB" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#e8a838;strokeWidth=1;dashed=1;dashPattern=8 4;" vertex="1" parent="t2_1">
+          <mxGeometry x="20" y="230" width="1060" height="170" as="geometry" />
+        </mxCell>
+        <mxCell id="t2_scenB_label" value="&lt;b&gt;&lt;font color=&quot;#e8a838&quot;&gt;场景 B: 交换机组网 LITE 模式 (最高带宽效率)&lt;/font&gt;&lt;/b&gt;" style="text;html=1;align=left;fontSize=13;fontColor=#e8a838;verticalAlign=middle;" vertex="1" parent="t2_1">
+          <mxGeometry x="35" y="232" width="400" height="24" as="geometry" />
+        </mxCell>
+
+        <!-- Chip A -->
+        <mxCell id="t2_b_chipA" value="&lt;b&gt;Chip A&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fontSize=12;fillColor=#fef3e0;strokeColor=#e8a838;strokeWidth=2;" vertex="1" parent="t2_1">
+          <mxGeometry x="60" y="275" width="100" height="44" as="geometry" />
+        </mxCell>
+
+        <!-- Switch 1 -->
+        <mxCell id="t2_b_sw1" value="&lt;b&gt;Switch 1&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fontSize=12;fillColor=#fef9f0;strokeColor=#e8a838;strokeWidth=2;" vertex="1" parent="t2_1">
+          <mxGeometry x="220" y="275" width="100" height="44" as="geometry" />
+        </mxCell>
+
+        <!-- Switch 2 -->
+        <mxCell id="t2_b_sw2" value="&lt;b&gt;Switch 2&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fontSize=12;fillColor=#fef9f0;strokeColor=#e8a838;strokeWidth=2;" vertex="1" parent="t2_1">
+          <mxGeometry x="380" y="275" width="100" height="44" as="geometry" />
+        </mxCell>
+
+        <!-- Chip B -->
+        <mxCell id="t2_b_chipB" value="&lt;b&gt;Chip B&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fontSize=12;fillColor=#fef3e0;strokeColor=#e8a838;strokeWidth=2;" vertex="1" parent="t2_1">
+          <mxGeometry x="540" y="275" width="100" height="44" as="geometry" />
+        </mxCell>
+
+        <!-- Arrows B -->
+        <mxCell id="t2_b_link1" value="" style="edgeStyle=orthogonalEdgeStyle;orthogonalLoop=1;jettySize=auto;rounded=0;html=1;strokeWidth=2;endArrow=none;endFill=0;strokeColor=#e8a838;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" source="t2_b_chipA" target="t2_b_sw1" parent="t2_1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t2_b_link2" value="" style="edgeStyle=orthogonalEdgeStyle;orthogonalLoop=1;jettySize=auto;rounded=0;html=1;strokeWidth=2;endArrow=none;endFill=0;strokeColor=#e8a838;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" source="t2_b_sw1" target="t2_b_sw2" parent="t2_1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t2_b_link3" value="" style="edgeStyle=orthogonalEdgeStyle;orthogonalLoop=1;jettySize=auto;rounded=0;html=1;strokeWidth=2;endArrow=none;endFill=0;strokeColor=#e8a838;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" source="t2_b_sw2" target="t2_b_chipB" parent="t2_1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- Warning -->
+        <mxCell id="t2_b_warn" value="&lt;font color=&quot;#d84315&quot;&gt;&lt;b&gt;[!] 丢包 = 数据丢失&lt;/b&gt;&lt;/font&gt;" style="text;html=1;align=center;fontSize=11;fontColor=#d84315;verticalAlign=middle;" vertex="1" parent="t2_1">
+          <mxGeometry x="240" y="325" width="200" height="20" as="geometry" />
+        </mxCell>
+
+        <!-- Info panel B -->
+        <mxCell id="t2_b_info" value="&lt;div style=&quot;text-align:left;font-size:11px;line-height:1.6;&quot;&gt;&lt;b&gt;流控:&lt;/b&gt; PFC (交换机参与) 或 CBFC (透明穿越)&lt;br&gt;&lt;b&gt;格式:&lt;/b&gt; AFH_Lite (头部仅 12B, 效率 98.8%)&lt;br&gt;&lt;b&gt;重传:&lt;/b&gt; &lt;font color=&quot;#d84315&quot;&gt;[FAIL] 无 (Go-Back-N 关闭)&lt;/font&gt;&lt;br&gt;&lt;b&gt;关键:&lt;/b&gt; 丢包不可恢复, 交换机必须无损&lt;/div&gt;" style="rounded=1;whiteSpace=wrap;html=1;fontSize=11;fillColor=#f5f5f5;strokeColor=#E0E0E0;shadow=1;align=left;spacingLeft=10;spacingRight=10;" vertex="1" parent="t2_1">
+          <mxGeometry x="680" y="258" width="300" height="110" as="geometry" />
+        </mxCell>
+
+        <!-- ====== Scenario C ====== -->
+        <mxCell id="t2_scenC" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#43a047;strokeWidth=1;dashed=1;dashPattern=8 4;" vertex="1" parent="t2_1">
+          <mxGeometry x="20" y="420" width="1060" height="180" as="geometry" />
+        </mxCell>
+        <mxCell id="t2_scenC_label" value="&lt;b&gt;&lt;font color=&quot;#43a047&quot;&gt;场景 C: 交换机组网 Standard 格式 (全功能)&lt;/font&gt;&lt;/b&gt;" style="text;html=1;align=left;fontSize=13;fontColor=#43a047;verticalAlign=middle;" vertex="1" parent="t2_1">
+          <mxGeometry x="35" y="422" width="400" height="24" as="geometry" />
+        </mxCell>
+
+        <!-- Chip A -->
+        <mxCell id="t2_c_chipA" value="&lt;b&gt;Chip A&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fontSize=12;fillColor=#e2f0e2;strokeColor=#43a047;strokeWidth=2;" vertex="1" parent="t2_1">
+          <mxGeometry x="60" y="465" width="100" height="44" as="geometry" />
+        </mxCell>
+
+        <!-- Switch 1 -->
+        <mxCell id="t2_c_sw1" value="&lt;b&gt;Switch 1&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fontSize=12;fillColor=#f0f8f0;strokeColor=#43a047;strokeWidth=2;" vertex="1" parent="t2_1">
+          <mxGeometry x="220" y="465" width="100" height="44" as="geometry" />
+        </mxCell>
+
+        <!-- Switch 2 -->
+        <mxCell id="t2_c_sw2" value="&lt;b&gt;Switch 2&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fontSize=12;fillColor=#f0f8f0;strokeColor=#43a047;strokeWidth=2;" vertex="1" parent="t2_1">
+          <mxGeometry x="380" y="465" width="100" height="44" as="geometry" />
+        </mxCell>
+
+        <!-- Chip B -->
+        <mxCell id="t2_c_chipB" value="&lt;b&gt;Chip B&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fontSize=12;fillColor=#e2f0e2;strokeColor=#43a047;strokeWidth=2;" vertex="1" parent="t2_1">
+          <mxGeometry x="540" y="465" width="100" height="44" as="geometry" />
+        </mxCell>
+
+        <!-- Arrows C -->
+        <mxCell id="t2_c_link1" value="" style="edgeStyle=orthogonalEdgeStyle;orthogonalLoop=1;jettySize=auto;rounded=0;html=1;strokeWidth=2;endArrow=none;endFill=0;strokeColor=#43a047;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" source="t2_c_chipA" target="t2_c_sw1" parent="t2_1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t2_c_link2" value="" style="edgeStyle=orthogonalEdgeStyle;orthogonalLoop=1;jettySize=auto;rounded=0;html=1;strokeWidth=2;endArrow=none;endFill=0;strokeColor=#43a047;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" source="t2_c_sw1" target="t2_c_sw2" parent="t2_1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="t2_c_link3" value="" style="edgeStyle=orthogonalEdgeStyle;orthogonalLoop=1;jettySize=auto;rounded=0;html=1;strokeWidth=2;endArrow=none;endFill=0;strokeColor=#43a047;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" source="t2_c_sw2" target="t2_c_chipB" parent="t2_1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- Labels under links C -->
+        <mxCell id="t2_c_ecn1" value="&lt;font color=&quot;#43a047&quot; style=&quot;font-size:10px;&quot;&gt;&lt;b&gt;ECN&lt;/b&gt;&lt;/font&gt;" style="text;html=1;align=center;fontSize=10;fontColor=#43a047;verticalAlign=top;" vertex="1" parent="t2_1">
+          <mxGeometry x="280" y="510" width="60" height="18" as="geometry" />
+        </mxCell>
+        <mxCell id="t2_c_pfc1" value="&lt;font color=&quot;#d84315&quot; style=&quot;font-size:10px;&quot;&gt;&lt;b&gt;PFC&lt;/b&gt;&lt;/font&gt;" style="text;html=1;align=center;fontSize=10;fontColor=#d84315;verticalAlign=top;" vertex="1" parent="t2_1">
+          <mxGeometry x="160" y="510" width="60" height="18" as="geometry" />
+        </mxCell>
+        <mxCell id="t2_c_gbn" value="&lt;font color=&quot;#2885ca&quot; style=&quot;font-size:10px;&quot;&gt;&lt;b&gt;Go-Back-N&lt;/b&gt;&lt;/font&gt;" style="text;html=1;align=center;fontSize=10;fontColor=#2885ca;verticalAlign=top;" vertex="1" parent="t2_1">
+          <mxGeometry x="400" y="510" width="80" height="18" as="geometry" />
+        </mxCell>
+
+        <!-- Info panel C -->
+        <mxCell id="t2_c_info" value="&lt;div style=&quot;text-align:left;font-size:11px;line-height:1.6;&quot;&gt;&lt;b&gt;流控:&lt;/b&gt; PFC (逐跳背压) + ECN (端到端拥塞通知)&lt;br&gt;&lt;b&gt;格式:&lt;/b&gt; Standard (含 IP/UDP, 头部 50-54B, 效率 95.6%)&lt;br&gt;&lt;b&gt;重传:&lt;/b&gt; &lt;font color=&quot;#43a047&quot;&gt;[OK] Go-Back-N (TYPE1, E2E 保护)&lt;/font&gt;&lt;br&gt;&lt;b&gt;优势:&lt;/b&gt; ECN 主动避塞 + PFC 最后防线 + 端到端重传&lt;/div&gt;" style="rounded=1;whiteSpace=wrap;html=1;fontSize=11;fillColor=#f5f5f5;strokeColor=#E0E0E0;shadow=1;align=left;spacingLeft=10;spacingRight=10;" vertex="1" parent="t2_1">
+          <mxGeometry x="680" y="448" width="320" height="120" as="geometry" />
+        </mxCell>
+
+        <!-- Legend -->
+        <mxCell id="t2_legend_bg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#E0E0E0;" vertex="1" parent="t2_1">
+          <mxGeometry x="20" y="618" width="850" height="28" as="geometry" />
+        </mxCell>
+        <mxCell id="t2_leg1" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d6e9f8;strokeColor=#2885ca;strokeWidth=1;" vertex="1" parent="t2_1">
+          <mxGeometry x="30" y="624" width="16" height="16" as="geometry" />
+        </mxCell>
+        <mxCell id="t2_leg1t" value="&lt;font color=&quot;#666&quot; style=&quot;font-size:10px;&quot;&gt;Chip 节点&lt;/font&gt;" style="text;html=1;align=left;fontSize=10;fontColor=#666;" vertex="1" parent="t2_1">
+          <mxGeometry x="50" y="622" width="70" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="t2_leg2" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fef3e0;strokeColor=#e8a838;strokeWidth=1;" vertex="1" parent="t2_1">
+          <mxGeometry x="130" y="624" width="16" height="16" as="geometry" />
+        </mxCell>
+        <mxCell id="t2_leg2t" value="&lt;font color=&quot;#666&quot; style=&quot;font-size:10px;&quot;&gt;Switch / LITE 模式&lt;/font&gt;" style="text;html=1;align=left;fontSize=10;fontColor=#666;" vertex="1" parent="t2_1">
+          <mxGeometry x="150" y="622" width="120" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="t2_leg3" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e2f0e2;strokeColor=#43a047;strokeWidth=1;" vertex="1" parent="t2_1">
+          <mxGeometry x="280" y="624" width="16" height="16" as="geometry" />
+        </mxCell>
+        <mxCell id="t2_leg3t" value="&lt;font color=&quot;#666&quot; style=&quot;font-size:10px;&quot;&gt;Standard 模式 / 推荐&lt;/font&gt;" style="text;html=1;align=left;fontSize=10;fontColor=#666;" vertex="1" parent="t2_1">
+          <mxGeometry x="300" y="622" width="130" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="t2_leg4" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fbe9e7;strokeColor=#d84315;strokeWidth=1;" vertex="1" parent="t2_1">
+          <mxGeometry x="440" y="624" width="16" height="16" as="geometry" />
+        </mxCell>
+        <mxCell id="t2_leg4t" value="&lt;font color=&quot;#666&quot; style=&quot;font-size:10px;&quot;&gt;警告 / 关键注意&lt;/font&gt;" style="text;html=1;align=left;fontSize=10;fontColor=#666;" vertex="1" parent="t2_1">
+          <mxGeometry x="460" y="622" width="100" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="t2_leg5" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#E0E0E0;shadow=1;" vertex="1" parent="t2_1">
+          <mxGeometry x="570" y="624" width="16" height="16" as="geometry" />
+        </mxCell>
+        <mxCell id="t2_leg5t" value="&lt;font color=&quot;#666&quot; style=&quot;font-size:10px;&quot;&gt;说明面板&lt;/font&gt;" style="text;html=1;align=left;fontSize=10;fontColor=#666;" vertex="1" parent="t2_1">
+          <mxGeometry x="590" y="622" width="60" height="20" as="geometry" />
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

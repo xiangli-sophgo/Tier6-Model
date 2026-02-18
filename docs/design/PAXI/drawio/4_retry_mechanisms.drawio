@@ -1,0 +1,293 @@
+<mxfile host="65bd71144e">
+    <diagram id="err-levels" name="4.1 Three Error Levels">
+        <mxGraphModel dx="573" dy="505" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1100" pageHeight="440" math="0" shadow="0">
+            <root>
+                <mxCell id="t1_0"/>
+                <mxCell id="t1_1" parent="t1_0"/>
+                <mxCell id="t1_title" value="4.1 Three Error Levels" style="text;html=1;align=center;fontSize=16;fontColor=#333;" parent="t1_1" vertex="1">
+                    <mxGeometry x="350" y="10" width="400" height="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="t1_l1" value="&lt;b&gt;L1: RSFEC&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#999999&quot;&gt;CESOC 物理层自动纠错&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;shadow=1;" parent="t1_1" vertex="1">
+                    <mxGeometry x="100" y="60" width="240" height="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="t1_l2" value="&lt;b&gt;L2: Go-Back-N&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#999999&quot;&gt;RC Link 端到端重传&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;shadow=1;" parent="t1_1" vertex="1">
+                    <mxGeometry x="100" y="180" width="240" height="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="t1_l3" value="&lt;b&gt;L3: DA 级隔离&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#999999&quot;&gt;PAXI Core 错误隔离与恢复&lt;/font&gt;" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=12;shadow=1;strokeWidth=2;" parent="t1_1" vertex="1">
+                    <mxGeometry x="100" y="300" width="240" height="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="t1_a1" value="" style="edgeStyle=orthogonalEdgeStyle;orthogonalLoop=1;jettySize=auto;rounded=0;html=1;strokeColor=#6c8ebf;strokeWidth=2;endArrow=block;endFill=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" parent="t1_1" source="t1_l1" target="t1_l2" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="t1_a1_label" value="无法纠正的错误" style="text;html=1;fontSize=10;fontColor=#333;align=right;" parent="t1_1" vertex="1">
+                    <mxGeometry x="10" y="130" width="100" height="20" as="geometry"/>
+                </mxCell>
+                <mxCell id="t1_a2" value="" style="edgeStyle=orthogonalEdgeStyle;orthogonalLoop=1;jettySize=auto;rounded=0;html=1;strokeColor=#6c8ebf;strokeWidth=2;endArrow=block;endFill=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" parent="t1_1" source="t1_l2" target="t1_l3" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="t1_a2_label" value="重传次数超限" style="text;html=1;fontSize=10;fontColor=#333;align=right;" parent="t1_1" vertex="1">
+                    <mxGeometry x="10" y="250" width="100" height="20" as="geometry"/>
+                </mxCell>
+                <mxCell id="t1_d1" value="&lt;b&gt;L1: RSFEC 详细&lt;/b&gt;&lt;br&gt;&lt;hr&gt;位置: CESOC (MAC 下层)&lt;br&gt;自动前向纠错, 错误率 &amp;lt; 10&lt;sup&gt;-12&lt;/sup&gt;&lt;br&gt;对上层完全透明, 无需建模&lt;br&gt;纠错能力: RS(544,514)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#E0E0E0;fontSize=11;shadow=1;align=left;verticalAlign=top;spacingLeft=12;spacingTop=6;" parent="t1_1" vertex="1">
+                    <mxGeometry x="440" y="40" width="280" height="100" as="geometry"/>
+                </mxCell>
+                <mxCell id="t1_dash1" value="" style="rounded=0;html=1;dashed=1;dashPattern=5 5;strokeColor=#BDBDBD;endArrow=none;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.3;entryDx=0;entryDy=0;" parent="t1_1" source="t1_l1" target="t1_d1" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="t1_d2" value="&lt;b&gt;L2: Go-Back-N 详细&lt;/b&gt;&lt;br&gt;&lt;hr&gt;位置: RC Link 传输层&lt;br&gt;仅 TYPE1 (可靠单播) 支持&lt;br&gt;PSN 检测丢包/乱序&lt;br&gt;从错误点重发所有后续包&lt;br&gt;512 OST 发送窗口&lt;br&gt;重传计数器, 超限触发 L3" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#E0E0E0;fontSize=11;shadow=1;align=left;verticalAlign=top;spacingLeft=12;spacingTop=6;" parent="t1_1" vertex="1">
+                    <mxGeometry x="440" y="150" width="280" height="120" as="geometry"/>
+                </mxCell>
+                <mxCell id="t1_dash2" value="" style="rounded=0;html=1;dashed=1;dashPattern=5 5;strokeColor=#BDBDBD;endArrow=none;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.3;entryDx=0;entryDy=0;" parent="t1_1" source="t1_l2" target="t1_d2" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="t1_d3" value="&lt;b&gt;L3: DA 级隔离详细&lt;/b&gt;&lt;br&gt;&lt;hr&gt;位置: PAXI Core&lt;br&gt;隔离错误 DA, 丢弃残留数据&lt;br&gt;需要软件介入恢复&lt;br&gt;最严重的错误处理级别" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#E0E0E0;fontSize=11;shadow=1;align=left;verticalAlign=top;spacingLeft=12;spacingTop=6;" parent="t1_1" vertex="1">
+                    <mxGeometry x="440" y="280" width="280" height="100" as="geometry"/>
+                </mxCell>
+                <mxCell id="t1_dash3" value="" style="rounded=0;html=1;dashed=1;dashPattern=5 5;strokeColor=#BDBDBD;endArrow=none;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.3;entryDx=0;entryDy=0;" parent="t1_1" source="t1_l3" target="t1_d3" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="t1_leg_bg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fafafa;strokeColor=#E0E0E0;" parent="t1_1" vertex="1">
+                    <mxGeometry x="100" y="390" width="620" height="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="t1_leg1" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" parent="t1_1" vertex="1">
+                    <mxGeometry x="120" y="397" width="16" height="16" as="geometry"/>
+                </mxCell>
+                <mxCell id="t1_leg1t" value="标准流程" style="text;html=1;fontSize=10;fontColor=#333;" parent="t1_1" vertex="1">
+                    <mxGeometry x="140" y="395" width="60" height="20" as="geometry"/>
+                </mxCell>
+                <mxCell id="t1_leg2" value="" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;" parent="t1_1" vertex="1">
+                    <mxGeometry x="220" y="397" width="16" height="16" as="geometry"/>
+                </mxCell>
+                <mxCell id="t1_leg2t" value="关键/错误" style="text;html=1;fontSize=10;fontColor=#333;" parent="t1_1" vertex="1">
+                    <mxGeometry x="240" y="395" width="60" height="20" as="geometry"/>
+                </mxCell>
+                <mxCell id="t1_leg3" value="" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#E0E0E0;" parent="t1_1" vertex="1">
+                    <mxGeometry x="320" y="397" width="16" height="16" as="geometry"/>
+                </mxCell>
+                <mxCell id="t1_leg3t" value="详细信息" style="text;html=1;fontSize=10;fontColor=#333;" parent="t1_1" vertex="1">
+                    <mxGeometry x="340" y="395" width="60" height="20" as="geometry"/>
+                </mxCell>
+                <mxCell id="t1_leg4" value="---" style="rounded=0;whiteSpace=wrap;html=1;strokeColor=#BDBDBD;fillColor=none;dashed=1;dashPattern=5 5;" parent="t1_1" vertex="1">
+                    <mxGeometry x="420" y="397" width="30" height="16" as="geometry"/>
+                </mxCell>
+                <mxCell id="t1_leg4t" value="关联连接" style="text;html=1;fontSize=10;fontColor=#333;" parent="t1_1" vertex="1">
+                    <mxGeometry x="454" y="395" width="60" height="20" as="geometry"/>
+                </mxCell>
+                <mxCell id="t1_leg5t" value="&lt;font color=&quot;#d79b00&quot;&gt;[GATE] [CHECK]&lt;/font&gt; 条件标记" style="text;html=1;fontSize=10;fontColor=#333;" parent="t1_1" vertex="1">
+                    <mxGeometry x="530" y="395" width="170" height="20" as="geometry"/>
+                </mxCell>
+            </root>
+        </mxGraphModel>
+    </diagram>
+    <diagram id="gbn-state" name="4.2 Go-Back-N State Machine">
+        <mxGraphModel dx="573" dy="505" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1100" pageHeight="500" math="0" shadow="0">
+            <root>
+                <mxCell id="t2_0"/>
+                <mxCell id="t2_1" parent="t2_0"/>
+                <mxCell id="t2_title" value="4.2 Go-Back-N State Machine" style="text;html=1;align=center;fontSize=16;fontColor=#333;" parent="t2_1" vertex="1">
+                    <mxGeometry x="250" y="10" width="400" height="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="t2_empty" value="&lt;b&gt;EMPTY&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;shadow=1;" parent="t2_1" vertex="1">
+                    <mxGeometry x="100" y="60" width="160" height="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="t2_wgrant" value="&lt;b&gt;WAIT_GRANT&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;shadow=1;" parent="t2_1" vertex="1">
+                    <mxGeometry x="100" y="200" width="160" height="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="t2_wcrd" value="&lt;b&gt;WAIT_CRD&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;shadow=1;" parent="t2_1" vertex="1">
+                    <mxGeometry x="400" y="200" width="160" height="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="t2_wack" value="&lt;b&gt;WAIT_ACK&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;shadow=1;" parent="t2_1" vertex="1">
+                    <mxGeometry x="100" y="340" width="160" height="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="t2_a1" value="写入 Slot" style="edgeStyle=orthogonalEdgeStyle;orthogonalLoop=1;jettySize=auto;rounded=0;html=1;strokeColor=#6c8ebf;strokeWidth=2;endArrow=block;endFill=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;fontSize=10;" parent="t2_1" source="t2_empty" target="t2_wgrant" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="t2_a2" value="仲裁发出" style="edgeStyle=orthogonalEdgeStyle;orthogonalLoop=1;jettySize=auto;rounded=0;html=1;strokeColor=#6c8ebf;strokeWidth=2;endArrow=block;endFill=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;fontSize=10;" parent="t2_1" source="t2_wgrant" target="t2_wack" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="t2_a3" value="速率控制阻塞" style="edgeStyle=orthogonalEdgeStyle;orthogonalLoop=1;jettySize=auto;rounded=0;html=1;strokeColor=#6c8ebf;strokeWidth=2;endArrow=block;endFill=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;fontSize=10;" parent="t2_1" source="t2_wgrant" target="t2_wcrd" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="t2_a4" value="阻塞撤销" style="edgeStyle=orthogonalEdgeStyle;orthogonalLoop=1;jettySize=auto;rounded=0;html=1;strokeColor=#6c8ebf;strokeWidth=2;endArrow=block;endFill=1;exitX=0;exitY=0.3;exitDx=0;exitDy=0;entryX=1;entryY=0.3;entryDx=0;entryDy=0;fontSize=10;" parent="t2_1" source="t2_wcrd" target="t2_wgrant" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="350" y="215"/>
+                            <mxPoint x="350" y="215"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="t2_a5" value="ACK 确认 (释放 Slot)" style="edgeStyle=orthogonalEdgeStyle;orthogonalLoop=1;jettySize=auto;rounded=0;html=1;strokeColor=#6c8ebf;strokeWidth=2;endArrow=block;endFill=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=1;entryY=0.5;entryDx=0;entryDy=0;fontSize=10;" parent="t2_1" source="t2_wack" target="t2_empty" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="310" y="365"/>
+                            <mxPoint x="310" y="85"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="t2_a6" value="重传 &lt;font color=&quot;#d79b00&quot;&gt;[CHECK]&lt;/font&gt; PSN error" style="edgeStyle=orthogonalEdgeStyle;orthogonalLoop=1;jettySize=auto;rounded=0;html=1;strokeColor=#b85450;strokeWidth=2;endArrow=block;endFill=1;exitX=0;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;fontSize=10;" parent="t2_1" source="t2_wack" target="t2_wgrant" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="60" y="365"/>
+                            <mxPoint x="60" y="225"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="t2_d1" value="&lt;b&gt;Go-Back-N 关键行为&lt;/b&gt;&lt;br&gt;&lt;hr&gt;RX 发现 PSN 缺口 -&amp;gt; 发送 NAK&lt;br&gt;TX 收到 NAK -&amp;gt; 所有 WAIT_ACK Slot 回退到 WAIT_GRANT&lt;br&gt;从最早未确认包开始重发&lt;br&gt;重传计数器递增, 超阈值上报中断&lt;br&gt;&lt;br&gt;&lt;b&gt;ACK MERGE&lt;/b&gt;:&lt;br&gt;深度 2&lt;sup&gt;QP_AW&lt;/sup&gt; 位图寄存器&lt;br&gt;4 组轮询, 确保多 QP 公平&lt;br&gt;FACK=1 时跳过合并, 立即回复" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#E0E0E0;fontSize=11;shadow=1;align=left;verticalAlign=top;spacingLeft=12;spacingTop=6;" parent="t2_1" vertex="1">
+                    <mxGeometry x="620" y="60" width="280" height="200" as="geometry"/>
+                </mxCell>
+                <mxCell id="t2_leg_bg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fafafa;strokeColor=#E0E0E0;" parent="t2_1" vertex="1">
+                    <mxGeometry x="100" y="440" width="620" height="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="t2_leg1" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" parent="t2_1" vertex="1">
+                    <mxGeometry x="120" y="447" width="16" height="16" as="geometry"/>
+                </mxCell>
+                <mxCell id="t2_leg1t" value="状态节点" style="text;html=1;fontSize=10;fontColor=#333;" parent="t2_1" vertex="1">
+                    <mxGeometry x="140" y="445" width="60" height="20" as="geometry"/>
+                </mxCell>
+                <mxCell id="t2_leg2" value="--&amp;gt;" style="text;html=1;fontSize=10;fontColor=#6c8ebf;" parent="t2_1" vertex="1">
+                    <mxGeometry x="220" y="445" width="30" height="20" as="geometry"/>
+                </mxCell>
+                <mxCell id="t2_leg2t" value="正常转换" style="text;html=1;fontSize=10;fontColor=#333;" parent="t2_1" vertex="1">
+                    <mxGeometry x="250" y="445" width="60" height="20" as="geometry"/>
+                </mxCell>
+                <mxCell id="t2_leg3" value="--&amp;gt;" style="text;html=1;fontSize=10;fontColor=#b85450;" parent="t2_1" vertex="1">
+                    <mxGeometry x="330" y="445" width="30" height="20" as="geometry"/>
+                </mxCell>
+                <mxCell id="t2_leg3t" value="重传路径" style="text;html=1;fontSize=10;fontColor=#333;" parent="t2_1" vertex="1">
+                    <mxGeometry x="360" y="445" width="60" height="20" as="geometry"/>
+                </mxCell>
+                <mxCell id="t2_leg4" value="" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#E0E0E0;" parent="t2_1" vertex="1">
+                    <mxGeometry x="440" y="447" width="16" height="16" as="geometry"/>
+                </mxCell>
+                <mxCell id="t2_leg4t" value="详细信息" style="text;html=1;fontSize=10;fontColor=#333;" parent="t2_1" vertex="1">
+                    <mxGeometry x="460" y="445" width="60" height="20" as="geometry"/>
+                </mxCell>
+                <mxCell id="t2_leg5t" value="&lt;font color=&quot;#d79b00&quot;&gt;[CHECK]&lt;/font&gt; 条件标记" style="text;html=1;fontSize=10;fontColor=#333;" parent="t2_1" vertex="1">
+                    <mxGeometry x="540" y="445" width="140" height="20" as="geometry"/>
+                </mxCell>
+            </root>
+        </mxGraphModel>
+    </diagram>
+    <diagram id="da-qp-recovery" name="4.3-4.4 DA Recovery + QP Fatal">
+        <mxGraphModel dx="573" dy="505" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1100" pageHeight="660" math="0" shadow="0">
+            <root>
+                <mxCell id="t3_0"/>
+                <mxCell id="t3_1" parent="t3_0"/>
+                <mxCell id="t3_ltitle" value="&lt;b&gt;4.3 DA 级错误恢复&lt;/b&gt;" style="text;html=1;align=center;fontSize=14;fontColor=#333;" parent="t3_1" vertex="1">
+                    <mxGeometry x="60" y="20" width="200" height="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="t3_rtitle" value="&lt;b&gt;4.4 QP Fatal 重建&lt;/b&gt;" style="text;html=1;align=center;fontSize=14;fontColor=#333;" parent="t3_1" vertex="1">
+                    <mxGeometry x="560" y="20" width="200" height="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="t3_l1" value="&lt;b&gt;检测: E2E_RETRY_ERR 中断&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;shadow=1;" parent="t3_1" vertex="1">
+                    <mxGeometry x="60" y="60" width="200" height="44" as="geometry"/>
+                </mxCell>
+                <mxCell id="t3_l2" value="&lt;b&gt;诊断: 读 Error Register&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;shadow=1;" parent="t3_1" vertex="1">
+                    <mxGeometry x="60" y="140" width="200" height="44" as="geometry"/>
+                </mxCell>
+                <mxCell id="t3_l3" value="&lt;b&gt;隔离: 停止错误 DA 传输&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;shadow=1;" parent="t3_1" vertex="1">
+                    <mxGeometry x="60" y="220" width="200" height="44" as="geometry"/>
+                </mxCell>
+                <mxCell id="t3_l4" value="&lt;b&gt;数据清除&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#999999&quot;&gt;自动/手动模式&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;shadow=1;" parent="t3_1" vertex="1">
+                    <mxGeometry x="60" y="300" width="200" height="44" as="geometry"/>
+                </mxCell>
+                <mxCell id="t3_l5" value="&lt;b&gt;确认: TX/RX_ERR_STAT=0&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;shadow=1;" parent="t3_1" vertex="1">
+                    <mxGeometry x="60" y="380" width="200" height="44" as="geometry"/>
+                </mxCell>
+                <mxCell id="t3_l6" value="&lt;b&gt;恢复: 清除中断, 恢复传输&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;shadow=1;" parent="t3_1" vertex="1">
+                    <mxGeometry x="60" y="460" width="200" height="44" as="geometry"/>
+                </mxCell>
+                <mxCell id="t3_la1" value="" style="edgeStyle=orthogonalEdgeStyle;orthogonalLoop=1;jettySize=auto;rounded=0;html=1;strokeColor=#6c8ebf;strokeWidth=2;endArrow=block;endFill=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" parent="t3_1" source="t3_l1" target="t3_l2" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="t3_la2" value="" style="edgeStyle=orthogonalEdgeStyle;orthogonalLoop=1;jettySize=auto;rounded=0;html=1;strokeColor=#6c8ebf;strokeWidth=2;endArrow=block;endFill=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" parent="t3_1" source="t3_l2" target="t3_l3" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="t3_la3" value="" style="edgeStyle=orthogonalEdgeStyle;orthogonalLoop=1;jettySize=auto;rounded=0;html=1;strokeColor=#6c8ebf;strokeWidth=2;endArrow=block;endFill=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" parent="t3_1" source="t3_l3" target="t3_l4" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="t3_la4" value="" style="edgeStyle=orthogonalEdgeStyle;orthogonalLoop=1;jettySize=auto;rounded=0;html=1;strokeColor=#6c8ebf;strokeWidth=2;endArrow=block;endFill=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" parent="t3_1" source="t3_l4" target="t3_l5" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="t3_la5" value="" style="edgeStyle=orthogonalEdgeStyle;orthogonalLoop=1;jettySize=auto;rounded=0;html=1;strokeColor=#6c8ebf;strokeWidth=2;endArrow=block;endFill=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" parent="t3_1" source="t3_l5" target="t3_l6" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="t3_detail" value="&lt;b&gt;隔离详细行为&lt;/b&gt;&lt;br&gt;&lt;hr&gt;TX: 完成当前 burst, 停止向错误 DA 发送&lt;br&gt;RX: 完成在传数据, 丢弃错误 DA 后续&lt;br&gt;&lt;br&gt;数据清除模式:&lt;br&gt;- 自动 (Ctrl bit13=1): 硬件自动清除&lt;br&gt;- 手动 (Ctrl bit13=0): 软件控制清除" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#E0E0E0;fontSize=11;shadow=1;align=left;verticalAlign=top;spacingLeft=12;spacingTop=6;" parent="t3_1" vertex="1">
+                    <mxGeometry x="280" y="200" width="260" height="140" as="geometry"/>
+                </mxCell>
+                <mxCell id="t3_dash1" value="" style="rounded=0;html=1;dashed=1;dashPattern=5 5;strokeColor=#BDBDBD;endArrow=none;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.3;entryDx=0;entryDy=0;" parent="t3_1" source="t3_l3" target="t3_detail" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="t3_r1" value="&lt;b&gt;选择故障 QP&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;shadow=1;" parent="t3_1" vertex="1">
+                    <mxGeometry x="560" y="60" width="200" height="44" as="geometry"/>
+                </mxCell>
+                <mxCell id="t3_r2" value="&lt;b&gt;禁用 QP (qp_en=0)&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;shadow=1;" parent="t3_1" vertex="1">
+                    <mxGeometry x="560" y="130" width="200" height="44" as="geometry"/>
+                </mxCell>
+                <mxCell id="t3_r3" value="&lt;b&gt;阻塞仲裁 (cc_speed=0)&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;shadow=1;" parent="t3_1" vertex="1">
+                    <mxGeometry x="560" y="200" width="200" height="44" as="geometry"/>
+                </mxCell>
+                <mxCell id="t3_r4" value="&lt;b&gt;等待空闲&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;shadow=1;" parent="t3_1" vertex="1">
+                    <mxGeometry x="560" y="270" width="200" height="44" as="geometry"/>
+                </mxCell>
+                <mxCell id="t3_r5" value="&lt;b&gt;释放 Buffer&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;shadow=1;" parent="t3_1" vertex="1">
+                    <mxGeometry x="560" y="340" width="200" height="44" as="geometry"/>
+                </mxCell>
+                <mxCell id="t3_r6" value="&lt;b&gt;等待释放完成&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;shadow=1;" parent="t3_1" vertex="1">
+                    <mxGeometry x="560" y="410" width="200" height="44" as="geometry"/>
+                </mxCell>
+                <mxCell id="t3_r7" value="&lt;b&gt;获取 PSN (tx_expect_psn)&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;shadow=1;" parent="t3_1" vertex="1">
+                    <mxGeometry x="560" y="480" width="200" height="44" as="geometry"/>
+                </mxCell>
+                <mxCell id="t3_r8" value="&lt;b&gt;重新初始化 (PSN+1)&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;shadow=1;" parent="t3_1" vertex="1">
+                    <mxGeometry x="560" y="550" width="200" height="44" as="geometry"/>
+                </mxCell>
+                <mxCell id="t3_ra1" value="" style="edgeStyle=orthogonalEdgeStyle;orthogonalLoop=1;jettySize=auto;rounded=0;html=1;strokeColor=#6c8ebf;strokeWidth=2;endArrow=block;endFill=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" parent="t3_1" source="t3_r1" target="t3_r2" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="t3_ra2" value="" style="edgeStyle=orthogonalEdgeStyle;orthogonalLoop=1;jettySize=auto;rounded=0;html=1;strokeColor=#6c8ebf;strokeWidth=2;endArrow=block;endFill=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" parent="t3_1" source="t3_r2" target="t3_r3" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="t3_ra3" value="" style="edgeStyle=orthogonalEdgeStyle;orthogonalLoop=1;jettySize=auto;rounded=0;html=1;strokeColor=#6c8ebf;strokeWidth=2;endArrow=block;endFill=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" parent="t3_1" source="t3_r3" target="t3_r4" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="t3_ra4" value="" style="edgeStyle=orthogonalEdgeStyle;orthogonalLoop=1;jettySize=auto;rounded=0;html=1;strokeColor=#6c8ebf;strokeWidth=2;endArrow=block;endFill=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" parent="t3_1" source="t3_r4" target="t3_r5" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="t3_ra5" value="" style="edgeStyle=orthogonalEdgeStyle;orthogonalLoop=1;jettySize=auto;rounded=0;html=1;strokeColor=#6c8ebf;strokeWidth=2;endArrow=block;endFill=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" parent="t3_1" source="t3_r5" target="t3_r6" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="t3_ra6" value="" style="edgeStyle=orthogonalEdgeStyle;orthogonalLoop=1;jettySize=auto;rounded=0;html=1;strokeColor=#6c8ebf;strokeWidth=2;endArrow=block;endFill=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" parent="t3_1" source="t3_r6" target="t3_r7" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="t3_ra7" value="" style="edgeStyle=orthogonalEdgeStyle;orthogonalLoop=1;jettySize=auto;rounded=0;html=1;strokeColor=#6c8ebf;strokeWidth=2;endArrow=block;endFill=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" parent="t3_1" source="t3_r7" target="t3_r8" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="t3_leg_bg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fafafa;strokeColor=#E0E0E0;" parent="t3_1" vertex="1">
+                    <mxGeometry x="100" y="620" width="620" height="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="t3_leg1" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" parent="t3_1" vertex="1">
+                    <mxGeometry x="120" y="627" width="16" height="16" as="geometry"/>
+                </mxCell>
+                <mxCell id="t3_leg1t" value="标准流程" style="text;html=1;fontSize=10;fontColor=#333;" parent="t3_1" vertex="1">
+                    <mxGeometry x="140" y="625" width="60" height="20" as="geometry"/>
+                </mxCell>
+                <mxCell id="t3_leg2" value="" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#E0E0E0;" parent="t3_1" vertex="1">
+                    <mxGeometry x="220" y="627" width="16" height="16" as="geometry"/>
+                </mxCell>
+                <mxCell id="t3_leg2t" value="详细信息" style="text;html=1;fontSize=10;fontColor=#333;" parent="t3_1" vertex="1">
+                    <mxGeometry x="240" y="625" width="60" height="20" as="geometry"/>
+                </mxCell>
+                <mxCell id="t3_leg3" value="---" style="rounded=0;whiteSpace=wrap;html=1;strokeColor=#BDBDBD;fillColor=none;dashed=1;dashPattern=5 5;" parent="t3_1" vertex="1">
+                    <mxGeometry x="320" y="627" width="30" height="16" as="geometry"/>
+                </mxCell>
+                <mxCell id="t3_leg3t" value="关联连接" style="text;html=1;fontSize=10;fontColor=#333;" parent="t3_1" vertex="1">
+                    <mxGeometry x="354" y="625" width="60" height="20" as="geometry"/>
+                </mxCell>
+                <mxCell id="t3_leg4t" value="&lt;font color=&quot;#d79b00&quot;&gt;[GATE] [CHECK]&lt;/font&gt; 条件标记" style="text;html=1;fontSize=10;fontColor=#333;" parent="t3_1" vertex="1">
+                    <mxGeometry x="430" y="625" width="170" height="20" as="geometry"/>
+                </mxCell>
+            </root>
+        </mxGraphModel>
+    </diagram>
+</mxfile>

@@ -1,0 +1,319 @@
+<mxfile host="app.diagrams.net" modified="2026-02-18" agent="Claude" version="24.7.17">
+  <diagram id="g5-integration" name="G5 Integration into L0-L5 Framework">
+    <mxGraphModel dx="1800" dy="1300" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1600" pageHeight="1300" math="0" shadow="0">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+
+        <!-- Title -->
+        <mxCell id="title" value="G5 Mode Integration Architecture - perf_model L0-L5 Framework" style="text;html=1;align=center;verticalAlign=middle;fontSize=18;fontStyle=1;fontColor=#333333;" vertex="1" parent="1">
+          <mxGeometry x="300" y="15" width="1000" height="35" as="geometry"/>
+        </mxCell>
+        <mxCell id="subtitle" value="Green = Shared layers | Blue = Math mode (existing) | Orange = G5 mode (new) | Red = Key interfaces" style="text;html=1;align=center;verticalAlign=middle;fontSize=10;fontColor=#666666;" vertex="1" parent="1">
+          <mxGeometry x="300" y="48" width="1000" height="22" as="geometry"/>
+        </mxCell>
+
+        <!-- ===== L0 Entry (Shared) ===== -->
+        <mxCell id="L0" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E8F5E9;strokeColor=#2E7D32;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="40" y="85" width="1520" height="100" as="geometry"/>
+        </mxCell>
+        <mxCell id="L0_label" value="L0 Entry (Shared)" style="text;html=1;align=left;verticalAlign=top;fontSize=14;fontStyle=1;fontColor=#1B5E20;" vertex="1" parent="1">
+          <mxGeometry x="55" y="88" width="200" height="22" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="api" value="&lt;b&gt;api.py&lt;/b&gt;&lt;br&gt;&lt;font style='font-size:8px;color:#555'&gt;REST routes&lt;br&gt;+ mode param&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#C8E6C9;strokeColor=#2E7D32;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="60" y="115" width="110" height="55" as="geometry"/>
+        </mxCell>
+        <mxCell id="evalcfg" value="&lt;b&gt;EvalConfig&lt;/b&gt;&lt;br&gt;&lt;font style='font-size:8px;color:#555'&gt;eval_config.py&lt;br&gt;&lt;b style='color:#C62828'&gt;+ mode: math|g5|g5_binary&lt;/b&gt;&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#C8E6C9;strokeColor=#2E7D32;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="190" y="115" width="185" height="55" as="geometry"/>
+        </mxCell>
+        <mxCell id="engine" value="&lt;b&gt;engine.py&lt;/b&gt;&lt;br&gt;&lt;font style='font-size:8px;color:#555'&gt;Orchestrator&lt;br&gt;&lt;b style='color:#C62828'&gt;if mode==math / g5 / g5_binary&lt;/b&gt;&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#C8E6C9;strokeColor=#2E7D32;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="395" y="115" width="190" height="55" as="geometry"/>
+        </mxCell>
+        <mxCell id="ws" value="&lt;b&gt;websocket.py&lt;/b&gt;&lt;br&gt;&lt;font style='font-size:8px;color:#555'&gt;Task push&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#C8E6C9;strokeColor=#2E7D32;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="605" y="115" width="100" height="55" as="geometry"/>
+        </mxCell>
+        <mxCell id="db" value="&lt;b&gt;database.py&lt;/b&gt;&lt;br&gt;&lt;font style='font-size:8px;color:#555'&gt;SQLite ORM&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#C8E6C9;strokeColor=#2E7D32;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="725" y="115" width="100" height="55" as="geometry"/>
+        </mxCell>
+
+        <!-- ===== L1 Workload (Shared) ===== -->
+        <mxCell id="L1" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E8F5E9;strokeColor=#2E7D32;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="40" y="200" width="760" height="85" as="geometry"/>
+        </mxCell>
+        <mxCell id="L1_label" value="L1 Workload IR (Shared)" style="text;html=1;align=left;verticalAlign=top;fontSize=14;fontStyle=1;fontColor=#1B5E20;" vertex="1" parent="1">
+          <mxGeometry x="55" y="203" width="250" height="22" as="geometry"/>
+        </mxCell>
+        <mxCell id="ir" value="&lt;b&gt;WorkloadIR&lt;/b&gt;&lt;br&gt;&lt;font style='font-size:8px;color:#555'&gt;ir.py + graph.py&lt;br&gt;Model -&gt; layers -&gt; ops&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#C8E6C9;strokeColor=#2E7D32;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="60" y="228" width="140" height="45" as="geometry"/>
+        </mxCell>
+        <mxCell id="models" value="&lt;b&gt;models/&lt;/b&gt;&lt;br&gt;&lt;font style='font-size:8px;color:#555'&gt;DeepSeek, Qwen&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#C8E6C9;strokeColor=#2E7D32;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="215" y="228" width="110" height="45" as="geometry"/>
+        </mxCell>
+        <mxCell id="layers" value="&lt;b&gt;layers/&lt;/b&gt;&lt;br&gt;&lt;font style='font-size:8px;color:#555'&gt;MLA, FFN, MoE&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#C8E6C9;strokeColor=#2E7D32;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="340" y="228" width="110" height="45" as="geometry"/>
+        </mxCell>
+        <mxCell id="operators" value="&lt;b&gt;operators/&lt;/b&gt;&lt;br&gt;&lt;font style='font-size:8px;color:#555'&gt;matmul, softmax&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#C8E6C9;strokeColor=#2E7D32;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="465" y="228" width="120" height="45" as="geometry"/>
+        </mxCell>
+
+        <!-- G5 Binary skip note -->
+        <mxCell id="g5_binary_skip" value="&lt;font style='font-size:9px;color:#BF360C'&gt;&lt;b&gt;g5_binary mode&lt;/b&gt;&lt;br&gt;skips L1 + L3&lt;br&gt;directly loads&lt;br&gt;CoreProgram&lt;br&gt;from .BD/.GDMA&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFCDD2;strokeColor=#C62828;fontSize=9;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="860" y="200" width="120" height="85" as="geometry"/>
+        </mxCell>
+
+        <!-- ===== L2 Arch (Shared + Extended) ===== -->
+        <mxCell id="L2" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E8F5E9;strokeColor=#2E7D32;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="40" y="300" width="760" height="85" as="geometry"/>
+        </mxCell>
+        <mxCell id="L2_label" value="L2 Architecture (Shared + G5 Extension)" style="text;html=1;align=left;verticalAlign=top;fontSize=14;fontStyle=1;fontColor=#1B5E20;" vertex="1" parent="1">
+          <mxGeometry x="55" y="303" width="350" height="22" as="geometry"/>
+        </mxCell>
+        <mxCell id="chip" value="&lt;b&gt;ChipSpec&lt;/b&gt;&lt;br&gt;&lt;font style='font-size:8px;color:#555'&gt;chip.py&lt;br&gt;Existing params&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#C8E6C9;strokeColor=#2E7D32;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="60" y="328" width="120" height="45" as="geometry"/>
+        </mxCell>
+        <mxCell id="chip_g5" value="&lt;b&gt;+ G5 Extensions&lt;/b&gt;&lt;br&gt;&lt;font style='font-size:8px;color:#BF360C'&gt;clock_freq_ghz, lmem_bank_num&lt;br&gt;ddr_read_latency_ns, bus_grid&lt;br&gt;cache_line_size, outstanding&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFE0B2;strokeColor=#E65100;fontSize=9;" vertex="1" parent="1">
+          <mxGeometry x="200" y="326" width="220" height="50" as="geometry"/>
+        </mxCell>
+        <mxCell id="memory" value="&lt;b&gt;MemoryHierarchy&lt;/b&gt;&lt;br&gt;&lt;font style='font-size:8px;color:#555'&gt;memory.py&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#C8E6C9;strokeColor=#2E7D32;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="440" y="328" width="130" height="45" as="geometry"/>
+        </mxCell>
+
+        <!-- ===== L3 Mapping - SPLIT ===== -->
+        <!-- L3 Common -->
+        <mxCell id="L3_common" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E8F5E9;strokeColor=#2E7D32;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="40" y="405" width="760" height="85" as="geometry"/>
+        </mxCell>
+        <mxCell id="L3c_label" value="L3.common (Shared)" style="text;html=1;align=left;verticalAlign=top;fontSize=14;fontStyle=1;fontColor=#1B5E20;" vertex="1" parent="1">
+          <mxGeometry x="55" y="408" width="250" height="22" as="geometry"/>
+        </mxCell>
+        <mxCell id="para_planner" value="&lt;b&gt;ParallelismPlanner&lt;/b&gt;&lt;br&gt;&lt;font style='font-size:8px;color:#555'&gt;parallelism/planner.py&lt;br&gt;TP/PP/EP/DP assignment&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#C8E6C9;strokeColor=#2E7D32;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="60" y="433" width="175" height="45" as="geometry"/>
+        </mxCell>
+        <mxCell id="protocols" value="&lt;b&gt;protocols.py&lt;/b&gt;&lt;br&gt;&lt;font style='font-size:8px;color:#555'&gt;DistributedModel&lt;br&gt;DistributedOp, CommType&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#C8E6C9;strokeColor=#2E7D32;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="255" y="433" width="165" height="45" as="geometry"/>
+        </mxCell>
+
+        <!-- ===== FORK POINT (DistributedModel) ===== -->
+        <mxCell id="fork" value="&lt;b style='color:#C62828;font-size:12px'&gt;DistributedModel&lt;/b&gt;&lt;br&gt;&lt;font style='font-size:9px;color:#555'&gt;Fork point: math vs g5 pipelines diverge here&lt;br&gt;Same input, different processing&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFCDD2;strokeColor=#C62828;strokeWidth=3;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="480" y="420" width="300" height="60" as="geometry"/>
+        </mxCell>
+
+        <!-- ===== L3 Math (existing) ===== -->
+        <mxCell id="L3_math" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E3F2FD;strokeColor=#1565C0;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="40" y="520" width="380" height="120" as="geometry"/>
+        </mxCell>
+        <mxCell id="L3m_label" value="L3.math (Existing)" style="text;html=1;align=left;verticalAlign=top;fontSize=13;fontStyle=1;fontColor=#1565C0;" vertex="1" parent="1">
+          <mxGeometry x="55" y="523" width="200" height="20" as="geometry"/>
+        </mxCell>
+        <mxCell id="tiling" value="&lt;b&gt;TilingPlanner&lt;/b&gt;&lt;br&gt;&lt;font style='font-size:8px;color:#555'&gt;tiling/planner.py&lt;br&gt;Enumerate tile combos&lt;br&gt;Score + select best&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#BBDEFB;strokeColor=#1565C0;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="55" y="548" width="155" height="65" as="geometry"/>
+        </mxCell>
+        <mxCell id="scheduling" value="&lt;b&gt;Scheduler&lt;/b&gt;&lt;br&gt;&lt;font style='font-size:8px;color:#555'&gt;scheduling/scheduler.py&lt;br&gt;Abstract timeline&lt;br&gt;Overlap estimation&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#BBDEFB;strokeColor=#1565C0;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="230" y="548" width="170" height="65" as="geometry"/>
+        </mxCell>
+        <mxCell id="L3m_out" value="&lt;font style='font-size:8px;color:#1565C0'&gt;&lt;b&gt;Output: TilePlan&lt;/b&gt;&lt;br&gt;{tile_m/k/n, traffic, t_compute_ms}&lt;br&gt;Statistical summary&lt;/font&gt;" style="text;html=1;align=left;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="55" y="618" width="340" height="20" as="geometry"/>
+        </mxCell>
+
+        <!-- ===== L3 G5 (new) ===== -->
+        <mxCell id="L3_g5" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF3E0;strokeColor=#E65100;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="440" y="520" width="400" height="120" as="geometry"/>
+        </mxCell>
+        <mxCell id="L3g_label" value="L3.g5 (New - Instruction Gen)" style="text;html=1;align=left;verticalAlign=top;fontSize=13;fontStyle=1;fontColor=#BF360C;" vertex="1" parent="1">
+          <mxGeometry x="455" y="523" width="300" height="20" as="geometry"/>
+        </mxCell>
+        <mxCell id="inst_tiler" value="&lt;b&gt;InstructionTiler&lt;/b&gt;&lt;br&gt;&lt;font style='font-size:8px;color:#555'&gt;Precise tiling&lt;br&gt;+ LMEM address layout&lt;br&gt;+ Double buffering&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFE0B2;strokeColor=#E65100;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="455" y="548" width="155" height="65" as="geometry"/>
+        </mxCell>
+        <mxCell id="inst_emitter" value="&lt;b&gt;InstructionEmitter&lt;/b&gt;&lt;br&gt;&lt;font style='font-size:8px;color:#555'&gt;Generate TIU+DMA cmds&lt;br&gt;cmd_id / cmd_id_dep&lt;br&gt;Address assignment&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFE0B2;strokeColor=#E65100;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="625" y="548" width="155" height="65" as="geometry"/>
+        </mxCell>
+        <mxCell id="L3g_out" value="&lt;font style='font-size:8px;color:#BF360C'&gt;&lt;b&gt;Output: CoreProgram&lt;/b&gt;&lt;br&gt;{cores[].tiu_cmds[], dma_cmds[], comm_schedule}&lt;br&gt;Executable instruction sequence&lt;/font&gt;" style="text;html=1;align=left;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="455" y="618" width="370" height="20" as="geometry"/>
+        </mxCell>
+
+        <!-- Binary parser (alternative input) -->
+        <mxCell id="binary_parser" value="&lt;b&gt;BinaryParser&lt;/b&gt;&lt;br&gt;&lt;font style='font-size:8px;color:#555'&gt;binary_parser.py&lt;br&gt;Parse .BD/.GDMA&lt;br&gt;-&gt; CoreProgram&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFE0B2;strokeColor=#E65100;fontSize=10;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="860" y="530" width="130" height="65" as="geometry"/>
+        </mxCell>
+        <mxCell id="bp_arrow" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#E65100;strokeWidth=1.5;dashed=1;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="g5_binary_skip" target="binary_parser">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+
+        <!-- ===== L4 Common ===== -->
+        <mxCell id="L4_common" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E8F5E9;strokeColor=#2E7D32;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="1020" y="405" width="540" height="85" as="geometry"/>
+        </mxCell>
+        <mxCell id="L4c_label" value="L4.common (Shared)" style="text;html=1;align=left;verticalAlign=top;fontSize=14;fontStyle=1;fontColor=#1B5E20;" vertex="1" parent="1">
+          <mxGeometry x="1035" y="408" width="250" height="22" as="geometry"/>
+        </mxCell>
+        <mxCell id="cost_model" value="&lt;b&gt;CostModel&lt;/b&gt;&lt;br&gt;&lt;font style='font-size:8px;color:#555'&gt;cost_models/base.py&lt;br&gt;Server + interconnect cost&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#C8E6C9;strokeColor=#2E7D32;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="1040" y="433" width="155" height="45" as="geometry"/>
+        </mxCell>
+        <mxCell id="metrics" value="&lt;b&gt;EngineResult&lt;/b&gt;&lt;br&gt;&lt;font style='font-size:8px;color:#555'&gt;metrics.py&lt;br&gt;StepMetrics, Aggregates&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#C8E6C9;strokeColor=#2E7D32;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="1210" y="433" width="155" height="45" as="geometry"/>
+        </mxCell>
+        <mxCell id="comm_proto" value="&lt;b&gt;CommProtocol&lt;/b&gt;&lt;br&gt;&lt;font style='font-size:8px;color:#555'&gt;comm_protocol.py&lt;br&gt;alpha-beta model&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#C8E6C9;strokeColor=#2E7D32;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="1380" y="433" width="155" height="45" as="geometry"/>
+        </mxCell>
+
+        <!-- ===== L4 Math (existing) ===== -->
+        <mxCell id="L4_math" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E3F2FD;strokeColor=#1565C0;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="40" y="670" width="380" height="120" as="geometry"/>
+        </mxCell>
+        <mxCell id="L4m_label" value="L4.math (Existing)" style="text;html=1;align=left;verticalAlign=top;fontSize=13;fontStyle=1;fontColor=#1565C0;" vertex="1" parent="1">
+          <mxGeometry x="55" y="673" width="200" height="20" as="geometry"/>
+        </mxCell>
+        <mxCell id="precise_eval" value="&lt;b&gt;PreciseEvaluator&lt;/b&gt;&lt;br&gt;&lt;font style='font-size:8px;color:#555'&gt;precise.py&lt;br&gt;t = max(ops/tflops, bytes/bw)&lt;br&gt;Roofline model&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#BBDEFB;strokeColor=#1565C0;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="55" y="698" width="170" height="65" as="geometry"/>
+        </mxCell>
+        <mxCell id="math_engine" value="&lt;b&gt;MathEngine&lt;/b&gt;&lt;br&gt;&lt;font style='font-size:8px;color:#555'&gt;engine.py&lt;br&gt;Iterate ops, sum times&lt;br&gt;Stateless O(N)&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#BBDEFB;strokeColor=#1565C0;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="240" y="698" width="155" height="65" as="geometry"/>
+        </mxCell>
+
+        <!-- ===== L4 G5 (new) ===== -->
+        <mxCell id="L4_g5" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF3E0;strokeColor=#E65100;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="440" y="670" width="560" height="190" as="geometry"/>
+        </mxCell>
+        <mxCell id="L4g_label" value="L4.g5 (New - Event-Driven Simulation)" style="text;html=1;align=left;verticalAlign=top;fontSize=13;fontStyle=1;fontColor=#BF360C;" vertex="1" parent="1">
+          <mxGeometry x="455" y="673" width="350" height="20" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="sim_engine" value="&lt;b&gt;SimEngine&lt;/b&gt;&lt;br&gt;&lt;font style='font-size:8px;color:#555'&gt;sim_engine.py&lt;br&gt;Event heap + delta cycle&lt;br&gt;Signal/FIFO/Semaphore&lt;br&gt;Replaces SystemC kernel&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFE0B2;strokeColor=#E65100;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="455" y="698" width="155" height="75" as="geometry"/>
+        </mxCell>
+        <mxCell id="tiu_sim" value="&lt;b&gt;TIU Engine&lt;/b&gt;&lt;br&gt;&lt;font style='font-size:8px;color:#555'&gt;tiu.py&lt;br&gt;State machine&lt;br&gt;cal_cycle() per type&lt;br&gt;Bank conflict&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFE0B2;strokeColor=#E65100;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="625" y="698" width="120" height="75" as="geometry"/>
+        </mxCell>
+        <mxCell id="dma_sim" value="&lt;b&gt;DMA Engine&lt;/b&gt;&lt;br&gt;&lt;font style='font-size:8px;color:#555'&gt;dma.py&lt;br&gt;5-stage pipeline&lt;br&gt;Segmentation&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFE0B2;strokeColor=#E65100;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="760" y="698" width="110" height="75" as="geometry"/>
+        </mxCell>
+        <mxCell id="mem_sim" value="&lt;b&gt;Memory&lt;/b&gt;&lt;br&gt;&lt;font style='font-size:8px;color:#555'&gt;memory.py&lt;br&gt;LMEM + DDR&lt;br&gt;Bank conflict&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFE0B2;strokeColor=#E65100;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="885" y="698" width="100" height="75" as="geometry"/>
+        </mxCell>
+        <mxCell id="ic_sim" value="&lt;b&gt;Interconnect&lt;/b&gt;&lt;br&gt;&lt;font style='font-size:8px;color:#555'&gt;interconnect.py&lt;br&gt;Bus + C2C + CDMA&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFE0B2;strokeColor=#E65100;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="455" y="785" width="130" height="55" as="geometry"/>
+        </mxCell>
+        <mxCell id="adapter" value="&lt;b&gt;Adapter&lt;/b&gt;&lt;br&gt;&lt;font style='font-size:8px;color:#555'&gt;adapter.py&lt;br&gt;Sim events -&gt; EngineResult&lt;br&gt;Aggregate by source_op_id&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFE0B2;strokeColor=#E65100;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="610" y="785" width="175" height="55" as="geometry"/>
+        </mxCell>
+
+        <!-- TPUPerf mapping note -->
+        <mxCell id="tpuperf_map" value="&lt;font style='font-size:9px;color:#555'&gt;&lt;b&gt;Maps to TPUPerf:&lt;/b&gt;&lt;br&gt;SimEngine = SystemC sc_main&lt;br&gt;TIU = c_model/tpu/tiu.cc&lt;br&gt;DMA = c_model/sg2260/tdma.cc&lt;br&gt;Memory = lmem.cpp + ddr_wrapper.cpp&lt;br&gt;Interconnect = SimpleBus + CDMA/C2C&lt;/font&gt;" style="text;html=1;align=left;verticalAlign=top;fontStyle=2;" vertex="1" parent="1">
+          <mxGeometry x="815" y="785" width="175" height="100" as="geometry"/>
+        </mxCell>
+
+        <!-- ===== MERGE POINT (EngineResult) ===== -->
+        <mxCell id="merge" value="&lt;b style='color:#C62828;font-size:12px'&gt;EngineResult&lt;/b&gt;&lt;br&gt;&lt;font style='font-size:9px;color:#555'&gt;Merge point: both modes produce identical output format&lt;br&gt;StepMetrics[] + Aggregates (TTFT/TPOT/TPS/MFU)&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFCDD2;strokeColor=#C62828;strokeWidth=3;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="200" y="900" width="500" height="55" as="geometry"/>
+        </mxCell>
+
+        <!-- ===== L5 Reporting (Shared) ===== -->
+        <mxCell id="L5" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E8F5E9;strokeColor=#2E7D32;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="40" y="980" width="1520" height="90" as="geometry"/>
+        </mxCell>
+        <mxCell id="L5_label" value="L5 Reporting (Shared)" style="text;html=1;align=left;verticalAlign=top;fontSize=14;fontStyle=1;fontColor=#1B5E20;" vertex="1" parent="1">
+          <mxGeometry x="55" y="983" width="200" height="22" as="geometry"/>
+        </mxCell>
+        <mxCell id="gantt" value="&lt;b&gt;Gantt&lt;/b&gt;&lt;br&gt;&lt;font style='font-size:8px;color:#555'&gt;gantt.py&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#C8E6C9;strokeColor=#2E7D32;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="60" y="1010" width="90" height="45" as="geometry"/>
+        </mxCell>
+        <mxCell id="cost_report" value="&lt;b&gt;Cost&lt;/b&gt;&lt;br&gt;&lt;font style='font-size:8px;color:#555'&gt;cost_analysis.py&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#C8E6C9;strokeColor=#2E7D32;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="170" y="1010" width="100" height="45" as="geometry"/>
+        </mxCell>
+        <mxCell id="mem_report" value="&lt;b&gt;Memory&lt;/b&gt;&lt;br&gt;&lt;font style='font-size:8px;color:#555'&gt;memory_analysis.py&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#C8E6C9;strokeColor=#2E7D32;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="290" y="1010" width="115" height="45" as="geometry"/>
+        </mxCell>
+        <mxCell id="traffic_report" value="&lt;b&gt;Traffic&lt;/b&gt;&lt;br&gt;&lt;font style='font-size:8px;color:#555'&gt;traffic_analysis.py&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#C8E6C9;strokeColor=#2E7D32;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="425" y="1010" width="110" height="45" as="geometry"/>
+        </mxCell>
+        <mxCell id="frontend" value="&lt;b&gt;Frontend (React)&lt;/b&gt;&lt;br&gt;&lt;font style='font-size:8px;color:#555'&gt;Charts, Gantt, KPI panel&lt;br&gt;Mode-agnostic rendering&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#C8E6C9;strokeColor=#2E7D32;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="560" y="1010" width="170" height="45" as="geometry"/>
+        </mxCell>
+
+        <!-- ===== KEY FLOW ARROWS ===== -->
+        <!-- L0 -> L1 -->
+        <mxCell id="f1" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#2E7D32;strokeWidth=2;exitX=0.3;exitY=1;exitDx=0;exitDy=0;entryX=0.3;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="L0" target="L1">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <!-- L1 -> L2 -->
+        <mxCell id="f2" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#2E7D32;strokeWidth=2;exitX=0.3;exitY=1;exitDx=0;exitDy=0;entryX=0.3;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="L1" target="L2">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <!-- L2 -> L3.common -->
+        <mxCell id="f3" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#2E7D32;strokeWidth=2;exitX=0.3;exitY=1;exitDx=0;exitDy=0;entryX=0.3;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="L2" target="L3_common">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+
+        <!-- Fork arrows -->
+        <mxCell id="fork_math" value="mode=math" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#1565C0;strokeWidth=2.5;exitX=0.25;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;fontSize=10;fontStyle=1;fontColor=#1565C0;" edge="1" parent="1" source="fork" target="L3_math">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="fork_g5" value="mode=g5" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#E65100;strokeWidth=2.5;exitX=0.75;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;fontSize=10;fontStyle=1;fontColor=#E65100;" edge="1" parent="1" source="fork" target="L3_g5">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+
+        <!-- L3 -> L4 -->
+        <mxCell id="f_math_eval" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#1565C0;strokeWidth=2;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="L3_math" target="L4_math">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="f_g5_sim" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#E65100;strokeWidth=2;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="L3_g5" target="L4_g5">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+
+        <!-- L4 -> merge -->
+        <mxCell id="f_math_merge" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#1565C0;strokeWidth=2;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.25;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="L4_math" target="merge">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="f_g5_merge" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#E65100;strokeWidth=2;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.75;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="adapter" target="merge">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+
+        <!-- Merge -> L5 -->
+        <mxCell id="f_merge_l5" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#2E7D32;strokeWidth=3;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.3;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="merge" target="L5">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+
+        <!-- Legend -->
+        <mxCell id="legend" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FAFAFA;strokeColor=#999;strokeWidth=1;" vertex="1" parent="1">
+          <mxGeometry x="1080" y="520" width="480" height="100" as="geometry"/>
+        </mxCell>
+        <mxCell id="leg_title" value="&lt;b&gt;Legend&lt;/b&gt;" style="text;html=1;align=left;verticalAlign=middle;fontSize=11;fontStyle=1;fontColor=#333;" vertex="1" parent="1">
+          <mxGeometry x="1090" y="525" width="100" height="18" as="geometry"/>
+        </mxCell>
+        <mxCell id="leg1" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#C8E6C9;strokeColor=#2E7D32;" vertex="1" parent="1">
+          <mxGeometry x="1095" y="548" width="30" height="15" as="geometry"/>
+        </mxCell>
+        <mxCell id="leg1t" value="Shared (both modes)" style="text;html=1;align=left;verticalAlign=middle;fontSize=9;" vertex="1" parent="1">
+          <mxGeometry x="1130" y="545" width="120" height="20" as="geometry"/>
+        </mxCell>
+        <mxCell id="leg2" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#BBDEFB;strokeColor=#1565C0;" vertex="1" parent="1">
+          <mxGeometry x="1095" y="570" width="30" height="15" as="geometry"/>
+        </mxCell>
+        <mxCell id="leg2t" value="Math mode (existing)" style="text;html=1;align=left;verticalAlign=middle;fontSize=9;" vertex="1" parent="1">
+          <mxGeometry x="1130" y="567" width="120" height="20" as="geometry"/>
+        </mxCell>
+        <mxCell id="leg3" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFE0B2;strokeColor=#E65100;" vertex="1" parent="1">
+          <mxGeometry x="1095" y="592" width="30" height="15" as="geometry"/>
+        </mxCell>
+        <mxCell id="leg3t" value="G5 mode (new)" style="text;html=1;align=left;verticalAlign=middle;fontSize=9;" vertex="1" parent="1">
+          <mxGeometry x="1130" y="589" width="120" height="20" as="geometry"/>
+        </mxCell>
+        <mxCell id="leg4" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFCDD2;strokeColor=#C62828;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="1290" y="548" width="30" height="15" as="geometry"/>
+        </mxCell>
+        <mxCell id="leg4t" value="Key interface (fork/merge)" style="text;html=1;align=left;verticalAlign=middle;fontSize=9;" vertex="1" parent="1">
+          <mxGeometry x="1325" y="545" width="155" height="20" as="geometry"/>
+        </mxCell>
+        <mxCell id="leg5" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFE0B2;strokeColor=#E65100;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="1290" y="570" width="30" height="15" as="geometry"/>
+        </mxCell>
+        <mxCell id="leg5t" value="Optional (binary mode)" style="text;html=1;align=left;verticalAlign=middle;fontSize=9;" vertex="1" parent="1">
+          <mxGeometry x="1325" y="567" width="155" height="20" as="geometry"/>
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

@@ -143,7 +143,8 @@ export function autoMapChipsToParallelism(
   const totalChips = chips.length;
 
   // 计算所需芯片数
-  const requiredChips = parallelism.dp * parallelism.tp * parallelism.pp * parallelism.ep * parallelism.sp;
+  // EP 和 TP 共享同一组芯片 (约束: dp * tp == moe_tp * ep)，SP 跟随 TP
+  const requiredChips = parallelism.dp * parallelism.tp * parallelism.pp;
 
   if (totalChips < requiredChips) {
     throw new Error(`芯片数量不足: 需要 ${requiredChips} 个，实际 ${totalChips} 个`);

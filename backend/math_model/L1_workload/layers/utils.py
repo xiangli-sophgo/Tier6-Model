@@ -19,7 +19,7 @@ def get_batch(config: dict[str, Any]) -> int:
 
 
 def get_seq_len(config: dict[str, Any]) -> int:
-    return _get_int(config, ("seq_len", "q_seq_len"), "layer config")
+    return _get_int(config, ("q_seq_len", "seq_len"), "layer config")
 
 
 def get_kv_seq_len(config: dict[str, Any]) -> int:

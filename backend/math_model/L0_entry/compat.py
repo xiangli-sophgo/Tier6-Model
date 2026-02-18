@@ -305,7 +305,7 @@ def convert_to_stats(
         aggregates: tier6 的聚合指标
         step_metrics: step 级指标（可选，用于计算事件数）
         inference_config: 推理配置（可选，用于获取 token 数）
-        parallelism: 并行配置（可选）
+        parallelism: 并行配置（含 is_prefill 标识）
         topology_config: 拓扑配置（可选）
         link_traffic_stats: 预计算的链路流量统计（来自 TrafficAnalyzer）
 
@@ -335,34 +335,34 @@ def convert_to_stats(
     # 计算效率（简化：使用 MFU）
     compute_efficiency = mfu if mfu > 0 else 0
 
-    # 假设 prefill 时间约等于 TTFT，其余为 decode 时间
-    prefill_time = ttft_ms if ttft_ms > 0 else total_time_ms * 0.3
-    decode_time = max(0, total_time_ms - prefill_time)
+    # 使用 is_prefill 标识直接判断阶段，不做启发式猜测
+    is_prefill = parallelism.get("is_prefill", True) if parallelism else True
 
-    # 按比例分配计算/通信时间
-    if total_time_ms > 0:
-        prefill_ratio = prefill_time / total_time_ms
-        decode_ratio = decode_time / total_time_ms
+    if is_prefill:
+        # Prefill 模式: 所有时间归属 prefill
+        prefill_time = total_time_ms
+        decode_time = 0.0
     else:
-        prefill_ratio = 0.3
-        decode_ratio = 0.7
+        # Decode 模式: 所有时间归属 decode
+        prefill_time = 0.0
+        decode_time = total_time_ms
 
     return {
         "prefill": {
-            "computeTime": compute_time_ms * prefill_ratio,
-            "commTime": comm_time_ms * prefill_ratio,
-            "bubbleTime": wait_time_ms * prefill_ratio,
+            "computeTime": compute_time_ms if is_prefill else 0.0,
+            "commTime": comm_time_ms if is_prefill else 0.0,
+            "bubbleTime": wait_time_ms if is_prefill else 0.0,
             "overlapTime": 0,
             "totalTime": prefill_time,
-            "computeEfficiency": compute_efficiency,
+            "computeEfficiency": compute_efficiency if is_prefill else 0.0,
         },
         "decode": {
-            "computeTime": compute_time_ms * decode_ratio,
-            "commTime": comm_time_ms * decode_ratio,
-            "bubbleTime": wait_time_ms * decode_ratio,
+            "computeTime": compute_time_ms if not is_prefill else 0.0,
+            "commTime": comm_time_ms if not is_prefill else 0.0,
+            "bubbleTime": wait_time_ms if not is_prefill else 0.0,
             "overlapTime": 0,
             "totalTime": decode_time,
-            "computeEfficiency": compute_efficiency,
+            "computeEfficiency": compute_efficiency if not is_prefill else 0.0,
         },
         "totalRunTime": total_time_ms,
         "simulatedTokens": simulated_tokens,
@@ -372,7 +372,7 @@ def convert_to_stats(
         "dynamicMbu": mbu,
         "maxPpBubbleRatio": 0,
         "totalEvents": num_ops,
-        "prefillFlops": int(total_flops * prefill_ratio) if total_flops else 0,
+        "prefillFlops": int(total_flops) if is_prefill and total_flops else 0,
         "linkTrafficStats": link_traffic_stats or [],
     }
 

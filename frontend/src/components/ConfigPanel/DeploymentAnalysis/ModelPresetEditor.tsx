@@ -29,7 +29,8 @@ import {
 } from '@/components/ui/dialog'
 import { BaseCard } from '@/components/common/BaseCard'
 import type { ModelPreset } from '@/types/math_model'
-import { getModelPresets, getModelPreset, updateModelPreset, saveModelPreset } from '@/api/math_model'
+import { DeleteConfirmButton } from '@/components/common/DeleteConfirmButton'
+import { getModelPresets, getModelPreset, updateModelPreset, saveModelPreset, deleteModelPreset } from '@/api/math_model'
 import { calculateModelParams } from '@/api/model'
 import { formatParams } from '@/utils/formatters'
 import { useDebouncedValue } from '@/hooks/useDebouncedCallback'
@@ -248,6 +249,27 @@ export const ModelPresetEditor: React.FC<ModelPresetEditorProps> = ({ value, onC
     }
   }, [selectedPreset, onChange])
 
+  // 删除
+  const handleDelete = async () => {
+    if (!selectedPreset) return
+    try {
+      await deleteModelPreset(selectedPreset)
+      const { presets } = await getModelPresets()
+      setPresetList(presets)
+      toast.success(`已删除: ${selectedPreset}`)
+      if (presets.length > 0) {
+        setSelectedPreset(presets[0].name)
+        originalRef.current = JSON.parse(JSON.stringify(presets[0].config))
+        onChange({ ...presets[0].config })
+      } else {
+        setSelectedPreset('')
+        originalRef.current = null
+      }
+    } catch (e) {
+      toast.error(`删除失败: ${e instanceof Error ? e.message : String(e)}`)
+    }
+  }
+
   // ============================================
   // 通用字段渲染器
   // ============================================
@@ -459,6 +481,7 @@ export const ModelPresetEditor: React.FC<ModelPresetEditorProps> = ({ value, onC
         <Button variant="outline" size="sm" onClick={handleReload} disabled={!originalRef.current}>
           <RefreshCw className="h-3.5 w-3.5 mr-1" />重新加载
         </Button>
+        <DeleteConfirmButton name={selectedPreset} label="删除预设" onConfirm={handleDelete} disabled={!selectedPreset} />
       </div>
 
       {/* 另存为弹窗 */}

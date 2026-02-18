@@ -98,8 +98,6 @@ export interface MoEConfig {
   num_experts: number;
   /** 每token激活的专家数 */
   num_experts_per_tok: number;
-  /** 专家容量因子 (capacity factor) */
-  expert_capacity_factor: number;
   /** 共享专家数量 (DeepSeek-V2风格) */
   num_shared_experts?: number;
   /** 每个专家的FFN中间维度 (可选，不设置则使用 intermediate_size) */
@@ -155,10 +153,6 @@ export interface LLMModelConfig {
   intermediate_size: number;
   /** 词表大小 */
   vocab_size: number;
-  /** 权重精度 */
-  weight_dtype: DataType;
-  /** 激活/KV Cache 精度 */
-  activation_dtype: DataType;
   /** 最大序列长度 */
   max_seq_length: number;
   /** MoE 配置 (可选) */
@@ -190,9 +184,9 @@ export interface InferenceConfig {
   /** micro batch 数量 (PP流水线) */
   num_micro_batches?: number;
   /** 权重精度 */
-  weight_dtype?: DataType;
+  weight_dtype: DataType;
   /** 激活精度 */
-  activation_dtype?: DataType;
+  activation_dtype: DataType;
 }
 
 // ============================================
@@ -345,6 +339,8 @@ export interface ParallelismStrategy {
   enable_tp_sp: boolean;
   /** 启用 Ring Attention overlap (Layer 级，计算与通信完全重叠) */
   enable_ring_attention?: boolean;
+  /** 启用 TBO (Transport/Bandwidth Overlap，MoE dispatch/combine 与计算重叠) */
+  enable_tbo?: boolean;
   /** MoE专家内张量并行度 (可选，默认=1，仅MoE模型使用) */
   moe_tp?: number;
   /** 是否为 Prefill 阶段 (false=Decode) */
@@ -745,15 +741,6 @@ export function getBytesPerElement(dtype: DataType): number {
   return BYTES_PER[dtype];
 }
 
-/** 获取权重精度的字节数 */
-export function getWeightBytes(model: LLMModelConfig): number {
-  return BYTES_PER[model.weight_dtype];
-}
-
-/** 获取激活/KV Cache 精度的字节数 */
-export function getActivationBytes(model: LLMModelConfig): number {
-  return BYTES_PER[model.activation_dtype];
-}
 
 // ============================================
 // 拓扑融合 - 芯片映射与流量分析

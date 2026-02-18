@@ -10,6 +10,7 @@ num_layers: 32
 num_attention_heads: 32
 num_key_value_heads: 32
 hidden_act: "silu"
+norm_type: "rmsnorm"
 rms_norm_eps: 1.0e-6
 
 # RoPE 配置

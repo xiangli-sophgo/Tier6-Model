@@ -11,9 +11,99 @@
 from __future__ import annotations
 
 import math
-from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Protocol
+from typing import TYPE_CHECKING, Dict, Protocol
+
+import numba
+
+
+# ============== Numba JIT 加速的 MatMul Traffic 计算 ==============
+
+LOOP_ORDER_MAP: Dict[str, int] = {
+    "mnk": 0, "nkm": 1, "mkn": 2, "nmk": 3, "kmn": 4, "knm": 5,
+}
+
+
+@numba.jit(nopython=True, cache=True)
+def _compute_traffic_numba(
+    order_idx: int,
+    g: int,
+    tile_m: int,
+    tile_n: int,
+    tile_k: int,
+    m_tiles: int,
+    n_tiles: int,
+    k_tiles: int,
+    a_bytes: int,
+    b_bytes: int,
+    c_bytes: int,
+    accum_bytes: int,
+) -> int:
+    """计算 MatMul 在指定 loop-order 下的 DRAM traffic (Numba JIT)"""
+    m_blk = tile_m * m_tiles
+    n_blk = tile_n * n_tiles
+    k_blk = tile_k * k_tiles
+
+    traffic = 0
+
+    if order_idx == 0:  # mnk
+        traffic = (
+            (m_blk * k_blk) * a_bytes * n_tiles
+            + (n_blk * k_blk) * b_bytes * m_tiles
+            + (m_blk * n_blk) * c_bytes
+        )
+    elif order_idx == 1:  # nkm
+        traffic = (
+            (n_blk * k_blk) * b_bytes
+            + (m_blk * k_blk) * a_bytes * n_tiles
+            + (m_blk * n_blk) * accum_bytes * 2 * max(0, k_tiles - 1)
+            + (m_blk * n_blk) * c_bytes
+        )
+    elif order_idx == 2:  # mkn
+        traffic = (
+            (m_blk * k_blk) * a_bytes
+            + (n_blk * k_blk) * b_bytes * m_tiles
+            + (m_blk * n_blk) * accum_bytes * 2 * max(0, k_tiles - 1)
+            + (m_blk * n_blk) * c_bytes
+        )
+    elif order_idx == 3:  # nmk
+        traffic = (
+            (n_blk * k_blk) * b_bytes * m_tiles
+            + (m_blk * k_blk) * a_bytes * n_tiles
+            + (m_blk * n_blk) * c_bytes
+        )
+    elif order_idx == 4:  # kmn
+        traffic = (
+            (m_blk * k_blk) * a_bytes
+            + (n_blk * k_blk) * b_bytes * m_tiles
+            + (m_blk * n_blk) * accum_bytes * 2 * max(0, k_tiles - 1)
+            + (m_blk * n_blk) * c_bytes
+        )
+    else:  # knm
+        traffic = (
+            (n_blk * k_blk) * b_bytes
+            + (m_blk * k_blk) * a_bytes * n_tiles
+            + (m_blk * n_blk) * accum_bytes * 2 * max(0, k_tiles - 1)
+            + (m_blk * n_blk) * c_bytes
+        )
+
+    return int(traffic * g)
+
+
+def _compute_traffic_fn(
+    order: str, g: int,
+    tile_m: int, tile_n: int, tile_k: int,
+    m_tiles: int, n_tiles: int, k_tiles: int,
+    a_bytes: int, b_bytes: int, c_bytes: int, accum_bytes: int,
+) -> int:
+    """Python 接口，调用 Numba 优化版本"""
+    order_idx = LOOP_ORDER_MAP.get(order, 0)
+    return _compute_traffic_numba(
+        order_idx, g, tile_m, tile_n, tile_k,
+        m_tiles, n_tiles, k_tiles,
+        a_bytes, b_bytes, c_bytes, accum_bytes,
+    )
+
 
 if TYPE_CHECKING:
     from math_model.L2_arch.chip import ChipSpecImpl
@@ -140,6 +230,9 @@ class MatMulPreciseEvaluator:
         a_bytes = self._get_dtype_bytes(op.attrs, "input_dtype_bytes", 2)
         b_bytes = self._get_dtype_bytes(op.attrs, "weight_dtype_bytes", 2)
         c_bytes = self._get_dtype_bytes(op.attrs, "output_dtype_bytes", 2)
+        # C tile 在 SRAM 中至少需要 BF16 精度 (2 bytes)
+        # FP8 只是存储/通信格式, 片上 buffer 不能低于 BF16
+        c_bytes = max(c_bytes, 2)
         accum_bytes = self._get_dtype_bytes(op.attrs, "accum_dtype_bytes", 4)
 
         tile_m = tile_config.tile_m or m
@@ -156,7 +249,7 @@ class MatMulPreciseEvaluator:
         best_order = "mnk"
 
         for order in ["mnk", "nkm", "mkn", "nmk", "kmn", "knm"]:
-            traffic = self._compute_traffic(
+            traffic = _compute_traffic_fn(
                 order,
                 g,
                 tile_m,
@@ -388,64 +481,98 @@ class AttentionPreciseEvaluator:
         )
 
         shape = op.local_shape
-        b = shape.get("B", 1)
-        s = shape.get("S", shape.get("seq_len", 1))
-        h = shape.get("H", shape.get("num_heads", 1))
-        d = shape.get("D", shape.get("head_dim", 64))
+
+        # FA2 shape: {B, QS, KS, QD, VD}  (B = batch*heads)
+        # Legacy shape: {B, S, H, D}
+        if "QS" in shape or "KS" in shape:
+            for key in ("B", "QS", "KS", "QD", "VD"):
+                if key not in shape:
+                    raise ValueError(
+                        f"Missing '{key}' in FA2 op local_shape for op '{op.op_id}'. "
+                        f"Available keys: {list(shape.keys())}"
+                    )
+            b = shape["B"]
+            qs = shape["QS"]
+            ks = shape["KS"]
+            qd = shape["QD"]
+            vd = shape["VD"]
+            h = 1
+
+            # B*QS redistribution across cores (CHIPMathica FA2 style)
+            # Merge batch*heads and query sequence, redistribute evenly across
+            # cores to eliminate alignment waste when QS is small (decode QS=1)
+            if chip and chip.core_count > 0:
+                total_works = b * qs
+                b = chip.core_count
+                qs = math.ceil(total_works / b)
+        else:
+            for key in ("B", "H", "D"):
+                if key not in shape and key.lower() not in shape:
+                    raise ValueError(
+                        f"Missing '{key}' in attention op local_shape for op '{op.op_id}'. "
+                        f"Available keys: {list(shape.keys())}"
+                    )
+            b = shape["B"]
+            h = shape.get("H") or shape["num_heads"]
+            qs = shape.get("S") or shape["seq_len"]
+            ks = qs
+            qd = shape.get("D") or shape["head_dim"]
+            vd = qd
 
         qkv_bytes = self._get_dtype_bytes(op.attrs, "input_dtype_bytes", 2)
         out_bytes = self._get_dtype_bytes(op.attrs, "output_dtype_bytes", 2)
 
-        tile_q = tile_config.tile_m or min(s, 64)
-        tile_k = tile_config.tile_k or min(s, 64)
+        tile_q = tile_config.tile_m or min(qs, 64)
+        # FA2TilingEvaluator puts KS tile in tile_n, fallback to tile_k
+        tile_k = tile_config.tile_n or tile_config.tile_k or min(ks, 64)
 
-        q_tiles = math.ceil(s / tile_q)
-        k_tiles = math.ceil(s / tile_k)
+        q_tiles = math.ceil(qs / tile_q)
+        k_tiles = math.ceil(ks / tile_k)
 
-        # FLOPs: 2 * B * H * S * S * D (QK^T) + 2 * B * H * S * S * D (PV)
-        flops = 4 * b * h * s * s * d
+        # FLOPs: 2*B*H*QS*KS*QD (QK^T) + 2*B*H*QS*KS*VD (PV)
+        flops = 2 * b * h * qs * ks * (qd + vd)
 
-        # Traffic 考虑 tiling
-        q_loads = q_tiles * k_tiles
+        # Traffic (tiled access pattern)
+        # Q stays in SRAM while iterating K tiles, so loaded only q_tiles times
+        q_loads = q_tiles
         k_loads = q_tiles * k_tiles
         v_loads = q_tiles * k_tiles
         o_writes = q_tiles
 
         traffic = (
-            q_loads * b * h * tile_q * d * qkv_bytes
-            + k_loads * b * h * tile_k * d * qkv_bytes
-            + v_loads * b * h * tile_k * d * qkv_bytes
-            + o_writes * b * h * tile_q * d * out_bytes
+            q_loads * b * h * tile_q * qd * qkv_bytes
+            + k_loads * b * h * tile_k * qd * qkv_bytes
+            + v_loads * b * h * tile_k * vd * qkv_bytes
+            + o_writes * b * h * tile_q * vd * out_bytes
         )
 
         # LMEM: Q + K + V + P + O tiles
         lmem_bytes = (
-            tile_q * d * qkv_bytes
-            + tile_k * d * qkv_bytes
-            + tile_k * d * qkv_bytes
+            tile_q * qd * qkv_bytes
+            + tile_k * qd * qkv_bytes
+            + tile_k * vd * qkv_bytes
             + 2 * tile_q * tile_k * 4  # P (float32)
-            + 4 * tile_q * d * 4  # O (float32)
+            + 4 * tile_q * vd * 4  # O (float32)
         )
 
-        # ============ GEMM 部分: arch_urate 对齐损耗（P0.1）============
+        # ============ GEMM arch_urate ============
         cube_m = chip.cube_m if chip else 0
         cube_k = chip.cube_k if chip else 0
         cube_n = chip.cube_n if chip else 0
         if cube_m > 0 and cube_k > 0 and cube_n > 0:
-            # QK^T: align(S, cube_m) * align(D, cube_k) * align(S, cube_n)
-            # PV:   align(S, cube_m) * align(S, cube_k) * align(D, cube_n)
-            gemm_real = s * s * (d + d)
+            # QK^T: align(QS, cube_m) * align(QD, cube_k) * align(KS, cube_n)
+            # PV:   align(QS, cube_m) * align(KS, cube_k) * align(VD, cube_n)
+            gemm_real = qs * ks * (qd + vd)
             gemm_theo = (
-                _align_up(s, cube_m) * _align_up(d, cube_k) * _align_up(s, cube_n)
-                + _align_up(s, cube_m) * _align_up(s, cube_k) * _align_up(d, cube_n)
+                _align_up(qs, cube_m) * _align_up(qd, cube_k) * _align_up(ks, cube_n)
+                + _align_up(qs, cube_m) * _align_up(ks, cube_k) * _align_up(vd, cube_n)
             )
-            # P1.6 zigzag: prefill + causal attention 时三角矩阵优化减 40% GEMM
             if self.enable_zigzag and self.is_prefill:
                 gemm_real = int(gemm_real * 0.6)
                 gemm_theo = int(gemm_theo * 0.6)
             aligned_flops = 2 * b * h * gemm_theo
         else:
-            gemm_real = 2 * s * s * d
+            gemm_real = qs * ks * (qd + vd)
             gemm_theo = gemm_real
             aligned_flops = flops
             if self.enable_zigzag and self.is_prefill:
@@ -453,53 +580,56 @@ class AttentionPreciseEvaluator:
                 gemm_theo = int(gemm_theo * 0.6)
                 aligned_flops = int(aligned_flops * 0.6)
 
-        # ============ P1.4/P1.5: Softmax 向量部分 ============
+        # ============ Softmax vector ops ============
         lane_num = chip.lane_per_core if chip else 0
-        eu_num = chip.eu_num if chip else 0
+        eu_num_total = chip.eu_num if chip else 0  # chip total EU (for throughput)
+        # softmax alignment 需要每核 EU 数: eu_block = eu_per_core / lane_num / dtype
+        # chip.eu_num 是芯片总量 (eu_per_lane * lane * cores), 需除以 core_count
+        eu_per_core = eu_num_total // chip.core_count if chip and chip.core_count > 0 else 0
         vector_theo = 0
         vector_real = 0
         vector_t_ms = 0.0
 
-        if lane_num > 0 and eu_num > 0:
-            # 以 tile 粒度计算 softmax 向量开销
-            # 每个 (q_tile, k_tile) block 都需要一次 softmax
+        # P16+P17: softmax 始终用 BF16 精度计算 (数值稳定性), 对齐 CHIPMathica
+        SOFTMAX_DTYPE_BYTES = 2
+
+        if lane_num > 0 and eu_per_core > 0:
+            # P16: 用 full (qs, ks) 而非 tile 维度, 对齐 CHIPMathica
+            # P17: 用 BF16 做 eu_block 对齐, 对齐 CHIPMathica
             sv_theo, sv_real = softmax_theoretical_and_real(
-                QS=tile_q, KS=tile_k,
-                lane_num=lane_num, eu_num=eu_num,
-                dtype_bytes=qkv_bytes,
+                QS=qs, KS=ks,
+                lane_num=lane_num, eu_num=eu_per_core,
+                dtype_bytes=SOFTMAX_DTYPE_BYTES,
             )
-            # 总量 = per-block 向量开销 * block 数 * batch * heads
-            vector_theo = sv_theo * q_tiles * k_tiles * b * h
-            vector_real = sv_real * q_tiles * k_tiles * b * h
+            # arch_urate 用 per-head 值 (与 gemm_real/gemm_theo 一致)
+            vector_theo = sv_theo
+            vector_real = sv_real
 
-            # 向量执行时间: vector_theo / (eu_num * freq / dtype_bytes)
-            # eu_num 的处理能力: eu_num 个元素/cycle, freq GHz
             freq_ghz = chip.frequency_ghz if chip else 1.0
-            vector_throughput = eu_num * freq_ghz * 1e9 / qkv_bytes  # ops/sec
+            # P17: throughput = eu * freq * dtype_bytes, 对齐 CHIPMathica
+            vector_throughput = eu_num_total * freq_ghz * 1e9 * SOFTMAX_DTYPE_BYTES
             if vector_throughput > 0:
-                vector_t_ms = vector_theo / vector_throughput * 1e3  # ms
+                # time 用 total (b * h) 计算
+                vector_t_ms = sv_theo * b * h / vector_throughput * 1e3
 
-        # 合并 arch_urate: (gemm_real + vector_real) / (gemm_theo + vector_theo)
         total_real = gemm_real + vector_real
         total_theo = gemm_theo + vector_theo
         arch_urate = total_real / total_theo if total_theo > 0 else 1.0
 
-        # ============ 分核感知（P0.3）============
+        # ============ Core utilization (B*H redistribute) ============
         active_cores = chip.core_count if chip else 1
         if chip and chip.core_count > 0:
+            # For FA2: redistribute B*H*q_tiles across cores (CHIPMathica style)
             total_parallel_tiles = b * h * q_tiles
             active_cores = min(chip.core_count, max(1, total_parallel_tiles))
             effective_tflops = compute_tflops * active_cores / chip.core_count
         else:
             effective_tflops = compute_tflops
 
-        # GEMM 执行时间
         t_gemm_ms = aligned_flops / (effective_tflops * 1e9) if effective_tflops > 0 else 0
-        # 总计算时间 = GEMM + Softmax 向量
         t_compute_ms = t_gemm_ms + vector_t_ms
         t_memory_ms = traffic / (memory_bw_gbps * 1e6) if memory_bw_gbps > 0 else 0
 
-        # compute-DMA overlap（P0.2）
         overlap_rate = chip.compute_dma_overlap_rate if chip else 0.0
         total_time = (
             min(t_compute_ms, t_memory_ms) * (1 - overlap_rate)

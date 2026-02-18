@@ -76,6 +76,14 @@ async def health_check():
 
 
 # ============================================
+# 优化开关
+# ============================================
+
+
+
+
+
+# ============================================
 # 预设管理 - 芯片
 # ============================================
 
@@ -1227,7 +1235,7 @@ async def execute_import(request: ImportExecuteRequest):
 
                     for result_data in task_data.get("results", []):
                         parallelism = result_data.get("parallelism", {})
-                        chips = parallelism.get("tp", 1) * parallelism.get("pp", 1) * parallelism.get("dp", 1) * parallelism.get("ep", 1)
+                        chips = parallelism.get("tp", 1) * parallelism.get("pp", 1) * parallelism.get("dp", 1)
 
                         db_result = DBEvaluationResult(
                             experiment_id=db_exp.id,
@@ -1352,7 +1360,7 @@ def _save_task_result_to_db(
                 comm_time_ms = aggregates.get("comm_time_ms", 0)
 
                 # 计算芯片数
-                chips = parallelism.get("tp", 1) * parallelism.get("pp", 1) * parallelism.get("dp", 1) * parallelism.get("ep", 1)
+                chips = parallelism.get("tp", 1) * parallelism.get("pp", 1) * parallelism.get("dp", 1)
 
                 # 直接创建结果记录（不再依赖中间的 Task）
                 db_result = DBEvaluationResult(

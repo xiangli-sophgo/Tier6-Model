@@ -3,7 +3,143 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Mapping
+from typing import Mapping, Tuple
+
+import numba
+
+
+# ============== Numba JIT 加速的通信协议计算 ==============
+
+
+@numba.jit(nopython=True, cache=True)
+def _hierarchical_group_size_numba(tp: int) -> int:
+    """计算层次化分组大小"""
+    if tp == 16:
+        return 2
+    return 4
+
+
+@numba.jit(nopython=True, cache=True)
+def _allreduce_numba(
+    tp: int,
+    comm_bytes: float,
+    intra_bw: float,
+    inter_bw: float,
+    bw_urate: float,
+    start_lat: float,
+    sync_lat: float,
+    switch_latency: float,
+    cable_latency: float,
+) -> Tuple[float, float]:
+    """AllReduce 通信延迟和通信量计算（Numba JIT）"""
+    if tp in (8, 16, 32):
+        group_size = _hierarchical_group_size_numba(tp)
+        num_groups = tp // group_size
+
+        comm_1 = 2.0 * (group_size - 1) / group_size * comm_bytes
+        comm_2 = 2.0 * (num_groups - 1) / num_groups * comm_bytes
+        comm_3 = float(comm_bytes)
+
+        lat_1 = (comm_1 / intra_bw / bw_urate) * 1e6 + (group_size - 1) * (
+            start_lat + sync_lat
+        )
+        lat_2 = (comm_2 / inter_bw / bw_urate) * 1e6 + (num_groups - 1) * (
+            start_lat + sync_lat + switch_latency + cable_latency
+        )
+        lat_3 = (comm_3 / intra_bw / bw_urate) * 1e6 + (group_size - 1) * (
+            start_lat + sync_lat
+        )
+
+        latency_us = max(lat_1, max(lat_2, lat_3))
+        comm_size = comm_1 * num_groups + comm_2 + comm_3 * num_groups
+        return latency_us, comm_size
+
+    comm_size = 2.0 * (tp - 1) / max(1, tp) * comm_bytes
+    latency_us = (comm_size / intra_bw / bw_urate) * 1e6 + (tp - 1) * (
+        start_lat + sync_lat
+    )
+    return latency_us, comm_size
+
+
+@numba.jit(nopython=True, cache=True)
+def _allgather_numba(
+    tp: int,
+    comm_bytes: float,
+    intra_bw: float,
+    inter_bw: float,
+    bw_urate: float,
+    start_lat: float,
+    sync_lat: float,
+    switch_latency: float,
+    cable_latency: float,
+) -> Tuple[float, float]:
+    """AllGather 通信延迟和通信量计算（Numba JIT）"""
+    if tp in (8, 16, 32):
+        group_size = _hierarchical_group_size_numba(tp)
+        num_groups = tp // group_size
+
+        comm_1 = float((group_size - 1) * comm_bytes)
+        comm_2 = float((num_groups - 1) * comm_bytes)
+        comm_3 = 0.0
+
+        lat_1 = (comm_1 / intra_bw / bw_urate) * 1e6 + (group_size - 1) * (
+            start_lat + sync_lat
+        )
+        lat_2 = (comm_2 / inter_bw / bw_urate) * 1e6 + (num_groups - 1) * (
+            start_lat + sync_lat + switch_latency + cable_latency
+        )
+
+        latency_us = max(lat_1, max(lat_2, comm_3))
+        comm_size = comm_1 * num_groups + comm_2 + comm_3 * num_groups
+        return latency_us, comm_size
+
+    comm_size = float((tp - 1) * comm_bytes)
+    latency_us = (comm_size / intra_bw / bw_urate) * 1e6 + (tp - 1) * (
+        start_lat + sync_lat
+    )
+    return latency_us, comm_size
+
+
+@numba.jit(nopython=True, cache=True)
+def _reducescatter_numba(
+    tp: int,
+    comm_bytes: float,
+    intra_bw: float,
+    inter_bw: float,
+    bw_urate: float,
+    start_lat: float,
+    sync_lat: float,
+    switch_latency: float,
+    cable_latency: float,
+) -> Tuple[float, float]:
+    """ReduceScatter 通信延迟和通信量计算（Numba JIT）"""
+    if tp in (8, 16, 32):
+        group_size = _hierarchical_group_size_numba(tp)
+        num_groups = tp // group_size
+
+        comm_1 = (group_size - 1) / group_size * comm_bytes
+        comm_2 = (num_groups - 1) / num_groups * comm_bytes
+        comm_3 = 0.0
+
+        lat_1 = (comm_1 / intra_bw / bw_urate) * 1e6 + (group_size - 1) * (
+            start_lat + sync_lat
+        )
+        lat_2 = (comm_2 / inter_bw / bw_urate) * 1e6 + (num_groups - 1) * (
+            start_lat + sync_lat + switch_latency + cable_latency
+        )
+
+        latency_us = max(lat_1, max(lat_2, comm_3))
+        comm_size = comm_1 * num_groups + comm_2 + comm_3 * num_groups
+        return latency_us, comm_size
+
+    comm_size = (tp - 1) / max(1, tp) * comm_bytes
+    latency_us = (comm_size / intra_bw / bw_urate) * 1e6 + (tp - 1) * (
+        start_lat + sync_lat
+    )
+    return latency_us, comm_size
+
+
+# ============== 数据类 ==============
 
 
 @dataclass
@@ -88,84 +224,46 @@ class CommProtocolCostModel:
             + 2 * self.params.d2d_lat
         )
 
-    def _hierarchical_group_size(self, tp: int) -> int:
-        if tp == 16:
-            return 2
-        return 4
+    @property
+    def dispatch_start_lat(self) -> float:
+        """dispatch/combine 启动延迟（含交换机/线缆延迟，对齐 CHIPMathica）"""
+        return (
+            self.start_lat
+            + 2 * self.params.switch_latency
+            + 2 * self.params.cable_latency
+        )
 
     def allreduce(self, tp: int, comm_bytes: int, comm_protocol: int) -> tuple[float, float]:
-        if tp in {8, 16, 32}:
-            group_size = self._hierarchical_group_size(tp)
-            num_groups = tp // group_size
-            comm_1 = 2 * (group_size - 1) / group_size * comm_bytes
-            comm_2 = 2 * (num_groups - 1) / num_groups * comm_bytes
-            comm_3 = comm_bytes
-            lat_1 = (comm_1 / self.arch.intra_bw / self.params.bw_urate) * 1e6 + (
-                group_size - 1
-            ) * (self.start_lat + self.params.sync_lat)
-            lat_2 = (comm_2 / self.arch.inter_bw / self.params.bw_urate) * 1e6 + (
-                num_groups - 1
-            ) * (self.start_lat + self.params.sync_lat + self.params.switch_latency + self.params.cable_latency)
-            lat_3 = (comm_3 / self.arch.intra_bw / self.params.bw_urate) * 1e6 + (
-                group_size - 1
-            ) * (self.start_lat + self.params.sync_lat)
-            latency_us = max(lat_1, lat_2, lat_3)
-            comm_size = comm_1 * num_groups + comm_2 + comm_3 * num_groups
-            return latency_us, comm_size
-
-        comm_size = 2 * (tp - 1) / max(1, tp) * comm_bytes
-        latency_us = (comm_size / self.arch.intra_bw / self.params.bw_urate) * 1e6 + (
-            tp - 1
-        ) * (self.start_lat + self.params.sync_lat)
-        return latency_us, comm_size
+        return _allreduce_numba(
+            tp=tp, comm_bytes=float(comm_bytes),
+            intra_bw=self.arch.intra_bw, inter_bw=self.arch.inter_bw,
+            bw_urate=self.params.bw_urate, start_lat=self.start_lat,
+            sync_lat=self.params.sync_lat,
+            switch_latency=self.params.switch_latency,
+            cable_latency=self.params.cable_latency,
+        )
 
     def allgather(self, tp: int, comm_bytes: int, comm_protocol: int) -> tuple[float, float]:
-        if tp in {8, 16, 32}:
-            group_size = self._hierarchical_group_size(tp)
-            num_groups = tp // group_size
-            comm_1 = (group_size - 1) * comm_bytes
-            comm_2 = (num_groups - 1) * comm_bytes
-            comm_3 = 0.0
-            lat_1 = (comm_1 / self.arch.intra_bw / self.params.bw_urate) * 1e6 + (
-                group_size - 1
-            ) * (self.start_lat + self.params.sync_lat)
-            lat_2 = (comm_2 / self.arch.inter_bw / self.params.bw_urate) * 1e6 + (
-                num_groups - 1
-            ) * (self.start_lat + self.params.sync_lat + self.params.switch_latency + self.params.cable_latency)
-            latency_us = max(lat_1, lat_2, comm_3)
-            comm_size = comm_1 * num_groups + comm_2 + comm_3 * num_groups
-            return latency_us, comm_size
-
-        comm_size = (tp - 1) * comm_bytes
-        latency_us = (comm_size / self.arch.intra_bw / self.params.bw_urate) * 1e6 + (
-            tp - 1
-        ) * (self.start_lat + self.params.sync_lat)
-        return latency_us, comm_size
+        return _allgather_numba(
+            tp=tp, comm_bytes=float(comm_bytes),
+            intra_bw=self.arch.intra_bw, inter_bw=self.arch.inter_bw,
+            bw_urate=self.params.bw_urate, start_lat=self.start_lat,
+            sync_lat=self.params.sync_lat,
+            switch_latency=self.params.switch_latency,
+            cable_latency=self.params.cable_latency,
+        )
 
     def reducescatter(
         self, tp: int, comm_bytes: int, comm_protocol: int
     ) -> tuple[float, float]:
-        if tp in {8, 16, 32}:
-            group_size = self._hierarchical_group_size(tp)
-            num_groups = tp // group_size
-            comm_1 = (group_size - 1) / group_size * comm_bytes
-            comm_2 = (num_groups - 1) / num_groups * comm_bytes
-            comm_3 = 0.0
-            lat_1 = (comm_1 / self.arch.intra_bw / self.params.bw_urate) * 1e6 + (
-                group_size - 1
-            ) * (self.start_lat + self.params.sync_lat)
-            lat_2 = (comm_2 / self.arch.inter_bw / self.params.bw_urate) * 1e6 + (
-                num_groups - 1
-            ) * (self.start_lat + self.params.sync_lat + self.params.switch_latency + self.params.cable_latency)
-            latency_us = max(lat_1, lat_2, comm_3)
-            comm_size = comm_1 * num_groups + comm_2 + comm_3 * num_groups
-            return latency_us, comm_size
-
-        comm_size = (tp - 1) / max(1, tp) * comm_bytes
-        latency_us = (comm_size / self.arch.intra_bw / self.params.bw_urate) * 1e6 + (
-            tp - 1
-        ) * (self.start_lat + self.params.sync_lat)
-        return latency_us, comm_size
+        return _reducescatter_numba(
+            tp=tp, comm_bytes=float(comm_bytes),
+            intra_bw=self.arch.intra_bw, inter_bw=self.arch.inter_bw,
+            bw_urate=self.params.bw_urate, start_lat=self.start_lat,
+            sync_lat=self.params.sync_lat,
+            switch_latency=self.params.switch_latency,
+            cable_latency=self.params.cable_latency,
+        )
 
     def dispatch(
         self,
@@ -178,7 +276,7 @@ class CommProtocolCostModel:
     ) -> tuple[float, float]:
         t_us = (
             (comm_bytes / self.arch.inter_bw / self.params.bw_urate) * 1e6
-            + self.start_lat
+            + self.dispatch_start_lat
             + self.params.cpu_fetch_delay
         )
 
@@ -197,7 +295,7 @@ class CommProtocolCostModel:
     ) -> tuple[float, float]:
         t_us = (
             (comm_bytes / self.arch.inter_bw / self.params.bw_urate) * 1e6
-            + self.start_lat
+            + self.dispatch_start_lat
             + self.params.cpu_fetch_delay
         )
 

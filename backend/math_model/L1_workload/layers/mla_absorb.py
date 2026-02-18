@@ -17,6 +17,7 @@ from math_model.L1_workload.layers.utils import (
     matmul_flops,
 )
 from math_model.L1_workload.operators.compute.matmul import MatMulOp
+from math_model.L1_workload.operators.compute.fa2 import FA2Op
 from math_model.L1_workload.tensor import TensorDesc
 
 if TYPE_CHECKING:
@@ -252,19 +253,17 @@ class MLAAbsorbLayer(LayerBase):
             )
         )
 
-        # 6. Attention score: [B*heads, S, q_dim] @ [B*heads, q_dim, K]
+        # 6. Fused FA2 attention: QK^T + softmax + PV
         ops.append(
-            self._matmul_op(
-                f"{self.name}_attn_score",
-                {"G": batch * heads, "M": seq_len, "K": q_dim, "N": kv_seq_len},
-            )
-        )
-
-        # 7. Attention output: [B*heads, S, K] @ [B*heads, K, kv_rank]
-        ops.append(
-            self._matmul_op(
-                f"{self.name}_attn_out",
-                {"G": batch * heads, "M": seq_len, "K": kv_seq_len, "N": kv_lora_rank},
+            self._fa2_op(
+                f"{self.name}_attn",
+                {
+                    "B": batch * heads,
+                    "QS": seq_len,
+                    "KS": kv_seq_len,
+                    "QD": q_dim,
+                    "VD": kv_lora_rank,
+                },
             )
         )
 
@@ -283,17 +282,16 @@ class MLAAbsorbLayer(LayerBase):
     ) -> tuple[list[GraphNode], list[GraphEdge], list[str], list[str]]:
         """构建 MLA-Absorb 的层内 OP 级计算图。"""
         ops = self.get_ops()
-        if len(ops) < 8:
+        if len(ops) < 7:
             return ([], [], [], [])
 
-        q_a_op, q_b_op, kv_a_op, k_comp_op, v_comp_op, score_op, out_op, proj_op = ops
+        q_a_op, q_b_op, kv_a_op, k_comp_op, v_comp_op, attn_op, proj_op = ops
         q_a_id = f"{layer_node_id}::op::{q_a_op.name}"
         q_b_id = f"{layer_node_id}::op::{q_b_op.name}"
         kv_a_id = f"{layer_node_id}::op::{kv_a_op.name}"
         k_comp_id = f"{layer_node_id}::op::{k_comp_op.name}"
         v_comp_id = f"{layer_node_id}::op::{v_comp_op.name}"
-        score_id = f"{layer_node_id}::op::{score_op.name}"
-        out_id = f"{layer_node_id}::op::{out_op.name}"
+        attn_id = f"{layer_node_id}::op::{attn_op.name}"
         proj_id = f"{layer_node_id}::op::{proj_op.name}"
 
         nodes = [
@@ -302,63 +300,53 @@ class MLAAbsorbLayer(LayerBase):
             GraphNode(node_id=kv_a_id, kind=NodeKind.OP, role=NodeRole.COMPUTE, ref=kv_a_op.name),
             GraphNode(node_id=k_comp_id, kind=NodeKind.OP, role=NodeRole.COMPUTE, ref=k_comp_op.name),
             GraphNode(node_id=v_comp_id, kind=NodeKind.OP, role=NodeRole.COMPUTE, ref=v_comp_op.name),
-            GraphNode(node_id=score_id, kind=NodeKind.OP, role=NodeRole.COMPUTE, ref=score_op.name),
-            GraphNode(node_id=out_id, kind=NodeKind.OP, role=NodeRole.COMPUTE, ref=out_op.name),
+            GraphNode(node_id=attn_id, kind=NodeKind.OP, role=NodeRole.COMPUTE, ref=attn_op.name),
             GraphNode(node_id=proj_id, kind=NodeKind.OP, role=NodeRole.COMPUTE, ref=proj_op.name),
         ]
 
         batch = get_batch(self._config)
         seq_len = get_seq_len(self._config)
-        kv_seq_len = get_kv_seq_len(self._config)
         hidden = get_hidden_size(self._config)
         heads = get_num_heads(self._config)
         q_lora_rank = int(self._config.get("q_lora_rank", hidden))
         kv_lora_rank = int(self._config.get("kv_lora_rank", hidden))
-        qk_nope = int(self._config.get("qk_nope_head_dim", hidden // heads))
         qk_rope = int(self._config.get("qk_rope_head_dim", 0))
         v_dim = int(self._config.get("v_head_dim", hidden // heads))
-        q_dim = kv_lora_rank + qk_rope
         tokens = batch * seq_len
 
         q_a_tensor = self._tensor(
             name=f"{q_a_op.name}_out",
-            shape=[tokens, q_lora_rank],  # shape: [tokens, q_rank]
+            shape=[tokens, q_lora_rank],
             producer_id=q_a_op.name,
             consumer_id=q_b_op.name,
         )
         q_b_tensor = self._tensor(
             name=f"{q_b_op.name}_out",
-            shape=[batch * heads, seq_len, q_dim],  # shape: [batch*heads, seq, q_dim]
+            shape=[batch * heads, seq_len, kv_lora_rank + qk_rope],
             producer_id=q_b_op.name,
-            consumer_id=score_op.name,
+            consumer_id=attn_op.name,
         )
         kv_a_tensor = self._tensor(
             name=f"{kv_a_op.name}_out",
-            shape=[tokens, kv_lora_rank + qk_rope],  # shape: [tokens, kv_rank+rope]
+            shape=[tokens, kv_lora_rank + qk_rope],
             producer_id=kv_a_op.name,
         )
         k_comp_tensor = self._tensor(
             name=f"{k_comp_op.name}_out",
-            shape=[batch * heads, kv_seq_len, kv_lora_rank],  # shape: [batch*heads, kv_seq, kv_rank]
+            shape=[batch * heads, seq_len, kv_lora_rank],
             producer_id=k_comp_op.name,
-            consumer_id=score_op.name,
+            consumer_id=attn_op.name,
         )
         v_comp_tensor = self._tensor(
             name=f"{v_comp_op.name}_out",
-            shape=[batch * heads, kv_seq_len, kv_lora_rank],  # shape: [batch*heads, kv_seq, kv_rank]
+            shape=[batch * heads, seq_len, kv_lora_rank],
             producer_id=v_comp_op.name,
-            consumer_id=out_op.name,
+            consumer_id=attn_op.name,
         )
-        score_tensor = self._tensor(
-            name=f"{score_op.name}_out",
-            shape=[batch * heads, seq_len, kv_seq_len],  # shape: [batch*heads, seq, kv_seq]
-            producer_id=score_op.name,
-            consumer_id=out_op.name,
-        )
-        out_tensor = self._tensor(
-            name=f"{out_op.name}_out",
-            shape=[batch * heads, seq_len, kv_lora_rank],  # shape: [batch*heads, seq, kv_rank]
-            producer_id=out_op.name,
+        attn_tensor = self._tensor(
+            name=f"{attn_op.name}_out",
+            shape=[batch * heads, seq_len, kv_lora_rank],
+            producer_id=attn_op.name,
             consumer_id=proj_op.name,
         )
 
@@ -366,12 +354,11 @@ class MLAAbsorbLayer(LayerBase):
             GraphEdge(src=q_a_id, dst=q_b_id, edge_type="data", tensor=q_a_tensor),
             GraphEdge(src=kv_a_id, dst=k_comp_id, edge_type="data", tensor=kv_a_tensor),
             GraphEdge(src=kv_a_id, dst=v_comp_id, edge_type="data", tensor=kv_a_tensor),
-            GraphEdge(src=q_b_id, dst=score_id, edge_type="data", tensor=q_b_tensor),
-            GraphEdge(src=k_comp_id, dst=score_id, edge_type="data", tensor=k_comp_tensor),
-            GraphEdge(src=score_id, dst=out_id, edge_type="data", tensor=score_tensor),
-            GraphEdge(src=v_comp_id, dst=out_id, edge_type="data", tensor=v_comp_tensor),
-            GraphEdge(src=out_id, dst=proj_id, edge_type="data", tensor=out_tensor),
+            GraphEdge(src=q_b_id, dst=attn_id, edge_type="data", tensor=q_b_tensor),
+            GraphEdge(src=k_comp_id, dst=attn_id, edge_type="data", tensor=k_comp_tensor),
+            GraphEdge(src=v_comp_id, dst=attn_id, edge_type="data", tensor=v_comp_tensor),
+            GraphEdge(src=attn_id, dst=proj_id, edge_type="data", tensor=attn_tensor),
         ]
 
-        _ = qk_nope, v_dim
+        _ = v_dim
         return (nodes, edges, [q_a_id, kv_a_id], [proj_id])

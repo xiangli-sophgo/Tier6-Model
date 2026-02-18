@@ -1,0 +1,233 @@
+<mxfile host="app.diagrams.net" modified="2026-02-18" agent="Claude" version="24.7.17">
+  <diagram id="mapping" name="TPUPerf vs Math Model Module Mapping">
+    <mxGraphModel dx="1800" dy="1400" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1600" pageHeight="1600" math="0" shadow="0">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+
+        <!-- Title -->
+        <mxCell id="title" value="TPUPerf Modules vs Tier6+Model (math_model) Module Mapping" style="text;html=1;align=center;verticalAlign=middle;fontSize=18;fontStyle=1;fontColor=#333333;" vertex="1" parent="1">
+          <mxGeometry x="200" y="15" width="1200" height="35" as="geometry"/>
+        </mxCell>
+        <mxCell id="subtitle" value="Left: TPUPerf (C++ SystemC, cycle-accurate) | Right: math_model (Python, algebraic) | Center: Shared concepts" style="text;html=1;align=center;verticalAlign=middle;fontSize=10;fontColor=#666666;" vertex="1" parent="1">
+          <mxGeometry x="200" y="48" width="1200" height="22" as="geometry"/>
+        </mxCell>
+
+        <!-- ===== LEFT COLUMN: TPUPerf ===== -->
+        <mxCell id="left_header" value="TPUPerf (Instruction-Level)" style="swimlane;html=1;startSize=30;fillColor=#E3F2FD;strokeColor=#1565C0;fontStyle=1;fontSize=13;rounded=1;" vertex="1" parent="1">
+          <mxGeometry x="40" y="90" width="500" height="1480" as="geometry"/>
+        </mxCell>
+
+        <!-- Input -->
+        <mxCell id="tp_input_label" value="INPUT" style="text;html=1;align=left;verticalAlign=middle;fontSize=11;fontStyle=1;fontColor=#1565C0;" vertex="1" parent="left_header">
+          <mxGeometry x="10" y="40" width="100" height="20" as="geometry"/>
+        </mxCell>
+        <mxCell id="tp_input" value="&lt;b&gt;Binary Instructions&lt;/b&gt;&lt;br&gt;&lt;font style='font-size:9px;color:#555'&gt;.BD (TIU) + .GDMA (DMA)&lt;br&gt;Per-core: .BD.0 ~ .BD.63&lt;br&gt;Pre-compiled by TPU-MLIR&lt;br&gt;Already tiled + addressed&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#BBDEFB;strokeColor=#1565C0;fontSize=10;" vertex="1" parent="left_header">
+          <mxGeometry x="20" y="65" width="200" height="85" as="geometry"/>
+        </mxCell>
+        <mxCell id="tp_json" value="&lt;b&gt;JSON Config&lt;/b&gt;&lt;br&gt;&lt;font style='font-size:9px;color:#555'&gt;sg2262_template.json&lt;br&gt;Chip micro-arch params&lt;br&gt;Freq, latency, bus width&lt;br&gt;Bank config, outstanding&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#BBDEFB;strokeColor=#1565C0;fontSize=10;" vertex="1" parent="left_header">
+          <mxGeometry x="250" y="65" width="200" height="85" as="geometry"/>
+        </mxCell>
+
+        <!-- Parsing -->
+        <mxCell id="tp_parse_label" value="PARSING" style="text;html=1;align=left;verticalAlign=middle;fontSize=11;fontStyle=1;fontColor=#1565C0;" vertex="1" parent="left_header">
+          <mxGeometry x="10" y="160" width="100" height="20" as="geometry"/>
+        </mxCell>
+        <mxCell id="tp_parser" value="&lt;b&gt;Parser (Singleton)&lt;/b&gt;&lt;br&gt;&lt;font style='font-size:9px;color:#555'&gt;framework/parser.h&lt;br&gt;load_tiu_cmd() - binary -&gt; TpuCmd structs&lt;br&gt;load_gdma_cmd() - binary -&gt; GdmaCmd structs&lt;br&gt;load_param() - JSON -&gt; sc_module attrs&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#BBDEFB;strokeColor=#1565C0;fontSize=10;" vertex="1" parent="left_header">
+          <mxGeometry x="20" y="185" width="440" height="70" as="geometry"/>
+        </mxCell>
+
+        <!-- Compute -->
+        <mxCell id="tp_compute_label" value="COMPUTE ENGINE" style="text;html=1;align=left;verticalAlign=middle;fontSize=11;fontStyle=1;fontColor=#1565C0;" vertex="1" parent="left_header">
+          <mxGeometry x="10" y="270" width="150" height="20" as="geometry"/>
+        </mxCell>
+        <mxCell id="tp_tiu" value="&lt;b&gt;TIU (c_model/tpu/tiu.cc)&lt;/b&gt;&lt;br&gt;&lt;font style='font-size:9px;color:#555'&gt;State machine: Init/Compute/Finish&lt;br&gt;cal_cycle(): per-instr-type cycle calc&lt;br&gt;CONV/MM2.nn/MM2.nt/MM2.tt/SFU/AR...&lt;br&gt;bank_conflict_checker: LMEM bank walk&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#BBDEFB;strokeColor=#1565C0;fontSize=10;" vertex="1" parent="left_header">
+          <mxGeometry x="20" y="295" width="220" height="90" as="geometry"/>
+        </mxCell>
+        <mxCell id="tp_tiu_ip" value="&lt;b&gt;TIU IP (ip/tiu_module/)&lt;/b&gt;&lt;br&gt;&lt;font style='font-size:9px;color:#555'&gt;dpc_gen_spec/ (16 types)&lt;br&gt;dpc_issue_spec/ (16 types)&lt;br&gt;dpc_arb, compute_unit&lt;br&gt;Full micro-arch pipeline&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#BBDEFB;strokeColor=#1565C0;fontSize=10;" vertex="1" parent="left_header">
+          <mxGeometry x="260" y="295" width="200" height="90" as="geometry"/>
+        </mxCell>
+
+        <!-- DMA -->
+        <mxCell id="tp_dma_label" value="DATA MOVEMENT" style="text;html=1;align=left;verticalAlign=middle;fontSize=11;fontStyle=1;fontColor=#1565C0;" vertex="1" parent="left_header">
+          <mxGeometry x="10" y="400" width="150" height="20" as="geometry"/>
+        </mxCell>
+        <mxCell id="tp_dma" value="&lt;b&gt;TDMA / GDMA (c_model/sg2260/tdma.cc)&lt;/b&gt;&lt;br&gt;&lt;font style='font-size:9px;color:#555'&gt;Multi-thread SC pipeline:&lt;br&gt;rd_cmd_segmentation_th (4D -&gt; 1D)&lt;br&gt;wr_cmd_segmentation_th&lt;br&gt;cmd_collect_th (response track)&lt;br&gt;Outstanding semaphore: rd=512, wr=512&lt;br&gt;7 cmd types: TENSOR/MATRIX/CW_TRANS/...&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#BBDEFB;strokeColor=#1565C0;fontSize=10;" vertex="1" parent="left_header">
+          <mxGeometry x="20" y="425" width="440" height="100" as="geometry"/>
+        </mxCell>
+
+        <!-- Memory -->
+        <mxCell id="tp_mem_label" value="MEMORY SUBSYSTEM" style="text;html=1;align=left;verticalAlign=middle;fontSize=11;fontStyle=1;fontColor=#1565C0;" vertex="1" parent="left_header">
+          <mxGeometry x="10" y="540" width="150" height="20" as="geometry"/>
+        </mxCell>
+        <mxCell id="tp_lmem" value="&lt;b&gt;LMEM (memory/lmem.cpp)&lt;/b&gt;&lt;br&gt;&lt;font style='font-size:9px;color:#555'&gt;2MB, 16 banks, 29ns latency&lt;br&gt;Per-bank conflict tracking&lt;br&gt;EU_WIDTH: 512-bit&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#BBDEFB;strokeColor=#1565C0;fontSize=10;" vertex="1" parent="left_header">
+          <mxGeometry x="20" y="565" width="200" height="75" as="geometry"/>
+        </mxCell>
+        <mxCell id="tp_ddr" value="&lt;b&gt;DDR (memory/ddr_wrapper.cpp)&lt;/b&gt;&lt;br&gt;&lt;font style='font-size:9px;color:#555'&gt;150ns, PHY 8GHz, 128-bit&lt;br&gt;addr_bubble_calculate&lt;br&gt;Bank group/row conflict&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#BBDEFB;strokeColor=#1565C0;fontSize=10;" vertex="1" parent="left_header">
+          <mxGeometry x="250" y="565" width="210" height="75" as="geometry"/>
+        </mxCell>
+        <mxCell id="tp_cache" value="&lt;b&gt;Cache (memory/gs_cache.cpp)&lt;/b&gt;&lt;br&gt;&lt;font style='font-size:9px;color:#555'&gt;4-way, 128B line, LRU&lt;br&gt;Hit 3 cycles, miss merge&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#BBDEFB;strokeColor=#1565C0;fontSize=10;" vertex="1" parent="left_header">
+          <mxGeometry x="20" y="650" width="200" height="60" as="geometry"/>
+        </mxCell>
+        <mxCell id="tp_are" value="&lt;b&gt;ARE (memory/are.cpp)&lt;/b&gt;&lt;br&gt;&lt;font style='font-size:9px;color:#555'&gt;Address routing&lt;br&gt;3-stage pipeline&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#BBDEFB;strokeColor=#1565C0;fontSize=10;" vertex="1" parent="left_header">
+          <mxGeometry x="250" y="650" width="170" height="60" as="geometry"/>
+        </mxCell>
+
+        <!-- Interconnect -->
+        <mxCell id="tp_ic_label" value="INTERCONNECT" style="text;html=1;align=left;verticalAlign=middle;fontSize=11;fontStyle=1;fontColor=#1565C0;" vertex="1" parent="left_header">
+          <mxGeometry x="10" y="725" width="150" height="20" as="geometry"/>
+        </mxCell>
+        <mxCell id="tp_bus" value="&lt;b&gt;SimpleBus (fabric/)&lt;/b&gt;&lt;br&gt;&lt;font style='font-size:9px;color:#555'&gt;128x64, TLM-2.0&lt;br&gt;Distance-based latency&lt;br&gt;45 cycles * Manhattan&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#BBDEFB;strokeColor=#1565C0;fontSize=10;" vertex="1" parent="left_header">
+          <mxGeometry x="20" y="750" width="200" height="70" as="geometry"/>
+        </mxCell>
+        <mxCell id="tp_cdma" value="&lt;b&gt;CDMA + C2C (sg2260/)&lt;/b&gt;&lt;br&gt;&lt;font style='font-size:9px;color:#555'&gt;Cross-chip DMA&lt;br&gt;SEND/RECV/ALLREDUCE&lt;br&gt;Credit flow, 11.2 GB/s&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#BBDEFB;strokeColor=#1565C0;fontSize=10;" vertex="1" parent="left_header">
+          <mxGeometry x="250" y="750" width="200" height="70" as="geometry"/>
+        </mxCell>
+
+        <!-- Sync -->
+        <mxCell id="tp_sync_label" value="SYNCHRONIZATION" style="text;html=1;align=left;verticalAlign=middle;fontSize=11;fontStyle=1;fontColor=#1565C0;" vertex="1" parent="left_header">
+          <mxGeometry x="10" y="835" width="150" height="20" as="geometry"/>
+        </mxCell>
+        <mxCell id="tp_sync" value="&lt;b&gt;SystemC Signals&lt;/b&gt;&lt;br&gt;&lt;font style='font-size:9px;color:#555'&gt;sc_signal&lt;unsigned int&gt; tiu_sync_id, tdma_sync_id&lt;br&gt;cmd_id / cmd_id_dep dependency model&lt;br&gt;sc_signal&lt;bool&gt; idle (per engine)&lt;br&gt;Delta cycle semantics for signal update&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#BBDEFB;strokeColor=#1565C0;fontSize=10;" vertex="1" parent="left_header">
+          <mxGeometry x="20" y="860" width="440" height="70" as="geometry"/>
+        </mxCell>
+
+        <!-- Output -->
+        <mxCell id="tp_out_label" value="OUTPUT" style="text;html=1;align=left;verticalAlign=middle;fontSize=11;fontStyle=1;fontColor=#1565C0;" vertex="1" parent="left_header">
+          <mxGeometry x="10" y="945" width="100" height="20" as="geometry"/>
+        </mxCell>
+        <mxCell id="tp_output" value="&lt;b&gt;Profiler + PerfAI&lt;/b&gt;&lt;br&gt;&lt;font style='font-size:9px;color:#555'&gt;Per-instruction: start/end cycle, stall, ops&lt;br&gt;Per-layer: timing, parallelism, bandwidth&lt;br&gt;Output: CSV + Excel + Web + simTotalCycle&lt;br&gt;Granularity: instruction-level (thousands of events)&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#BBDEFB;strokeColor=#1565C0;fontSize=10;" vertex="1" parent="left_header">
+          <mxGeometry x="20" y="970" width="440" height="80" as="geometry"/>
+        </mxCell>
+
+        <!-- Key diff -->
+        <mxCell id="tp_summary" value="&lt;font style='font-size:10px;color:#1565C0'&gt;&lt;b&gt;Characteristics&lt;/b&gt;&lt;br&gt;- Cycle-accurate (instruction granularity)&lt;br&gt;- Event-driven (SystemC kernel)&lt;br&gt;- Stateful (bank state, outstanding, sync_id)&lt;br&gt;- O(Instructions * Cores) complexity&lt;br&gt;- Requires pre-compiled binary instructions&lt;br&gt;- Run time: minutes to hours&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E3F2FD;strokeColor=#1565C0;fontSize=10;align=left;spacingLeft=10;" vertex="1" parent="left_header">
+          <mxGeometry x="20" y="1080" width="440" height="120" as="geometry"/>
+        </mxCell>
+
+        <!-- ===== RIGHT COLUMN: math_model ===== -->
+        <mxCell id="right_header" value="math_model (Algebraic)" style="swimlane;html=1;startSize=30;fillColor=#FFF3E0;strokeColor=#E65100;fontStyle=1;fontSize=13;rounded=1;" vertex="1" parent="1">
+          <mxGeometry x="1060" y="90" width="500" height="1480" as="geometry"/>
+        </mxCell>
+
+        <!-- Input -->
+        <mxCell id="mm_input_label" value="INPUT" style="text;html=1;align=left;verticalAlign=middle;fontSize=11;fontStyle=1;fontColor=#E65100;" vertex="1" parent="right_header">
+          <mxGeometry x="10" y="40" width="100" height="20" as="geometry"/>
+        </mxCell>
+        <mxCell id="mm_input" value="&lt;b&gt;Model + Chip + Topology YAML&lt;/b&gt;&lt;br&gt;&lt;font style='font-size:9px;color:#555'&gt;DeepSeek-V3.yaml (model)&lt;br&gt;SG2262.yaml (chip spec)&lt;br&gt;P1-R1-B4-C32.yaml (topology)&lt;br&gt;+ Runtime params (batch, seq_len)&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFE0B2;strokeColor=#E65100;fontSize=10;" vertex="1" parent="right_header">
+          <mxGeometry x="20" y="65" width="210" height="85" as="geometry"/>
+        </mxCell>
+        <mxCell id="mm_evalcfg" value="&lt;b&gt;EvalConfig&lt;/b&gt;&lt;br&gt;&lt;font style='font-size:9px;color:#555'&gt;L0_entry/eval_config.py&lt;br&gt;Unified config dataclass&lt;br&gt;Model + chip + deployment&lt;br&gt;+ parallelism strategy&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFE0B2;strokeColor=#E65100;fontSize=10;" vertex="1" parent="right_header">
+          <mxGeometry x="260" y="65" width="200" height="85" as="geometry"/>
+        </mxCell>
+
+        <!-- Workload IR -->
+        <mxCell id="mm_ir_label" value="WORKLOAD IR (L1)" style="text;html=1;align=left;verticalAlign=middle;fontSize=11;fontStyle=1;fontColor=#E65100;" vertex="1" parent="right_header">
+          <mxGeometry x="10" y="160" width="150" height="20" as="geometry"/>
+        </mxCell>
+        <mxCell id="mm_ir" value="&lt;b&gt;WorkloadIR / Model (L1_workload/)&lt;/b&gt;&lt;br&gt;&lt;font style='font-size:9px;color:#555'&gt;ir.py: Model -&gt; layers -&gt; operators&lt;br&gt;models/deepseek.py: build layer graph&lt;br&gt;layers/mla.py, ffn.py: layer definitions&lt;br&gt;operators/: matmul, softmax, etc.&lt;br&gt;Output: operator list with shapes (M/K/N)&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFE0B2;strokeColor=#E65100;fontSize=10;" vertex="1" parent="right_header">
+          <mxGeometry x="20" y="185" width="440" height="85" as="geometry"/>
+        </mxCell>
+
+        <!-- Compute (Tiling) -->
+        <mxCell id="mm_compute_label" value="TILING + SCHEDULING (L3)" style="text;html=1;align=left;verticalAlign=middle;fontSize=11;fontStyle=1;fontColor=#E65100;" vertex="1" parent="right_header">
+          <mxGeometry x="10" y="285" width="200" height="20" as="geometry"/>
+        </mxCell>
+        <mxCell id="mm_tiling" value="&lt;b&gt;TilingPlanner (L3_mapping/tiling/)&lt;/b&gt;&lt;br&gt;&lt;font style='font-size:9px;color:#555'&gt;planner.py: enumerate tile_m/k/n combos&lt;br&gt;evaluators.py: score each tile plan&lt;br&gt;Output: TilePlan {tile_m/k/n, traffic, t_compute}&lt;br&gt;&lt;br&gt;NO instruction generation&lt;br&gt;NO address layout&lt;br&gt;Statistical summary only&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFE0B2;strokeColor=#E65100;fontSize=10;" vertex="1" parent="right_header">
+          <mxGeometry x="20" y="310" width="440" height="100" as="geometry"/>
+        </mxCell>
+
+        <!-- Parallelism -->
+        <mxCell id="mm_para_label" value="PARALLELISM (L3)" style="text;html=1;align=left;verticalAlign=middle;fontSize=11;fontStyle=1;fontColor=#E65100;" vertex="1" parent="right_header">
+          <mxGeometry x="10" y="425" width="150" height="20" as="geometry"/>
+        </mxCell>
+        <mxCell id="mm_para" value="&lt;b&gt;ParallelismPlanner (L3_mapping/parallelism/)&lt;/b&gt;&lt;br&gt;&lt;font style='font-size:9px;color:#555'&gt;planner.py: TP/PP/EP/DP assignment&lt;br&gt;pattern_rules.py: assignment order&lt;br&gt;protocols.py: DistributedModel, CommType&lt;br&gt;Output: per-chip op assignment + comm plan&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFE0B2;strokeColor=#E65100;fontSize=10;" vertex="1" parent="right_header">
+          <mxGeometry x="20" y="450" width="440" height="80" as="geometry"/>
+        </mxCell>
+
+        <!-- Hardware (L2) -->
+        <mxCell id="mm_hw_label" value="HARDWARE SPEC (L2)" style="text;html=1;align=left;verticalAlign=middle;fontSize=11;fontStyle=1;fontColor=#E65100;" vertex="1" parent="right_header">
+          <mxGeometry x="10" y="545" width="150" height="20" as="geometry"/>
+        </mxCell>
+        <mxCell id="mm_chip" value="&lt;b&gt;ChipSpec (L2_arch/chip.py)&lt;/b&gt;&lt;br&gt;&lt;font style='font-size:9px;color:#555'&gt;TFLOPS (fp8/bf16), cores&lt;br&gt;cube_m/k/n, sram_size_kb&lt;br&gt;lane_num, align_bytes&lt;br&gt;compute_dma_overlap_rate&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFE0B2;strokeColor=#E65100;fontSize=10;" vertex="1" parent="right_header">
+          <mxGeometry x="20" y="570" width="200" height="80" as="geometry"/>
+        </mxCell>
+        <mxCell id="mm_mem" value="&lt;b&gt;MemoryHierarchy (L2_arch/memory.py)&lt;/b&gt;&lt;br&gt;&lt;font style='font-size:9px;color:#555'&gt;gmem: capacity + bandwidth + utilization&lt;br&gt;lmem: capacity + utilization&lt;br&gt;Two-level: gmem (HBM) + lmem (SRAM)&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFE0B2;strokeColor=#E65100;fontSize=10;" vertex="1" parent="right_header">
+          <mxGeometry x="250" y="570" width="210" height="80" as="geometry"/>
+        </mxCell>
+
+        <!-- Evaluation (L4) -->
+        <mxCell id="mm_eval_label" value="EVALUATION (L4)" style="text;html=1;align=left;verticalAlign=middle;fontSize=11;fontStyle=1;fontColor=#E65100;" vertex="1" parent="right_header">
+          <mxGeometry x="10" y="670" width="150" height="20" as="geometry"/>
+        </mxCell>
+        <mxCell id="mm_eval" value="&lt;b&gt;Evaluators (L4_evaluation/evaluators/)&lt;/b&gt;&lt;br&gt;&lt;font style='font-size:9px;color:#555'&gt;precise.py: t_compute = ops / (tflops * util)&lt;br&gt;                      t_mem = bytes / (bw * util)&lt;br&gt;                      t_total = max(t_compute, t_mem)&lt;br&gt;rmsnorm_eval.py: RMSNorm specific&lt;br&gt;softmax_eval.py: Softmax specific&lt;br&gt;NO cycle-level simulation&lt;br&gt;Pure formula-based roofline model&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFE0B2;strokeColor=#E65100;fontSize=10;" vertex="1" parent="right_header">
+          <mxGeometry x="20" y="695" width="440" height="115" as="geometry"/>
+        </mxCell>
+
+        <!-- Comm -->
+        <mxCell id="mm_comm_label" value="COMMUNICATION" style="text;html=1;align=left;verticalAlign=middle;fontSize=11;fontStyle=1;fontColor=#E65100;" vertex="1" parent="right_header">
+          <mxGeometry x="10" y="825" width="150" height="20" as="geometry"/>
+        </mxCell>
+        <mxCell id="mm_comm" value="&lt;b&gt;CommProtocol (L4_evaluation/cost_models/)&lt;/b&gt;&lt;br&gt;&lt;font style='font-size:9px;color:#555'&gt;comm_protocol.py: alpha-beta model&lt;br&gt;AllReduce: ring / double_binary_tree / ...&lt;br&gt;AllToAll: pairwise / ring / bruck&lt;br&gt;t_comm = alpha + beta * msg_size&lt;br&gt;Multi-hop: cumulative latency&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFE0B2;strokeColor=#E65100;fontSize=10;" vertex="1" parent="right_header">
+          <mxGeometry x="20" y="850" width="440" height="85" as="geometry"/>
+        </mxCell>
+
+        <!-- Output -->
+        <mxCell id="mm_out_label" value="OUTPUT" style="text;html=1;align=left;verticalAlign=middle;fontSize=11;fontStyle=1;fontColor=#E65100;" vertex="1" parent="right_header">
+          <mxGeometry x="10" y="950" width="100" height="20" as="geometry"/>
+        </mxCell>
+        <mxCell id="mm_output" value="&lt;b&gt;EngineResult + L5 Reporting&lt;/b&gt;&lt;br&gt;&lt;font style='font-size:9px;color:#555'&gt;Per-op: t_compute, t_comm, bottleneck_tag&lt;br&gt;Aggregates: TTFT, TPOT, TPS, MFU, MBU&lt;br&gt;Cost analysis, Gantt chart, memory breakdown&lt;br&gt;Granularity: operator-level (tens of events)&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFE0B2;strokeColor=#E65100;fontSize=10;" vertex="1" parent="right_header">
+          <mxGeometry x="20" y="975" width="440" height="80" as="geometry"/>
+        </mxCell>
+
+        <!-- Key diff -->
+        <mxCell id="mm_summary" value="&lt;font style='font-size:10px;color:#E65100'&gt;&lt;b&gt;Characteristics&lt;/b&gt;&lt;br&gt;- Algebraic (formula-based roofline)&lt;br&gt;- Stateless (no simulation state)&lt;br&gt;- O(Operators) complexity&lt;br&gt;- Builds workload from model params&lt;br&gt;- Auto parallelism planning&lt;br&gt;- Run time: milliseconds&lt;br&gt;- Precision: ~0.67% vs hardware&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF3E0;strokeColor=#E65100;fontSize=10;align=left;spacingLeft=10;" vertex="1" parent="right_header">
+          <mxGeometry x="20" y="1080" width="440" height="130" as="geometry"/>
+        </mxCell>
+
+        <!-- ===== CENTER: Mapping Lines ===== -->
+        <mxCell id="center_label" value="Concept Mapping" style="text;html=1;align=center;verticalAlign=middle;fontSize=13;fontStyle=1;fontColor=#666;" vertex="1" parent="1">
+          <mxGeometry x="580" y="85" width="440" height="25" as="geometry"/>
+        </mxCell>
+
+        <!-- Mapping boxes -->
+        <mxCell id="map_input" value="&lt;b&gt;No direct equivalent&lt;/b&gt;&lt;br&gt;&lt;font style='font-size:8px;color:#555'&gt;TPUPerf: pre-compiled binary&lt;br&gt;math_model: builds from model YAML&lt;br&gt;&lt;b style='color:#C62828'&gt;Gap: G5 needs instruction generation&lt;br&gt;OR binary parser&lt;/b&gt;&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFCDD2;strokeColor=#C62828;fontSize=9;" vertex="1" parent="1">
+          <mxGeometry x="580" y="155" width="440" height="70" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="map_parse" value="&lt;b&gt;Parser ~= L0 + L1&lt;/b&gt;&lt;br&gt;&lt;font style='font-size:8px;color:#555'&gt;TPUPerf Parser: binary -&gt; cmd structs&lt;br&gt;math_model L0+L1: YAML -&gt; WorkloadIR -&gt; op list&lt;br&gt;&lt;b style='color:#1565C0'&gt;Both produce per-op data structures&lt;/b&gt;&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E8F5E9;strokeColor=#2E7D32;fontSize=9;" vertex="1" parent="1">
+          <mxGeometry x="580" y="255" width="440" height="60" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="map_compute" value="&lt;b&gt;TIU cal_cycle() ~= L4 evaluators&lt;/b&gt;&lt;br&gt;&lt;font style='font-size:8px;color:#555'&gt;TPUPerf: per-instruction cycle calc (exact)&lt;br&gt;math_model: per-operator formula (approximate)&lt;br&gt;TPUPerf has bank conflict, init cycles, micro-arch&lt;br&gt;math_model uses t = max(ops/tflops, bytes/bw)&lt;br&gt;&lt;b style='color:#C62828'&gt;Core precision gap (1-2 orders of magnitude)&lt;/b&gt;&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF9C4;strokeColor=#F57F17;fontSize=9;" vertex="1" parent="1">
+          <mxGeometry x="580" y="355" width="440" height="85" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="map_mem" value="&lt;b&gt;LMEM/DDR ~= L2 MemoryHierarchy&lt;/b&gt;&lt;br&gt;&lt;font style='font-size:8px;color:#555'&gt;TPUPerf: bank-level simulation, latency model&lt;br&gt;math_model: aggregate bandwidth * utilization&lt;br&gt;TPUPerf has: cache, ARE, outstanding tracking&lt;br&gt;math_model has: two-level capacity/BW model&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF9C4;strokeColor=#F57F17;fontSize=9;" vertex="1" parent="1">
+          <mxGeometry x="580" y="620" width="440" height="75" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="map_ic" value="&lt;b&gt;Bus/CDMA ~= L3 parallelism + L4 comm&lt;/b&gt;&lt;br&gt;&lt;font style='font-size:8px;color:#555'&gt;TPUPerf: TLM bus fabric, credit flow, distance lat&lt;br&gt;math_model: alpha-beta model, topology graph&lt;br&gt;&lt;b style='color:#1565C0'&gt;Both model AllReduce/P2P/AllToAll&lt;/b&gt;&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E8F5E9;strokeColor=#2E7D32;fontSize=9;" vertex="1" parent="1">
+          <mxGeometry x="580" y="810" width="440" height="65" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="map_output" value="&lt;b&gt;Output: same metrics, different granularity&lt;/b&gt;&lt;br&gt;&lt;font style='font-size:8px;color:#555'&gt;TPUPerf: per-instruction events (1000s)&lt;br&gt;math_model: per-operator metrics (10s)&lt;br&gt;&lt;b style='color:#1565C0'&gt;Both: total cycles, utilization, bandwidth&lt;br&gt;G5 adapter aggregates instructions to operators&lt;/b&gt;&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E8F5E9;strokeColor=#2E7D32;fontSize=9;" vertex="1" parent="1">
+          <mxGeometry x="580" y="1030" width="440" height="70" as="geometry"/>
+        </mxCell>
+
+        <!-- Components TPUPerf has but math_model doesn't -->
+        <mxCell id="gap_box" value="&lt;b&gt;Components TPUPerf has, math_model lacks&lt;/b&gt;&lt;br&gt;&lt;font style='font-size:9px;color:#555'&gt;&lt;br&gt;1. &lt;b&gt;HAU&lt;/b&gt; (Hash Accel Unit) - no equivalent&lt;br&gt;2. &lt;b&gt;IFE&lt;/b&gt; (Instruction Fetch Engine) - no equivalent&lt;br&gt;3. &lt;b&gt;SDMA&lt;/b&gt; (System DMA) - no equivalent&lt;br&gt;4. &lt;b&gt;GsCache&lt;/b&gt; (L2 Cache) - no equivalent&lt;br&gt;5. &lt;b&gt;ARE&lt;/b&gt; (Address Routing) - no equivalent&lt;br&gt;6. &lt;b&gt;Bank Conflict&lt;/b&gt; (LMEM bank-level) - no equivalent&lt;br&gt;7. &lt;b&gt;Outstanding ctrl&lt;/b&gt; (semaphore) - no equivalent&lt;br&gt;8. &lt;b&gt;Sync signals&lt;/b&gt; (cmd_id_dep) - no equivalent&lt;br&gt;&lt;br&gt;math_model compensates with &lt;b&gt;utilization factors&lt;/b&gt;&lt;br&gt;(e.g., sram_utilization=0.45, bw_utilization=0.85)&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FCE4EC;strokeColor=#C62828;fontSize=10;align=left;spacingLeft=10;" vertex="1" parent="1">
+          <mxGeometry x="580" y="1140" width="440" height="220" as="geometry"/>
+        </mxCell>
+
+        <!-- Mapping lines (dashed) -->
+        <mxCell id="ml1" style="rounded=0;html=1;dashed=1;strokeColor=#999;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="tp_input" target="map_input"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="ml1b" style="rounded=0;html=1;dashed=1;strokeColor=#999;exitX=0;exitY=0.5;exitDx=0;exitDy=0;entryX=1;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="mm_input" target="map_input"><mxGeometry relative="1" as="geometry"/></mxCell>
+
+        <mxCell id="ml2" style="rounded=0;html=1;dashed=1;strokeColor=#999;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="tp_parser" target="map_parse"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="ml2b" style="rounded=0;html=1;dashed=1;strokeColor=#999;exitX=0;exitY=0.5;exitDx=0;exitDy=0;entryX=1;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="mm_ir" target="map_parse"><mxGeometry relative="1" as="geometry"/></mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

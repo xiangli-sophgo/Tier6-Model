@@ -150,10 +150,10 @@ class TilingPlanner:
         return plan
 
     def _get_lmem_budget(self) -> int:
-        """获取片内 LMEM 预算（按 sram_utilization * LMEM / core_count）"""
+        """获取片内 LMEM 预算（按 utilization * LMEM / core_count）"""
         try:
             lmem = self.chip.memory_hierarchy.get_level("lmem")
-            utilization = lmem.sram_utilization
+            utilization = lmem.utilization
             per_core = lmem.capacity_bytes / self.chip.core_count if self.chip.core_count else 0
             return int(per_core * utilization)
         except KeyError:

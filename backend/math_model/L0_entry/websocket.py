@@ -99,7 +99,7 @@ class WebSocketManager:
 
         try:
             # 从线程池安全地调度到主事件循环
-            logger.info(f"[WS] Scheduling broadcast to {len(self._subscribers)} subscribers")
+            logger.debug(f"[WS] Scheduling broadcast to {len(self._subscribers)} subscribers")
             asyncio.run_coroutine_threadsafe(
                 self._broadcast_async(message),
                 self._main_loop
@@ -182,7 +182,7 @@ class WebSocketManager:
                 "infeasible_plans": search_stats.get("infeasible_plans", 0),
             }
 
-        logger.info(f"[WS] Broadcasting task update: task_id={task_id}, status={status}, subscribers={self.subscriber_count}")
+        logger.debug(f"[WS] Broadcasting task update: task_id={task_id}, status={status}, subscribers={self.subscriber_count}")
         self.broadcast(message)
 
     def broadcast_experiment_update(

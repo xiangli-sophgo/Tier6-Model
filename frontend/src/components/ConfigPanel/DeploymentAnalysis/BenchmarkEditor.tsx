@@ -40,10 +40,12 @@ import {
   getModelList,
   getModelPreset,
 } from '../../../utils/llmDeployment/presets'
+import { DeleteConfirmButton } from '@/components/common/DeleteConfirmButton'
 import {
   getBenchmarks as apiBenchmarkList,
   getBenchmark as apiBenchmarkDetail,
   createBenchmark as apiCreateBenchmark,
+  deleteBenchmark as apiDeleteBenchmark,
 } from '../../../api/math_model'
 import { ConfigLabel } from './ConfigSelectors'
 import { generateBenchmarkName } from '../../../utils/llmDeployment/benchmarkNaming'
@@ -197,6 +199,27 @@ export const BenchmarkConfigSelector: React.FC<BenchmarkConfigSelectorProps> = (
     }
   }
 
+  // 删除
+  const handleDelete = async () => {
+    if (!presetId) return
+    try {
+      await apiDeleteBenchmark(presetId)
+      const updated = customBenchmarks.filter(b => b.id !== presetId)
+      setCustomBenchmarks(updated)
+      toast.success(`已删除: ${presetId}`)
+      if (updated.length > 0) {
+        setPresetId(updated[0].id)
+        localStorage.setItem(LAST_BENCHMARK_KEY, updated[0].id)
+        onBenchmarkSelect?.(updated[0].id)
+        onModelChange(updated[0].model)
+        onInferenceChange(updated[0].inference)
+        setOriginalConfig({ model: { ...updated[0].model }, inference: { ...updated[0].inference } })
+      } else {
+        setPresetId('')
+      }
+    } catch { toast.error('删除失败') }
+  }
+
   const handleReset = () => {
     const match = customBenchmarks.find(c => c.id === presetId)
     if (match) {
@@ -241,6 +264,7 @@ export const BenchmarkConfigSelector: React.FC<BenchmarkConfigSelectorProps> = (
 
   const dropdownOptions = customBenchmarks.map(c => ({ value: c.id, label: c.name }))
   const updateModelField = <K extends keyof LLMModelConfig>(field: K, val: LLMModelConfig[K]) => { onModelChange({ ...modelConfig, [field]: val }) }
+  const updateInferenceField = <K extends keyof InferenceConfig>(field: K, val: InferenceConfig[K]) => { onInferenceChange({ ...inferenceConfig, [field]: val }) }
   const updateMoeField = <K extends keyof NonNullable<LLMModelConfig['moe_config']>>(field: K, val: NonNullable<LLMModelConfig['moe_config']>[K]) => {
     if (modelConfig.moe_config) onModelChange({ ...modelConfig, moe_config: { ...modelConfig.moe_config, [field]: val } })
   }
@@ -332,7 +356,7 @@ export const BenchmarkConfigSelector: React.FC<BenchmarkConfigSelectorProps> = (
                       )}
                     </div>
                     <Select value={modelConfig.model_type} onValueChange={(v) => {
-                      if (v === 'moe' && !modelConfig.moe_config) onModelChange({ ...modelConfig, model_type: v, moe_config: { num_experts: 8, num_experts_per_tok: 2, expert_capacity_factor: 1.25 } })
+                      if (v === 'moe' && !modelConfig.moe_config) onModelChange({ ...modelConfig, model_type: v, moe_config: { num_experts: 8, num_experts_per_tok: 2 } })
                       else updateModelField('model_type', v as any)
                     }}>
                       <SelectTrigger className="w-full h-7"><SelectValue /></SelectTrigger>
@@ -550,26 +574,26 @@ export const BenchmarkConfigSelector: React.FC<BenchmarkConfigSelectorProps> = (
             gradient
           >
             <div className="grid grid-cols-2 gap-2">
-              <div className={`p-2 rounded -m-2 mb-0 ${isModelFieldModified('weight_dtype') ? 'bg-blue-50/50' : ''}`}>
+              <div className={`p-2 rounded -m-2 mb-0 ${isInferenceFieldModified('weight_dtype') ? 'bg-blue-50/50' : ''}`}>
                 <div className="mb-1 flex items-center gap-1.5">
                   <ConfigLabel name="weight_dtype" label="权重精度" />
-                  {isModelFieldModified('weight_dtype') && (
+                  {isInferenceFieldModified('weight_dtype') && (
                     <Badge variant="outline" className="text-[9px] px-1 py-0 h-3.5 bg-blue-100 text-blue-700 border-blue-300">已修改</Badge>
                   )}
                 </div>
-                <Select value={modelConfig.weight_dtype} onValueChange={(v) => updateModelField('weight_dtype', v as any)}>
+                <Select value={inferenceConfig.weight_dtype} onValueChange={(v) => updateInferenceField('weight_dtype', v as any)}>
                   <SelectTrigger className="w-full h-7"><SelectValue /></SelectTrigger>
                   <SelectContent><SelectItem value="fp32">FP32</SelectItem><SelectItem value="bf16">BF16</SelectItem><SelectItem value="fp16">FP16</SelectItem><SelectItem value="fp8">FP8</SelectItem><SelectItem value="int8">INT8</SelectItem><SelectItem value="int4">INT4</SelectItem></SelectContent>
                 </Select>
               </div>
-              <div className={`p-2 rounded -m-2 mb-0 ${isModelFieldModified('activation_dtype') ? 'bg-blue-50/50' : ''}`}>
+              <div className={`p-2 rounded -m-2 mb-0 ${isInferenceFieldModified('activation_dtype') ? 'bg-blue-50/50' : ''}`}>
                 <div className="mb-1 flex items-center gap-1.5">
                   <ConfigLabel name="activation_dtype" label="激活精度" />
-                  {isModelFieldModified('activation_dtype') && (
+                  {isInferenceFieldModified('activation_dtype') && (
                     <Badge variant="outline" className="text-[9px] px-1 py-0 h-3.5 bg-blue-100 text-blue-700 border-blue-300">已修改</Badge>
                   )}
                 </div>
-                <Select value={modelConfig.activation_dtype} onValueChange={(v) => updateModelField('activation_dtype', v as any)}>
+                <Select value={inferenceConfig.activation_dtype} onValueChange={(v) => updateInferenceField('activation_dtype', v as any)}>
                   <SelectTrigger className="w-full h-7"><SelectValue /></SelectTrigger>
                   <SelectContent><SelectItem value="fp32">FP32</SelectItem><SelectItem value="bf16">BF16</SelectItem><SelectItem value="fp16">FP16</SelectItem><SelectItem value="fp8">FP8</SelectItem><SelectItem value="int8">INT8</SelectItem><SelectItem value="int4">INT4</SelectItem></SelectContent>
                 </Select>
@@ -637,6 +661,7 @@ export const BenchmarkConfigSelector: React.FC<BenchmarkConfigSelectorProps> = (
           <Button variant="outline" size="sm" onClick={handleSave}><Save className="h-3.5 w-3.5 mr-1" />保存</Button>
           <Button variant="outline" size="sm" onClick={handleOpenSaveAsDialog}><Copy className="h-3.5 w-3.5 mr-1" />另存为</Button>
           <Button variant="outline" size="sm" onClick={handleReset}><RefreshCw className="h-3.5 w-3.5 mr-1" />重置</Button>
+          <DeleteConfirmButton name={presetId} label="删除配置" onConfirm={handleDelete} disabled={!presetId} />
         </div>
 
         {/* 另存为弹窗 */}

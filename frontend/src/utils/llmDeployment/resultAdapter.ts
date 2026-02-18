@@ -136,7 +136,7 @@ export function adaptSimulationResult(
     plan: {
       plan_id: `${parallelism.tp > 1 ? `tp${parallelism.tp}` : ''}${parallelism.pp > 1 ? `_pp${parallelism.pp}` : ''}${parallelism.ep > 1 ? `_ep${parallelism.ep}` : ''}${parallelism.dp > 1 ? `_dp${parallelism.dp}` : ''}`.replace(/^_/, '') || 'single',
       parallelism,
-      total_chips: stats.totalChips || (parallelism.dp * parallelism.tp * parallelism.pp * parallelism.ep),
+      total_chips: stats.totalChips || (parallelism.dp * parallelism.tp * parallelism.pp),
     },
     memory,
     communication,

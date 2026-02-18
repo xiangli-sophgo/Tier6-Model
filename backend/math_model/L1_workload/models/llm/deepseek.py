@@ -108,6 +108,7 @@ class DeepSeekV3Model(ModelBase):
             "qk_nope_head_dim": mc.mla.qk_nope_head_dim,
             "qk_rope_head_dim": mc.mla.qk_rope_head_dim,
             "v_head_dim": mc.mla.v_head_dim,
+            "mla_mode": mc.mla.mla_mode,
             # MoE (key rename 对齐 layer 层期望)
             "n_routed_experts": mc.moe.num_routed_experts,
             "n_shared_experts": mc.moe.num_shared_experts,
@@ -163,13 +164,24 @@ class DeepSeekV3Model(ModelBase):
             raise ValueError(
                 "Must specify either 'num_dense_layers', 'num_moe_layers', or both in DeepSeek model config"
             )
-        is_prefill_cfg = self._config.get("is_prefill")
-        if is_prefill_cfg is None:
-            # 兼容历史行为：未显式指定时使用 MLALayer。
+        # MLA 模式选择: 必须在配置中明确指定
+        if "mla_mode" not in self._config:
+            raise ValueError("Missing 'mla_mode' in model config. Expected: 'standard', 'absorb', or 'auto'")
+        mla_mode = str(self._config["mla_mode"]).lower()
+
+        if mla_mode == "standard":
             mla_cls = MLALayer
+        elif mla_mode == "absorb":
+            mla_cls = MLAAbsorbLayer
+        elif mla_mode == "auto":
+            is_prefill = self._config.get("is_prefill")
+            if is_prefill is None:
+                raise ValueError("mla_mode='auto' requires 'is_prefill' in config")
+            mla_cls = MLALayer if bool(is_prefill) else MLAAbsorbLayer
         else:
-            is_prefill = bool(is_prefill_cfg)
-            mla_cls = MLALayer if is_prefill else MLAAbsorbLayer
+            raise ValueError(
+                f"Unknown mla_mode '{mla_mode}'. Expected: 'standard', 'absorb', or 'auto'"
+            )
 
         # 1. Embedding 层
         self._layers.append(EmbeddingLayer("embedding", self._config))

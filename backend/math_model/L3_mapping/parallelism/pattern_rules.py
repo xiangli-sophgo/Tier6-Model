@@ -36,6 +36,7 @@ PATTERN_TEMPLATES: dict[str, dict[str, ParallelSpec]] = {
         "kv_proj": ParallelSpec(ParallelType.TP_COL, "N"),
         "attn_score": ParallelSpec(ParallelType.TP_COL, "N"),
         "attn_out": ParallelSpec(ParallelType.TP_ROW, "K"),
+        "attn": ParallelSpec(ParallelType.TP_HEAD, "B"),
         "o_proj": ParallelSpec(ParallelType.TP_ROW, "K"),
     },
     # MLA Absorb（对齐 DS_TPU 分解口径）
@@ -47,6 +48,26 @@ PATTERN_TEMPLATES: dict[str, dict[str, ParallelSpec]] = {
         "v_compact": ParallelSpec(ParallelType.TP_HEAD, "G"),
         "attn_score": ParallelSpec(ParallelType.TP_COL, "N"),
         "attn_out": ParallelSpec(ParallelType.TP_ROW, "K"),
+        "attn": ParallelSpec(ParallelType.TP_HEAD, "B"),
+        "o_proj": ParallelSpec(ParallelType.TP_ROW, "K"),
+    },
+    # MLA v3.2 (Top-K 稀疏注意力)
+    "mla_v3_2": {
+        "q_a": ParallelSpec(ParallelType.REPLICATE, ""),
+        "q_b": ParallelSpec(ParallelType.TP_COL, "N"),
+        "kv_a": ParallelSpec(ParallelType.REPLICATE, ""),
+        "kv_b": ParallelSpec(ParallelType.TP_COL, "N"),
+        "attn": ParallelSpec(ParallelType.TP_HEAD, "B"),
+        "o_proj": ParallelSpec(ParallelType.TP_ROW, "K"),
+    },
+    # MLA Absorb v3.2 (Top-K 稀疏注意力 + KV 分解)
+    "mla_absorb_v3_2": {
+        "q_a": ParallelSpec(ParallelType.REPLICATE, ""),
+        "q_b": ParallelSpec(ParallelType.TP_COL, "N"),
+        "kv_a": ParallelSpec(ParallelType.REPLICATE, ""),
+        "k_compact": ParallelSpec(ParallelType.TP_HEAD, "G"),
+        "v_compact": ParallelSpec(ParallelType.TP_HEAD, "G"),
+        "attn": ParallelSpec(ParallelType.TP_HEAD, "B"),
         "o_proj": ParallelSpec(ParallelType.TP_ROW, "K"),
     },
     # MoE 层切分
@@ -75,6 +96,7 @@ PATTERN_TEMPLATES: dict[str, dict[str, ParallelSpec]] = {
 # Op 类型到默认 ParallelSpec 的映射
 DEFAULT_PARALLEL_SPECS: dict[str, ParallelSpec] = {
     "matmul": ParallelSpec(ParallelType.TP_COL, "N"),
+    "fa2": ParallelSpec(ParallelType.TP_HEAD, "B"),
     "linear": ParallelSpec(ParallelType.TP_COL, "N"),
     "embedding": ParallelSpec(ParallelType.TP_COL, "N"),
     "layernorm": ParallelSpec(ParallelType.REPLICATE, ""),

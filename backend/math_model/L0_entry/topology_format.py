@@ -142,11 +142,10 @@ def grouped_pods_to_expanded(config: dict[str, Any]) -> dict[str, Any]:
                                         "compute_tflops_bf16",
                                         "memory_capacity_gb",
                                         "memory_bandwidth_gbps",
-                                        "memory_bandwidth_utilization",
                                         "lmem_capacity_mb",
                                         "lmem_bandwidth_gbps",
                                         "cube_m", "cube_k", "cube_n",
-                                        "sram_size_kb", "sram_utilization",
+                                        "sram_size_kb",
                                         "lane_num", "align_bytes",
                                         "compute_dma_overlap_rate",
                                     ):

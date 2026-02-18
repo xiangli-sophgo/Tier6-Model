@@ -68,6 +68,9 @@ num_attention_heads: 32         # 注意力头数 (Query 头数)
 hidden_act: "silu"              # 激活函数: "silu" (SwiGLU), "gelu", "relu"
                                 # 现代 LLM 几乎都用 "silu"
 
+norm_type: "rmsnorm"            # 归一化类型: "rmsnorm" (RMSNorm), "layernorm" (LayerNorm)
+                                # 现代 LLM 几乎都用 "rmsnorm"
+
 rms_norm_eps: 1.0e-6            # RMSNorm epsilon，防止除零的极小值
                                 # 标准值: 1e-6
 
@@ -116,6 +119,10 @@ rms_norm_eps: 1.0e-6            # RMSNorm epsilon，防止除零的极小值
 #   qk_rope_head_dim: 64        # QK 中 RoPE 编码部分的头维度
 #                               # 总 QK 头维度 = qk_nope + qk_rope = 192
 #   v_head_dim: 128             # Value 的头维度
+#   mla_mode: standard          # MLA 计算模式: standard / absorb / auto
+#                               # standard: kv_b 投影 + 小维度 attention (对齐 CHIPMathica)
+#                               # absorb: k/v compact + 大维度 attention (更省 KV Cache)
+#                               # auto: prefill 用 standard, decode 用 absorb
 
 # ------------------------------------------------------------
 # DSA (Dynamic Sparse Attention) -- 动态稀疏注意力

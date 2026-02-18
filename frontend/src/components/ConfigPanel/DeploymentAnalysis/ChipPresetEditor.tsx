@@ -17,7 +17,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { BaseCard } from '@/components/common/BaseCard'
 import type { ChipPreset } from '@/types/math_model'
-import { getChipPresets, getChipPreset, saveChipPreset, updateChipPreset } from '@/api/math_model'
+import { DeleteConfirmButton } from '@/components/common/DeleteConfirmButton'
+import { getChipPresets, getChipPreset, saveChipPreset, updateChipPreset, deleteChipPreset } from '@/api/math_model'
 import { deepClone, setNested, getNested, errMsg, isPlainObject } from '@/utils/nestedObjectEditor'
 
 // ==================== Props ====================
@@ -138,6 +139,25 @@ export const ChipPresetEditor: React.FC<ChipPresetEditorProps> = ({ value, onCha
       originalRef.current = deepClone(config); onChange(config)
       toast.success('已重新加载')
     } catch (err) { toast.error(`重新加载失败: ${errMsg(err)}`) }
+  }
+
+  // 删除
+  const handleDelete = async () => {
+    if (!selectedPreset) return
+    try {
+      await deleteChipPreset(selectedPreset)
+      const { presets } = await getChipPresets()
+      setPresetList(presets)
+      toast.success(`已删除: ${selectedPreset}`)
+      if (presets.length > 0) {
+        setSelectedPreset(presets[0].name)
+        originalRef.current = deepClone(presets[0].config)
+        onChange(presets[0].config)
+      } else {
+        setSelectedPreset('')
+        originalRef.current = null
+      }
+    } catch (err) { toast.error(`删除失败: ${errMsg(err)}`) }
   }
 
   // ==================== 动态渲染 ====================
@@ -288,6 +308,7 @@ export const ChipPresetEditor: React.FC<ChipPresetEditorProps> = ({ value, onCha
         <Button variant="outline" size="sm" onClick={handleSave}><Save className="h-3.5 w-3.5 mr-1" />保存</Button>
         <Button variant="outline" size="sm" onClick={() => { setSaveAsName(value.name); setSaveAsOpen(true) }}><Copy className="h-3.5 w-3.5 mr-1" />另存为</Button>
         <Button variant="outline" size="sm" onClick={handleReload}><RefreshCw className="h-3.5 w-3.5 mr-1" />重新加载</Button>
+        <DeleteConfirmButton name={selectedPreset} label="删除预设" onConfirm={handleDelete} disabled={!selectedPreset} />
       </div>
 
       {/* 另存为弹窗 */}

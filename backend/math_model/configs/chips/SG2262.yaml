@@ -1,25 +1,26 @@
 name: 'SG2262'
 architecture: TPU_V7
 process: 7nm
-frequency_ghz: 1
+# 对齐 CHIPMathica sg2262.yaml: core=64, flops=786.432T => freq=1.5GHz
+frequency_ghz: 1.5
 align_bytes: 32
 compute_dma_overlap_rate: 0.8
 compute_efficiency: 0.9
 cores:
-  count: 4
-  lanes_per_core: 64
+  count: 64
+  lanes_per_core: 16
 compute_units:
   cube:
     m: 16
     k: 32
     n: 8
     mac_per_lane:
-      INT8: 1000
-      FP8: 1000
-      BF16: 500
-      FP16: 500
-      TF32: 250
-      INT4: 2000
+      INT8: 256
+      FP8: 256
+      BF16: 128
+      FP16: 128
+      TF32: 64
+      INT4: 512
   vector:
     eu_per_lane:
       INT8: 64
@@ -32,15 +33,18 @@ compute_units:
 memory:
   gmem:
     type: LPDDR5
-    capacity_gb: 64
-    bandwidth_gbps: 273
-    bandwidth_utilization: 0.85
+    capacity_gb: 128
+    # 对齐 CHIPMathica: dram_bw=8601.6 GB/s, 无 utilization
+    bandwidth_gbps: 8601.6
+    utilization: 1.0
     latency_ns: 100
   lmem:
-    capacity_mb: 64
+    # 对齐 CHIPMathica: sram_size=2MB/core, 64 cores => total=128MB
+    # utilization=0.45 对齐 CHIPMathica: sram_limit = sram_size * 0.45
+    capacity_mb: 128
     bandwidth_gbps: 2000
     latency_ns: 1
-    sram_utilization: 0.45
+    utilization: 0.45
 dma_engines:
   gdma:
     bandwidth_gbps: 68

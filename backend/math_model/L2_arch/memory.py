@@ -16,10 +16,12 @@ class MemoryLevelImpl:
     Attributes:
         name: 层级名称 (gmem/l2m/lmem/smem)
         capacity_bytes: 容量 (bytes)
-        bandwidth_gbps: 带宽 (GB/s)
+        bandwidth_gbps: 带宽 (GB/s) - 理论峰值
         latency_ns: 延迟 (ns)
         scope: 共享域
-        sram_utilization: SRAM 可用比例 (仅 lmem 使用，0-1)
+        utilization: 利用率 (0-1)
+            - gmem: bandwidth_utilization, 实际可达带宽 = bandwidth_gbps * utilization
+            - lmem: sram_utilization, 可用于 tiling 的 SRAM 比例
     """
 
     name: str
@@ -27,7 +29,7 @@ class MemoryLevelImpl:
     bandwidth_gbps: float
     latency_ns: float = 0.0
     scope: str = "chip"
-    sram_utilization: float = 1.0
+    utilization: float = 1.0
 
     @classmethod
     def from_config(cls, name: str, config: dict[str, Any]) -> "MemoryLevelImpl":
@@ -60,13 +62,16 @@ class MemoryLevelImpl:
         if "latency_ns" not in config:
             raise ValueError(f"Missing 'latency_ns' in memory level '{name}'")
 
+        if "utilization" not in config:
+            raise ValueError(f"Missing 'utilization' in memory level '{name}'")
+
         return cls(
             name=name,
             capacity_bytes=capacity,
             bandwidth_gbps=bandwidth,
             latency_ns=config["latency_ns"],
             scope=config.get("scope", "chip"),  # 可选，默认 chip
-            sram_utilization=float(config.get("sram_utilization", 1.0)),  # 可选，默认 1.0
+            utilization=float(config["utilization"]),
         )
 
 

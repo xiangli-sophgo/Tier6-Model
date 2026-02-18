@@ -45,8 +45,8 @@ class ParallelismConfig:
 
     @property
     def total_devices(self) -> int:
-        """总设备数 = TP × PP × DP × EP"""
-        return self.tp * self.pp * self.dp * self.ep
+        """总设备数 = TP × PP × DP (EP 复用 DP×TP 的芯片, 约束: dp*tp == moe_tp*ep)"""
+        return self.tp * self.pp * self.dp
 
     def to_dict(self) -> dict[str, int]:
         """转换为字典"""

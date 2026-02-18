@@ -97,7 +97,7 @@ class ChipSpecImpl:
         """SRAM 可用比例"""
         try:
             lmem = self.memory_hierarchy.get_level("lmem")
-            return getattr(lmem, "sram_utilization", 0.45)
+            return getattr(lmem, "utilization", 0.45)
         except KeyError:
             return 0.45
 
@@ -140,13 +140,14 @@ class ChipSpecImpl:
             return 0
 
     def get_gmem_bandwidth(self) -> float:
-        """获取 GMEM 带宽
+        """获取 GMEM 有效带宽 (理论峰值 * 利用率)
 
         Returns:
-            GMEM 带宽 (GB/s)
+            GMEM 有效带宽 (GB/s)
         """
         try:
-            return self.memory_hierarchy.get_level("gmem").bandwidth_gbps
+            gmem = self.memory_hierarchy.get_level("gmem")
+            return gmem.bandwidth_gbps * gmem.utilization
         except KeyError:
             return 0.0
 

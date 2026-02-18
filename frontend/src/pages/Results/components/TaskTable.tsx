@@ -1277,7 +1277,7 @@ export default function TaskTable({
               }}
               readOnly={true}
               cells={(row) => ({
-                className: `htCenter htMiddle${selectedRowIndices.has(row) ? ' selected-row' : ''}`,
+                className: `htCenter htMiddle htNoWrap${selectedRowIndices.has(row) ? ' selected-row' : ''}`,
               })}
               className="task-hot-table"
             />

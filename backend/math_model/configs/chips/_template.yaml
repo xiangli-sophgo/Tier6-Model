@@ -19,8 +19,8 @@ frequency_ghz: 1.0              # 芯片工作频率 (GHz)
 # 核心配置
 # ------------------------------------------------------------
 cores:
-  count: 4                      # 核心数量
-  lanes_per_core: 64            # 每核心 SIMD Lane 数量
+  count: 32                     # 核心数量
+  lanes_per_core: 16            # 每核心 SIMD Lane 数量
 
 # ------------------------------------------------------------
 # 计算单元
@@ -35,12 +35,12 @@ compute_units:
     # 每 Lane 每周期 MAC (Multiply-Accumulate) 操作数，按数据类型
     # 峰值算力推导: TFLOPS = cores * lanes_per_core * mac_per_lane * freq_ghz * 2 / 1000
     mac_per_lane:
-      INT4: 2000                # 4-bit 整数
-      INT8: 1000                # 8-bit 整数
-      FP8: 1000                 # 8-bit 浮点 (推理主力精度)
-      BF16: 500                 # Brain Float 16
-      FP16: 500                 # IEEE Float 16
-      TF32: 250                 # TensorFloat-32
+      INT4: 512                 # 4-bit 整数
+      INT8: 256                 # 8-bit 整数
+      FP8: 256                  # 8-bit 浮点 (推理主力精度)
+      BF16: 128                 # Brain Float 16
+      FP16: 128                 # IEEE Float 16
+      TF32: 64                  # TensorFloat-32
 
   # Vector: 向量计算单元，用于激活函数、LayerNorm、Softmax 等逐元素运算
   vector:
@@ -64,9 +64,9 @@ memory:
   # gmem: Global Memory - 片外主存
   gmem:
     type: LPDDR5                # 存储类型 (LPDDR5/HBM2e/HBM3/HBM3e/DDR5/GDDR6/GDDR7)
-    capacity_gb: 64             # 总容量 (GB)
-    bandwidth_gbps: 273         # 理论峰值带宽 (GB/s)
-    bandwidth_utilization: 0.85 # 实际带宽利用率 (0~1)，实际可达 = bandwidth * utilization
+    capacity_gb: 128            # 总容量 (GB)
+    bandwidth_gbps: 4096        # 理论峰值带宽 (GB/s)
+    utilization: 0.70           # 利用率 (0~1)，实际可达带宽 = bandwidth_gbps * utilization
     latency_ns: 100             # 访问延迟 (ns)
 
   # lmem: Local Memory - 核内本地 SRAM (芯片总量，代码会按 core_count 均分)
@@ -74,7 +74,7 @@ memory:
     capacity_mb: 64             # 芯片总容量 (MB)，每核 = capacity / cores.count
     bandwidth_gbps: 2000        # 带宽 (GB/s)
     latency_ns: 1               # 访问延迟 (ns)
-    sram_utilization: 0.45      # SRAM 利用率 (0~1)，可用于 tiling 的比例
+    utilization: 0.45           # 利用率 (0~1)，可用于 tiling 的 SRAM 比例
 
 # ------------------------------------------------------------
 # DMA 引擎

@@ -161,6 +161,18 @@ class LayerBase(ABC):
             accum_dtype=self._accum_dtype,
         )
 
+    def _fa2_op(self, name: str, params: dict[str, int]) -> "OpBase":
+        from math_model.L1_workload.operators.compute.fa2 import FA2Op
+
+        return FA2Op(
+            name,
+            params,
+            dtype=self._activation_dtype,
+            weight_dtype=self._weight_dtype,
+            output_dtype=self._output_dtype,
+            accum_dtype=self._accum_dtype,
+        )
+
     @abstractmethod
     def get_inputs(self) -> list[TensorDesc]:
         """获取输入张量描述"""

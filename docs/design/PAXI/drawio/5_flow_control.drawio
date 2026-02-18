@@ -1,0 +1,470 @@
+<mxfile host="65bd71144e" pages="5">
+    <diagram id="fc-overview" name="5.1 Flow Control Overview">
+        <mxGraphModel dx="573" dy="505" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1100" pageHeight="440" math="0" shadow="0">
+            <root>
+                <mxCell id="t1_0"/>
+                <mxCell id="t1_1" parent="t1_0"/>
+                <mxCell id="t1_title" value="5.1 Flow Control Overview" style="text;html=1;align=center;fontSize=16;fontColor=#333;" parent="t1_1" vertex="1">
+                    <mxGeometry x="350" y="10" width="300" height="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="t1_app" value="&lt;b&gt;Application Layer&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:10px&quot;&gt;RX OST Constraint&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;shadow=1;" parent="t1_1" vertex="1">
+                    <mxGeometry x="100" y="60" width="240" height="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="t1_paxi" value="&lt;b&gt;PAXI Layer&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:10px&quot;&gt;TX 仲裁 + RX 水位线&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;shadow=1;" parent="t1_1" vertex="1">
+                    <mxGeometry x="100" y="180" width="240" height="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="t1_rc" value="&lt;b&gt;RC Link Layer&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:10px&quot;&gt;CBFC + Rate Control + Bank&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;shadow=1;" parent="t1_1" vertex="1">
+                    <mxGeometry x="100" y="300" width="240" height="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="t1_e1" style="edgeStyle=orthogonalEdgeStyle;orthogonalLoop=1;jettySize=auto;rounded=0;html=1;strokeColor=#6c8ebf;strokeWidth=2;endArrow=block;endFill=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" parent="t1_1" source="t1_app" target="t1_paxi" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="t1_e2" style="edgeStyle=orthogonalEdgeStyle;orthogonalLoop=1;jettySize=auto;rounded=0;html=1;strokeColor=#6c8ebf;strokeWidth=2;endArrow=block;endFill=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" parent="t1_1" source="t1_paxi" target="t1_rc" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="t1_d1" value="&lt;b&gt;应用层约束&lt;/b&gt;&lt;br&gt;&lt;br&gt;RX OST 限制并发请求数" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#E0E0E0;shadow=1;fontSize=11;align=left;verticalAlign=top;spacingLeft=12;spacingTop=6;spacingRight=8;" parent="t1_1" vertex="1">
+                    <mxGeometry x="440" y="30" width="300" height="80" as="geometry"/>
+                </mxCell>
+                <mxCell id="t1_d2" value="&lt;b&gt;PAXI 层流控&lt;/b&gt;&lt;br&gt;&lt;br&gt;&lt;b&gt;TX:&lt;/b&gt; Channel Weight 仲裁 (REQ/RSP/MUL 权重)&lt;br&gt;&lt;b&gt;TX:&lt;/b&gt; AR/B 打包水位 + 超时触发&lt;br&gt;&lt;b&gt;RX:&lt;/b&gt; VC Buffer 水位线 -&amp;gt; PFC/CBFC 背压" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#E0E0E0;shadow=1;fontSize=11;align=left;verticalAlign=top;spacingLeft=12;spacingTop=6;spacingRight=8;" parent="t1_1" vertex="1">
+                    <mxGeometry x="440" y="140" width="340" height="110" as="geometry"/>
+                </mxCell>
+                <mxCell id="t1_d3" value="&lt;b&gt;RC Link 层流控&lt;/b&gt;&lt;br&gt;&lt;br&gt;&lt;b&gt;CBFC:&lt;/b&gt; per-VC Credit 端到端流控 &lt;font color=&quot;#d79b00&quot;&gt;[GATE]&lt;/font&gt;&lt;br&gt;&lt;b&gt;Rate:&lt;/b&gt; per-QP 速率控制 (窗口限速) &lt;font color=&quot;#d79b00&quot;&gt;[GATE]&lt;/font&gt;&lt;br&gt;&lt;b&gt;Multicast:&lt;/b&gt; 多播专用 Credit &lt;font color=&quot;#d79b00&quot;&gt;[GATE]&lt;/font&gt;&lt;br&gt;&lt;b&gt;Bank:&lt;/b&gt; 4 Bank 轮转仲裁" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#E0E0E0;shadow=1;fontSize=11;align=left;verticalAlign=top;spacingLeft=12;spacingTop=6;spacingRight=8;" parent="t1_1" vertex="1">
+                    <mxGeometry x="440" y="270" width="340" height="120" as="geometry"/>
+                </mxCell>
+                <mxCell id="t1_d_e1" style="rounded=0;html=1;dashed=1;dashPattern=5 5;strokeColor=#BDBDBD;endArrow=none;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.3;entryDx=0;entryDy=0;" parent="t1_1" source="t1_app" target="t1_d1" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="t1_d_e2" style="rounded=0;html=1;dashed=1;dashPattern=5 5;strokeColor=#BDBDBD;endArrow=none;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.3;entryDx=0;entryDy=0;" parent="t1_1" source="t1_paxi" target="t1_d2" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="t1_d_e3" style="rounded=0;html=1;dashed=1;dashPattern=5 5;strokeColor=#BDBDBD;endArrow=none;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.3;entryDx=0;entryDy=0;" parent="t1_1" source="t1_rc" target="t1_d3" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="t1_leg_bg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#E0E0E0;" parent="t1_1" vertex="1">
+                    <mxGeometry x="40" y="395" width="920" height="35" as="geometry"/>
+                </mxCell>
+                <mxCell id="t1_leg1" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" parent="t1_1" vertex="1">
+                    <mxGeometry x="60" y="403" width="20" height="14" as="geometry"/>
+                </mxCell>
+                <mxCell id="t1_leg1t" value="流控层级" style="text;html=1;fontSize=10;align=left;" parent="t1_1" vertex="1">
+                    <mxGeometry x="85" y="400" width="70" height="20" as="geometry"/>
+                </mxCell>
+                <mxCell id="t1_leg2" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#E0E0E0;" parent="t1_1" vertex="1">
+                    <mxGeometry x="180" y="403" width="20" height="14" as="geometry"/>
+                </mxCell>
+                <mxCell id="t1_leg2t" value="详细说明" style="text;html=1;fontSize=10;align=left;" parent="t1_1" vertex="1">
+                    <mxGeometry x="205" y="400" width="70" height="20" as="geometry"/>
+                </mxCell>
+                <mxCell id="t1_leg3t" value="&lt;font color=&quot;#d79b00&quot;&gt;[GATE]&lt;/font&gt; = 流控门控点" style="text;html=1;fontSize=10;align=left;" parent="t1_1" vertex="1">
+                    <mxGeometry x="300" y="400" width="150" height="20" as="geometry"/>
+                </mxCell>
+                <mxCell id="t1_leg4" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;" parent="t1_1" vertex="1">
+                    <mxGeometry x="480" y="403" width="20" height="14" as="geometry"/>
+                </mxCell>
+                <mxCell id="t1_leg4t" value="关键/阻塞节点" style="text;html=1;fontSize=10;align=left;" parent="t1_1" vertex="1">
+                    <mxGeometry x="505" y="400" width="90" height="20" as="geometry"/>
+                </mxCell>
+            </root>
+        </mxGraphModel>
+    </diagram>
+    <diagram id="cbfc-detail" name="5.2 CBFC Detail">
+        <mxGraphModel dx="573" dy="505" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1100" pageHeight="560" math="0" shadow="0">
+            <root>
+                <mxCell id="t2_0"/>
+                <mxCell id="t2_1" parent="t2_0"/>
+                <mxCell id="t2_title" value="5.2 CBFC Detail" style="text;html=1;align=center;fontSize=16;fontColor=#333;" parent="t2_1" vertex="1">
+                    <mxGeometry x="400" y="10" width="300" height="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="t2_ltitle" value="&lt;b&gt;发送方&lt;/b&gt;" style="text;html=1;align=center;fontSize=14;fontColor=#333;" parent="t2_1" vertex="1">
+                    <mxGeometry x="60" y="55" width="200" height="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="t2_s1" value="维护 per-VC Credit 计数" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;shadow=1;" parent="t2_1" vertex="1">
+                    <mxGeometry x="60" y="100" width="200" height="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="t2_s2" value="发包: consumed =&lt;br&gt;ceil(pkt_len / credit_size)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;shadow=1;" parent="t2_1" vertex="1">
+                    <mxGeometry x="60" y="200" width="200" height="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="t2_s3" value="Credit 检查&lt;br&gt;&lt;font style=&quot;font-size:10px&quot;&gt;remaining &amp;lt; uf_limit -&amp;gt; 阻塞&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;shadow=1;" parent="t2_1" vertex="1">
+                    <mxGeometry x="60" y="300" width="200" height="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="t2_le1" style="edgeStyle=orthogonalEdgeStyle;orthogonalLoop=1;jettySize=auto;rounded=0;html=1;strokeColor=#6c8ebf;strokeWidth=2;endArrow=block;endFill=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" parent="t2_1" source="t2_s1" target="t2_s2" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="t2_le2" style="edgeStyle=orthogonalEdgeStyle;orthogonalLoop=1;jettySize=auto;rounded=0;html=1;strokeColor=#6c8ebf;strokeWidth=2;endArrow=block;endFill=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" parent="t2_1" source="t2_s2" target="t2_s3" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="t2_rtitle" value="&lt;b&gt;接收方&lt;/b&gt;" style="text;html=1;align=center;fontSize=14;fontColor=#333;" parent="t2_1" vertex="1">
+                    <mxGeometry x="600" y="55" width="200" height="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="t2_r1" value="维护本地 Credit 计数" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;shadow=1;" parent="t2_1" vertex="1">
+                    <mxGeometry x="600" y="100" width="200" height="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="t2_r2" value="收包: local_credit -= consumed" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;shadow=1;" parent="t2_1" vertex="1">
+                    <mxGeometry x="600" y="200" width="200" height="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="t2_r3" value="数据弹出时: 归还 Credit" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;shadow=1;" parent="t2_1" vertex="1">
+                    <mxGeometry x="600" y="300" width="200" height="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="t2_re1" style="edgeStyle=orthogonalEdgeStyle;orthogonalLoop=1;jettySize=auto;rounded=0;html=1;strokeColor=#6c8ebf;strokeWidth=2;endArrow=block;endFill=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" parent="t2_1" source="t2_r1" target="t2_r2" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="t2_re2" style="edgeStyle=orthogonalEdgeStyle;orthogonalLoop=1;jettySize=auto;rounded=0;html=1;strokeColor=#6c8ebf;strokeWidth=2;endArrow=block;endFill=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" parent="t2_1" source="t2_r2" target="t2_r3" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="t2_cr" value="Credit 返还&lt;br&gt;&lt;font style=&quot;font-size:9px&quot;&gt;(MAC2TX_CBFC_VLD_I)&lt;/font&gt;" style="rounded=0;html=1;dashed=1;dashPattern=5 5;strokeColor=#b85450;strokeWidth=2;endArrow=block;endFill=1;exitX=0;exitY=0.5;exitDx=0;exitDy=0;entryX=1;entryY=0.5;entryDx=0;entryDy=0;" parent="t2_1" source="t2_r3" target="t2_s3" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="t2_ic" value="&lt;font style=&quot;font-size:9px&quot;&gt;初始 Credit 协商&lt;/font&gt;" style="rounded=0;html=1;dashed=1;dashPattern=5 5;strokeColor=#BDBDBD;endArrow=block;endFill=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" parent="t2_1" source="t2_s1" target="t2_r1" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="t2_dp" value="&lt;b&gt;CBFC 高级特性&lt;/b&gt;&lt;br&gt;&lt;br&gt;&lt;b&gt;动态下限&lt;/b&gt; (dyn_uf_limit_cbfc_en):&lt;br&gt;Credit 低于水线但仍大于最大包长时允许再发一包 (仅 TYPE1 REQ)&lt;br&gt;&lt;br&gt;&lt;b&gt;软件流控&lt;/b&gt; (software_ctrl_cbfc_vc_status):&lt;br&gt;对应 VC 位=0 强制停止, 位=1 允许&lt;br&gt;&lt;br&gt;&lt;b&gt;全局禁用&lt;/b&gt; (stop_cbfc_en):&lt;br&gt;最高优先级, 禁用所有 CBFC" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#E0E0E0;shadow=1;fontSize=11;align=left;verticalAlign=top;spacingLeft=12;spacingTop=6;spacingRight=8;" parent="t2_1" vertex="1">
+                    <mxGeometry x="260" y="370" width="350" height="150" as="geometry"/>
+                </mxCell>
+                <mxCell id="t2_leg_bg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#E0E0E0;" parent="t2_1" vertex="1">
+                    <mxGeometry x="40" y="532.5" width="920" height="35" as="geometry"/>
+                </mxCell>
+                <mxCell id="t2_leg1" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" parent="t2_1" vertex="1">
+                    <mxGeometry x="60" y="543" width="20" height="14" as="geometry"/>
+                </mxCell>
+                <mxCell id="t2_leg1t" value="流控操作" style="text;html=1;fontSize=10;align=left;" parent="t2_1" vertex="1">
+                    <mxGeometry x="85" y="540" width="70" height="20" as="geometry"/>
+                </mxCell>
+                <mxCell id="t2_leg2" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#E0E0E0;" parent="t2_1" vertex="1">
+                    <mxGeometry x="180" y="543" width="20" height="14" as="geometry"/>
+                </mxCell>
+                <mxCell id="t2_leg2t" value="详细说明" style="text;html=1;fontSize=10;align=left;" parent="t2_1" vertex="1">
+                    <mxGeometry x="205" y="540" width="70" height="20" as="geometry"/>
+                </mxCell>
+                <mxCell id="t2_leg3t" value="--- Credit 返还路径" style="text;html=1;fontSize=10;align=left;fontColor=#b85450;" parent="t2_1" vertex="1">
+                    <mxGeometry x="300" y="540" width="150" height="20" as="geometry"/>
+                </mxCell>
+                <mxCell id="t2_leg4t" value="--- 初始协商" style="text;html=1;fontSize=10;align=left;fontColor=#BDBDBD;" parent="t2_1" vertex="1">
+                    <mxGeometry x="470" y="540" width="120" height="20" as="geometry"/>
+                </mxCell>
+            </root>
+        </mxGraphModel>
+    </diagram>
+    <diagram id="pfc-behavior" name="5.3 PFC Behavior">
+        <mxGraphModel dx="573" dy="505" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1100" pageHeight="560" math="0" shadow="0">
+            <root>
+                <mxCell id="t3_0"/>
+                <mxCell id="t3_1" parent="t3_0"/>
+                <mxCell id="t3_title" value="5.3 PFC Behavior" style="text;html=1;align=center;fontSize=16;fontColor=#333;" parent="t3_1" vertex="1">
+                    <mxGeometry x="350" y="10" width="300" height="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="t3_b1" value="数据写入 REQ MEM" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;shadow=1;" parent="t3_1" vertex="1">
+                    <mxGeometry x="120" y="60" width="200" height="44" as="geometry"/>
+                </mxCell>
+                <mxCell id="t3_dm1" value="数据量 &amp;gt;&lt;br&gt;高水位?" style="rhombus;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=11;" parent="t3_1" vertex="1">
+                    <mxGeometry x="150" y="140" width="140" height="80" as="geometry"/>
+                </mxCell>
+                <mxCell id="t3_pause" value="触发 PFC PAUSE" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=12;shadow=1;strokeWidth=2;" parent="t3_1" vertex="1">
+                    <mxGeometry x="360" y="158" width="180" height="44" as="geometry"/>
+                </mxCell>
+                <mxCell id="t3_remote" value="远端暂停 VC 发送" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;shadow=1;" parent="t3_1" vertex="1">
+                    <mxGeometry x="360" y="250" width="180" height="44" as="geometry"/>
+                </mxCell>
+                <mxCell id="t3_consume" value="本地数据被消费" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;shadow=1;" parent="t3_1" vertex="1">
+                    <mxGeometry x="120" y="310" width="200" height="44" as="geometry"/>
+                </mxCell>
+                <mxCell id="t3_dm2" value="数据量 &amp;lt;&lt;br&gt;低水位?" style="rhombus;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=11;" parent="t3_1" vertex="1">
+                    <mxGeometry x="150" y="390" width="140" height="80" as="geometry"/>
+                </mxCell>
+                <mxCell id="t3_resume" value="解除 PFC, 恢复发送" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;shadow=1;" parent="t3_1" vertex="1">
+                    <mxGeometry x="360" y="408" width="180" height="44" as="geometry"/>
+                </mxCell>
+                <mxCell id="t3_e1" style="edgeStyle=orthogonalEdgeStyle;orthogonalLoop=1;jettySize=auto;rounded=0;html=1;strokeColor=#6c8ebf;strokeWidth=2;endArrow=block;endFill=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" parent="t3_1" source="t3_b1" target="t3_dm1" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="t3_e2" value="Yes" style="edgeStyle=orthogonalEdgeStyle;orthogonalLoop=1;jettySize=auto;rounded=0;html=1;strokeColor=#6c8ebf;strokeWidth=2;endArrow=block;endFill=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;fontSize=10;" parent="t3_1" source="t3_dm1" target="t3_pause" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="t3_e3" value="No" style="edgeStyle=orthogonalEdgeStyle;orthogonalLoop=1;jettySize=auto;rounded=0;html=1;strokeColor=#6c8ebf;strokeWidth=2;endArrow=block;endFill=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;fontSize=10;" parent="t3_1" source="t3_dm1" target="t3_consume" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="t3_e4" style="edgeStyle=orthogonalEdgeStyle;orthogonalLoop=1;jettySize=auto;rounded=0;html=1;strokeColor=#6c8ebf;strokeWidth=2;endArrow=block;endFill=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" parent="t3_1" source="t3_pause" target="t3_remote" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="t3_e5" style="edgeStyle=orthogonalEdgeStyle;orthogonalLoop=1;jettySize=auto;rounded=0;html=1;strokeColor=#6c8ebf;strokeWidth=2;endArrow=block;endFill=1;entryX=1;entryY=0.5;entryDx=0;entryDy=0;exitX=0.5;exitY=1;exitDx=0;exitDy=0;" parent="t3_1" source="t3_remote" target="t3_consume" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <mxPoint x="450" y="300" as="sourcePoint"/>
+                        <Array as="points">
+                            <mxPoint x="450" y="332"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="t3_e6" style="edgeStyle=orthogonalEdgeStyle;orthogonalLoop=1;jettySize=auto;rounded=0;html=1;strokeColor=#6c8ebf;strokeWidth=2;endArrow=block;endFill=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" parent="t3_1" source="t3_consume" target="t3_dm2" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="t3_e7" value="Yes" style="edgeStyle=orthogonalEdgeStyle;orthogonalLoop=1;jettySize=auto;rounded=0;html=1;strokeColor=#6c8ebf;strokeWidth=2;endArrow=block;endFill=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;fontSize=10;" parent="t3_1" source="t3_dm2" target="t3_resume" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="t3_e8" value="No" style="edgeStyle=orthogonalEdgeStyle;orthogonalLoop=1;rounded=0;html=1;strokeColor=#6c8ebf;strokeWidth=2;endArrow=block;endFill=1;exitX=0;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;fontSize=10;" parent="t3_1" source="t3_dm2" target="t3_consume" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="80" y="430"/>
+                            <mxPoint x="80" y="332"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="t3_dp" value="&lt;b&gt;PFC 水位线参数&lt;/b&gt;&lt;br&gt;&lt;br&gt;&lt;b&gt;高水位&lt;/b&gt;: N帧 + 1RTT&lt;br&gt;(N=32 for REQ/RSP, N=8 for MUL)&lt;br&gt;&lt;br&gt;&lt;b&gt;低水位&lt;/b&gt;: 1 RTT&lt;br&gt;&lt;br&gt;&lt;b&gt;预留空间&lt;/b&gt;: 1 RTT&lt;br&gt;吸收背压生效前在途数据&lt;br&gt;&lt;br&gt;注意: CBFC 和 PFC 共用&lt;br&gt;TX_PFC_REQ_O[7:0] 接口" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#E0E0E0;shadow=1;fontSize=11;align=left;verticalAlign=top;spacingLeft=12;spacingTop=6;spacingRight=8;" parent="t3_1" vertex="1">
+                    <mxGeometry x="620" y="60" width="260" height="200" as="geometry"/>
+                </mxCell>
+                <mxCell id="t3_leg_bg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#E0E0E0;" parent="t3_1" vertex="1">
+                    <mxGeometry x="40" y="510" width="920" height="35" as="geometry"/>
+                </mxCell>
+                <mxCell id="t3_leg1" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" parent="t3_1" vertex="1">
+                    <mxGeometry x="60" y="518" width="20" height="14" as="geometry"/>
+                </mxCell>
+                <mxCell id="t3_leg1t" value="流控操作" style="text;html=1;fontSize=10;align=left;" parent="t3_1" vertex="1">
+                    <mxGeometry x="85" y="515" width="70" height="20" as="geometry"/>
+                </mxCell>
+                <mxCell id="t3_leg2" value="" style="rhombus;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" parent="t3_1" vertex="1">
+                    <mxGeometry x="180" y="516" width="18" height="18" as="geometry"/>
+                </mxCell>
+                <mxCell id="t3_leg2t" value="判断节点" style="text;html=1;fontSize=10;align=left;" parent="t3_1" vertex="1">
+                    <mxGeometry x="205" y="515" width="70" height="20" as="geometry"/>
+                </mxCell>
+                <mxCell id="t3_leg3" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;" parent="t3_1" vertex="1">
+                    <mxGeometry x="300" y="518" width="20" height="14" as="geometry"/>
+                </mxCell>
+                <mxCell id="t3_leg3t" value="暂停/阻塞" style="text;html=1;fontSize=10;align=left;" parent="t3_1" vertex="1">
+                    <mxGeometry x="325" y="515" width="70" height="20" as="geometry"/>
+                </mxCell>
+                <mxCell id="t3_leg4" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#E0E0E0;" parent="t3_1" vertex="1">
+                    <mxGeometry x="420" y="518" width="20" height="14" as="geometry"/>
+                </mxCell>
+                <mxCell id="t3_leg4t" value="参数说明" style="text;html=1;fontSize=10;align=left;" parent="t3_1" vertex="1">
+                    <mxGeometry x="445" y="515" width="70" height="20" as="geometry"/>
+                </mxCell>
+            </root>
+        </mxGraphModel>
+    </diagram>
+    <diagram id="rate-arb" name="5.4 Rate Control + Arbitration">
+        <mxGraphModel dx="573" dy="505" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1100" pageHeight="560" math="0" shadow="0">
+            <root>
+                <mxCell id="t4_0"/>
+                <mxCell id="t4_1" parent="t4_0"/>
+                <mxCell id="t4_title" value="5.4 Rate Control + Arbitration" style="text;html=1;align=center;fontSize=16;fontColor=#333;" parent="t4_1" vertex="1">
+                    <mxGeometry x="350" y="10" width="400" height="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="t4_lsec" value="&lt;b&gt;Per-QP 速率控制&lt;/b&gt;" style="text;html=1;align=center;fontSize=13;fontColor=#333;" parent="t4_1" vertex="1">
+                    <mxGeometry x="40" y="45" width="200" height="25" as="geometry"/>
+                </mxCell>
+                <mxCell id="t4_r1" value="QP 发包&lt;br&gt;&lt;font style=&quot;font-size:10px&quot;&gt;acc_cnt += wqe_data_size&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;shadow=1;" parent="t4_1" vertex="1">
+                    <mxGeometry x="40" y="80" width="200" height="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="t4_r2" value="窗口检查&lt;br&gt;&lt;font style=&quot;font-size:10px&quot;&gt;acc_cnt &amp;gt;= length_thr?&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;shadow=1;" parent="t4_1" vertex="1">
+                    <mxGeometry x="40" y="170" width="200" height="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="t4_r3" value="阻塞 QP&lt;br&gt;&lt;font style=&quot;font-size:10px&quot;&gt;置位 ARB_REQ_MASK&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=12;shadow=1;strokeWidth=2;" parent="t4_1" vertex="1">
+                    <mxGeometry x="40" y="260" width="200" height="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="t4_r4" value="窗口复位&lt;br&gt;&lt;font style=&quot;font-size:10px&quot;&gt;acc_cnt = max(acc_cnt - length_thr, 0)&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;shadow=1;" parent="t4_1" vertex="1">
+                    <mxGeometry x="40" y="350" width="200" height="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="t4_re1" style="edgeStyle=orthogonalEdgeStyle;orthogonalLoop=1;jettySize=auto;rounded=0;html=1;strokeColor=#6c8ebf;strokeWidth=2;endArrow=block;endFill=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" parent="t4_1" source="t4_r1" target="t4_r2" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="t4_re2" value="&amp;gt;=thr" style="edgeStyle=orthogonalEdgeStyle;orthogonalLoop=1;jettySize=auto;rounded=0;html=1;strokeColor=#6c8ebf;strokeWidth=2;endArrow=block;endFill=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;fontSize=10;" parent="t4_1" source="t4_r2" target="t4_r3" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="t4_re3" value="下一窗口" style="edgeStyle=orthogonalEdgeStyle;orthogonalLoop=1;jettySize=auto;rounded=0;html=1;strokeColor=#6c8ebf;strokeWidth=2;endArrow=block;endFill=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;fontSize=10;" parent="t4_1" source="t4_r3" target="t4_r4" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="t4_re4" value="&amp;lt;thr" style="edgeStyle=orthogonalEdgeStyle;orthogonalLoop=1;rounded=0;html=1;strokeColor=#6c8ebf;strokeWidth=2;endArrow=block;endFill=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=1;entryY=0.5;entryDx=0;entryDy=0;fontSize=10;" parent="t4_1" source="t4_r2" target="t4_r4" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="260" y="195"/>
+                            <mxPoint x="260" y="375"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="t4_re5" style="edgeStyle=orthogonalEdgeStyle;orthogonalLoop=1;rounded=0;html=1;strokeColor=#6c8ebf;strokeWidth=2;endArrow=block;endFill=1;exitX=0;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" parent="t4_1" source="t4_r4" target="t4_r1" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="20" y="375"/>
+                            <mxPoint x="20" y="105"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="t4_rdp" value="&lt;b&gt;速率控制参数&lt;/b&gt;&lt;br&gt;&lt;br&gt;&lt;b&gt;CC_WINDOW&lt;/b&gt;: 4.096 ~ 65.536 us&lt;br&gt;&lt;b&gt;length_thr&lt;/b&gt;: per-QP 配置&lt;br&gt;&lt;br&gt;示例 (length_thr = 0x30):&lt;br&gt;窗口1: 发0x10-&amp;gt;acc=0x10 (OK)&lt;br&gt;           发0x30-&amp;gt;acc=0x40 (阻塞)&lt;br&gt;窗口2: acc=max(0x40-0x30,0)=0x10" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#E0E0E0;shadow=1;fontSize=11;align=left;verticalAlign=top;spacingLeft=12;spacingTop=6;spacingRight=8;" parent="t4_1" vertex="1">
+                    <mxGeometry x="280" y="80" width="240" height="180" as="geometry"/>
+                </mxCell>
+                <mxCell id="t4_rsec" value="&lt;b&gt;TYPE1 发送仲裁&lt;/b&gt;" style="text;html=1;align=center;fontSize=13;fontColor=#333;" parent="t4_1" vertex="1">
+                    <mxGeometry x="580" y="45" width="180" height="25" as="geometry"/>
+                </mxCell>
+                <mxCell id="t4_a1" value="512 Slot Queue (FIFO)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;shadow=1;" parent="t4_1" vertex="1">
+                    <mxGeometry x="580" y="80" width="180" height="44" as="geometry"/>
+                </mxCell>
+                <mxCell id="t4_a2" value="Bank 轮转 (4 Bank)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;shadow=1;" parent="t4_1" vertex="1">
+                    <mxGeometry x="580" y="160" width="180" height="44" as="geometry"/>
+                </mxCell>
+                <mxCell id="t4_a3" value="速率控制 Gate &lt;font color=&quot;#d79b00&quot;&gt;[GATE]&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;shadow=1;" parent="t4_1" vertex="1">
+                    <mxGeometry x="580" y="240" width="180" height="44" as="geometry"/>
+                </mxCell>
+                <mxCell id="t4_a4" value="CBFC Credit Gate &lt;font color=&quot;#d79b00&quot;&gt;[GATE]&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;shadow=1;" parent="t4_1" vertex="1">
+                    <mxGeometry x="580" y="320" width="180" height="44" as="geometry"/>
+                </mxCell>
+                <mxCell id="t4_a5" value="MAC 帧封装 -&amp;gt; CESOC" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=12;shadow=1;strokeWidth=2;" parent="t4_1" vertex="1">
+                    <mxGeometry x="580" y="400" width="180" height="44" as="geometry"/>
+                </mxCell>
+                <mxCell id="t4_ae1" style="edgeStyle=orthogonalEdgeStyle;orthogonalLoop=1;jettySize=auto;rounded=0;html=1;strokeColor=#6c8ebf;strokeWidth=2;endArrow=block;endFill=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" parent="t4_1" source="t4_a1" target="t4_a2" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="t4_ae2" style="edgeStyle=orthogonalEdgeStyle;orthogonalLoop=1;jettySize=auto;rounded=0;html=1;strokeColor=#6c8ebf;strokeWidth=2;endArrow=block;endFill=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" parent="t4_1" source="t4_a2" target="t4_a3" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="t4_ae3" style="edgeStyle=orthogonalEdgeStyle;orthogonalLoop=1;jettySize=auto;rounded=0;html=1;strokeColor=#6c8ebf;strokeWidth=2;endArrow=block;endFill=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" parent="t4_1" source="t4_a3" target="t4_a4" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="t4_ae4" style="edgeStyle=orthogonalEdgeStyle;orthogonalLoop=1;jettySize=auto;rounded=0;html=1;strokeColor=#6c8ebf;strokeWidth=2;endArrow=block;endFill=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" parent="t4_1" source="t4_a4" target="t4_a5" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="t4_adp" value="&lt;b&gt;仲裁规则&lt;/b&gt;&lt;br&gt;&lt;br&gt;&lt;b&gt;Bank 轮转&lt;/b&gt;: QPID[1:0] 分 4 Bank&lt;br&gt;发出一个 Bank 后优先调度其他 Bank&lt;br&gt;&lt;br&gt;&lt;b&gt;速率 Gate&lt;/b&gt;: acc_cnt &amp;gt;= length_thr 阻塞&lt;br&gt;&lt;b&gt;CBFC Gate&lt;/b&gt;: credit &amp;lt; uf_limit 阻塞" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#E0E0E0;shadow=1;fontSize=11;align=left;verticalAlign=top;spacingLeft=12;spacingTop=6;spacingRight=8;" parent="t4_1" vertex="1">
+                    <mxGeometry x="800" y="136" width="250" height="150" as="geometry"/>
+                </mxCell>
+                <mxCell id="t4_d_e1" style="rounded=0;html=1;dashed=1;dashPattern=5 5;strokeColor=#BDBDBD;endArrow=none;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.3;entryDx=0;entryDy=0;" parent="t4_1" source="t4_a2" target="t4_adp" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="t4_leg_bg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#E0E0E0;" parent="t4_1" vertex="1">
+                    <mxGeometry x="40" y="510" width="920" height="35" as="geometry"/>
+                </mxCell>
+                <mxCell id="t4_leg1" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" parent="t4_1" vertex="1">
+                    <mxGeometry x="60" y="518" width="20" height="14" as="geometry"/>
+                </mxCell>
+                <mxCell id="t4_leg1t" value="处理步骤" style="text;html=1;fontSize=10;align=left;" parent="t4_1" vertex="1">
+                    <mxGeometry x="85" y="515" width="70" height="20" as="geometry"/>
+                </mxCell>
+                <mxCell id="t4_leg2" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;" parent="t4_1" vertex="1">
+                    <mxGeometry x="180" y="518" width="20" height="14" as="geometry"/>
+                </mxCell>
+                <mxCell id="t4_leg2t" value="阻塞/输出" style="text;html=1;fontSize=10;align=left;" parent="t4_1" vertex="1">
+                    <mxGeometry x="205" y="515" width="70" height="20" as="geometry"/>
+                </mxCell>
+                <mxCell id="t4_leg3t" value="&lt;font color=&quot;#d79b00&quot;&gt;[GATE]&lt;/font&gt; = 流控门控点" style="text;html=1;fontSize=10;align=left;" parent="t4_1" vertex="1">
+                    <mxGeometry x="300" y="515" width="150" height="20" as="geometry"/>
+                </mxCell>
+                <mxCell id="t4_leg4" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#E0E0E0;" parent="t4_1" vertex="1">
+                    <mxGeometry x="480" y="518" width="20" height="14" as="geometry"/>
+                </mxCell>
+                <mxCell id="t4_leg4t" value="参数说明" style="text;html=1;fontSize=10;align=left;" parent="t4_1" vertex="1">
+                    <mxGeometry x="505" y="515" width="70" height="20" as="geometry"/>
+                </mxCell>
+            </root>
+        </mxGraphModel>
+    </diagram>
+    <diagram id="cnp-mul" name="5.6-5.7 CNP Merge + Multicast FC">
+        <mxGraphModel dx="573" dy="505" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1100" pageHeight="560" math="0" shadow="0">
+            <root>
+                <mxCell id="t5_0"/>
+                <mxCell id="t5_1" parent="t5_0"/>
+                <mxCell id="t5_title" value="5.6-5.7 CNP Merge + Multicast FC" style="text;html=1;align=center;fontSize=16;fontColor=#333;" parent="t5_1" vertex="1">
+                    <mxGeometry x="300" y="10" width="400" height="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="t5_sec1" value="&lt;b&gt;CNP MERGE 拥塞通知过滤&lt;/b&gt;" style="text;html=1;align=left;fontSize=13;fontColor=#333;" parent="t5_1" vertex="1">
+                    <mxGeometry x="60" y="45" width="300" height="25" as="geometry"/>
+                </mxCell>
+                <mxCell id="t5_c1" value="收到 CNP 报文" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;shadow=1;" parent="t5_1" vertex="1">
+                    <mxGeometry x="60" y="80" width="160" height="44" as="geometry"/>
+                </mxCell>
+                <mxCell id="t5_cdm" value="QPID 在&lt;br&gt;Buffer 中?" style="rhombus;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=11;" parent="t5_1" vertex="1">
+                    <mxGeometry x="280" y="67" width="140" height="70" as="geometry"/>
+                </mxCell>
+                <mxCell id="t5_c3a" value="首次: 透传" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;shadow=1;" parent="t5_1" vertex="1">
+                    <mxGeometry x="480" y="60" width="140" height="36" as="geometry"/>
+                </mxCell>
+                <mxCell id="t5_c3b" value="检查时间差" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;shadow=1;" parent="t5_1" vertex="1">
+                    <mxGeometry x="480" y="110" width="140" height="36" as="geometry"/>
+                </mxCell>
+                <mxCell id="t5_c4a" value="&amp;gt; TIMER_THR: 透传" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;shadow=1;" parent="t5_1" vertex="1">
+                    <mxGeometry x="680" y="60" width="170" height="36" as="geometry"/>
+                </mxCell>
+                <mxCell id="t5_c4b" value="&amp;lt;= TIMER_THR: 过滤" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=12;shadow=1;strokeWidth=2;" parent="t5_1" vertex="1">
+                    <mxGeometry x="680" y="119" width="170" height="36" as="geometry"/>
+                </mxCell>
+                <mxCell id="t5_ce1" style="edgeStyle=orthogonalEdgeStyle;orthogonalLoop=1;jettySize=auto;rounded=0;html=1;strokeColor=#6c8ebf;strokeWidth=2;endArrow=block;endFill=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" parent="t5_1" source="t5_c1" target="t5_cdm" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="t5_ce2" value="No" style="edgeStyle=orthogonalEdgeStyle;orthogonalLoop=1;jettySize=auto;rounded=0;html=1;strokeColor=#6c8ebf;strokeWidth=2;endArrow=block;endFill=1;exitX=1;exitY=0.25;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;fontSize=10;" parent="t5_1" source="t5_cdm" target="t5_c3a" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="t5_ce3" value="Yes" style="edgeStyle=orthogonalEdgeStyle;orthogonalLoop=1;jettySize=auto;rounded=0;html=1;strokeColor=#6c8ebf;strokeWidth=2;endArrow=block;endFill=1;exitX=1;exitY=0.75;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;fontSize=10;" parent="t5_1" source="t5_cdm" target="t5_c3b" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="t5_ce4" style="edgeStyle=orthogonalEdgeStyle;orthogonalLoop=1;jettySize=auto;rounded=0;html=1;strokeColor=#6c8ebf;strokeWidth=2;endArrow=block;endFill=1;exitX=1;exitY=0.25;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" parent="t5_1" source="t5_c3b" target="t5_c4a" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="t5_ce5" style="edgeStyle=orthogonalEdgeStyle;orthogonalLoop=1;jettySize=auto;rounded=0;html=1;strokeColor=#6c8ebf;strokeWidth=2;endArrow=block;endFill=1;exitX=1;exitY=0.75;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" parent="t5_1" source="t5_c3b" target="t5_c4b" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="t5_cdp" value="&lt;b&gt;CNP MERGE 参数&lt;/b&gt;&lt;br&gt;&lt;br&gt;&lt;b&gt;QPID Buffer&lt;/b&gt;: 深度 8&lt;br&gt;&lt;b&gt;TIMER Buffer&lt;/b&gt;: 记录每个 QPID 最近处理时间&lt;br&gt;&lt;b&gt;TIMER_THR_I&lt;/b&gt;: 可配置过滤间隔&lt;br&gt;目的: 防止拥塞时 CNP 风暴导致过度降速" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#E0E0E0;shadow=1;fontSize=11;align=left;verticalAlign=top;spacingLeft=12;spacingTop=6;spacingRight=8;" parent="t5_1" vertex="1">
+                    <mxGeometry x="60" y="170" width="400" height="100" as="geometry"/>
+                </mxCell>
+                <mxCell id="t5_sec2" value="&lt;b&gt;多播双重流控&lt;/b&gt;" style="text;html=1;align=left;fontSize=13;fontColor=#333;" parent="t5_1" vertex="1">
+                    <mxGeometry x="60" y="310" width="200" height="25" as="geometry"/>
+                </mxCell>
+                <mxCell id="t5_m1" value="发送 TYPE2 报文" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;shadow=1;" parent="t5_1" vertex="1">
+                    <mxGeometry x="60" y="350" width="160" height="44" as="geometry"/>
+                </mxCell>
+                <mxCell id="t5_mdm1" value="CBFC VC4&lt;br&gt;Credit?&lt;br&gt;&lt;font color=&quot;#d79b00&quot; style=&quot;font-size:9px&quot;&gt;[GATE]&lt;/font&gt;" style="rhombus;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=11;" parent="t5_1" vertex="1">
+                    <mxGeometry x="280" y="340" width="140" height="70" as="geometry"/>
+                </mxCell>
+                <mxCell id="t5_mdm2" value="多播专用&lt;br&gt;Credit?&lt;br&gt;&lt;font color=&quot;#d79b00&quot; style=&quot;font-size:9px&quot;&gt;[GATE]&lt;/font&gt;" style="rhombus;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=11;" parent="t5_1" vertex="1">
+                    <mxGeometry x="480" y="340" width="140" height="70" as="geometry"/>
+                </mxCell>
+                <mxCell id="t5_m4a" value="允许发送" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;shadow=1;" parent="t5_1" vertex="1">
+                    <mxGeometry x="680" y="355" width="140" height="40" as="geometry"/>
+                </mxCell>
+                <mxCell id="t5_m4b" value="阻塞" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=12;shadow=1;strokeWidth=2;" parent="t5_1" vertex="1">
+                    <mxGeometry x="480" y="450" width="140" height="40" as="geometry"/>
+                </mxCell>
+                <mxCell id="t5_me1" style="edgeStyle=orthogonalEdgeStyle;orthogonalLoop=1;jettySize=auto;rounded=0;html=1;strokeColor=#6c8ebf;strokeWidth=2;endArrow=block;endFill=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" parent="t5_1" source="t5_m1" target="t5_mdm1" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="t5_me2" value="满足" style="edgeStyle=orthogonalEdgeStyle;orthogonalLoop=1;jettySize=auto;rounded=0;html=1;strokeColor=#6c8ebf;strokeWidth=2;endArrow=block;endFill=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;fontSize=10;" parent="t5_1" source="t5_mdm1" target="t5_mdm2" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="t5_me3" value="不满足" style="edgeStyle=orthogonalEdgeStyle;orthogonalLoop=1;jettySize=auto;rounded=0;html=1;strokeColor=#6c8ebf;strokeWidth=2;endArrow=block;endFill=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;fontSize=10;" parent="t5_1" source="t5_mdm1" target="t5_m4b" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="t5_me4" value="满足" style="edgeStyle=orthogonalEdgeStyle;orthogonalLoop=1;jettySize=auto;rounded=0;html=1;strokeColor=#6c8ebf;strokeWidth=2;endArrow=block;endFill=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;fontSize=10;" parent="t5_1" source="t5_mdm2" target="t5_m4a" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="t5_me5" value="不满足" style="edgeStyle=orthogonalEdgeStyle;orthogonalLoop=1;jettySize=auto;rounded=0;html=1;strokeColor=#6c8ebf;strokeWidth=2;endArrow=block;endFill=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;fontSize=10;" parent="t5_1" source="t5_mdm2" target="t5_m4b" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="t5_leg_bg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#E0E0E0;" parent="t5_1" vertex="1">
+                    <mxGeometry x="40" y="510" width="920" height="35" as="geometry"/>
+                </mxCell>
+                <mxCell id="t5_leg1" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" parent="t5_1" vertex="1">
+                    <mxGeometry x="60" y="518" width="20" height="14" as="geometry"/>
+                </mxCell>
+                <mxCell id="t5_leg1t" value="处理步骤" style="text;html=1;fontSize=10;align=left;" parent="t5_1" vertex="1">
+                    <mxGeometry x="85" y="515" width="70" height="20" as="geometry"/>
+                </mxCell>
+                <mxCell id="t5_leg2" value="" style="rhombus;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" parent="t5_1" vertex="1">
+                    <mxGeometry x="180" y="516" width="18" height="18" as="geometry"/>
+                </mxCell>
+                <mxCell id="t5_leg2t" value="判断节点" style="text;html=1;fontSize=10;align=left;" parent="t5_1" vertex="1">
+                    <mxGeometry x="205" y="515" width="70" height="20" as="geometry"/>
+                </mxCell>
+                <mxCell id="t5_leg3" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;" parent="t5_1" vertex="1">
+                    <mxGeometry x="300" y="518" width="20" height="14" as="geometry"/>
+                </mxCell>
+                <mxCell id="t5_leg3t" value="过滤/阻塞" style="text;html=1;fontSize=10;align=left;" parent="t5_1" vertex="1">
+                    <mxGeometry x="325" y="515" width="70" height="20" as="geometry"/>
+                </mxCell>
+                <mxCell id="t5_leg4t" value="&lt;font color=&quot;#d79b00&quot;&gt;[GATE]&lt;/font&gt; = 流控门控点" style="text;html=1;fontSize=10;align=left;" parent="t5_1" vertex="1">
+                    <mxGeometry x="420" y="515" width="150" height="20" as="geometry"/>
+                </mxCell>
+                <mxCell id="t5_leg5" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#E0E0E0;" parent="t5_1" vertex="1">
+                    <mxGeometry x="600" y="518" width="20" height="14" as="geometry"/>
+                </mxCell>
+                <mxCell id="t5_leg5t" value="参数说明" style="text;html=1;fontSize=10;align=left;" parent="t5_1" vertex="1">
+                    <mxGeometry x="625" y="515" width="70" height="20" as="geometry"/>
+                </mxCell>
+            </root>
+        </mxGraphModel>
+    </diagram>
+</mxfile>

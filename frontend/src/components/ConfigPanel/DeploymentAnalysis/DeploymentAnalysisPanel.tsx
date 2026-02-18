@@ -62,6 +62,7 @@ import {
   getBenchmark,
   createBenchmark,
   updateBenchmark,
+  deleteBenchmark,
   getTopology,
   createTopology,
   updateTopology,
@@ -97,6 +98,7 @@ import {
   generateTopologyName,
 } from '../../../utils/configNameGenerator'
 import { BaseCard } from '@/components/common/BaseCard'
+import { DeleteConfirmButton } from '@/components/common/DeleteConfirmButton'
 import { ParallelismConfigPanel } from './ParallelismConfigPanel'
 import { AnalysisResultDisplay } from './AnalysisResultDisplay'
 import { useTaskWebSocket, TaskUpdate } from '../../../hooks/useTaskWebSocket'
@@ -157,8 +159,6 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
       num_kv_heads: 32,
       intermediate_size: 11008,
       vocab_size: 32000,
-      weight_dtype: 'bf16',
-      activation_dtype: 'bf16',
       max_seq_length: 4096,
       norm_type: 'rmsnorm',
     }
@@ -171,6 +171,8 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
     output_seq_length: 256,
     max_seq_length: 768,
     num_micro_batches: 4,
+    weight_dtype: 'bf16',
+    activation_dtype: 'bf16',
   })
 
   // 从拓扑配置提取的芯片组
@@ -219,6 +221,9 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
 
   // Ring Attention overlap 优化开关（需 TP > 1）
   const [enableRingAttention, setEnableRingAttention] = useState<boolean>(false)
+
+  // TBO (Transport/Bandwidth Overlap) 开关：MoE dispatch/combine 与计算重叠
+  const [enableTbo, setEnableTbo] = useState<boolean>(false)
 
   // 原始配置快照（用于修改追踪）
   const [originalBenchmarkConfig, setOriginalBenchmarkConfig] = useState<{
@@ -592,24 +597,21 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
 
       // 3. 更新推理参数 (含 dtype)
       const inf = fullConfig.inference as Record<string, unknown>
+      if (!inf.weight_dtype) {
+        throw new Error(`Missing 'weight_dtype' in benchmark inference config: ${selectedBenchmarkId}`)
+      }
+      if (!inf.activation_dtype) {
+        throw new Error(`Missing 'activation_dtype' in benchmark inference config: ${selectedBenchmarkId}`)
+      }
       const newInference: InferenceConfig = {
-        batch_size: Number(inf.batch_size) || 1,
-        input_seq_length: Number(inf.input_seq_length) || 4096,
-        output_seq_length: Number(inf.output_seq_length) || 1024,
-        max_seq_length: (Number(inf.input_seq_length) || 4096) + (Number(inf.output_seq_length) || 1024),
-        weight_dtype: (inf.weight_dtype as DataType) || undefined,
-        activation_dtype: (inf.activation_dtype as DataType) || undefined,
+        batch_size: Number(inf.batch_size),
+        input_seq_length: Number(inf.input_seq_length),
+        output_seq_length: Number(inf.output_seq_length),
+        max_seq_length: Number(inf.input_seq_length) + Number(inf.output_seq_length),
+        weight_dtype: inf.weight_dtype as DataType,
+        activation_dtype: inf.activation_dtype as DataType,
       }
       setInferenceConfig(newInference)
-
-      // 4. 同步 dtype 到 modelConfig
-      if (inf.weight_dtype || inf.activation_dtype) {
-        setModelConfig(prev => ({
-          ...prev,
-          ...(inf.weight_dtype ? { weight_dtype: inf.weight_dtype as DataType } : {}),
-          ...(inf.activation_dtype ? { activation_dtype: inf.activation_dtype as DataType } : {}),
-        }))
-      }
 
       // 5. 直接从后端响应拍快照 (用预设名称，不等 React state settle)
       setBenchmarkSnapshot({
@@ -688,8 +690,8 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
       batch_size: snap ? inferenceConfig.batch_size !== snap.inference.batch_size : false,
       input_seq_length: snap ? inferenceConfig.input_seq_length !== snap.inference.input_seq_length : false,
       output_seq_length: snap ? inferenceConfig.output_seq_length !== snap.inference.output_seq_length : false,
-      weight_dtype: snap ? (inferenceConfig.weight_dtype || modelConfig.weight_dtype) !== (snap.inference.weight_dtype || 'bf16') : false,
-      activation_dtype: snap ? (inferenceConfig.activation_dtype || modelConfig.activation_dtype) !== (snap.inference.activation_dtype || 'bf16') : false,
+      weight_dtype: snap ? inferenceConfig.weight_dtype !== snap.inference.weight_dtype : false,
+      activation_dtype: snap ? inferenceConfig.activation_dtype !== snap.inference.activation_dtype : false,
     }
   }, [inferenceConfig, modelConfig, benchmarkSnapshot, modelPreset.name, topologyConfigForEditor.name, modelParamsModified, topologyParamsModified])
 
@@ -735,8 +737,8 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
           batch_size: inferenceConfig.batch_size,
           input_seq_length: inferenceConfig.input_seq_length,
           output_seq_length: inferenceConfig.output_seq_length,
-          weight_dtype: inferenceConfig.weight_dtype || modelConfig.weight_dtype,
-          activation_dtype: inferenceConfig.activation_dtype || modelConfig.activation_dtype,
+          weight_dtype: inferenceConfig.weight_dtype,
+          activation_dtype: inferenceConfig.activation_dtype,
         },
       })
       const res = await getBenchmarks()
@@ -770,8 +772,8 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
           batch_size: inferenceConfig.batch_size,
           input_seq_length: inferenceConfig.input_seq_length,
           output_seq_length: inferenceConfig.output_seq_length,
-          weight_dtype: inferenceConfig.weight_dtype || modelConfig.weight_dtype,
-          activation_dtype: inferenceConfig.activation_dtype || modelConfig.activation_dtype,
+          weight_dtype: inferenceConfig.weight_dtype,
+          activation_dtype: inferenceConfig.activation_dtype,
         },
       })
       const res = await getBenchmarks()
@@ -793,6 +795,20 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
   const handleResetBenchmark = useCallback(() => {
     if (!selectedBenchmarkId) return
     handleBenchmarkPresetChange(selectedBenchmarkId)
+  }, [selectedBenchmarkId, handleBenchmarkPresetChange])
+
+  const handleDeleteBenchmark = useCallback(async () => {
+    if (!selectedBenchmarkId) return
+    await deleteBenchmark(selectedBenchmarkId)
+    const res = await getBenchmarks()
+    setBenchmarkPresets(res.benchmarks)
+    if (res.benchmarks.length > 0) {
+      setSelectedBenchmarkId(res.benchmarks[0].id)
+      handleBenchmarkPresetChange(res.benchmarks[0].id)
+    } else {
+      setSelectedBenchmarkId('')
+    }
+    toast.success('Benchmark deleted')
   }, [selectedBenchmarkId, handleBenchmarkPresetChange])
 
   // 提取当前 ChipPreset 供 ChipPresetEditor 使用
@@ -1320,8 +1336,6 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
           model: modelPreset as unknown as Record<string, unknown>,
           inference: {
             ...inferenceConfig,
-            weight_dtype: inferenceConfig.weight_dtype || modelConfig.weight_dtype,
-            activation_dtype: inferenceConfig.activation_dtype || modelConfig.activation_dtype,
           } as unknown as Record<string, unknown>,
         },
         topology_config: {
@@ -1344,6 +1358,7 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
           is_prefill: enablePrefill,
           enable_zigzag: enableZigzag,
           enable_ring_attention: enableRingAttention,
+          enable_tbo: enableTbo,
         } as unknown as Record<string, unknown> : undefined,
         search_constraints: parallelismMode === 'auto' ? { max_chips: maxChips } : undefined,
         max_workers: taskMaxWorkers,
@@ -1372,7 +1387,7 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
     experimentName, taskMaxWorkers, modelPreset, modelConfig, inferenceConfig, parallelismMode, manualStrategy,
     maxChips, addTask, updateTask, setAnalysisTasks, selectedTopologyConfig, selectedBenchmark,
     localPodCount, localRacksPerPod, localRackConfig, localHardwareParams, commLatencyConfig,
-    enablePrefill, enableZigzag, enableRingAttention, topologyConfigForEditor
+    enablePrefill, enableZigzag, enableRingAttention, enableTbo, topologyConfigForEditor
   ])
 
   // 运行参数遍历（批量提交任务）
@@ -1466,8 +1481,6 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
             model: overriddenConfig.model,
             inference: {
               ...overriddenConfig.inference,
-              weight_dtype: (overriddenConfig.inference as InferenceConfig).weight_dtype || modelConfig.weight_dtype,
-              activation_dtype: (overriddenConfig.inference as InferenceConfig).activation_dtype || modelConfig.activation_dtype,
             },
           },
           topology_config: {
@@ -1490,6 +1503,7 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
             is_prefill: enablePrefill,
             enable_zigzag: enableZigzag,
             enable_ring_attention: enableRingAttention,
+            enable_tbo: enableTbo,
           } as unknown as Record<string, unknown>,
           max_workers: taskMaxWorkers,
         })
@@ -1528,6 +1542,7 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
     enablePrefill,
     enableZigzag,
     enableRingAttention,
+    enableTbo,
   ])
 
 
@@ -1643,10 +1658,9 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
                       <span className="text-[13px] text-gray-600">权重精度</span>
                       {benchmarkModBadge('weight_dtype')}
                     </div>
-                    <Select value={inferenceConfig.weight_dtype || modelConfig.weight_dtype}
+                    <Select value={inferenceConfig.weight_dtype}
                       onValueChange={(v) => {
                         setInferenceConfig(prev => ({ ...prev, weight_dtype: v as DataType }))
-                        setModelConfig(prev => ({ ...prev, weight_dtype: v as DataType }))
                       }}>
                       <SelectTrigger className="w-full h-7"><SelectValue /></SelectTrigger>
                       <SelectContent>
@@ -1663,10 +1677,9 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
                       <span className="text-[13px] text-gray-600">激活精度</span>
                       {benchmarkModBadge('activation_dtype')}
                     </div>
-                    <Select value={inferenceConfig.activation_dtype || modelConfig.activation_dtype}
+                    <Select value={inferenceConfig.activation_dtype}
                       onValueChange={(v) => {
                         setInferenceConfig(prev => ({ ...prev, activation_dtype: v as DataType }))
-                        setModelConfig(prev => ({ ...prev, activation_dtype: v as DataType }))
                       }}>
                       <SelectTrigger className="w-full h-7"><SelectValue /></SelectTrigger>
                       <SelectContent>
@@ -1690,6 +1703,12 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
                   <Button variant="outline" size="sm" onClick={handleResetBenchmark} disabled={!selectedBenchmarkId}>
                     <RefreshCw className="h-3.5 w-3.5 mr-1" />重新加载
                   </Button>
+                  <DeleteConfirmButton
+                    name={selectedBenchmarkId}
+                    label="删除配置"
+                    onConfirm={handleDeleteBenchmark}
+                    disabled={!selectedBenchmarkId}
+                  />
                 </div>
               </div>
             </BaseCard>
@@ -1760,7 +1779,7 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
               {/* --- 评估选项 --- */}
               <div className="mt-4 pt-4 border-t border-gray-200">
                 <div className="mb-3 text-xs font-medium text-gray-500">评估选项</div>
-                <div className="grid grid-cols-3 gap-4">
+                <div className="grid grid-cols-4 gap-4">
                   <div className="text-center">
                     <HelpTooltip label="Prefill 阶段" content="预填充阶段: 处理输入序列，计算密集型" labelClassName="text-[11px] text-gray-600 block mb-1 cursor-help" />
                     <div className="flex justify-center h-7 items-center"><Switch checked={enablePrefill} onCheckedChange={setEnablePrefill} /></div>
@@ -1772,6 +1791,10 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
                   <div className="text-center">
                     <HelpTooltip label="Ring Attn" content="Ring Attention: Layer 级重叠优化，Attention 层的计算与通信完全并行（需 TP>1）" labelClassName="text-[11px] text-gray-600 block mb-1 cursor-help" />
                     <div className="flex justify-center h-7 items-center"><Switch checked={enableRingAttention} onCheckedChange={setEnableRingAttention} /></div>
+                  </div>
+                  <div className="text-center">
+                    <HelpTooltip label="TBO" content="Transport/Bandwidth Overlap: MoE 模型的 dispatch/combine 通信与计算重叠优化（仅 MoE 模型生效）" labelClassName="text-[11px] text-gray-600 block mb-1 cursor-help" />
+                    <div className="flex justify-center h-7 items-center"><Switch checked={enableTbo} onCheckedChange={setEnableTbo} /></div>
                   </div>
                 </div>
               </div>

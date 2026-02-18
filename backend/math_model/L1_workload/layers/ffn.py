@@ -5,13 +5,18 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
-from math_model.L0_entry.types import DataType
 from math_model.L1_workload.graph import GraphEdge, GraphNode, NodeKind, NodeRole
 from math_model.L1_workload.layers import layer_registry
 from math_model.L1_workload.layers.base import LayerBase, LayerRole
-from math_model.L1_workload.operators.compute.matmul import MatMulOp
+from math_model.L1_workload.layers.utils import (
+    get_batch,
+    get_hidden_size,
+    get_intermediate_size,
+    get_seq_len,
+    matmul_flops,
+)
 from math_model.L1_workload.tensor import TensorDesc
 
 if TYPE_CHECKING:
@@ -29,16 +34,16 @@ class FFNLayer(LayerBase):
         4. Down Projection: hidden @ Wdown -> output
 
     Config 参数:
-        - hidden_size: 隐藏层大小
-        - intermediate_size: 中间层大小
-        - seq_len: 序列长度
-        - batch: 批次大小
+        - hidden_size / hidden_dim: 隐藏层大小
+        - intermediate_size / inter_dim: 中间层大小
+        - seq_len / q_seq_len: 序列长度
+        - batch / batch_size: 批次大小
 
     Example:
         >>> layer = FFNLayer("ffn_0", {
         ...     "hidden_size": 4096,
         ...     "intermediate_size": 11008,
-        ...     "seq_len": 2048,
+        ...     "q_seq_len": 1,
         ...     "batch": 1,
         ... })
         >>> print(layer.compute_flops())
@@ -54,22 +59,16 @@ class FFNLayer(LayerBase):
 
     def get_inputs(self) -> list[TensorDesc]:
         """获取输入张量: hidden_states"""
-        default_batch = 1  # common batch fallback
-        default_seq_len = 2048  # typical model context length
-        default_hidden = 4096  # typical hidden size
-        b = self._config.get("batch", default_batch)
-        s = self._config.get("seq_len", default_seq_len)
-        h = self._config.get("hidden_size", default_hidden)
+        b = get_batch(self._config)
+        s = get_seq_len(self._config)
+        h = get_hidden_size(self._config)
         return [self._tensor(name="hidden_states", shape=[b, s, h])]
 
     def get_outputs(self) -> list[TensorDesc]:
         """获取输出张量: ffn_output"""
-        default_batch = 1  # common batch fallback
-        default_seq_len = 2048  # typical model context length
-        default_hidden = 4096  # typical hidden size
-        b = self._config.get("batch", default_batch)
-        s = self._config.get("seq_len", default_seq_len)
-        h = self._config.get("hidden_size", default_hidden)
+        b = get_batch(self._config)
+        s = get_seq_len(self._config)
+        h = get_hidden_size(self._config)
         return [self._tensor(name="ffn_output", shape=[b, s, h], is_output=True)]
 
     def compute_flops(self) -> int:
@@ -81,19 +80,18 @@ class FFNLayer(LayerBase):
             - Down Projection: 2 * B * S * I * H
             Total: 6 * B * S * H * I
         """
-        default_batch = 1  # common batch fallback
-        default_seq_len = 2048  # typical model context length
-        default_hidden = 4096  # typical hidden size
-        expansion = 4  # intermediate_size = hidden_size * 4
-        b = self._config.get("batch", default_batch)
-        s = self._config.get("seq_len", default_seq_len)
-        h = self._config.get("hidden_size", default_hidden)
-        i = self._config.get("intermediate_size", h * expansion)
-        mul_add = 2  # matmul uses 2 * M * K * N
-        proj_count = 3  # gate + up + down projections
+        b = get_batch(self._config)
+        s = get_seq_len(self._config)
+        h = get_hidden_size(self._config)
+        i = get_intermediate_size(self._config)
+        tokens = b * s
+        gate_up_count = 2  # gate + up projections
+        down_count = 1  # down projection
 
-        # Gate + Up + Down projections
-        return mul_add * b * s * h * i * proj_count
+        return (
+            matmul_flops(tokens, h, i) * gate_up_count
+            + matmul_flops(tokens, i, h) * down_count
+        )
 
     def compute_memory(self) -> tuple[int, int]:
         """计算内存占用
@@ -101,23 +99,16 @@ class FFNLayer(LayerBase):
         Returns:
             tuple[int, int]: (weight_bytes, activation_bytes)
         """
-        default_batch = 1  # common batch fallback
-        default_seq_len = 2048  # typical model context length
-        default_hidden = 4096  # typical hidden size
-        expansion = 4  # intermediate_size = hidden_size * 4
-        h = self._config.get("hidden_size", default_hidden)
-        i = self._config.get("intermediate_size", h * expansion)
-        b = self._config.get("batch", default_batch)
-        s = self._config.get("seq_len", default_seq_len)
+        b = get_batch(self._config)
+        s = get_seq_len(self._config)
+        h = get_hidden_size(self._config)
+        i = get_intermediate_size(self._config)
         act_bytes = self._activation_dtype.bytes
         weight_bytes_per_elem = self._weight_dtype.bytes
-        up_down_count = 2  # gate + up activations
+        gate_up_count = 2  # gate + up weights
 
-        # 权重: Wgate, Wup, Wdown
-        weight_bytes = (h * i * up_down_count + i * h) * weight_bytes_per_elem
-
-        # 激活: input, gate, up, hidden, output
-        activation_bytes = (b * s * h + b * s * i * up_down_count + b * s * h) * act_bytes
+        weight_bytes = (h * i * gate_up_count + i * h) * weight_bytes_per_elem
+        activation_bytes = (b * s * h + b * s * i * gate_up_count + b * s * h) * act_bytes
 
         return weight_bytes, activation_bytes
 
@@ -152,14 +143,10 @@ class FFNLayer(LayerBase):
         Returns:
             list[OpBase]: Op 列表
         """
-        default_batch = 1  # common batch fallback
-        default_seq_len = 2048  # typical model context length
-        default_hidden = 4096  # typical hidden size
-        expansion = 4  # intermediate_size = hidden_size * 4
-        b = self._config.get("batch", default_batch)
-        s = self._config.get("seq_len", default_seq_len)
-        h = self._config.get("hidden_size", default_hidden)
-        i = self._config.get("intermediate_size", h * expansion)
+        b = get_batch(self._config)
+        s = get_seq_len(self._config)
+        h = get_hidden_size(self._config)
+        i = get_intermediate_size(self._config)
         tokens = b * s
 
         ops: list[OpBase] = []
@@ -217,14 +204,9 @@ class FFNLayer(LayerBase):
             GraphNode(node_id=down_id, kind=NodeKind.OP, role=NodeRole.COMPUTE, ref=down_op.name),
         ]
 
-        default_batch = 1
-        default_seq_len = 2048
-        default_hidden = 4096
-        expansion = 4
-        b = self._config.get("batch", default_batch)
-        s = self._config.get("seq_len", default_seq_len)
-        h = self._config.get("hidden_size", default_hidden)
-        i = self._config.get("intermediate_size", h * expansion)
+        b = get_batch(self._config)
+        s = get_seq_len(self._config)
+        i = get_intermediate_size(self._config)
         tokens = b * s
 
         # gate/up 输出张量: [B*S, I]

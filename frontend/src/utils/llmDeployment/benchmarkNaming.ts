@@ -25,8 +25,7 @@ function formatSeqLen(len: number): string {
  * 格式化数据类型为数字
  * "fp16" → "16", "bf16" → "16", "int8" → "8", "int4" → "4", "fp8" → "8"
  */
-function formatDtype(dtype: string | undefined): string {
-  if (!dtype) return '16'
+function formatDtype(dtype: string): string {
   const match = dtype.match(/\d+/)
   return match ? match[0] : '16'
 }
@@ -34,7 +33,7 @@ function formatDtype(dtype: string | undefined): string {
 /**
  * 生成 Benchmark 名称
  *
- * 直接使用模型的完整名称（含参数量），拼接推理参数。
+ * 精度信息从 inference 配置获取。
  *
  * @param model 模型配置
  * @param inference 推理配置
@@ -56,8 +55,8 @@ export function generateBenchmarkName(
   parts.push(`O${formatSeqLen(inference.output_seq_length)}`)
 
   // W[x]A[y] - 权重和激活精度
-  const weightBits = formatDtype(model.weight_dtype)
-  const actBits = formatDtype(model.activation_dtype)
+  const weightBits = formatDtype(inference.weight_dtype)
+  const actBits = formatDtype(inference.activation_dtype)
   parts.push(`W${weightBits}A${actBits}`)
 
   // B[BS] - Batch Size
@@ -104,10 +103,10 @@ export function parseBenchmarkParts(
   })
 
   // 数据精度
-  const weightBits = formatDtype(model.weight_dtype)
-  const actBits = formatDtype(model.activation_dtype)
-  const weightDtypeUpper = (model.weight_dtype || 'fp16').toUpperCase()
-  const actDtypeUpper = (model.activation_dtype || 'fp16').toUpperCase()
+  const weightBits = formatDtype(inference.weight_dtype)
+  const actBits = formatDtype(inference.activation_dtype)
+  const weightDtypeUpper = inference.weight_dtype.toUpperCase()
+  const actDtypeUpper = inference.activation_dtype.toUpperCase()
   parts.push({
     key: `W${weightBits}A${actBits}`,
     label: '精度',

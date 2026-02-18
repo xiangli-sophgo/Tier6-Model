@@ -109,7 +109,16 @@ core_count = config["cores"]["count"]
 - → → `->`
 - ⚠️ → `[WARN]`
 
-### 6. 代码回退规则
+### 6. 存储层级利用率命名规则
+
+**存储层级 (gmem/lmem) 的利用率字段统一命名为 `utilization`**，不使用 `bandwidth_utilization`、`sram_utilization` 等前缀形式。
+
+- YAML 配置中: `utilization: 0.85`
+- 代码中: `MemoryLevelImpl.utilization`
+- gmem: 表示带宽利用率，有效带宽 = `bandwidth_gbps * utilization`
+- lmem: 表示 SRAM 可用比例，tiling 预算 = `capacity / cores * utilization`
+
+### 7. 代码回退规则
 
 **禁止使用 `git checkout <file>` 或 `git restore <file>` 来回退代码修改**。因为文件中可能包含本次会话中其他任务的修改，整文件回退会导致这些修改丢失。
 

@@ -67,6 +67,7 @@ class EvaluationEngine:
         "attention",
         "mha",
         "mla",
+        "fa2",
     }
 
     # 通信类 Op 类型
@@ -131,6 +132,7 @@ class EvaluationEngine:
         output_tokens: int = 1,
         prefill_ops: set[str] | None = None,
         deployment_config: dict[str, object] | None = None,
+        is_prefill: bool = True,
     ) -> EngineResult:
         """执行评估
 
@@ -208,9 +210,11 @@ class EvaluationEngine:
             calibrator = Calibration(calibration)
             step_metrics_list = calibrator.apply_batch(step_metrics_list)
 
-        # 9.5 应用 Model 级 MoE 通信/计算重叠
-        # 参考 CHIPMathica: dispatch/combine 通信可与相邻计算并行
-        step_metrics_list = self._apply_moe_compute_overlap(step_metrics_list)
+        # 9.5 应用 Model 级 MoE 通信/计算重叠 (TBO)
+        # CHIPMathica 默认 tbo=False (顺序累加), tbo=True 时做 compute-comm overlap
+        enable_tbo = bool(deployment_config.get("enable_tbo", False)) if deployment_config else False
+        if enable_tbo:
+            step_metrics_list = self._apply_moe_compute_overlap(step_metrics_list)
 
         # 9.6 应用 Layer 级 Ring Attention 重叠
         # 参考 CHIPMathica: Attention 层的计算与通信完全重叠
@@ -223,6 +227,7 @@ class EvaluationEngine:
             hardware,
             output_tokens,
             prefill_ops or set(),
+            is_prefill=is_prefill,
         )
 
         # 11. 构建结果
@@ -311,59 +316,72 @@ class EvaluationEngine:
         self,
         steps: list[StepMetrics],
     ) -> list[StepMetrics]:
-        """应用 Model 级 MoE 通信/计算重叠
+        """应用 Model 级 MoE 通信/计算重叠（block-level）
 
-        参考 CHIPMathica (deepseek.py:260-309):
-        MoE 的 dispatch/combine 通信可以与相邻的计算操作并行执行。
-        如果计算时间 >= 通信时间，通信完全隐藏（免费）；
-        否则，有效通信时间 = 通信时间 - 计算时间。
+        对齐 CHIPMathica: 用 min(MLA计算块, MoE计算块) 作为 overlap 预算，
+        而非单个相邻 step 的计算时间。
+
+        Step 列表结构（修复 1 后）:
+            [MLA compute block] -> dispatch -> [MoE compute block] -> combine -> ...
 
         三级 overlap 模型:
         - Tile 级: compute vs DMA (在 precise.py/compute.py evaluator 中处理)
-        - Layer 级: Ring Attention (TODO: 暂未实现)
+        - Layer 级: Ring Attention (在 _apply_ring_attn_overlap 中处理)
         - Model 级: MoE dispatch/combine vs 计算 (本方法)
         """
         if not steps:
             return steps
 
-        for i, step in enumerate(steps):
+        def _is_moe_comm(step: StepMetrics) -> bool:
             reason = step.meta.get("reason", "")
-            if "dispatch" not in reason and "combine" not in reason:
-                continue
+            return "dispatch" in reason or "combine" in reason
 
+        def _sum_compute_backward(idx: int) -> float:
+            """从 idx-1 向前累加 t_compute，遇到另一个 dispatch/combine 停止"""
+            total = 0.0
+            for j in range(idx - 1, -1, -1):
+                if _is_moe_comm(steps[j]):
+                    break
+                total += steps[j].t_compute
+            return total
+
+        def _sum_compute_forward(idx: int) -> float:
+            """从 idx+1 向后累加 t_compute，遇到另一个 dispatch/combine 停止"""
+            total = 0.0
+            for j in range(idx + 1, len(steps)):
+                if _is_moe_comm(steps[j]):
+                    break
+                total += steps[j].t_compute
+            return total
+
+        for i, step in enumerate(steps):
+            if not _is_moe_comm(step):
+                continue
             comm_time = step.t_comm
             if comm_time <= 0:
                 continue
 
-            # 找到可用于重叠的相邻计算 step
-            overlap_compute_time = 0.0
-            if "dispatch" in reason:
-                # dispatch 在计算之前，可以和前一个计算 step 重叠
-                for j in range(i - 1, -1, -1):
-                    if steps[j].t_compute > 0:
-                        overlap_compute_time = steps[j].t_compute
-                        break
-            else:
-                # combine 在计算之后，可以和后一个计算 step 重叠
-                for j in range(i + 1, len(steps)):
-                    if steps[j].t_compute > 0:
-                        overlap_compute_time = steps[j].t_compute
-                        break
+            prev_block = _sum_compute_backward(i)
+            next_block = _sum_compute_forward(i)
 
-            if overlap_compute_time <= 0:
+            if prev_block <= 0 and next_block <= 0:
                 continue
 
-            # 计算有效通信时间
-            if overlap_compute_time >= comm_time:
-                # 计算时间足够长，通信完全隐藏
+            # min(前块, 后块)，对齐 B 的 min(mla, shared+routed)
+            if prev_block > 0 and next_block > 0:
+                overlap_budget = min(prev_block, next_block)
+            else:
+                overlap_budget = max(prev_block, next_block)
+
+            if overlap_budget >= comm_time:
                 effective_comm = 0.0
             else:
-                # 通信部分隐藏
-                effective_comm = comm_time - overlap_compute_time
+                effective_comm = comm_time - overlap_budget
 
             step.t_comm = effective_comm
             step.t_total = step.t_compute + step.t_comm + step.t_wait
             step.meta["moe_overlap_hidden_ms"] = comm_time - effective_comm
+            step.meta["moe_overlap_budget_ms"] = overlap_budget
 
         return steps
 
@@ -444,6 +462,7 @@ class EvaluationEngine:
         hardware: dict[str, float],
         output_tokens: int,
         prefill_ops: set[str],
+        is_prefill: bool = True,
     ) -> Aggregates:
         """聚合指标
 
@@ -452,6 +471,7 @@ class EvaluationEngine:
             - hardware: 硬件参数
             - output_tokens: 输出 token 数
             - prefill_ops: Prefill 阶段 op_id 集合
+            - is_prefill: 当前仿真是 prefill 还是 decode 阶段
         输出:
             - Aggregates
         关键步骤:
@@ -492,15 +512,18 @@ class EvaluationEngine:
 
         total_time = total_compute_time + total_comm_time + total_wait_time
 
-        # 计算 TTFT（首 Token 延迟）
-        ttft = prefill_time if prefill_time > 0 else total_time
-
-        # 计算 TPOT（每 Token 时间）
-        decode_time = total_time - prefill_time
-        tpot = decode_time / output_tokens if output_tokens > 0 else 0
-
-        # 计算 TPS（每秒 Token 数）
-        tps = output_tokens / (decode_time / 1000) if decode_time > 0 else 0
+        if is_prefill:
+            # Prefill 模式: 所有时间都是 prefill，TTFT = total_time
+            ttft = total_time
+            decode_time = 0.0
+            tpot = 0.0
+            tps = 0.0
+        else:
+            # Decode 模式: 所有时间都是 decode，TTFT 不适用
+            ttft = 0.0
+            decode_time = total_time
+            tpot = decode_time / output_tokens if output_tokens > 0 else 0
+            tps = output_tokens / (decode_time / 1000) if decode_time > 0 else 0
 
         # 计算 MFU（Model FLOPS Utilization）
         compute_tflops = hardware["compute_tflops"]

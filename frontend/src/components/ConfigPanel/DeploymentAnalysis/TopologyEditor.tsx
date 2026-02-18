@@ -16,7 +16,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { HelpTooltip } from '@/components/ui/info-tooltip'
 import { BaseCard } from '@/components/common/BaseCard'
 import type { TopologyConfig, TopologyListItem } from '@/types/math_model'
-import { getTopologies, getTopology, createTopology, updateTopology } from '@/api/math_model'
+import { DeleteConfirmButton } from '@/components/common/DeleteConfirmButton'
+import { getTopologies, getTopology, createTopology, updateTopology, deleteTopology } from '@/api/math_model'
 import { countChips, countPods, countRacks, countBoards } from '@/utils/llmDeployment/topologyFormat'
 import { deepClone, errMsg } from '@/utils/nestedObjectEditor'
 
@@ -215,6 +216,26 @@ export const TopologyEditor: React.FC<TopologyEditorProps> = ({ value, onChange,
     finally { setLoading(false) }
   }, [selectedPreset, onChange])
 
+  // 删除
+  const handleDelete = async () => {
+    if (!selectedPreset) return
+    try {
+      await deleteTopology(selectedPreset)
+      const res = await getTopologies()
+      setPresets(res.topologies)
+      toast.success(`已删除: ${selectedPreset}`)
+      if (res.topologies.length > 0) {
+        const first = res.topologies[0]
+        setSelectedPreset(first.name)
+        const cfg = await getTopology(first.name)
+        setSnapshot(deepClone(cfg)); onChange(cfg)
+      } else {
+        setSelectedPreset('')
+        setSnapshot(null)
+      }
+    } catch (e) { toast.error(`删除失败: ${errMsg(e)}`) }
+  }
+
   const isModified = useCallback(
     (getter: (c: TopologyConfig) => unknown): boolean => {
       if (!snapshot) return false
@@ -410,6 +431,7 @@ export const TopologyEditor: React.FC<TopologyEditorProps> = ({ value, onChange,
         <Button variant="outline" size="sm" onClick={handleReload} disabled={loading || !selectedPreset}>
           <RefreshCw className="h-3.5 w-3.5 mr-1" />重新加载
         </Button>
+        <DeleteConfirmButton name={selectedPreset} label="删除预设" onConfirm={handleDelete} disabled={!selectedPreset || loading} />
       </div>
 
       {/* 另存为弹窗 */}

@@ -283,7 +283,7 @@ export const ModelConfigSelector: React.FC<ModelConfigSelectorProps> = ({ value,
               <HelpTooltip label="模型类型" content="Dense: 标准密集模型; MoE: 混合专家稀疏模型" labelClassName="text-[13px] cursor-help" />
               <Select value={value.model_type} onValueChange={(v) => {
                 if (v === 'moe' && !value.moe_config) {
-                  onChange({ ...value, model_type: v, moe_config: { num_experts: 8, num_experts_per_tok: 2, expert_capacity_factor: 1.25 } })
+                  onChange({ ...value, model_type: v, moe_config: { num_experts: 8, num_experts_per_tok: 2 } })
                 } else {
                   updateField('model_type', v as any)
                 }
@@ -319,34 +319,7 @@ export const ModelConfigSelector: React.FC<ModelConfigSelectorProps> = ({ value,
               <HelpTooltip label="词表大小" content="Vocab Size" labelClassName="text-[13px] cursor-help" />
               <NumberInput min={1000} value={value.vocab_size} onChange={(v) => updateField('vocab_size', v || 32000)} className="w-20 h-7" />
             </div>
-            <div className="flex justify-between items-center mb-1">
-              <HelpTooltip label="权重精度" content="权重精度" labelClassName="text-[13px] cursor-help" />
-              <Select value={value.weight_dtype} onValueChange={(v) => updateField('weight_dtype', v as any)}>
-                <SelectTrigger className="w-[90px] h-7"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="fp32">FP32</SelectItem>
-                  <SelectItem value="bf16">BF16</SelectItem>
-                  <SelectItem value="fp16">FP16</SelectItem>
-                  <SelectItem value="fp8">FP8</SelectItem>
-                  <SelectItem value="int8">INT8</SelectItem>
-                  <SelectItem value="int4">INT4</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="flex justify-between items-center mb-1">
-              <HelpTooltip label="激活精度" content="激活精度" labelClassName="text-[13px] cursor-help" />
-              <Select value={value.activation_dtype} onValueChange={(v) => updateField('activation_dtype', v as any)}>
-                <SelectTrigger className="w-[90px] h-7"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="fp32">FP32</SelectItem>
-                  <SelectItem value="bf16">BF16</SelectItem>
-                  <SelectItem value="fp16">FP16</SelectItem>
-                  <SelectItem value="fp8">FP8</SelectItem>
-                  <SelectItem value="int8">INT8</SelectItem>
-                  <SelectItem value="int4">INT4</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
+            {/* 精度配置已移至 InferenceConfig，不再属于模型配置 */}
             <div className="flex justify-between items-center mb-1">
               <HelpTooltip label="最大序列长度" content="Max Sequence Length" labelClassName="text-[13px] cursor-help" />
               <NumberInput min={128} value={value.max_seq_length} onChange={(v) => updateField('max_seq_length', v || 4096)} className="w-20 h-7" />
@@ -404,7 +377,7 @@ export const ModelConfigSelector: React.FC<ModelConfigSelectorProps> = ({ value,
               <InfoTooltip content="Num Attention Heads"><span className="text-gray-500 cursor-help">注意力头: {value.num_attention_heads}</span></InfoTooltip>
               <InfoTooltip content="Num KV Heads"><span className="text-gray-500 cursor-help">KV头: {value.num_kv_heads}</span></InfoTooltip>
               <InfoTooltip content="Intermediate Size"><span className="text-gray-500 cursor-help">FFN: {value.intermediate_size}</span></InfoTooltip>
-              <InfoTooltip content="W=权重精度, A=激活精度"><span className="text-gray-500 cursor-help">精度: W{getDtypeBits(value.weight_dtype)}A{getDtypeBits(value.activation_dtype)}</span></InfoTooltip>
+              {/* 精度信息已移至 InferenceConfig */}
             </div>
             {value.model_type === 'moe' && value.moe_config && (
               <div className="mt-1 pt-1 border-t border-gray-200">

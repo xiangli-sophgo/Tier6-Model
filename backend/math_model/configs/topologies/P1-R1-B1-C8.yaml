@@ -23,20 +23,20 @@ chips:
     compute_dma_overlap_rate: 0.8
     compute_efficiency: 0.9
     cores:
-      count: 4
-      lanes_per_core: 64
+      count: 32
+      lanes_per_core: 16
     compute_units:
       cube:
         m: 16
         k: 32
         n: 8
         mac_per_lane:
-          INT8: 1000
-          FP8: 1000
-          BF16: 500
-          FP16: 500
-          TF32: 250
-          INT4: 2000
+          INT8: 256
+          FP8: 256
+          BF16: 128
+          FP16: 128
+          TF32: 64
+          INT4: 512
       vector:
         eu_per_lane:
           INT8: 64
@@ -49,15 +49,15 @@ chips:
     memory:
       gmem:
         type: LPDDR5
-        capacity_gb: 64
-        bandwidth_gbps: 273
-        bandwidth_utilization: 0.85
+        capacity_gb: 128
+        bandwidth_gbps: 4096
+        utilization: 0.70
         latency_ns: 100
       lmem:
         capacity_mb: 64
         bandwidth_gbps: 2000
         latency_ns: 1
-        sram_utilization: 0.45
+        utilization: 0.45
     dma_engines:
       gdma:
         bandwidth_gbps: 68

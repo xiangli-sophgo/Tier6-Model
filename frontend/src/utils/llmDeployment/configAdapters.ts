@@ -12,7 +12,7 @@ import type { LLMModelConfig, AttentionType } from './types';
  * ModelPreset -> LLMModelConfig
  *
  * 将后端 YAML 格式的模型预设转换为前端旧格式。
- * 注意: ModelPreset 没有 dtype 信息，默认使用 bf16。
+ * 注意: ModelPreset 没有 dtype 信息，精度由 InferenceConfig 管理。
  */
 export function modelPresetToLLMConfig(preset: ModelPreset): LLMModelConfig {
   const isMoE = !!preset.MoE;
@@ -37,10 +37,8 @@ export function modelPresetToLLMConfig(preset: ModelPreset): LLMModelConfig {
     num_kv_heads: preset.num_key_value_heads ?? preset.num_attention_heads,
     intermediate_size: preset.intermediate_size,
     vocab_size: preset.vocab_size,
-    weight_dtype: 'bf16',
-    activation_dtype: 'bf16',
     max_seq_length: preset.max_seq_len ?? 4096,
-    norm_type: 'rmsnorm',
+    norm_type: (preset.norm_type as 'rmsnorm' | 'layernorm') || 'rmsnorm',
     attention_type,
   };
 
@@ -48,7 +46,6 @@ export function modelPresetToLLMConfig(preset: ModelPreset): LLMModelConfig {
     config.moe_config = {
       num_experts: preset.MoE.num_routed_experts,
       num_experts_per_tok: preset.MoE.num_activated_experts,
-      expert_capacity_factor: 1.0,
       num_shared_experts: preset.MoE.num_shared_experts,
       expert_intermediate_size: preset.MoE.intermediate_size,
       first_k_dense_replace: preset.num_dense_layers,
@@ -84,6 +81,7 @@ export function llmConfigToModelPreset(config: LLMModelConfig): ModelPreset {
     num_attention_heads: config.num_attention_heads,
     num_key_value_heads: config.num_kv_heads,
     max_seq_len: config.max_seq_length,
+    norm_type: config.norm_type,
   };
 
   if (config.moe_config) {

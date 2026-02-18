@@ -16,8 +16,6 @@ export const PARAMETER_DESCRIPTIONS: Record<string, string> = {
   'model.moe_config.num_experts': 'MoE专家总数',
   'model.moe_config.num_experts_per_tok': '每个token激活的专家数',
   'model.moe_config.num_shared_experts': '共享专家数（始终激活）',
-  'model.moe_config.expert_capacity_factor': 'MoE专家容量因子，影响负载均衡',
-
   // MLA
   'model.mla_config.kv_lora_rank': 'MLA KV压缩秩，越小显存越少',
   'model.mla_config.q_lora_rank': 'MLA Query LoRA秩',

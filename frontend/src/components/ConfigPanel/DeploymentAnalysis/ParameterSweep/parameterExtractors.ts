@@ -37,7 +37,6 @@ const PARAMETER_METADATA: Record<string, ParameterMetadata> = {
   'model.moe_config.num_shared_experts': { label: '共享专家数', defaultRange: { min: 0, max: 16, step: 1 } },
   'model.vocab_size': { label: '词表大小', defaultRange: { min: 10000, max: 200000, step: 1000 } },
   'model.max_position_embeddings': { label: '最大位置编码', defaultRange: { min: 2048, max: 131072, step: 2048 } },
-  'model.moe_config.expert_capacity_factor': { label: 'MoE容量因子', defaultRange: { min: 1.0, max: 2.0, step: 0.1 } },
   'model.mla_config.kv_lora_rank': { label: 'MLA KV LoRA秩', defaultRange: { min: 256, max: 2048, step: 128 } },
   'model.mla_config.q_lora_rank': { label: 'MLA Q LoRA秩', defaultRange: { min: 512, max: 4096, step: 256 } },
   'model.mla_config.qk_rope_dim': { label: 'MLA QK RoPE维度', defaultRange: { min: 32, max: 256, step: 32 } },

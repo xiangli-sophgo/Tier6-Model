@@ -1,0 +1,10 @@
+id: DeepSeek-V3-671B-A37B-S4K-O1-W8A8-B2048
+name: DeepSeek-V3-671B-A37B-S4K-O1-W8A8-B2048
+model: DeepSeek-V3-671B-A37B
+topology: P1-R1-B4-C32
+inference:
+  batch_size: 2048
+  input_seq_length: 4096
+  output_seq_length: 1
+  weight_dtype: fp8
+  activation_dtype: fp8

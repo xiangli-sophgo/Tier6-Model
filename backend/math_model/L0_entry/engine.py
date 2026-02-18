@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import logging
+import time
 from typing import Any, Callable
 
 from math_model.L0_entry.config_loader import (
@@ -93,23 +94,28 @@ def run_evaluation(
             progress_callback(p)
 
     _report(0.02)
+    t_total_start = time.perf_counter()
 
     # ==================== L1: 构建 WorkloadIR ====================
     from math_model.L1_workload.models.llm.deepseek import DeepSeekV3Model
 
+    t0 = time.perf_counter()
     model = DeepSeekV3Model.from_model_config(eval_config.model)
     ir = model.to_ir()
+    t1 = time.perf_counter()
 
-    print(f"[L1] WorkloadIR created: {len(ir.get_layers())} layers")
+    print(f"[L1] WorkloadIR created: {len(ir.get_layers())} layers  [{(t1-t0)*1000:.1f} ms]")
     _report(0.05)
 
     # ==================== L2: 加载 ChipSpec ====================
     from math_model.L2_arch.chip import ChipSpecImpl
 
+    t0 = time.perf_counter()
     chip_config = eval_config.chip_config
     chip_name = _require(chip_config, "name", "chip config")
     chip = ChipSpecImpl.from_config(chip_name, chip_config)
-    print(f"[L2] ChipSpec loaded: {chip.name}")
+    t1 = time.perf_counter()
+    print(f"[L2] ChipSpec loaded: {chip.name}  [{(t1-t0)*1000:.1f} ms]")
     _report(0.08)
 
     # ==================== L3: Parallelism Planning ====================
@@ -140,17 +146,24 @@ def run_evaluation(
         inter_chip_bw_gbps=brd.inter_chip_bw_gbps,
     )
 
-    print("[L3] Running ParallelismPlanner...")
+    t0 = time.perf_counter()
     planner = ParallelismPlanner(deployment, board)
     dist_model = planner.plan(ir)
+    t1 = time.perf_counter()
+    print(f"[L3] ParallelismPlanner done  [{(t1-t0)*1000:.1f} ms]")
     _report(0.12)
 
     # ==================== L3: Tiling Planning ====================
     from math_model.L3_mapping.tiling.planner import TilingPlanner
     from math_model.L4_evaluation.evaluators.precise import PreciseTileEvaluator
 
-    print("[L3] Running TilingPlanner...")
-    compute_tflops = chip.get_peak_flops("BF16", "cube") / 1e12
+    t0 = time.perf_counter()
+    # 根据 weight_dtype 选择峰值算力 (对齐 CHIPMathica)
+    # FP8/INT8 -> 使用对应精度峰值; 其他 -> BF16
+    cube_dtype = eval_config.inference.weight_dtype.upper()
+    if cube_dtype not in ("FP8", "INT8"):
+        cube_dtype = "BF16"
+    compute_tflops = chip.get_peak_flops(cube_dtype, "cube") / 1e12
     memory_bw_gbps = chip.get_gmem_bandwidth()
 
     precise_evaluator = PreciseTileEvaluator(
@@ -168,27 +181,32 @@ def run_evaluation(
     tile_plan = TilingPlanner(chip, l4_evaluator=precise_evaluator).plan(
         dist_model, progress_callback=_tiling_progress,
     )
+    t1 = time.perf_counter()
+    print(f"[L3] TilingPlanner done  [{(t1-t0)*1000:.1f} ms]")
     _report(0.75)
 
     # ==================== L3: Scheduling ====================
     from math_model.L3_mapping.scheduling.scheduler import Scheduler
 
-    print("[L3] Running Scheduler...")
+    t0 = time.perf_counter()
     exec_plan = Scheduler().plan(dist_model, tile_plan)
+    t1 = time.perf_counter()
+    print(f"[L3] Scheduler done  [{(t1-t0)*1000:.1f} ms]")
     _report(0.78)
 
     # ==================== L4: Evaluation ====================
     from math_model.L4_evaluation.engine import EvaluationEngine
     from math_model.L4_evaluation.metrics import Granularity
 
-    print("[L4] Running EvaluationEngine...")
+    t0 = time.perf_counter()
 
     # 构建硬件规格 -- 使用 eval_config 中的拓扑/通信参数（修复数据丢失 bug）
     hardware = _build_hardware_spec(chip, eval_config)
 
-    # deployment_config dict 用于传递给 engine (ring attention 等)
+    # deployment_config dict 用于传递给 engine (ring attention, TBO 等)
     deployment_dict = {
         "enable_ring_attention": dep.enable_ring_attention,
+        "enable_tbo": dep.enable_tbo,
         "tp": dep.tp,
     }
 
@@ -200,12 +218,14 @@ def run_evaluation(
         granularity=Granularity.CHIP,
         output_tokens=dep.batch_size,
         deployment_config=deployment_dict,
+        is_prefill=dep.is_prefill,
     )
+    t1 = time.perf_counter()
+    print(f"[L4] EvaluationEngine done  [{(t1-t0)*1000:.1f} ms]")
     _report(0.85)
 
     # ==================== L5: Reporting ====================
-    print("[L5] Generating reports...")
-
+    t0 = time.perf_counter()
     mc = eval_config.model
     run_config = {
         "model": {
@@ -233,6 +253,8 @@ def run_evaluation(
 
     reporting_engine = ReportingEngine()
     report = reporting_engine.run(engine_result=engine_result, config=run_config)
+    t1 = time.perf_counter()
+    print(f"[L5] ReportingEngine done  [{(t1-t0)*1000:.1f} ms]")
     _report(0.95)
 
     result = {
@@ -244,6 +266,9 @@ def run_evaluation(
         "granularity": report.granularity,
     }
 
+    t_total_end = time.perf_counter()
+    total_ms = (t_total_end - t_total_start) * 1000
+
     perf = report.performance
     print(f"\n[Result Summary]")
     print(f"  Total time: {perf.total_time_ms:.2f} ms")
@@ -252,6 +277,7 @@ def run_evaluation(
     print(f"  MFU: {perf.mfu:.4f}")
     print(f"  TPS: {perf.tps:.2f}")
     print(f"  TPS per chip: {perf.tps / brd.num_chips:.2f}")
+    print(f"\n[Timing] run_evaluation total: {total_ms:.1f} ms")
 
     return result
 
@@ -265,8 +291,11 @@ def _build_hardware_spec(chip: Any, eval_config: EvalConfig) -> dict[str, Any]:
     from math_model.L4_evaluation.metrics import CommProtocolSpec, HardwareSpec, merge_specs
     from math_model.L2_arch.topology import TopologySpec
 
-    # 硬件规格（从 chip 对象获取）
-    compute_tflops = chip.get_peak_flops("BF16", "cube") / 1e12
+    # 硬件规格（从 chip 对象获取, 根据 weight_dtype 选择峰值算力）
+    hw_cube_dtype = eval_config.inference.weight_dtype.upper()
+    if hw_cube_dtype not in ("FP8", "INT8"):
+        hw_cube_dtype = "BF16"
+    compute_tflops = chip.get_peak_flops(hw_cube_dtype, "cube") / 1e12
     memory_bw_gbps = chip.get_gmem_bandwidth()
     sram_per_core_kb = chip.get_total_sram() / max(1, chip.core_count) / 1024
 
@@ -459,6 +488,8 @@ def run_evaluation_from_request(
     Returns:
         dict: 评估结果
     """
+    t_request_start = time.perf_counter()
+
     # 提取配置
     benchmark_config = _require(config, "benchmark_config", "evaluation request")
     topology_config = _require(config, "topology_config", "evaluation request")
@@ -481,6 +512,9 @@ def run_evaluation_from_request(
         manual_parallelism=manual_parallelism,
         inference_config=inference_config,
     )
+
+    t_config_end = time.perf_counter()
+    print(f"[L0] Config parsing (build_eval_config)  [{(t_config_end-t_request_start)*1000:.1f} ms]")
 
     dep = eval_config.deployment
     logger.info(f"Running evaluation: {config.get('experiment_name', 'N/A')}")
@@ -559,7 +593,8 @@ def run_evaluation_from_request(
             output_seq_length = _require(inference_config, "output_seq_length", "inference config")
             tpot = total_time_ms / max(output_seq_length, 1)
 
-        chips = dep.tp * dep.pp * dep.dp * dep.ep
+        # EP 复用 DP×TP 的芯片 (约束: dp*tp == moe_tp*ep)
+        chips = dep.tp * dep.pp * dep.dp
         batch_size = dep.batch_size
         tps_per_chip = tps / chips if chips > 0 else 0
         tps_per_batch = tps / batch_size if batch_size > 0 else 0
@@ -598,6 +633,10 @@ def run_evaluation_from_request(
             "gantt_chart": gantt_chart,
             "stats": stats,
         }
+
+        t_request_end = time.perf_counter()
+        total_request_ms = (t_request_end - t_request_start) * 1000
+        print(f"\n[Timing] run_evaluation_from_request total: {total_request_ms:.1f} ms")
 
         if progress_callback:
             progress_callback(0.98)
@@ -662,7 +701,8 @@ def _calculate_deployment_cost(
 
     dep = eval_config.deployment
     mc = eval_config.model
-    chips = dep.tp * dep.pp * dep.dp * dep.ep
+    # EP 复用 DP×TP 的芯片 (约束: dp*tp == moe_tp*ep)
+    chips = dep.tp * dep.pp * dep.dp
 
     # 获取芯片类型
     chip_type = _require(eval_config.chip_config, "name", "chip config")
