@@ -1,0 +1,363 @@
+<mxfile host="app.diagrams.net" modified="2026-02-19" agent="Claude" version="24.7.17">
+  <diagram id="paxi-switch-g5" name="PAXI + Switch Cycle-Level G5 Architecture">
+    <mxGraphModel dx="2200" dy="1800" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="2400" pageHeight="2200" math="0" shadow="0">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+
+        <!-- ==================== TITLE ==================== -->
+        <mxCell id="title" value="G5 Cycle-Level Architecture: PAXI + Switch Integration" style="text;html=1;align=center;verticalAlign=middle;fontSize=20;fontStyle=1;fontColor=#333333;" vertex="1" parent="1">
+          <mxGeometry x="400" y="15" width="1600" height="35" as="geometry"/>
+        </mxCell>
+        <mxCell id="subtitle" value="Orange = G5 existing (TIU/DMA/SDMA/HAU) | Purple = PAXI (new) | Teal = Switch (new) | Green = Shared | Red = Key interface" style="text;html=1;align=center;verticalAlign=middle;fontSize=10;fontColor=#666666;" vertex="1" parent="1">
+          <mxGeometry x="400" y="48" width="1600" height="22" as="geometry"/>
+        </mxCell>
+
+        <!-- ==================== CHIP A (Left) ==================== -->
+        <mxCell id="chipA" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FAFAFA;strokeColor=#666;strokeWidth=2;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="40" y="90" width="900" height="1100" as="geometry"/>
+        </mxCell>
+        <mxCell id="chipA_label" value="&lt;b&gt;SG2262 Chip A&lt;/b&gt; (Single Die View)" style="text;html=1;align=left;verticalAlign=top;fontSize=16;fontStyle=1;fontColor=#333;" vertex="1" parent="1">
+          <mxGeometry x="55" y="95" width="350" height="25" as="geometry"/>
+        </mxCell>
+
+        <!-- === Core Subsystem (TpuSubsys) === -->
+        <mxCell id="core_box" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF3E0;strokeColor=#E65100;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="60" y="130" width="860" height="340" as="geometry"/>
+        </mxCell>
+        <mxCell id="core_label" value="TpuSubsys (Core 0..63) - G5 SimEngine Event Loop" style="text;html=1;align=left;verticalAlign=top;fontSize=13;fontStyle=1;fontColor=#BF360C;" vertex="1" parent="1">
+          <mxGeometry x="75" y="133" width="450" height="20" as="geometry"/>
+        </mxCell>
+
+        <!-- TIU -->
+        <mxCell id="tiu" value="&lt;b&gt;TIU Engine&lt;/b&gt;&lt;br&gt;&lt;font style='font-size:8px;color:#555'&gt;tiu.py&lt;br&gt;MatMul cycle calc&lt;br&gt;Bank conflict model&lt;br&gt;&lt;b&gt;Event: TIU_FINISH&lt;/b&gt;&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFE0B2;strokeColor=#E65100;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="80" y="165" width="140" height="80" as="geometry"/>
+        </mxCell>
+        <!-- GDMA -->
+        <mxCell id="gdma" value="&lt;b&gt;GDMA Engine&lt;/b&gt;&lt;br&gt;&lt;font style='font-size:8px;color:#555'&gt;dma.py&lt;br&gt;DDR &lt;-&gt; LMEM&lt;br&gt;5-stage pipeline&lt;br&gt;&lt;b&gt;Event: DMA_FINISH&lt;/b&gt;&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFE0B2;strokeColor=#E65100;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="240" y="165" width="140" height="80" as="geometry"/>
+        </mxCell>
+        <!-- HAU -->
+        <mxCell id="hau" value="&lt;b&gt;HAU Engine&lt;/b&gt;&lt;br&gt;&lt;font style='font-size:8px;color:#555'&gt;hau.py&lt;br&gt;Sort / TopK&lt;br&gt;MoE routing&lt;br&gt;&lt;b&gt;Event: HAU_FINISH&lt;/b&gt;&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFE0B2;strokeColor=#E65100;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="400" y="165" width="140" height="80" as="geometry"/>
+        </mxCell>
+        <!-- SDMA -->
+        <mxCell id="sdma" value="&lt;b&gt;SDMA Engine&lt;/b&gt;&lt;br&gt;&lt;font style='font-size:8px;color:#555'&gt;sdma.py (refactored)&lt;br&gt;Inter-core DMA&lt;br&gt;&lt;b style='color:#C62828'&gt;Routes to CDMA/NoC&lt;/b&gt;&lt;br&gt;&lt;b&gt;Event: SDMA_FINISH&lt;/b&gt;&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFE0B2;strokeColor=#C62828;fontSize=10;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="560" y="165" width="160" height="80" as="geometry"/>
+        </mxCell>
+
+        <!-- Memory -->
+        <mxCell id="lmem" value="&lt;b&gt;LMEM&lt;/b&gt;&lt;br&gt;&lt;font style='font-size:8px;color:#555'&gt;2MB SRAM&lt;br&gt;Bank conflict&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFE0B2;strokeColor=#E65100;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="740" y="165" width="90" height="80" as="geometry"/>
+        </mxCell>
+
+        <!-- SimEngine -->
+        <mxCell id="sim_engine" value="&lt;b&gt;G5 SimEngine&lt;/b&gt;&lt;br&gt;&lt;font style='font-size:8px;color:#555'&gt;sim_engine.py&lt;br&gt;Event heap (heapq)&lt;br&gt;4+N engine sync&lt;br&gt;cmd_id / cmd_id_dep&lt;br&gt;&lt;b style='color:#C62828'&gt;+ PAXI_TX/RX events&lt;/b&gt;&lt;br&gt;&lt;b style='color:#C62828'&gt;+ SWITCH events&lt;/b&gt;&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFCDD2;strokeColor=#C62828;strokeWidth=2;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="80" y="270" width="200" height="100" as="geometry"/>
+        </mxCell>
+
+        <!-- DDR -->
+        <mxCell id="ddr" value="&lt;b&gt;DDR (GMEM)&lt;/b&gt;&lt;br&gt;&lt;font style='font-size:8px;color:#555'&gt;64GB HBM/LPDDR&lt;br&gt;12TB/s BW&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFE0B2;strokeColor=#E65100;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="450" y="290" width="120" height="60" as="geometry"/>
+        </mxCell>
+
+        <!-- NoC (SimpleBus) -->
+        <mxCell id="noc" value="&lt;b&gt;NoC (SimpleBus)&lt;/b&gt;&lt;br&gt;&lt;font style='font-size:8px;color:#555'&gt;noc_adapter.py&lt;br&gt;Manhattan distance&lt;br&gt;128 master, 64 slave&lt;br&gt;Intra-chip routing&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFE0B2;strokeColor=#E65100;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="600" y="280" width="150" height="80" as="geometry"/>
+        </mxCell>
+
+        <!-- ==================== CDMA (Bridge) ==================== -->
+        <mxCell id="cdma_box" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F3E5F5;strokeColor=#7B1FA2;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="60" y="490" width="860" height="120" as="geometry"/>
+        </mxCell>
+        <mxCell id="cdma_label" value="CDMA (Cross-Die/Chip DMA) - AXI Master/Slave Bridge" style="text;html=1;align=left;verticalAlign=top;fontSize=13;fontStyle=1;fontColor=#4A148C;" vertex="1" parent="1">
+          <mxGeometry x="75" y="493" width="450" height="20" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="cdma_tx" value="&lt;b&gt;CDMA TX&lt;/b&gt;&lt;br&gt;&lt;font style='font-size:8px;color:#555'&gt;4 engines x 8 threads/Die&lt;br&gt;64 GB/s/engine&lt;br&gt;Credit flow control&lt;br&gt;AXI Master -&gt; AXI Slave (远端)&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E1BEE7;strokeColor=#7B1FA2;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="80" y="520" width="220" height="75" as="geometry"/>
+        </mxCell>
+        <mxCell id="cdma_rx" value="&lt;b&gt;CDMA RX&lt;/b&gt;&lt;br&gt;&lt;font style='font-size:8px;color:#555'&gt;AXI Slave (接收远端写)&lt;br&gt;Fence / 保序窗口&lt;br&gt;CHS(硬件保序)/CFS(fence)&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E1BEE7;strokeColor=#7B1FA2;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="320" y="520" width="200" height="75" as="geometry"/>
+        </mxCell>
+        <mxCell id="cdma_reduce" value="&lt;b&gt;In-Network Reduce&lt;/b&gt;&lt;br&gt;&lt;font style='font-size:8px;color:#555'&gt;add/max/min&lt;br&gt;fp32/fp16/bf16&lt;br&gt;Hardware AllReduce&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E1BEE7;strokeColor=#7B1FA2;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="540" y="520" width="160" height="75" as="geometry"/>
+        </mxCell>
+        <mxCell id="cdma_events" value="&lt;font style='font-size:9px;color:#4A148C'&gt;&lt;b&gt;New Events:&lt;/b&gt;&lt;br&gt;CDMA_SUBMIT&lt;br&gt;CDMA_TX_DONE&lt;br&gt;CDMA_RX_DONE&lt;br&gt;CDMA_FENCE_WAIT&lt;/font&gt;" style="text;html=1;align=left;verticalAlign=top;fontStyle=0;" vertex="1" parent="1">
+          <mxGeometry x="720" y="520" width="130" height="75" as="geometry"/>
+        </mxCell>
+
+        <!-- ==================== PAXI (New Module) ==================== -->
+        <mxCell id="paxi_box" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F3E5F5;strokeColor=#6A1B9A;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="60" y="630" width="860" height="280" as="geometry"/>
+        </mxCell>
+        <mxCell id="paxi_label" value="PAXI Core + RC Link + CESOC (Cycle-Level Behavioral Model)" style="text;html=1;align=left;verticalAlign=top;fontSize=13;fontStyle=1;fontColor=#4A148C;" vertex="1" parent="1">
+          <mxGeometry x="75" y="633" width="550" height="20" as="geometry"/>
+        </mxCell>
+        <mxCell id="paxi_new" value="&lt;font style='color:#6A1B9A;font-size:9px'&gt;&lt;b&gt;NEW: L4_evaluation/g5/paxi/&lt;/b&gt;&lt;/font&gt;" style="text;html=1;align=right;verticalAlign=top;" vertex="1" parent="1">
+          <mxGeometry x="680" y="633" width="220" height="20" as="geometry"/>
+        </mxCell>
+
+        <!-- PAXI TX -->
+        <mxCell id="paxi_tx" value="&lt;b&gt;PAXI TX Path&lt;/b&gt;&lt;br&gt;&lt;font style='font-size:7px;color:#555'&gt;paxi_core.py&lt;br&gt;AXI Slave -&gt; Flit Encoder&lt;br&gt;TX Buffer (AW+W/AR/B/R)&lt;br&gt;VC Classifier (8 VC)&lt;br&gt;Channel Weight Arbiter&lt;br&gt;DA Routing&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#CE93D8;strokeColor=#6A1B9A;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="80" y="660" width="180" height="100" as="geometry"/>
+        </mxCell>
+
+        <!-- RC Link TX -->
+        <mxCell id="rclink_tx" value="&lt;b&gt;RC Link TX&lt;/b&gt;&lt;br&gt;&lt;font style='font-size:7px;color:#555'&gt;rclink.py&lt;br&gt;Slot Queue (512 OST)&lt;br&gt;Bank Arbiter (4 bank RR)&lt;br&gt;Rate Control (per-QP)&lt;br&gt;CBFC Credit Check&lt;br&gt;Frame Encap (4 formats)&lt;br&gt;&lt;b&gt;Go-Back-N State Machine&lt;/b&gt;&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#CE93D8;strokeColor=#6A1B9A;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="280" y="660" width="190" height="110" as="geometry"/>
+        </mxCell>
+
+        <!-- CESOC -->
+        <mxCell id="cesoc" value="&lt;b&gt;CESOC&lt;/b&gt;&lt;br&gt;&lt;font style='font-size:7px;color:#555'&gt;cesoc.py&lt;br&gt;CEMAC (200G/400G)&lt;br&gt;CEPCS (encode/decode)&lt;br&gt;CEFEC (RS-FEC &lt;10^-12)&lt;br&gt;Fixed pipeline latency&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#CE93D8;strokeColor=#6A1B9A;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="490" y="660" width="160" height="100" as="geometry"/>
+        </mxCell>
+
+        <!-- PAXI RX -->
+        <mxCell id="paxi_rx" value="&lt;b&gt;PAXI RX Path&lt;/b&gt;&lt;br&gt;&lt;font style='font-size:7px;color:#555'&gt;paxi_core.py&lt;br&gt;VC Buffer (REQ/RSP/MUL)&lt;br&gt;Watermark Monitor&lt;br&gt;Flit Decoder&lt;br&gt;AXI Channel Buffer (5ch)&lt;br&gt;AXI Master Output&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#CE93D8;strokeColor=#6A1B9A;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="80" y="780" width="180" height="100" as="geometry"/>
+        </mxCell>
+
+        <!-- RC Link RX -->
+        <mxCell id="rclink_rx" value="&lt;b&gt;RC Link RX&lt;/b&gt;&lt;br&gt;&lt;font style='font-size:7px;color:#555'&gt;rclink.py&lt;br&gt;PSN Verify&lt;br&gt;ACK Gen (ACK MERGE)&lt;br&gt;Credit Return (CBFC)&lt;br&gt;CNP MERGE (depth 8)&lt;br&gt;NAK -&gt; Go-Back-N trigger&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#CE93D8;strokeColor=#6A1B9A;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="280" y="780" width="190" height="100" as="geometry"/>
+        </mxCell>
+
+        <!-- Flow Control Box -->
+        <mxCell id="flow_ctrl" value="&lt;b&gt;Flow Control&lt;/b&gt;&lt;br&gt;&lt;font style='font-size:7px;color:#555'&gt;flow_control.py&lt;br&gt;&lt;b&gt;Mode A: CBFC&lt;/b&gt; (E2E credit)&lt;br&gt;&lt;b&gt;Mode B: PFC&lt;/b&gt; (hop-by-hop)&lt;br&gt;per-VC credit tracking&lt;br&gt;Watermark -&gt; backpressure&lt;br&gt;&lt;b&gt;Mutually exclusive&lt;/b&gt;&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#CE93D8;strokeColor=#6A1B9A;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="490" y="780" width="170" height="100" as="geometry"/>
+        </mxCell>
+
+        <!-- PAXI Events -->
+        <mxCell id="paxi_events" value="&lt;font style='font-size:8px;color:#6A1B9A'&gt;&lt;b&gt;PAXI Events:&lt;/b&gt;&lt;br&gt;PAXI_FLIT_ENCODED&lt;br&gt;PAXI_VC_ARBITRATED&lt;br&gt;RCLINK_FRAME_SENT&lt;br&gt;CESOC_TX_DONE&lt;br&gt;CESOC_RX_DONE&lt;br&gt;RCLINK_PSN_VERIFIED&lt;br&gt;RCLINK_ACK_SENT&lt;br&gt;RCLINK_CREDIT_RETURNED&lt;br&gt;RCLINK_NAK_TRIGGERED&lt;br&gt;PAXI_FLIT_DECODED&lt;br&gt;PAXI_BACKPRESSURE&lt;br&gt;&lt;b&gt;Formats:&lt;/b&gt;&lt;br&gt;Standard/AFH_GEN1&lt;br&gt;AFH_GEN2/AFH_Lite&lt;/font&gt;" style="text;html=1;align=left;verticalAlign=top;fontStyle=0;" vertex="1" parent="1">
+          <mxGeometry x="685" y="660" width="160" height="220" as="geometry"/>
+        </mxCell>
+
+        <!-- ==================== PHYSICAL LINK ==================== -->
+        <mxCell id="link_box" value="" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#E0E0E0;strokeColor=#616161;strokeWidth=3;" vertex="1" parent="1">
+          <mxGeometry x="40" y="930" width="2320" height="80" as="geometry"/>
+        </mxCell>
+        <mxCell id="link_label" value="&lt;b&gt;Physical Link Layer&lt;/b&gt; -- SerDes 8x112G PAM4 (448 GB/s C2C) -- link.py" style="text;html=1;align=center;verticalAlign=middle;fontSize=14;fontStyle=1;fontColor=#333;" vertex="1" parent="1">
+          <mxGeometry x="600" y="945" width="1200" height="25" as="geometry"/>
+        </mxCell>
+        <mxCell id="link_modes" value="&lt;font style='font-size:9px;color:#333'&gt;C2C Direct (no switch) | Via L2 Switch (LITE mode / Standard mode)&lt;/font&gt;" style="text;html=1;align=center;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="600" y="970" width="1200" height="20" as="geometry"/>
+        </mxCell>
+
+        <!-- ==================== SWITCH (Center) ==================== -->
+        <mxCell id="switch_box" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E0F2F1;strokeColor=#00695C;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="970" y="90" width="720" height="820" as="geometry"/>
+        </mxCell>
+        <mxCell id="switch_label" value="L2 Ethernet Switch (Cycle-Level Behavioral Model)" style="text;html=1;align=left;verticalAlign=top;fontSize=16;fontStyle=1;fontColor=#004D40;" vertex="1" parent="1">
+          <mxGeometry x="985" y="95" width="550" height="25" as="geometry"/>
+        </mxCell>
+        <mxCell id="switch_new" value="&lt;font style='color:#00695C;font-size:9px'&gt;&lt;b&gt;NEW: L4_evaluation/g5/switch/&lt;/b&gt;&lt;/font&gt;" style="text;html=1;align=right;verticalAlign=top;" vertex="1" parent="1">
+          <mxGeometry x="1420" y="95" width="250" height="20" as="geometry"/>
+        </mxCell>
+
+        <!-- Switch Pipeline -->
+        <mxCell id="sw_ingress" value="&lt;b&gt;Ingress Pipeline&lt;/b&gt;&lt;br&gt;&lt;font style='font-size:7px;color:#555'&gt;ingress.py&lt;br&gt;Stage 1: PHY_RX (SerDes)&lt;br&gt;Stage 2: PARSER (MAC/IP)&lt;br&gt;Stage 3: INGRESS_MATCH&lt;br&gt;Stage 4: TRAFFIC_MGR (QoS)&lt;br&gt;&lt;b&gt;~10ns fixed latency&lt;/b&gt;&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#B2DFDB;strokeColor=#00695C;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="990" y="130" width="200" height="110" as="geometry"/>
+        </mxCell>
+
+        <!-- VOQ -->
+        <mxCell id="sw_voq" value="&lt;b&gt;VOQ Buffer&lt;/b&gt;&lt;br&gt;&lt;font style='font-size:7px;color:#555'&gt;voq.py&lt;br&gt;VOQ[in][out][pri] queues&lt;br&gt;N_in x N_out x N_pri&lt;br&gt;&lt;b&gt;Shared Buffer Pool&lt;/b&gt;&lt;br&gt;Dynamic Threshold (DT)&lt;br&gt;alpha param controls admission&lt;br&gt;&lt;b&gt;Tail Drop / PFC trigger&lt;/b&gt;&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#B2DFDB;strokeColor=#00695C;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="990" y="260" width="200" height="130" as="geometry"/>
+        </mxCell>
+
+        <!-- iSLIP -->
+        <mxCell id="sw_islip" value="&lt;b&gt;iSLIP Scheduler&lt;/b&gt;&lt;br&gt;&lt;font style='font-size:7px;color:#555'&gt;scheduler.py&lt;br&gt;Iterative Round-Robin&lt;br&gt;2-4 iterations/timeslot&lt;br&gt;3-step: Request-Grant-Accept&lt;br&gt;Grant ptr update on accept&lt;br&gt;Priority-aware variant&lt;br&gt;&lt;b&gt;~8-16ns per schedule&lt;/b&gt;&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#B2DFDB;strokeColor=#00695C;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="990" y="410" width="200" height="130" as="geometry"/>
+        </mxCell>
+
+        <!-- Crossbar -->
+        <mxCell id="sw_xbar" value="&lt;b&gt;Crossbar (NxN)&lt;/b&gt;&lt;br&gt;&lt;font style='font-size:7px;color:#555'&gt;crossbar.py&lt;br&gt;Unbuffered switching fabric&lt;br&gt;Matched pairs traverse&lt;br&gt;&lt;b&gt;~2ns fixed&lt;/b&gt;&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#B2DFDB;strokeColor=#00695C;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="990" y="560" width="200" height="80" as="geometry"/>
+        </mxCell>
+
+        <!-- Egress -->
+        <mxCell id="sw_egress" value="&lt;b&gt;Egress Pipeline&lt;/b&gt;&lt;br&gt;&lt;font style='font-size:7px;color:#555'&gt;egress.py&lt;br&gt;ECN Marking (Standard fmt only)&lt;br&gt;PFC Check (per-priority)&lt;br&gt;Output Schedule (SP+WRR)&lt;br&gt;Serialization&lt;br&gt;&lt;b&gt;Cut-Through / Store-Forward&lt;/b&gt;&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#B2DFDB;strokeColor=#00695C;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="990" y="660" width="200" height="110" as="geometry"/>
+        </mxCell>
+
+        <!-- Switch Right Column -->
+        <!-- Congestion -->
+        <mxCell id="sw_congestion" value="&lt;b&gt;Congestion Controller&lt;/b&gt;&lt;br&gt;&lt;font style='font-size:7px;color:#555'&gt;congestion.py&lt;br&gt;&lt;b&gt;ECN:&lt;/b&gt; Probability marking&lt;br&gt;kmin/kmax/pmax thresholds&lt;br&gt;Only Standard format&lt;br&gt;&lt;b&gt;PFC:&lt;/b&gt; per-priority PAUSE&lt;br&gt;xon/xoff thresholds&lt;br&gt;Hop-by-hop propagation&lt;br&gt;PFC Watchdog (deadlock)&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#B2DFDB;strokeColor=#00695C;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="1220" y="130" width="210" height="150" as="geometry"/>
+        </mxCell>
+
+        <!-- Switch Config -->
+        <mxCell id="sw_config" value="&lt;b&gt;SwitchConfig&lt;/b&gt;&lt;br&gt;&lt;font style='font-size:7px;color:#555'&gt;switch_presets/*.yaml&lt;br&gt;port_count: 8/16/32/64&lt;br&gt;port_bw: 200G/400G/800G&lt;br&gt;buffer_mb: 16/32/64/128&lt;br&gt;dt_alpha: 0.5/1.0/2.0&lt;br&gt;scheduler: islip (iter 2-4)&lt;br&gt;forwarding: cut-through/SAF&lt;br&gt;ecn_enabled, pfc_enabled&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#B2DFDB;strokeColor=#00695C;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="1220" y="300" width="210" height="150" as="geometry"/>
+        </mxCell>
+
+        <!-- Switch Events -->
+        <mxCell id="sw_events" value="&lt;font style='font-size:8px;color:#00695C'&gt;&lt;b&gt;Switch Events:&lt;/b&gt;&lt;br&gt;SW_PKT_ARRIVE&lt;br&gt;SW_INGRESS_DONE&lt;br&gt;SW_VOQ_ENQUEUED&lt;br&gt;SW_ISLIP_SCHEDULED&lt;br&gt;SW_XBAR_TRAVERSED&lt;br&gt;SW_EGRESS_DONE&lt;br&gt;SW_PKT_DEPART&lt;br&gt;SW_PFC_PAUSE&lt;br&gt;SW_PFC_RESUME&lt;br&gt;SW_ECN_MARK&lt;br&gt;SW_PKT_DROP&lt;/font&gt;" style="text;html=1;align=left;verticalAlign=top;fontStyle=0;" vertex="1" parent="1">
+          <mxGeometry x="1460" y="130" width="130" height="180" as="geometry"/>
+        </mxCell>
+
+        <!-- Switch QoS Mapping -->
+        <mxCell id="sw_qos" value="&lt;b&gt;PAXI QoS Mapping&lt;/b&gt;&lt;br&gt;&lt;font style='font-size:7px;color:#555'&gt;Pri 3: TYPE1 ACK+CNP (SP)&lt;br&gt;Pri 2: TYPE1 REQ data (WRR 50%)&lt;br&gt;Pri 1: TYPE1 RSP resp (WRR 40%)&lt;br&gt;Pri 0: TYPE2/3 multi/mgmt (WRR 10%)&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#B2DFDB;strokeColor=#00695C;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="1220" y="470" width="220" height="80" as="geometry"/>
+        </mxCell>
+
+        <!-- Switch Latency Model -->
+        <mxCell id="sw_latency" value="&lt;b&gt;Latency Model&lt;/b&gt;&lt;br&gt;&lt;font style='font-size:7px;color:#555'&gt;T_switch = T_ingress + T_queue + T_xbar + T_egress&lt;br&gt;&lt;b&gt;Zero load:&lt;/b&gt; ~300ns (ToR) / ~800ns (Agg)&lt;br&gt;&lt;b&gt;Incast:&lt;/b&gt; 5-50us (VOQ dynamic)&lt;br&gt;&lt;b&gt;PFC trigger:&lt;/b&gt; 100us+&lt;br&gt;Serialization: 1406B/400G = 28ns&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#B2DFDB;strokeColor=#00695C;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="1220" y="570" width="220" height="100" as="geometry"/>
+        </mxCell>
+
+        <!-- Switch Output Metrics -->
+        <mxCell id="sw_metrics" value="&lt;b&gt;Switch Metrics Output&lt;/b&gt;&lt;br&gt;&lt;font style='font-size:7px;color:#555'&gt;throughput_gbps, utilization&lt;br&gt;latency p50/p95/p99&lt;br&gt;buffer peak/avg usage&lt;br&gt;ecn_marked / pfc_pause_count&lt;br&gt;islip iterations / match_eff&lt;br&gt;drop_rate (per VOQ)&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#B2DFDB;strokeColor=#00695C;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="1220" y="690" width="220" height="100" as="geometry"/>
+        </mxCell>
+
+        <!-- ==================== CHIP B (Right) ==================== -->
+        <mxCell id="chipB" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FAFAFA;strokeColor=#666;strokeWidth=2;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="1720" y="90" width="640" height="820" as="geometry"/>
+        </mxCell>
+        <mxCell id="chipB_label" value="&lt;b&gt;SG2262 Chip B&lt;/b&gt; (Peer)" style="text;html=1;align=left;verticalAlign=top;fontSize=16;fontStyle=1;fontColor=#333;" vertex="1" parent="1">
+          <mxGeometry x="1735" y="95" width="250" height="25" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="chipB_core" value="&lt;b&gt;TpuSubsys (Cores)&lt;/b&gt;&lt;br&gt;&lt;font style='font-size:8px;color:#555'&gt;Same architecture as Chip A&lt;br&gt;TIU + GDMA + SDMA + HAU&lt;br&gt;SimEngine event loop&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFE0B2;strokeColor=#E65100;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="1740" y="130" width="250" height="80" as="geometry"/>
+        </mxCell>
+        <mxCell id="chipB_cdma" value="&lt;b&gt;CDMA&lt;/b&gt;&lt;br&gt;&lt;font style='font-size:8px;color:#555'&gt;Cross-chip DMA&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E1BEE7;strokeColor=#7B1FA2;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="1740" y="230" width="120" height="50" as="geometry"/>
+        </mxCell>
+        <mxCell id="chipB_paxi" value="&lt;b&gt;PAXI + RC Link&lt;/b&gt;&lt;br&gt;&lt;font style='font-size:8px;color:#555'&gt;TX/RX paths&lt;br&gt;CBFC/PFC flow control&lt;br&gt;All 4 packet formats&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#CE93D8;strokeColor=#6A1B9A;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="1740" y="300" width="250" height="70" as="geometry"/>
+        </mxCell>
+        <mxCell id="chipB_cesoc" value="&lt;b&gt;CESOC&lt;/b&gt;&lt;br&gt;&lt;font style='font-size:8px;color:#555'&gt;MAC/PCS/FEC&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#CE93D8;strokeColor=#6A1B9A;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="1740" y="390" width="120" height="50" as="geometry"/>
+        </mxCell>
+
+        <!-- ==================== DATA FLOW ARROWS ==================== -->
+        <!-- SDMA -> CDMA -->
+        <mxCell id="a1" value="Cross-chip" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#7B1FA2;strokeWidth=2;entryX=0.5;entryY=0;entryDx=0;entryDy=0;exitX=0.5;exitY=1;exitDx=0;exitDy=0;fontSize=9;fontColor=#7B1FA2;fontStyle=1;" edge="1" parent="1" source="sdma" target="cdma_box">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <!-- SDMA -> NoC (intra-chip) -->
+        <mxCell id="a1b" value="Intra-chip" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#E65100;strokeWidth=1.5;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;fontSize=9;fontColor=#E65100;fontStyle=1;" edge="1" parent="1" source="sdma" target="noc">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <!-- CDMA -> PAXI -->
+        <mxCell id="a2" value="AXI bus" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#6A1B9A;strokeWidth=2;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;fontSize=9;fontColor=#6A1B9A;fontStyle=1;" edge="1" parent="1" source="cdma_box" target="paxi_box">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <!-- PAXI TX -> CESOC -> Link -->
+        <mxCell id="a3" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#6A1B9A;strokeWidth=2;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.2;entryY=0;entryDx=0;entryDy=0;" edge="1" parent="1" source="paxi_box" target="link_box">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+
+        <!-- Link -> Switch (optional path) -->
+        <mxCell id="a4" value="Via Switch" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#00695C;strokeWidth=2;exitX=0.5;exitY=0;exitDx=0;exitDy=0;entryX=0.5;entryY=1;entryDx=0;entryDy=0;fontSize=9;fontColor=#00695C;fontStyle=1;dashed=1;" edge="1" parent="1" source="link_box" target="switch_box">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1330" y="1000"/>
+              <mxPoint x="1330" y="1000"/>
+            </Array>
+          </mxGeometry>
+        </mxCell>
+
+        <!-- Link -> Chip B -->
+        <mxCell id="a5" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#6A1B9A;strokeWidth=2;exitX=0.8;exitY=0;exitDx=0;exitDy=0;entryX=0.5;entryY=1;entryDx=0;entryDy=0;" edge="1" parent="1" source="link_box" target="chipB">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+
+        <!-- ==================== BOTTOM: Integration & File Structure ==================== -->
+        <mxCell id="integration_box" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E8F5E9;strokeColor=#2E7D32;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="40" y="1040" width="2320" height="280" as="geometry"/>
+        </mxCell>
+        <mxCell id="int_label" value="G5 SimEngine Integration -- Multi-Chip Event-Driven Architecture" style="text;html=1;align=left;verticalAlign=top;fontSize=16;fontStyle=1;fontColor=#1B5E20;" vertex="1" parent="1">
+          <mxGeometry x="55" y="1045" width="600" height="25" as="geometry"/>
+        </mxCell>
+
+        <!-- Unified Event Heap -->
+        <mxCell id="event_heap" value="&lt;b&gt;Unified Event Heap&lt;/b&gt;&lt;br&gt;&lt;font style='font-size:8px;color:#555'&gt;Global heapq across all chips/switches&lt;br&gt;Events sorted by (time_ns, chip_id, type)&lt;br&gt;&lt;b&gt;Existing:&lt;/b&gt; TIU_FINISH, DMA_FINISH, SDMA_FINISH, HAU_FINISH&lt;br&gt;&lt;b style='color:#7B1FA2'&gt;+ CDMA:&lt;/b&gt; CDMA_SUBMIT, CDMA_TX_DONE, CDMA_RX_DONE&lt;br&gt;&lt;b style='color:#6A1B9A'&gt;+ PAXI:&lt;/b&gt; PAXI_TX_DONE, RCLINK_FRAME_SENT, CESOC_DONE, RCLINK_ACK, CREDIT_RETURN&lt;br&gt;&lt;b style='color:#00695C'&gt;+ SWITCH:&lt;/b&gt; SW_PKT_ARRIVE, SW_SCHEDULED, SW_PKT_DEPART, SW_PFC_PAUSE/RESUME&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#C8E6C9;strokeColor=#2E7D32;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="60" y="1080" width="550" height="120" as="geometry"/>
+        </mxCell>
+
+        <!-- Communication Path Router -->
+        <mxCell id="comm_router" value="&lt;b&gt;Communication Path Router&lt;/b&gt;&lt;br&gt;&lt;font style='font-size:8px;color:#555'&gt;comm_router.py&lt;br&gt;&lt;b&gt;Intra-core:&lt;/b&gt; LMEM direct (0 hop)&lt;br&gt;&lt;b&gt;Intra-chip:&lt;/b&gt; SDMA -&gt; NoC (SimpleBus)&lt;br&gt;&lt;b&gt;C2C Direct:&lt;/b&gt; SDMA -&gt; CDMA -&gt; PAXI -&gt; Link -&gt; PAXI&lt;br&gt;&lt;b&gt;Via Switch:&lt;/b&gt; SDMA -&gt; CDMA -&gt; PAXI -&gt; Link -&gt; Switch -&gt; Link -&gt; PAXI&lt;br&gt;&lt;b&gt;Multi-hop:&lt;/b&gt; ... -&gt; Switch1 -&gt; Switch2 -&gt; ...&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#C8E6C9;strokeColor=#2E7D32;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="640" y="1080" width="400" height="120" as="geometry"/>
+        </mxCell>
+
+        <!-- Modes Table -->
+        <mxCell id="modes_table" value="&lt;b&gt;PAXI Operating Modes (All Modeled)&lt;/b&gt;&lt;br&gt;&lt;font style='font-size:7px;color:#555'&gt;&lt;table border='1' cellpadding='3' cellspacing='0' style='border-collapse:collapse;font-size:7px'&gt;&lt;tr&gt;&lt;th&gt;Mode&lt;/th&gt;&lt;th&gt;Format&lt;/th&gt;&lt;th&gt;Retransmit&lt;/th&gt;&lt;th&gt;FlowCtrl&lt;/th&gt;&lt;th&gt;ECN&lt;/th&gt;&lt;th&gt;Scenario&lt;/th&gt;&lt;/tr&gt;&lt;tr&gt;&lt;td&gt;C2C Direct&lt;/td&gt;&lt;td&gt;AFH_GEN1/2&lt;/td&gt;&lt;td&gt;Go-Back-N&lt;/td&gt;&lt;td&gt;CBFC&lt;/td&gt;&lt;td&gt;No&lt;/td&gt;&lt;td&gt;Board-internal&lt;/td&gt;&lt;/tr&gt;&lt;tr&gt;&lt;td&gt;Switch LITE&lt;/td&gt;&lt;td&gt;AFH_Lite&lt;/td&gt;&lt;td&gt;None&lt;/td&gt;&lt;td&gt;PFC&lt;/td&gt;&lt;td&gt;No&lt;/td&gt;&lt;td&gt;Board-to-Board&lt;/td&gt;&lt;/tr&gt;&lt;tr&gt;&lt;td&gt;Switch Std&lt;/td&gt;&lt;td&gt;Standard&lt;/td&gt;&lt;td&gt;Go-Back-N&lt;/td&gt;&lt;td&gt;PFC&lt;/td&gt;&lt;td&gt;Yes&lt;/td&gt;&lt;td&gt;Rack-to-Rack&lt;/td&gt;&lt;/tr&gt;&lt;tr&gt;&lt;td&gt;Multicast&lt;/td&gt;&lt;td&gt;Any&lt;/td&gt;&lt;td&gt;None(TYPE2)&lt;/td&gt;&lt;td&gt;CBFC+MUL&lt;/td&gt;&lt;td&gt;-&lt;/td&gt;&lt;td&gt;AllReduce bcast&lt;/td&gt;&lt;/tr&gt;&lt;/table&gt;&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#C8E6C9;strokeColor=#2E7D32;fontSize=10;overflow=fill;" vertex="1" parent="1">
+          <mxGeometry x="1070" y="1080" width="390" height="120" as="geometry"/>
+        </mxCell>
+
+        <!-- New File Structure -->
+        <mxCell id="file_struct" value="&lt;b&gt;New File Structure&lt;/b&gt;&lt;br&gt;&lt;font style='font-size:7px;color:#555'&gt;&lt;pre&gt;L4_evaluation/g5/&lt;br&gt;  paxi/&lt;br&gt;    __init__.py&lt;br&gt;    paxi_core.py    # PAXI TX/RX state machines&lt;br&gt;    rclink.py       # RC Link TX/RX + Go-Back-N&lt;br&gt;    cesoc.py        # MAC/PCS/FEC pipeline delay&lt;br&gt;    flow_control.py # CBFC + PFC state machines&lt;br&gt;    packet.py       # Flit/Frame/Packet data structs&lt;br&gt;    config.py       # PAXIConfig dataclass&lt;br&gt;  switch/&lt;br&gt;    __init__.py&lt;br&gt;    switch_core.py  # Switch top-level state machine&lt;br&gt;    ingress.py      # Parser + Match + Traffic Mgr&lt;br&gt;    voq.py          # VOQ + Shared Buffer + DT&lt;br&gt;    scheduler.py    # iSLIP + priority-aware&lt;br&gt;    crossbar.py     # NxN crossbar transfer&lt;br&gt;    egress.py       # ECN/PFC/Output schedule&lt;br&gt;    congestion.py   # ECN marking + PFC logic&lt;br&gt;    config.py       # SwitchConfig dataclass&lt;br&gt;  cdma.py           # CDMA engine model&lt;br&gt;  comm_router.py    # Path selection logic&lt;br&gt;  link.py           # Physical link model&lt;/pre&gt;&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#C8E6C9;strokeColor=#2E7D32;fontSize=10;align=left;verticalAlign=top;overflow=fill;" vertex="1" parent="1">
+          <mxGeometry x="1490" y="1070" width="310" height="240" as="geometry"/>
+        </mxCell>
+
+        <!-- Config YAML -->
+        <mxCell id="config_yaml" value="&lt;b&gt;Config Extensions&lt;/b&gt;&lt;br&gt;&lt;font style='font-size:7px;color:#555'&gt;&lt;pre&gt;# SG2262.yaml additions:&lt;br&gt;paxi:&lt;br&gt;  mac_bandwidth_gbps: 400&lt;br&gt;  axi_to_axi_latency_ns: 150&lt;br&gt;  flow_control: cbfc  # cbfc|pfc&lt;br&gt;  packet_format: afh_gen1&lt;br&gt;  vc_count: 8&lt;br&gt;  type1_ost: 512&lt;br&gt;  type1_max_payload: 1344&lt;br&gt;  lite_mode: false&lt;br&gt;  cbfc:&lt;br&gt;    credit_size: 128&lt;br&gt;    credit_limit: 64&lt;br&gt;    credit_uf_limit: 2&lt;br&gt;cdma:&lt;br&gt;  engines_per_die: 4&lt;br&gt;  threads_per_engine: 8&lt;br&gt;  bandwidth_gbps: 64  # per engine&lt;br&gt;&lt;br&gt;# switch_presets/tor_400g.yaml&lt;br&gt;# (see SwitchConfig box)&lt;/pre&gt;&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#C8E6C9;strokeColor=#2E7D32;fontSize=10;align=left;verticalAlign=top;overflow=fill;" vertex="1" parent="1">
+          <mxGeometry x="1830" y="1070" width="280" height="240" as="geometry"/>
+        </mxCell>
+
+        <!-- Adapter extension -->
+        <mxCell id="adapter_ext" value="&lt;b&gt;Adapter Extension&lt;/b&gt;&lt;br&gt;&lt;font style='font-size:8px;color:#555'&gt;adapter.py (extended)&lt;br&gt;Aggregate PAXI/Switch events&lt;br&gt;into existing EngineResult&lt;br&gt;&lt;b&gt;New metrics:&lt;/b&gt;&lt;br&gt;- paxi_tx_time / paxi_rx_time&lt;br&gt;- switch_queue_time&lt;br&gt;- credit_stall_time&lt;br&gt;- pfc_pause_time&lt;br&gt;- serialization_time&lt;br&gt;All flow into StepMetrics[]&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#C8E6C9;strokeColor=#2E7D32;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="60" y="1210" width="250" height="120" as="geometry"/>
+        </mxCell>
+
+        <!-- Gantt extension -->
+        <mxCell id="gantt_ext" value="&lt;b&gt;Gantt Extension&lt;/b&gt;&lt;br&gt;&lt;font style='font-size:8px;color:#555'&gt;New swimlanes in Gantt:&lt;br&gt;- CDMA (per chip)&lt;br&gt;- PAXI TX/RX (per chip)&lt;br&gt;- Switch (per switch)&lt;br&gt;Visualize cross-chip comm&lt;br&gt;pipeline overlaps&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#C8E6C9;strokeColor=#2E7D32;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="340" y="1210" width="250" height="105" as="geometry"/>
+        </mxCell>
+
+        <!-- Legend -->
+        <mxCell id="legend" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FAFAFA;strokeColor=#999;strokeWidth=1;" vertex="1" parent="1">
+          <mxGeometry x="1740" y="460" width="600" height="120" as="geometry"/>
+        </mxCell>
+        <mxCell id="leg_title" value="&lt;b&gt;Legend&lt;/b&gt;" style="text;html=1;align=left;verticalAlign=middle;fontSize=11;fontStyle=1;fontColor=#333;" vertex="1" parent="1">
+          <mxGeometry x="1755" y="465" width="80" height="18" as="geometry"/>
+        </mxCell>
+        <mxCell id="leg_orange" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFE0B2;strokeColor=#E65100;" vertex="1" parent="1">
+          <mxGeometry x="1755" y="490" width="25" height="12" as="geometry"/>
+        </mxCell>
+        <mxCell id="leg_orange_t" value="G5 Core (existing: TIU/DMA/SDMA/HAU)" style="text;html=1;align=left;verticalAlign=middle;fontSize=8;" vertex="1" parent="1">
+          <mxGeometry x="1785" y="486" width="230" height="20" as="geometry"/>
+        </mxCell>
+        <mxCell id="leg_purple" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#CE93D8;strokeColor=#6A1B9A;" vertex="1" parent="1">
+          <mxGeometry x="1755" y="508" width="25" height="12" as="geometry"/>
+        </mxCell>
+        <mxCell id="leg_purple_t" value="PAXI + RC Link + CESOC (NEW cycle-level)" style="text;html=1;align=left;verticalAlign=middle;fontSize=8;" vertex="1" parent="1">
+          <mxGeometry x="1785" y="504" width="230" height="20" as="geometry"/>
+        </mxCell>
+        <mxCell id="leg_teal" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#B2DFDB;strokeColor=#00695C;" vertex="1" parent="1">
+          <mxGeometry x="1755" y="526" width="25" height="12" as="geometry"/>
+        </mxCell>
+        <mxCell id="leg_teal_t" value="L2 Switch (NEW cycle-level)" style="text;html=1;align=left;verticalAlign=middle;fontSize=8;" vertex="1" parent="1">
+          <mxGeometry x="1785" y="522" width="230" height="20" as="geometry"/>
+        </mxCell>
+        <mxCell id="leg_lavender" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E1BEE7;strokeColor=#7B1FA2;" vertex="1" parent="1">
+          <mxGeometry x="1755" y="544" width="25" height="12" as="geometry"/>
+        </mxCell>
+        <mxCell id="leg_lavender_t" value="CDMA (NEW - AXI bridge to PAXI)" style="text;html=1;align=left;verticalAlign=middle;fontSize=8;" vertex="1" parent="1">
+          <mxGeometry x="1785" y="540" width="230" height="20" as="geometry"/>
+        </mxCell>
+        <mxCell id="leg_green" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#C8E6C9;strokeColor=#2E7D32;" vertex="1" parent="1">
+          <mxGeometry x="2060" y="490" width="25" height="12" as="geometry"/>
+        </mxCell>
+        <mxCell id="leg_green_t" value="Shared / Integration" style="text;html=1;align=left;verticalAlign=middle;fontSize=8;" vertex="1" parent="1">
+          <mxGeometry x="2090" y="486" width="130" height="20" as="geometry"/>
+        </mxCell>
+        <mxCell id="leg_red" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFCDD2;strokeColor=#C62828;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="2060" y="508" width="25" height="12" as="geometry"/>
+        </mxCell>
+        <mxCell id="leg_red_t" value="Key interface / hub" style="text;html=1;align=left;verticalAlign=middle;fontSize=8;" vertex="1" parent="1">
+          <mxGeometry x="2090" y="504" width="130" height="20" as="geometry"/>
+        </mxCell>
+
+        <!-- Data path description -->
+        <mxCell id="datapath" value="&lt;b&gt;Cross-Chip Data Path (Cycle-Level):&lt;/b&gt;&lt;br&gt;&lt;font style='font-size:9px'&gt;SDMA cmd -&gt; CDMA TX (AXI Write) -&gt; PAXI TX (Flit encode + VC arb) -&gt; RC Link TX (Slot queue + CBFC check + Frame encap) -&gt; CESOC TX (MAC+PCS+FEC) -&gt; SerDes -&gt; [Link] -&gt; [Switch pipeline?] -&gt; [Link] -&gt; SerDes -&gt; CESOC RX -&gt; RC Link RX (PSN verify + ACK) -&gt; PAXI RX (VC buffer + decode) -&gt; CDMA RX (AXI Master) -&gt; SDMA_FINISH event&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF9C4;strokeColor=#F9A825;strokeWidth=2;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="640" y="1210" width="820" height="60" as="geometry"/>
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

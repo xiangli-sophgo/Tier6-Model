@@ -353,6 +353,7 @@ class EvaluationRequest(BaseModel):
     manual_parallelism: Optional[ManualParallelism] = None
     search_constraints: Optional[SearchConstraints] = None
     max_workers: int = Field(4, ge=1, le=32)
+    eval_mode: str = Field("math", pattern=r"^(math|g5)$")
 
 
 class SimulateRequest(BaseModel):

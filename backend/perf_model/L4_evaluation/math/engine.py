@@ -43,7 +43,7 @@ class EvaluationEngine:
         - Step 级别时延分解与瓶颈归因
 
     计算流程:
-        - 口径校验 → 模型选择 → 类型路由 → Step 估时 → 精细评估 → 聚合输出
+        - 口径校验 -> 模型选择 -> 类型路由 -> Step 估时 -> 精细评估 -> 聚合输出
     """
 
     # 计算类 Op 类型
@@ -147,7 +147,7 @@ class EvaluationEngine:
         输出:
             - EngineResult（StepMetrics + Aggregates + trace_meta）
         关键步骤:
-            - 口径校验 → 模型选择 → 类型路由 → Step 估时 → 校准 → 聚合
+            - 口径校验 -> 模型选择 -> 类型路由 -> Step 估时 -> 校准 -> 聚合
         """
         # 1. 口径校验
         self._validate_inputs(exec_plan, hardware, granularity)

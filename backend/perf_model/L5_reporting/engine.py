@@ -45,7 +45,7 @@ class ReportingEngine:
         输出:
             - ReportingReport
         关键步骤:
-            - 校验输入 → 装配视图 → 返回报告
+            - 校验输入 -> 装配视图 -> 返回报告
         """
         if output_config is None:
             output_config = OutputConfig()

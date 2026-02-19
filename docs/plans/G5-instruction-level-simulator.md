@@ -119,16 +119,26 @@ backend/perf_model/
                 softmax_eval.py
             engine.py              # MathEvaluationEngine
         g5/                        # === G5 模式 ===
-            sim_engine.py          # 事件驱动仿真调度器
+            sim_engine.py          # 事件驱动仿真调度器 (委托 SingleChipSim)
             tiu.py                 # TIU 计算引擎
             dma.py                 # GDMA 搬运引擎 (LMEM <-> DDR)
             sdma.py                # SDMA 核间通信引擎 (GMEM <-> GMEM)
             hau.py                 # HAU 硬件辅助单元 (Sort/Top-K)
-            ife.py                 # IFE 指令调度模型 (FIFO + 依赖管理)
             memory.py              # LMEM + DDR 模型
-            noc_adapter.py         # NoC 适配器 (v1: SimpleBus / v2: CrossRing)
-            interconnect.py        # 多芯片互连 (C2C + CDMA)
             adapter.py             # 仿真事件 → EngineResult
+            pipeline.py            # G5 管线封装 (DistributedModel → EngineResult)
+            kernel/                # SimKernel 仿真内核
+                sim_kernel.py      # 全局事件队列 (heapq, 多时钟域)
+                sim_object.py      # SimObject 基类 (schedule/schedule_at)
+                sim_record.py      # SimRecord 数据结构
+            chip/                  # 芯片子系统
+                core_subsys.py     # 单核子系统 (TIU+DMA+SDMA+HAU + sync_id)
+                bus.py             # BusModel 2D mesh Manhattan 距离
+            top/                   # 顶层组装
+                single_chip.py     # 单芯片多核仿真器
+            ife.py                 # IFE 指令调度模型 (待实现)
+            noc_adapter.py         # NoC 适配器 (待实现)
+            interconnect.py        # 多芯片互连 (待实现)
 
     L5_reporting/                  # 共享报告生成
         engine.py
@@ -724,49 +734,103 @@ G5 模式需要 ChipSpec 扩展以下微架构参数：
 
 ## 七、实施步骤
 
-### Step 1: 目录重构
+### Step 1: 目录重构 [DONE - v2.4.0, fa9db88]
 - `backend/math_model/` → `backend/perf_model/`
 - L3_mapping/ 内部文件移入 common/ 和 math/ 子目录
 - L4_evaluation/ 内部文件移入 common/ 和 math/ 子目录
 - 更新所有 import 路径
 - 验证现有 math 模式功能不受影响
 
-### Step 2: L3.g5 指令生成
-- 实现 `program.py` (CoreProgram/TIUCommand/DMACommand/SDMACommand/HAUCommand 数据结构)
-- 实现 `instruction_tiler.py` (指令级 tiling + 地址布局)
-- 实现 `instruction_emitter.py` (从 DistributedOp → 指令序列, 含 TIU/GDMA/SDMA/HAU)
-  - MatMul → TIU + GDMA 指令
-  - MoE routing → HAU (Top-K) + SDMA (数据分发) 指令
-  - AllReduce/P2P → SDMA (芯片内) 或 CommOp (跨芯片) 指令
-- 用 MatMul 单 op 验证指令生成正确性
+### Step 2: L3.g5 指令生成 [DONE - MatMul Only]
+- [x] 实现 `program.py` (CoreProgram/TIUCommand/DMACommand/SDMACommand/HAUCommand 数据结构)
+- [x] 实现 `instruction_tiler.py` (指令级 tiling + LMEM double buffering 地址布局)
+- [x] 实现 `instruction_emitter.py` (从 DistributedOp → 指令序列, 含 double buffering 依赖跟踪)
+  - [x] MatMul → TIU + GDMA 指令
+  - [x] MoE routing → HAU (Top-K) + SDMA (数据分发) 指令 (Step 4 完成)
+  - [x] AllReduce → SDMA (芯片内) 指令 (Step 4 完成)
+  - [ ] P2P → CommOp (跨芯片) 指令 (待 Step 5)
+- [x] 用 MatMul 单 op 验证指令生成正确性 (test_g5_matmul_e2e.py)
 
-### Step 3: L4.g5 仿真内核 (TIU + GDMA 核心)
-- 实现 `sim_engine.py` (事件调度器 + delta cycle + 信号机制 + 多时钟域)
-- 实现 `ife.py` (指令调度模型: FIFO 深度限制 + 调度延迟 + 背压)
-- 实现 `tiu.py` (状态机 + MM2/CONV/SFU/AR 延迟计算)
-- 实现 `dma.py` (GDMA 5 级流水 + 分段逻辑 + outstanding 控制)
-- 实现 `memory.py` (LMEM bank conflict + DDR 模型)
-- 单核单 op 端到端验证 (TIU + GDMA 协同)
+### Step 3: L4.g5 仿真内核 (TIU + GDMA 核心) [DONE - Minimal]
+- [x] 实现 `sim_engine.py` (事件调度器, heapq, TIU/DMA sync_id 同步)
+  - [ ] delta cycle + 信号机制 + 多时钟域 (后续增强)
+- [ ] 实现 `ife.py` (指令调度模型: FIFO 深度限制 + 调度延迟 + 背压) (后续增强)
+- [x] 实现 `tiu.py` (MM2_NN 延迟公式, 对标 TPUPerf)
+  - [ ] CONV/SFU/AR 延迟计算 (后续扩展)
+- [x] 实现 `dma.py` (GDMA 简化延迟: startup + bytes/bandwidth)
+  - [ ] 5 级流水 + 分段逻辑 + outstanding 控制 (后续增强)
+- [x] 实现 `memory.py` (LMEM 预算计算 + 校验)
+  - [ ] bank conflict + DDR 地址映射 (后续增强)
+- [x] 实现 `adapter.py` (SimRecord -> StepMetrics -> EngineResult, 含 MFU/MBU)
+- [x] 单核单 op 端到端验证 (512x2048x4096, BF16, SG2262: 2.19ms, MFU=1.00%)
 
-### Step 4: SDMA + HAU 扩展
-- 实现 `sdma.py` (核间通信: GMEM→GMEM, 独立同步 ID, 独立 outstanding)
-- 实现 `hau.py` (硬件排序: Sort/Top-K/Unique, 消息联动 SDMA)
-- 验证 MoE Top-K → SDMA 分发流程
-- 验证 SDMA AllReduce 通信延迟
+### Step 4: SDMA + HAU 扩展 [DONE]
+- [x] 实现 `sdma.py` (核间通信: GMEM→GMEM, 简化延迟模型, 复用 DMAEngineImpl)
+- [x] 实现 `hau.py` (硬件排序: Sort/Top-K/Unique, 公式延迟模型)
+- [x] 扩展 `program.py` (SDMACommand 11字段 + HAUCommand 12字段 + 3 新枚举)
+- [x] 扩展 `sim_engine.py` (4引擎并行: TIU+GDMA+SDMA+HAU, 通用 dep_engine 依赖解析)
+- [x] 扩展 `instruction_emitter.py` (MoE dispatch/combine + AllReduce + HAU Top-K 自动插入)
+- [x] 扩展 `adapter.py` (SDMA→t_comm, HAU→t_compute 分类)
+- [x] 扩展 `SG2262.yaml` (新增 sdma + hau 配置段)
+- [x] 扩展 `chip.py` (ChipSpecImpl.hau_config 字段)
+- [x] 验证 MoE Top-K → SDMA 分发流程 (test_g5_moe_e2e.py)
+- [x] 验证 MatMul 回归测试通过
+- [x] TPUPerf 公式对齐修复:
+  - tiu.py: ch_per_cyc 按精度缩放 (BF16=16, 对齐 CUBE_IC_16BIT)
+  - SG2262.yaml: 新增 tiu_frequency_ghz=1.0 (对齐 TPUPerf clk_tiu=1000MHz)
+  - chip.py: 新增 tiu_frequency_ghz 字段 + get_tiu_frequency() 方法
+  - hau.py: 使用 get_tiu_frequency() 替代 frequency_ghz
 
-### Step 5: 多核互连与 NoC
-- 实现 `noc_adapter.py` (NoCInterface 协议 + SimpleBus v1 实现)
-  - SimpleBus: Manhattan 距离延迟, 128 master + 64 slave 端口, 带宽仲裁
-- 实现 `interconnect.py` (多芯片互连: C2C + CDMA 信用流控)
-- 多核并行仿真 (64 核 TpuSubsys 实例)
-- AllReduce/P2P 通信建模 (芯片内走 SDMA+NoC, 跨芯片走 CDMA+C2C)
+### Step 5: 多核互连与 NoC [部分完成 - Phase 1: SimKernel 多核架构]
 
-### Step 6: 系统集成
-- L0 编排逻辑（mode 切换: math / g5 / g5_binary）
-- L2 参数扩展 (NoC 参数 + SDMA/HAU/IFE 参数)
-- adapter.py（仿真事件 → EngineResult, 含 SDMA/HAU 事件聚合）
-- 前端 mode 选择 UI
-- 端到端验证（Math vs G5 结果交叉对比）
+**Phase 1: SimKernel 仿真内核 + 多核扩展 [DONE]**
+- [x] 实现 `kernel/sim_kernel.py` (SimKernel: 全局 heapq 事件队列, 多时钟域, seq_counter FIFO 稳定排序)
+- [x] 实现 `kernel/sim_object.py` (SimObject 基类: schedule/schedule_at/schedule_cycles, 时钟域绑定)
+- [x] 实现 `kernel/sim_record.py` (SimRecord 数据结构独立模块, 解决循环引用)
+- [x] 实现 `chip/core_subsys.py` (CoreSubsys: 4 引擎并行 + sync_id 同步, 对标 TPUPerf TpuSubsys)
+- [x] 实现 `chip/bus.py` (BusModel: 2D mesh Manhattan 距离延迟, 从 ChipSpec.noc_config 读取参数)
+- [x] 实现 `top/single_chip.py` (SingleChipSim: SimKernel + BusModel + N*CoreSubsys 组装)
+- [x] 重构 `sim_engine.py` (G5SimEngine 委托 SingleChipSim, 外部 API 不变)
+- [x] 扩展 `chip.py` (ChipSpecImpl 新增 noc_config 字段, from_config() 解析 noc 配置)
+- [x] 扩展 `SG2262.yaml` (新增 noc 配置段: 8x8 mesh, 45 cycles/hop)
+- [x] 测试: 25+ 单元测试全部通过 (test_g5_simkernel.py, test_g5_core_subsys.py, test_g5_single_chip.py, test_g5_multicore_e2e.py)
+- [x] 回归: MatMul 2.1886ms/MFU=0.9981%, MoE 1.7392ms/MFU=0.4318% (数值不变)
+- [x] 多核验证: 4 核独立 MatMul 正确并行, 2 核 SDMA 通信含 bus delay
+
+**Phase 2: 高级 NoC + 多芯片 (待实现)**
+- [ ] 实现 `noc_adapter.py` (NoCInterface 协议 + SimpleBus v1: 带宽仲裁, 128 master + 64 slave 端口)
+- [ ] 实现 `interconnect.py` (多芯片互连: C2C + CDMA 信用流控)
+- [ ] AllReduce/P2P 通信建模 (芯片内走 SDMA+NoC, 跨芯片走 CDMA+C2C)
+- [ ] 64 核压力测试 + NoC 带宽竞争
+
+### Step 6: 系统集成 (单核 G5 接入前端) [已完成]
+- [x] L0 编排逻辑 (mode 切换: math / g5)
+  - `EvalConfig` 新增 `mode: str = "math"` 字段
+  - `build_eval_config()` 新增 `eval_mode` 参数透传
+  - `EvaluationRequest` 新增 `eval_mode: str` (Pydantic, regex `^(math|g5)$`)
+  - `run_evaluation()` 在 ParallelismPlanner 后按 mode 分叉:
+    - g5: `run_g5_pipeline()` -> EngineResult
+    - math: `_run_math_pipeline()` -> EngineResult (原有逻辑提取为函数)
+  - `run_evaluation_from_request()` 从 config 提取 eval_mode 并传入 build_eval_config
+  - `submit_evaluation()` API 端点将 eval_mode 写入 config_snapshot
+- [x] G5 管线封装 (`L4_evaluation/g5/pipeline.py`, 新文件)
+  - `run_g5_pipeline(dist_model, chip, progress_callback)` -> EngineResult
+  - 流程: DistributedModel.ops -> G5InstructionEmitter -> G5SimEngine -> G5ResultAdapter
+- [x] G5 emitter 适配真实 DistributedOp COMM 节点
+  - 识别 `role=NodeRole.COMM` + `comm_type` 的节点
+  - ALL2ALL (dispatch/combine) -> SDMA 指令
+  - ALLREDUCE / ALLGATHER / REDUCE_SCATTER / P2P -> SDMA allreduce 指令
+  - 兼容 MockDistributedOp (测试) 和真实 DistributedOp (duck typing)
+- [x] 前端 mode 选择 UI
+  - `DeploymentAnalysisPanel.tsx`: evalMode 状态 + Select 组件 ("Math 代数模型" / "G5 指令级仿真")
+  - `math_model.ts`: EvaluationRequest 类型新增 `eval_mode` 字段
+  - handleRunAnalysis / handleRunSweep 透传 eval_mode
+- [x] 端到端验证
+  - test_g5_matmul_e2e.py 通过
+  - test_g5_moe_e2e.py 通过
+  - EvalConfig.mode / EvaluationRequest.eval_mode 字段验证通过
+- [ ] L2 参数扩展 (NoC 参数 + SDMA/HAU/IFE 参数) -- 延后至 Step 5 多核阶段
+- [ ] Math vs G5 结果交叉对比 -- 需前端 UI 端到端运行后对比
 
 ### Step 7: 二进制解析
 - 实现 `binary_parser.py` (.BD/.GDMA/.HAU/.SDMA 四类二进制文件解析)
@@ -812,20 +876,38 @@ G5 模式需要 ChipSpec 扩展以下微架构参数：
 - 所有 import 语句更新
 
 ### 需要新增的文件（G5 模式）
+
+**L3.g5 指令生成 [已完成]**:
 - `L3_mapping/g5/program.py` — CoreProgram 数据结构 (含 TIU/DMA/SDMA/HAU 指令)
 - `L3_mapping/g5/instruction_tiler.py` — 指令级 tiling
-- `L3_mapping/g5/instruction_emitter.py` — 指令生成 (含 MoE routing 的 HAU+SDMA 指令)
-- `L3_mapping/g5/binary_parser.py` — 二进制解析 (.BD/.GDMA/.HAU/.SDMA)
-- `L4_evaluation/g5/sim_engine.py` — 事件驱动仿真调度器
-- `L4_evaluation/g5/ife.py` — IFE 指令调度模型 (FIFO + 依赖管理)
+- `L3_mapping/g5/instruction_emitter.py` — 指令生成 (含 MoE routing + COMM 节点适配)
+- `L3_mapping/g5/binary_parser.py` — 二进制解析 (.BD/.GDMA/.HAU/.SDMA) [待实现]
+
+**L4.g5 仿真引擎 [已完成]**:
+- `L4_evaluation/g5/sim_engine.py` — 事件驱动仿真调度器 (委托 SingleChipSim)
 - `L4_evaluation/g5/tiu.py` — TIU 计算引擎
 - `L4_evaluation/g5/dma.py` — GDMA 搬运引擎 (LMEM <-> DDR)
 - `L4_evaluation/g5/sdma.py` — SDMA 核间通信引擎 (GMEM <-> GMEM)
 - `L4_evaluation/g5/hau.py` — HAU 硬件辅助单元 (Sort/Top-K)
 - `L4_evaluation/g5/memory.py` — 内存子系统 (LMEM + DDR)
+- `L4_evaluation/g5/adapter.py` — 仿真事件 → EngineResult
+- `L4_evaluation/g5/pipeline.py` — G5 管线封装 (DistributedModel → EngineResult)
+
+**L4.g5 SimKernel 架构 [已完成]**:
+- `L4_evaluation/g5/kernel/sim_kernel.py` — SimKernel 全局事件队列
+- `L4_evaluation/g5/kernel/sim_object.py` — SimObject 基类
+- `L4_evaluation/g5/kernel/sim_record.py` — SimRecord 数据结构
+- `L4_evaluation/g5/kernel/__init__.py` — 包导出
+- `L4_evaluation/g5/chip/core_subsys.py` — 单核子系统 (4 引擎 + 同步)
+- `L4_evaluation/g5/chip/bus.py` — BusModel 2D mesh
+- `L4_evaluation/g5/chip/__init__.py` — 包导出
+- `L4_evaluation/g5/top/single_chip.py` — 单芯片多核组装
+- `L4_evaluation/g5/top/__init__.py` — 包导出
+
+**待实现**:
+- `L4_evaluation/g5/ife.py` — IFE 指令调度模型 (FIFO + 依赖管理)
 - `L4_evaluation/g5/noc_adapter.py` — NoC 适配器 (v1: SimpleBus / v2: CrossRing)
 - `L4_evaluation/g5/interconnect.py` — 多芯片互连 (C2C + CDMA)
-- `L4_evaluation/g5/adapter.py` — 仿真事件 → EngineResult
 
 ### 外部依赖（CrossRing 集成, 后续）
 - `code/CrossRing/` — NoC 仿真器 (纯 Python)

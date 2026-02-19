@@ -307,6 +307,7 @@ export interface EvaluationRequest {
   manual_parallelism?: ManualParallelism | Record<string, unknown>;
   search_constraints?: Record<string, unknown>;
   max_workers?: number;
+  eval_mode?: 'math' | 'g5';
 }
 
 /** 手动并行策略 */

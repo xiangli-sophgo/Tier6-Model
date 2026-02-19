@@ -225,6 +225,9 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
   // TBO (Transport/Bandwidth Overlap) 开关：MoE dispatch/combine 与计算重叠
   const [enableTbo, setEnableTbo] = useState<boolean>(false)
 
+  // 评估模式: math (代数模型) 或 g5 (指令级仿真)
+  const [evalMode, setEvalMode] = useState<'math' | 'g5'>('math')
+
   // 原始配置快照（用于修改追踪）
   const [originalBenchmarkConfig, setOriginalBenchmarkConfig] = useState<{
     model: LLMModelConfig | null
@@ -1362,6 +1365,7 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
         } as unknown as Record<string, unknown> : undefined,
         search_constraints: parallelismMode === 'auto' ? { max_chips: maxChips } : undefined,
         max_workers: taskMaxWorkers,
+        eval_mode: evalMode,
       })
 
       const backendTaskId = response.task_id
@@ -1387,7 +1391,7 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
     experimentName, taskMaxWorkers, modelPreset, modelConfig, inferenceConfig, parallelismMode, manualStrategy,
     maxChips, addTask, updateTask, setAnalysisTasks, selectedTopologyConfig, selectedBenchmark,
     localPodCount, localRacksPerPod, localRackConfig, localHardwareParams, commLatencyConfig,
-    enablePrefill, enableZigzag, enableRingAttention, enableTbo, topologyConfigForEditor
+    enablePrefill, enableZigzag, enableRingAttention, enableTbo, topologyConfigForEditor, evalMode
   ])
 
   // 运行参数遍历（批量提交任务）
@@ -1506,6 +1510,7 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
             enable_tbo: enableTbo,
           } as unknown as Record<string, unknown>,
           max_workers: taskMaxWorkers,
+          eval_mode: evalMode,
         })
 
         // 更新任务 ID 为后端返回的真实 ID
@@ -1543,6 +1548,7 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
     enableZigzag,
     enableRingAttention,
     enableTbo,
+    evalMode,
   ])
 
 
@@ -1779,6 +1785,29 @@ export const DeploymentAnalysisPanel: React.FC<DeploymentAnalysisPanelProps> = (
               {/* --- 评估选项 --- */}
               <div className="mt-4 pt-4 border-t border-gray-200">
                 <div className="mb-3 text-xs font-medium text-gray-500">评估选项</div>
+
+                {/* 评估模式 */}
+                <div className="mb-3">
+                  <div className="mb-1.5 text-[13px] text-gray-600 flex items-center">
+                    评估模式
+                    <TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Info className="h-3.5 w-3.5 ml-1 text-gray-400 cursor-help" />
+                        </TooltipTrigger>
+                        <TooltipContent>Math: 代数模型 (快速, 粗粒度); G5: 指令级仿真 (精确, 细粒度)</TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                  </div>
+                  <Select value={evalMode} onValueChange={(v) => setEvalMode(v as 'math' | 'g5')}>
+                    <SelectTrigger className="w-48 h-7"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="math">Math (代数模型)</SelectItem>
+                      <SelectItem value="g5">G5 (指令级仿真)</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
                 <div className="grid grid-cols-4 gap-4">
                   <div className="text-center">
                     <HelpTooltip label="Prefill 阶段" content="预填充阶段: 处理输入序列，计算密集型" labelClassName="text-[11px] text-gray-600 block mb-1 cursor-help" />

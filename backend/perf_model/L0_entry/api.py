@@ -627,6 +627,7 @@ async def submit_evaluation(request: EvaluationRequest):
         "manual_parallelism": request.manual_parallelism.model_dump() if request.manual_parallelism else None,
         "search_constraints": request.search_constraints.model_dump() if request.search_constraints else None,
         "max_workers": request.max_workers,
+        "eval_mode": request.eval_mode,
     }
 
     # 提交任务到线程池

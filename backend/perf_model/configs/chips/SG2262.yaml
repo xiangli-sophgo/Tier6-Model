@@ -3,6 +3,8 @@ architecture: TPU_V7
 process: 7nm
 # 对齐 CHIPMathica sg2262.yaml: core=64, flops=786.432T => freq=1.5GHz
 frequency_ghz: 1.5
+# 对齐 TPUPerf sg2262_template.json: clk_tiu=1000MHz (G5 仿真专用)
+tiu_frequency_ghz: 1.0
 align_bytes: 32
 compute_dma_overlap_rate: 0.8
 compute_efficiency: 0.9
@@ -50,8 +52,22 @@ dma_engines:
     bandwidth_gbps: 68
     startup_latency_ns: 100
     efficiency: 0.9
+  sdma:
+    bandwidth_gbps: 64
+    startup_latency_ns: 120
+    efficiency: 0.85
+hau:
+  sort_width: 16
+  compare_cycles: 1
+  init_cycles: 20
 interconnect:
   NoC:
     topology: Mesh
     bandwidth_gbps: 1000
     latency_ns: 10
+# G5 NoC 配置 (2D mesh, 对齐 TPUPerf simple_bus)
+noc:
+  topology: "2d_mesh"
+  mesh_cols: 8
+  mesh_rows: 8
+  base_latency_cycles: 45  # Manhattan 距离系数 (cycles/hop)

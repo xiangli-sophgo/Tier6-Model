@@ -150,6 +150,7 @@ class EvalConfig:
     inference: InferenceConfig
     raw_model_config: dict[str, Any]  # 报告/快照用
     raw_topology_config: dict[str, Any]  # 报告/快照用
+    mode: str = "math"  # "math" (代数模型) | "g5" (指令级仿真)
 
 
 # ============================================
@@ -390,6 +391,7 @@ def build_eval_config(
     topology_config: dict[str, Any],
     manual_parallelism: dict[str, Any],
     inference_config: dict[str, Any],
+    eval_mode: str = "math",
 ) -> EvalConfig:
     """唯一的 dict -> EvalConfig 转换点
 
@@ -425,4 +427,5 @@ def build_eval_config(
         inference=_build_inference_config(inference_config),
         raw_model_config=model_config,
         raw_topology_config=topology_config,
+        mode=eval_mode,
     )

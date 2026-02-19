@@ -22,8 +22,8 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 app = FastAPI(
-    title="Math Model API",
-    description="LLM 推理部署分析平台 - 数学建模后端",
+    title="Perf Model API",
+    description="LLM 推理部署分析平台 - 性能建模后端",
     version="3.0.0",
 )
 
@@ -70,7 +70,7 @@ async def startup_event():
 async def root():
     """根路径"""
     return {
-        "name": "Math Model API",
+        "name": "Perf Model API",
         "version": "3.0.0",
         "status": "running",
     }

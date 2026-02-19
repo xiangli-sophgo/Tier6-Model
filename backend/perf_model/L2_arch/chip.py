@@ -53,6 +53,9 @@ class ChipSpecImpl:
     memory_hierarchy: MemoryHierarchyImpl = field(default_factory=MemoryHierarchyImpl)
     dma_engines: dict[str, DMAEngineImpl] = field(default_factory=dict)
     interconnect: InterconnectSpecImpl = field(default_factory=InterconnectSpecImpl)
+    hau_config: dict[str, Any] = field(default_factory=dict)
+    tiu_frequency_ghz: float = 0.0  # G5 TIU 时钟频率, 0=使用 frequency_ghz
+    noc_config: dict[str, Any] = field(default_factory=dict)  # G5 NoC 配置
 
     def __post_init__(self) -> None:
         if not self.cores and self.core_count > 0:
@@ -100,6 +103,15 @@ class ChipSpecImpl:
             return getattr(lmem, "utilization", 0.45)
         except KeyError:
             return 0.45
+
+    def get_tiu_frequency(self) -> float:
+        """获取 G5 TIU 时钟频率 (GHz)
+
+        优先使用 tiu_frequency_ghz, 未配置时回退到 frequency_ghz。
+        """
+        if self.tiu_frequency_ghz > 0:
+            return self.tiu_frequency_ghz
+        return self.frequency_ghz
 
     def get_peak_flops(self, dtype: str, unit: str = "cube") -> float:
         """获取峰值算力
@@ -183,6 +195,9 @@ class ChipSpecImpl:
             memory_hierarchy=self.memory_hierarchy,
             dma_engines=self.dma_engines,
             interconnect=self.interconnect,
+            hau_config=self.hau_config,
+            tiu_frequency_ghz=self.tiu_frequency_ghz,
+            noc_config=self.noc_config,
         )
 
     @classmethod
@@ -255,6 +270,15 @@ class ChipSpecImpl:
         interconnect_config = config.get("interconnect", {})
         interconnect = InterconnectSpecImpl.from_config(interconnect_config)
 
+        # HAU 配置 (可选, 仅 G5 仿真使用)
+        hau_config = config.get("hau", {})
+
+        # G5 TIU 时钟频率 (可选, 仅 G5 仿真使用, 默认回退到 frequency_ghz)
+        tiu_frequency_ghz = float(config.get("tiu_frequency_ghz", 0.0))
+
+        # G5 NoC 配置 (可选, 仅 G5 仿真使用)
+        noc_config = config.get("noc", {})
+
         return cls(
             name=name,
             core_count=core_count,
@@ -267,6 +291,9 @@ class ChipSpecImpl:
             memory_hierarchy=memory_hierarchy,
             dma_engines=dma_engines,
             interconnect=interconnect,
+            hau_config=hau_config,
+            tiu_frequency_ghz=tiu_frequency_ghz,
+            noc_config=noc_config,
         )
 
     def _derive_core_specs(self) -> list[CoreSpecImpl]:

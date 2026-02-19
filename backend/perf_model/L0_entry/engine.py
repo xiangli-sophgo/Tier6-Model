@@ -67,6 +67,86 @@ def build_chip_id_mapping(topology_config: dict[str, Any]) -> dict[int, str]:
     return mapping
 
 
+def _run_math_pipeline(
+    eval_config: EvalConfig,
+    chip: Any,
+    dist_model: Any,
+    _report: Callable[[float], None],
+) -> Any:
+    """Math 代数模型路径: L3 Tiling -> L3 Scheduling -> L4 Evaluation
+
+    Returns:
+        EngineResult
+    """
+    from perf_model.L3_mapping.math.tiling.planner import TilingPlanner
+    from perf_model.L4_evaluation.math.evaluators.precise import PreciseTileEvaluator
+
+    dep = eval_config.deployment
+
+    t0 = time.perf_counter()
+    cube_dtype = eval_config.inference.weight_dtype.upper()
+    if cube_dtype not in ("FP8", "INT8"):
+        cube_dtype = "BF16"
+    compute_tflops = chip.get_peak_flops(cube_dtype, "cube") / 1e12
+    memory_bw_gbps = chip.get_gmem_bandwidth()
+
+    precise_evaluator = PreciseTileEvaluator(
+        compute_tflops=compute_tflops,
+        memory_bandwidth_gbps=memory_bw_gbps,
+        is_prefill=dep.is_prefill,
+        enable_zigzag=dep.enable_zigzag,
+    )
+
+    def _tiling_progress(current: int, total: int) -> None:
+        if total > 0:
+            _report(0.12 + (current / total) * 0.63)
+
+    tile_plan = TilingPlanner(chip, l4_evaluator=precise_evaluator).plan(
+        dist_model, progress_callback=_tiling_progress,
+    )
+    t1 = time.perf_counter()
+    print(f"[L3] TilingPlanner done  [{(t1-t0)*1000:.1f} ms]")
+    _report(0.75)
+
+    # L3: Scheduling
+    from perf_model.L3_mapping.math.scheduling.scheduler import Scheduler
+
+    t0 = time.perf_counter()
+    exec_plan = Scheduler().plan(dist_model, tile_plan)
+    t1 = time.perf_counter()
+    print(f"[L3] Scheduler done  [{(t1-t0)*1000:.1f} ms]")
+    _report(0.78)
+
+    # L4: Evaluation
+    from perf_model.L4_evaluation.math.engine import EvaluationEngine
+    from perf_model.L4_evaluation.common.metrics import Granularity
+
+    t0 = time.perf_counter()
+    hardware = _build_hardware_spec(chip, eval_config)
+
+    deployment_dict = {
+        "enable_ring_attention": dep.enable_ring_attention,
+        "enable_tbo": dep.enable_tbo,
+        "tp": dep.tp,
+    }
+
+    engine = EvaluationEngine()
+    engine_result = engine.evaluate(
+        exec_plan=exec_plan,
+        distributed_model=dist_model,
+        hardware=hardware,
+        granularity=Granularity.CHIP,
+        output_tokens=dep.batch_size,
+        deployment_config=deployment_dict,
+        is_prefill=dep.is_prefill,
+    )
+    t1 = time.perf_counter()
+    print(f"[L4] EvaluationEngine done  [{(t1-t0)*1000:.1f} ms]")
+    _report(0.85)
+
+    return engine_result
+
+
 def run_evaluation(
     eval_config: EvalConfig,
     progress_callback: Callable[[float], None] | None = None,
@@ -153,76 +233,33 @@ def run_evaluation(
     print(f"[L3] ParallelismPlanner done  [{(t1-t0)*1000:.1f} ms]")
     _report(0.12)
 
-    # ==================== L3: Tiling Planning ====================
-    from perf_model.L3_mapping.math.tiling.planner import TilingPlanner
-    from perf_model.L4_evaluation.math.evaluators.precise import PreciseTileEvaluator
+    # ==================== 模式路由 ====================
+    if eval_config.mode == "g5":
+        # G5 指令级仿真路径: L3.g5(Emitter) -> L4.g5(SimEngine -> Adapter) -> EngineResult
+        from perf_model.L4_evaluation.g5.pipeline import run_g5_pipeline
 
-    t0 = time.perf_counter()
-    # 根据 weight_dtype 选择峰值算力 (对齐 CHIPMathica)
-    # FP8/INT8 -> 使用对应精度峰值; 其他 -> BF16
-    cube_dtype = eval_config.inference.weight_dtype.upper()
-    if cube_dtype not in ("FP8", "INT8"):
-        cube_dtype = "BF16"
-    compute_tflops = chip.get_peak_flops(cube_dtype, "cube") / 1e12
-    memory_bw_gbps = chip.get_gmem_bandwidth()
+        t0 = time.perf_counter()
 
-    precise_evaluator = PreciseTileEvaluator(
-        compute_tflops=compute_tflops,
-        memory_bandwidth_gbps=memory_bw_gbps,
-        is_prefill=dep.is_prefill,
-        enable_zigzag=dep.enable_zigzag,
-    )
+        def _g5_progress(p: float) -> None:
+            # G5 管线进度映射到 12% -> 85%
+            _report(0.12 + p * 0.73)
 
-    # TilingPlanner 进度映射到 12% -> 75%
-    def _tiling_progress(current: int, total: int) -> None:
-        if total > 0:
-            _report(0.12 + (current / total) * 0.63)
+        engine_result = run_g5_pipeline(dist_model, chip, progress_callback=_g5_progress)
+        t1 = time.perf_counter()
+        print(f"[G5] Pipeline done  [{(t1-t0)*1000:.1f} ms]")
 
-    tile_plan = TilingPlanner(chip, l4_evaluator=precise_evaluator).plan(
-        dist_model, progress_callback=_tiling_progress,
-    )
-    t1 = time.perf_counter()
-    print(f"[L3] TilingPlanner done  [{(t1-t0)*1000:.1f} ms]")
-    _report(0.75)
+        # 补充 G5 EngineResult 中的推理级指标 (adapter 无推理上下文)
+        agg = engine_result.aggregates
+        if agg.total_time > 0:
+            agg.ttft = agg.total_time  # 单核仿真: total_time 即为 TTFT
+            agg.tpot = agg.total_time / max(dep.batch_size, 1)
+            agg.tps = dep.batch_size / (agg.total_time / 1e3) if agg.total_time > 0 else 0.0
 
-    # ==================== L3: Scheduling ====================
-    from perf_model.L3_mapping.math.scheduling.scheduler import Scheduler
+        _report(0.85)
 
-    t0 = time.perf_counter()
-    exec_plan = Scheduler().plan(dist_model, tile_plan)
-    t1 = time.perf_counter()
-    print(f"[L3] Scheduler done  [{(t1-t0)*1000:.1f} ms]")
-    _report(0.78)
-
-    # ==================== L4: Evaluation ====================
-    from perf_model.L4_evaluation.math.engine import EvaluationEngine
-    from perf_model.L4_evaluation.common.metrics import Granularity
-
-    t0 = time.perf_counter()
-
-    # 构建硬件规格 -- 使用 eval_config 中的拓扑/通信参数（修复数据丢失 bug）
-    hardware = _build_hardware_spec(chip, eval_config)
-
-    # deployment_config dict 用于传递给 engine (ring attention, TBO 等)
-    deployment_dict = {
-        "enable_ring_attention": dep.enable_ring_attention,
-        "enable_tbo": dep.enable_tbo,
-        "tp": dep.tp,
-    }
-
-    engine = EvaluationEngine()
-    engine_result = engine.evaluate(
-        exec_plan=exec_plan,
-        distributed_model=dist_model,
-        hardware=hardware,
-        granularity=Granularity.CHIP,
-        output_tokens=dep.batch_size,
-        deployment_config=deployment_dict,
-        is_prefill=dep.is_prefill,
-    )
-    t1 = time.perf_counter()
-    print(f"[L4] EvaluationEngine done  [{(t1-t0)*1000:.1f} ms]")
-    _report(0.85)
+    else:
+        # Math 代数模型路径 (原有逻辑)
+        engine_result = _run_math_pipeline(eval_config, chip, dist_model, _report)
 
     # ==================== L5: Reporting ====================
     t0 = time.perf_counter()
@@ -504,6 +541,9 @@ def run_evaluation_from_request(
         raise ValueError("Missing 'chips' in topology_config")
     chip_config = _extract_first_chip_config(chips_dict)
 
+    # 提取评估模式 (math / g5)
+    eval_mode = config.get("eval_mode", "math")
+
     # 单一转换点: dict -> EvalConfig
     eval_config = build_eval_config(
         chip_config=chip_config,
@@ -511,6 +551,7 @@ def run_evaluation_from_request(
         topology_config=topology_config,
         manual_parallelism=manual_parallelism,
         inference_config=inference_config,
+        eval_mode=eval_mode,
     )
 
     t_config_end = time.perf_counter()
